@@ -1,15 +1,16 @@
-use crate::{Observable, Observer};
+use crate::{Observable, Observer, Subscription};
 use std::cell::RefCell;
 use std::rc::Rc;
 
+
 pub struct Subject<'a, T> {
-  observers: Rc<RefCell<Vec<Box<FnMut(&T) + 'a>>>>,
+  callbacks: Rc<RefCell<Vec<Box<FnMut(&T) + 'a>>>>,
 }
 
 impl<'a, T> Clone for Subject<'a, T> {
   fn clone(&self) -> Self {
     Subject {
-      observers: self.observers.clone(),
+      callbacks: self.callbacks.clone(),
     }
   }
 }
@@ -17,22 +18,31 @@ impl<'a, T> Clone for Subject<'a, T> {
 impl<'a, T: 'a> Observable<'a> for Subject<'a, T> {
   type Item = &'a T;
 
-  fn subscribe<O>(self, observer: O)
+  fn subscribe<O>(self, observer: O) -> Subscription<'a>
   where
     O: FnMut(Self::Item) + 'a,
   {
     let observer: Box<FnMut(Self::Item)> = Box::new(observer);
     // of course, we know Self::Item and &T is the same type, but
     // rust can't infer it, so, write an unsafe code to let rust know.
-    let observer = unsafe { std::mem::transmute(observer) };
-    self.observers.borrow_mut().push(observer);
+    let observer: Box<(dyn for<'r> std::ops::FnMut(&'r T) + 'a)> =
+      unsafe { std::mem::transmute(observer) };
+    let obser_ptr = observer.as_ref() as *const _;
+    self.callbacks.borrow_mut().push(observer);
+
+    Subscription(Box::new(move || {
+      self
+        .callbacks
+        .borrow_mut()
+        .retain(|x| x.as_ref() as *const _ != obser_ptr);
+    }))
   }
 }
 
 impl<'a, T: 'a> Subject<'a, T> {
   pub fn new() -> Subject<'a, T> {
     Subject {
-      observers: Rc::new(RefCell::new(vec![])),
+      callbacks: Rc::new(RefCell::new(vec![])),
     }
   }
 
@@ -56,7 +66,7 @@ impl<'a, T> Observer for Subject<'a, T> {
   type Item = T;
 
   fn next(&self, v: Self::Item) -> &Self {
-    for observer in self.observers.borrow_mut().iter_mut() {
+    for observer in self.callbacks.borrow_mut().iter_mut() {
       observer(&v);
     }
     self

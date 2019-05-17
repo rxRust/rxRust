@@ -1,4 +1,4 @@
-use crate::Observable;
+use crate::{Observable, Subscription};
 
 pub trait Map<'a, T> {
   /// Creates a new stream which calls a closure on each element and uses
@@ -10,7 +10,7 @@ pub trait Map<'a, T> {
     F: FnMut(T) -> B + 'a,
   {
     MapOP {
-      stream: self,
+      source: self,
       func: f,
     }
   }
@@ -20,7 +20,7 @@ impl<'a, T, O> Map<'a, T> for O where O: Observable<'a> {}
 
 
 pub struct MapOP<S, M> {
-  stream: S,
+  source: S,
   func: M,
 }
 
@@ -32,12 +32,12 @@ where
 {
   type Item = B;
 
-  fn subscribe<O>(self, mut observer: O)
+  fn subscribe<O>(self, mut observer: O) -> Subscription<'a>
   where
     O: 'a + FnMut(Self::Item),
   {
     let mut func = self.func;
-    self.stream.subscribe(move |v| {
+    self.source.subscribe(move |v| {
       observer(func(v));
     })
   }
@@ -68,5 +68,20 @@ mod test {
       broadcast.next(&100);
     }
     assert_eq!(i, 100);
+  }
+
+  #[test]
+  fn unsubscribe() {
+    let mut i = 0;
+    {
+      let broadcast = Subject::new();
+      broadcast
+        .clone()
+        .map(|v: &&i32| v)
+        .subscribe(|v| i = **v)
+        .unsubscribe();
+      broadcast.next(&100);
+    }
+    assert_eq!(i, 0);
   }
 }
