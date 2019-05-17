@@ -9,8 +9,10 @@ pub use subscription::Subscription;
 pub trait Observable<'a>: Sized {
   /// The type of the elements being emitted.
   type Item: Sized;
+  // the Subscription subsribe method return. 
+  type Unsubcribe;
 
-  fn subscribe<O>(self, observer: O) -> Subscription<'a>
+  fn subscribe<O>(self, observer: O) -> Self::Unsubcribe
   where
     O: 'a + FnMut(Self::Item);
 

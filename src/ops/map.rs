@@ -1,4 +1,4 @@
-use crate::{Observable, Subscription};
+use crate::Observable;
 
 pub trait Map<'a, T> {
   /// Creates a new stream which calls a closure on each element and uses
@@ -31,8 +31,9 @@ where
   M: FnMut(S::Item) -> B + 'a,
 {
   type Item = B;
+  type Unsubcribe = S::Unsubcribe;
 
-  fn subscribe<O>(self, mut observer: O) -> Subscription<'a>
+  fn subscribe<O>(self, mut observer: O) -> Self::Unsubcribe
   where
     O: 'a + FnMut(Self::Item),
   {

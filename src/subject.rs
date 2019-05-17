@@ -2,6 +2,7 @@ use crate::{Observable, Observer, Subscription};
 use std::cell::RefCell;
 use std::rc::Rc;
 
+pub(crate) type CallbackPtr<'a, T> = *const (dyn for<'r> FnMut(&'r T) + 'a);
 
 pub struct Subject<'a, T> {
   callbacks: Rc<RefCell<Vec<Box<FnMut(&T) + 'a>>>>,
@@ -17,8 +18,9 @@ impl<'a, T> Clone for Subject<'a, T> {
 
 impl<'a, T: 'a> Observable<'a> for Subject<'a, T> {
   type Item = &'a T;
+  type Unsubcribe = Subscription<'a, T>;
 
-  fn subscribe<O>(self, observer: O) -> Subscription<'a>
+  fn subscribe<O>(self, observer: O) -> Self::Unsubcribe
   where
     O: FnMut(Self::Item) + 'a,
   {
@@ -27,15 +29,10 @@ impl<'a, T: 'a> Observable<'a> for Subject<'a, T> {
     // rust can't infer it, so, write an unsafe code to let rust know.
     let observer: Box<(dyn for<'r> std::ops::FnMut(&'r T) + 'a)> =
       unsafe { std::mem::transmute(observer) };
-    let obser_ptr = observer.as_ref() as *const _;
+    let ptr = observer.as_ref() as CallbackPtr<T>;
     self.callbacks.borrow_mut().push(observer);
 
-    Subscription(Box::new(move || {
-      self
-        .callbacks
-        .borrow_mut()
-        .retain(|x| x.as_ref() as *const _ != obser_ptr);
-    }))
+    Subscription::new(self, ptr)
   }
 }
 
@@ -59,6 +56,13 @@ impl<'a, T: 'a> Subject<'a, T> {
       clone.next(x);
     });
     broadcast
+  }
+
+  pub fn remove_callback(&mut self, ptr: CallbackPtr<T>) {
+    self
+      .callbacks
+      .borrow_mut()
+      .retain(|x| x.as_ref() as *const _ != ptr);
   }
 }
 
