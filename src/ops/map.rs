@@ -31,9 +31,9 @@ where
   M: FnMut(S::Item) -> B + 'a,
 {
   type Item = B;
-  type Unsubcribe = S::Unsubcribe;
+  type Unsubscribe = S::Unsubscribe;
 
-  fn subscribe<O>(self, mut observer: O) -> Self::Unsubcribe
+  fn subscribe<O>(self, mut observer: O) -> Self::Unsubscribe
   where
     O: 'a + FnMut(Self::Item),
   {
@@ -47,10 +47,10 @@ where
 
 #[cfg(test)]
 mod test {
-  use crate::{ops::Map, Observable, Observer, Subject};
+  use crate::{ops::Map, Observable, Observer, Subject, Subscription};
 
   #[test]
-  fn primtive_type() {
+  fn primitive_type() {
     let mut i = 0;
     {
       let subject = Subject::new();
@@ -61,7 +61,7 @@ mod test {
   }
 
   #[test]
-  fn reference_lifetim_should_work() {
+  fn reference_lifetime_should_work() {
     let mut i = 0;
     {
       let subject = Subject::new();

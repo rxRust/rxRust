@@ -21,7 +21,7 @@ use crate::Observable;
 /// });
 
 /// // only even numbers received.
-/// assert!(coll.borrow().iter().eq(&vec![0, 2, 4, 6, 8]));
+/// assert_eq!(coll.borrow().clone(), vec![0, 2, 4, 6, 8]);
 /// ```
 
 pub trait Filter<'a, T> {
@@ -50,9 +50,9 @@ where
   F: 'a + FnMut(&S::Item) -> bool,
 {
   type Item = S::Item;
-  type Unsubcribe = S::Unsubcribe;
+  type Unsubscribe = S::Unsubscribe;
 
-  fn subscribe<O>(self, mut observer: O) -> Self::Unsubcribe
+  fn subscribe<O>(self, mut observer: O) -> Self::Unsubscribe
   where
     O: 'a + FnMut(Self::Item),
   {
@@ -63,27 +63,4 @@ where
       }
     })
   }
-}
-
-#[test]
-fn filter() {
-  use crate::{ops::Filter, Observable, Observer, Subject};
-
-  use std::cell::RefCell;
-  use std::rc::Rc;
-
-  let subject = Subject::new();
-  let coll = Rc::new(RefCell::new(vec![]));
-  let coll_clone = coll.clone();
-
-  subject.clone().filter(|v| *v % 2 == 0).subscribe(move |v| {
-    coll_clone.borrow_mut().push(*v);
-  });
-
-  (0..10).into_iter().for_each(|v| {
-    subject.next(v);
-  });
-
-  // only even numbers received.
-  assert!(coll.borrow().iter().eq(&vec![0, 2, 4, 6, 8]));
 }

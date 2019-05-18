@@ -3,5 +3,9 @@ name = "rx_rs"
 version = "0.1.0"
 authors = ["adoo <Adoo@outlook.com>"]
 edition = "2018"
+description = "A Rust implementation of Reactive Extensions."
+keywords = ["reactivex", "rx", "frp"]
+categories = ["Data structures", "Data control"]
+license = "MIT"
 
 [dependencies]

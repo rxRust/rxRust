@@ -18,9 +18,9 @@ impl<'a, T> Clone for Subject<'a, T> {
 
 impl<'a, T: 'a> Observable<'a> for Subject<'a, T> {
   type Item = &'a T;
-  type Unsubcribe = Subscription<'a, T>;
+  type Unsubscribe = SubjectSubscription<'a, T>;
 
-  fn subscribe<O>(self, observer: O) -> Self::Unsubcribe
+  fn subscribe<O>(self, observer: O) -> Self::Unsubscribe
   where
     O: FnMut(Self::Item) + 'a,
   {
@@ -32,7 +32,10 @@ impl<'a, T: 'a> Observable<'a> for Subject<'a, T> {
     let ptr = observer.as_ref() as CallbackPtr<T>;
     self.callbacks.borrow_mut().push(observer);
 
-    Subscription::new(self, ptr)
+    SubjectSubscription {
+      source: self,
+      callback: ptr,
+    }
   }
 }
 
@@ -74,6 +77,17 @@ impl<'a, T> Observer for Subject<'a, T> {
       observer(&v);
     }
     self
+  }
+}
+
+pub struct SubjectSubscription<'a, T> {
+  source: Subject<'a, T>,
+  callback: CallbackPtr<'a, T>,
+}
+
+impl<'a, T: 'a> Subscription for SubjectSubscription<'a, T> {
+  fn unsubscribe(mut self) {
+    self.source.remove_callback(self.callback);
   }
 }
 
