@@ -4,7 +4,7 @@ rx_rs ia a Rust implementation of Reactive Extensions. Which is zero cost abstra
 
 ## Example 
 
-```
+```rust
 use rx_rs::{ops::{Filter, Merge}, Observable, Observer, Subject};
 
 let numbers = Subject::new();
