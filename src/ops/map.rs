@@ -1,4 +1,4 @@
-use crate::Observable;
+use crate::{Observable, ErrComplete};
 
 /// Creates a new stream which calls a closure on each element and uses
 /// its return as the value.
@@ -30,28 +30,30 @@ where
 {
   type Item = B;
   type Unsubscribe = S::Unsubscribe;
+  type Err=S::Err;
 
-  fn subscribe<O>(self, mut observer: O) -> Self::Unsubscribe
+  fn subscribe<N, EC>(self, mut next: N, err_or_complete: EC) -> Self::Unsubscribe
   where
-    O: 'a + FnMut(Self::Item),
+    N: 'a + FnMut(Self::Item),
+    EC: 'a + FnMut(&ErrComplete<Self::Err>)
   {
     let mut func = self.func;
     self.source.subscribe(move |v| {
-      observer(func(v));
-    })
+      next(func(v));
+    }, err_or_complete)
   }
 }
 
 #[cfg(test)]
 mod test {
-  use crate::{ops::Map, Observable, Observer, Subject, Subscription};
+  use crate::{ops::Map, Observable, Observer, Subject, Subscription, ErrComplete};
 
   #[test]
   fn primitive_type() {
     let mut i = 0;
     {
       let subject = Subject::new();
-      subject.clone().map(|i| i * 2).subscribe(|v| i = v);
+      subject.clone().map(|i| i * 2).subscribe(|v| i = v, |_: &ErrComplete<()>|{});
       subject.next(100);
     }
     assert_eq!(i, 200);
@@ -62,7 +64,7 @@ mod test {
     let mut i = 0;
     {
       let subject = Subject::new();
-      subject.clone().map(|v: &&i32| v).subscribe(|v| i = **v);
+      subject.clone().map(|v: &&i32| v).subscribe(|v| i = **v, |_: &ErrComplete<()>|{});
       subject.next(&100);
     }
     assert_eq!(i, 100);
@@ -76,7 +78,7 @@ mod test {
       subject
         .clone()
         .map(|v: &&i32| v)
-        .subscribe(|v| i = **v)
+        .subscribe(|v| i = **v, |_: &ErrComplete<()>|{})
         .unsubscribe();
       subject.next(&100);
     }

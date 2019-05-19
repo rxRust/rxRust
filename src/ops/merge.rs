@@ -1,4 +1,4 @@
-use crate::{Observable, Subscription};
+use crate::{ErrComplete, Observable, Subscription};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -7,7 +7,7 @@ use std::rc::Rc;
 /// # Example
 ///
 /// ```
-/// # use rx_rs::{ops::{Filter, Merge}, Observable, Observer, Subject};
+/// # use rx_rs::{ops::{Filter, Merge}, Observable, Observer, Subject, ErrComplete};
 /// let numbers = Subject::new();
 /// // crate a even stream by filter
 /// let even = numbers.clone().filter(|v| *v % 2 == 0);
@@ -18,7 +18,7 @@ use std::rc::Rc;
 /// let merged = even.merge(odd);
 ///
 /// // attach observers
-/// merged.subscribe(|v| println!("{} ", v));
+/// merged.subscribe(|v| println!("{} ", v), |ec: &ErrComplete<()>| {});
 /// ```
 pub trait Merge<'a, T> {
   fn merge<S>(self, o: S) -> MergeOp<Self, S>
@@ -40,26 +40,38 @@ pub struct MergeOp<S1, S2> {
   source2: S2,
 }
 
-impl<'a, T, S1, S2> Observable<'a> for MergeOp<S1, S2>
+impl<'a, T, S1, S2, E> Observable<'a> for MergeOp<S1, S2>
 where
-  S1: Observable<'a, Item = T>,
-  S2: Observable<'a, Item = T>,
+  S1: Observable<'a, Item = T, Err = E>,
+  S2: Observable<'a, Item = T, Err = E>,
 {
   type Item = T;
   type Unsubscribe = MergeSubscription<S1::Unsubscribe, S2::Unsubscribe>;
+  type Err = E;
 
-  fn subscribe<O>(self, observer: O) -> Self::Unsubscribe
+  fn subscribe<N, EC>(self, next: N, err_or_complete: EC) -> Self::Unsubscribe
   where
-    O: 'a + FnMut(Self::Item),
+    N: 'a + FnMut(Self::Item),
+    EC: 'a + FnMut(&ErrComplete<Self::Err>),
   {
-    let observer = Rc::new(RefCell::new(observer));
-    let observer_clone = observer.clone();
-    let subscription1 = self.source1.subscribe(move |v| {
-      (&mut *observer.borrow_mut())(v);
-    });
-    let subscription2 = self.source2.subscribe(move |v| {
-      (&mut *observer_clone.borrow_mut())(v);
-    });
+    let next = Rc::new(RefCell::new(next));
+    let next_clone = next.clone();
+    ;
+    let on_ec1 = Rc::new(RefCell::new(err_or_complete));
+    let on_ec2 = on_ec1.clone();
+
+    let subscription1 = self.source1.subscribe(
+      move |v| {
+        (&mut *next.borrow_mut())(v);
+      },
+      move |ec| (&mut *on_ec1.borrow_mut())(ec),
+    );
+    let subscription2 = self.source2.subscribe(
+      move |v| {
+        (&mut *next_clone.borrow_mut())(v);
+      },
+      move |ec| (&mut *on_ec2.borrow_mut())(ec),
+    );
 
     MergeSubscription {
       subscription1,
@@ -88,7 +100,7 @@ where
 mod test {
   use crate::{
     ops::{Filter, Merge},
-    Observable, Observer, Subject, Subscription,
+    ErrComplete, Observable, Observer, Subject, Subscription,
   };
   use std::cell::RefCell;
   use std::rc::Rc;
@@ -110,9 +122,18 @@ mod test {
     let merged = even.clone().merge(odd.clone());
 
     //  attach observers
-    merged.subscribe(|v| numbers_store.borrow_mut().push(**v));
-    odd.subscribe(|v| odd_store.borrow_mut().push(**v));
-    even.subscribe(|v| even_store.borrow_mut().push(**v));
+    merged.subscribe(
+      |v| numbers_store.borrow_mut().push(**v),
+      |_ec: &ErrComplete<()>| {},
+    );
+    odd.subscribe(
+      |v| odd_store.borrow_mut().push(**v),
+      |_ec: &ErrComplete<()>| {},
+    );
+    even.subscribe(
+      |v| even_store.borrow_mut().push(**v),
+      |_ec: &ErrComplete<()>| {},
+    );
 
     (0..10).into_iter().for_each(|v| {
       numbers.next(v);
@@ -133,7 +154,10 @@ mod test {
 
     even
       .merge(odd)
-      .subscribe(|_| unreachable!("oh, unsubscribe not work."))
+      .subscribe(
+        |_| unreachable!("oh, unsubscribe not work."),
+        |_ec: &ErrComplete<()>| {},
+      )
       .unsubscribe();
 
     numbers.next(1);

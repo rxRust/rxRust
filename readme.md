@@ -5,7 +5,7 @@ rx_rs ia a Rust implementation of Reactive Extensions. Which is zero cost abstra
 ## Example 
 
 ```rust
-use rx_rs::{ops::{Filter, Merge}, Observable, Observer, Subject};
+use rx_rs::{ops::{Filter, Merge}, Observable, Observer, Subject, ErrComplete};
 
 let numbers = Subject::new();
 // crate a even stream by filter
@@ -17,5 +17,5 @@ let odd = numbers.clone().filter(|v| *v % 2 != 0);
 let merged = even.merge(odd);
 
 // attach observers
-merged.subscribe(|v| println!("{} ", v));
+merged.subscribe(|v| println!("{} ", v), |ec: &ErrComplete<()>| {});
 ```

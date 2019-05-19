@@ -1,10 +1,10 @@
-use crate::Observable;
+use crate::{ErrComplete, Observable};
 
 /// Emit only those items from an Observable that pass a predicate test
 /// # Example
 ///
 /// ```
-/// use rx_rs::{ops::Filter, Subject, Observable, Observer};
+/// use rx_rs::{ops::Filter, Subject, Observable, Observer, ErrComplete};
 /// use std::cell::RefCell;
 /// use std::rc::Rc;
 ///
@@ -14,7 +14,8 @@ use crate::Observable;
 ///
 /// subject.clone().filter(|v| *v % 2 == 0).subscribe(move |v| {
 ///    coll_clone.borrow_mut().push(*v);
-/// });
+/// },
+/// |ec: &ErrComplete<()>| {});
 
 /// (0..10).into_iter().for_each(|v| {
 ///    subject.next(v);
@@ -51,16 +52,23 @@ where
 {
   type Item = S::Item;
   type Unsubscribe = S::Unsubscribe;
+  type Err = S::Err;
 
-  fn subscribe<O>(self, mut observer: O) -> Self::Unsubscribe
+  fn subscribe<N, EC>(
+    self, mut next: N, err_or_complete: EC,
+  ) -> Self::Unsubscribe
   where
-    O: 'a + FnMut(Self::Item),
+    N: 'a + FnMut(Self::Item),
+    EC: 'a + FnMut(&ErrComplete<Self::Err>),
   {
     let mut filter = self.filter;
-    self.source.subscribe(move |v| {
-      if filter(&v) {
-        observer(v);
-      }
-    })
+    self.source.subscribe(
+      move |v| {
+        if filter(&v) {
+          next(v);
+        }
+      },
+      err_or_complete,
+    )
   }
 }
