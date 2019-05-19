@@ -1,3 +1,5 @@
+#![feature(external_doc)]
+#![doc(include = "../README.md")]
 
 pub mod ops;
 pub mod subject;

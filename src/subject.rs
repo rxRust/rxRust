@@ -25,7 +25,7 @@ impl<'a, T: 'a> Observable<'a> for Subject<'a, T> {
     O: FnMut(Self::Item) + 'a,
   {
     let observer: Box<FnMut(Self::Item)> = Box::new(observer);
-    // of course, we know Self::Item and &T is the same type, but
+    // of course, we know Self::Item and &'a T is the same type, but
     // rust can't infer it, so, write an unsafe code to let rust know.
     let observer: Box<(dyn for<'r> std::ops::FnMut(&'r T) + 'a)> =
       unsafe { std::mem::transmute(observer) };
