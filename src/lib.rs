@@ -16,7 +16,6 @@ pub trait Observable<'a>: Sized {
   where
     O: 'a + FnMut(Self::Item);
 
-
   fn broadcast(self) -> Subject<'a, Self::Item>
   where
     Self: 'a,
@@ -30,7 +29,6 @@ pub trait Observer {
 
   fn next(&self, v: Self::Item) -> &Self;
 }
-
 
 pub trait Subscription {
   fn unsubscribe(self);

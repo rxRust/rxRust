@@ -4,8 +4,11 @@ use std::rc::Rc;
 
 pub(crate) type CallbackPtr<'a, T> = *const (dyn for<'r> FnMut(&'r T) + 'a);
 
+type CallbackVec<'a, T> = Rc<RefCell<Vec<Box<FnMut(&T) + 'a>>>>;
+
+#[derive(Default)]
 pub struct Subject<'a, T> {
-  callbacks: Rc<RefCell<Vec<Box<FnMut(&T) + 'a>>>>,
+  callbacks: CallbackVec<'a, T>,
 }
 
 impl<'a, T> Clone for Subject<'a, T> {
@@ -86,11 +89,8 @@ pub struct SubjectSubscription<'a, T> {
 }
 
 impl<'a, T: 'a> Subscription for SubjectSubscription<'a, T> {
-  fn unsubscribe(mut self) {
-    self.source.remove_callback(self.callback);
-  }
+  fn unsubscribe(mut self) { self.source.remove_callback(self.callback); }
 }
-
 
 #[test]
 fn base_data_flow() {

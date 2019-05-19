@@ -125,7 +125,6 @@ mod test {
 
   #[test]
   fn merge_unsubscribe_work() {
-
     let numbers = Subject::new();
     // enabling multiple observers for even stream;
     let even = numbers.clone().filter(|v| *v % 2 == 0).broadcast();

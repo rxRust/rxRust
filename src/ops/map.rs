@@ -18,12 +18,10 @@ pub trait Map<'a, T> {
 
 impl<'a, T, O> Map<'a, T> for O where O: Observable<'a> {}
 
-
 pub struct MapOp<S, M> {
   source: S,
   func: M,
 }
-
 
 impl<'a, B, S, M> Observable<'a> for MapOp<S, M>
 where
@@ -43,7 +41,6 @@ where
     })
   }
 }
-
 
 #[cfg(test)]
 mod test {
