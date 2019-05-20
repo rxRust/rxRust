@@ -7,7 +7,9 @@ use std::rc::Rc;
 /// # Example
 ///
 /// ```
-/// # use rx_rs::{ops::{Filter, Merge}, Observable, Observer, Subject, ErrComplete};
+/// # use rx_rs::{
+///   ops::{Filter, Merge}, Observable, Observer, Subject, ErrComplete
+///  };
 /// let numbers = Subject::new();
 /// // crate a even stream by filter
 /// let even = numbers.clone().filter(|v| *v % 2 == 0);

@@ -1,11 +1,14 @@
 # rx_rs: Reactive Extensions for Rust
 
-rx_rs ia a Rust implementation of Reactive Extensions. Which is zero cost abstractions except the Subject have to box the first closure of a stream.
+rx_rs ia a Rust implementation of Reactive Extensions. Which is almost zero cost abstraction except the Subject have to box the first closure of a stream.
 
 ## Example 
 
 ```rust
-use rx_rs::{ops::{Filter, Merge}, Observable, Observer, Subject, ErrComplete};
+use rx_rs::{ 
+  ops::{ Filter, Merge }, Observable, Observer,
+  Subject, Subscription, ErrComplete 
+};
 
 let numbers = Subject::new();
 // crate a even stream by filter
@@ -17,5 +20,20 @@ let odd = numbers.clone().filter(|v| *v % 2 != 0);
 let merged = even.merge(odd);
 
 // attach observers
-merged.subscribe(|v| println!("{} ", v), |ec: &ErrComplete<()>| {});
+let subscription = merged.subscribe(
+  |v| println!("{} ", v),
+  |ec: &ErrComplete<()>| {
+    // process Error or Complete here.
+  }
+);
+
+// shot numbers
+(0..10).into_iter().for_each(|v| {
+    numbers.next(v);
+});
+
+// "0 1 2 3 4 5 6 7 8 9" will be print.
+
+// unsubscribe the stream.
+subscription.unsubscribe();
 ```

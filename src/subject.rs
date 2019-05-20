@@ -103,6 +103,7 @@ impl<'a, T, E> Observer for Subject<'a, T, E> {
     for cbs in self.cbs.borrow_mut().iter_mut() {
       (cbs.on_err_or_complete)(&ErrComplete::Complete);
     }
+    self.cbs.borrow_mut().clear();
   }
 
   fn err(self, err: Self::Err) {
@@ -110,6 +111,7 @@ impl<'a, T, E> Observer for Subject<'a, T, E> {
     for cbs in self.cbs.borrow_mut().iter_mut() {
       (cbs.on_err_or_complete)(&err);
     }
+    self.cbs.borrow_mut().clear();
   }
 }
 

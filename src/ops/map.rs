@@ -1,4 +1,4 @@
-use crate::{Observable, ErrComplete};
+use crate::{ErrComplete, Observable};
 
 /// Creates a new stream which calls a closure on each element and uses
 /// its return as the value.
@@ -30,30 +30,40 @@ where
 {
   type Item = B;
   type Unsubscribe = S::Unsubscribe;
-  type Err=S::Err;
+  type Err = S::Err;
 
-  fn subscribe<N, EC>(self, mut next: N, err_or_complete: EC) -> Self::Unsubscribe
+  fn subscribe<N, EC>(
+    self, mut next: N, err_or_complete: EC,
+  ) -> Self::Unsubscribe
   where
     N: 'a + FnMut(Self::Item),
-    EC: 'a + FnMut(&ErrComplete<Self::Err>)
+    EC: 'a + FnMut(&ErrComplete<Self::Err>),
   {
     let mut func = self.func;
-    self.source.subscribe(move |v| {
-      next(func(v));
-    }, err_or_complete)
+    self.source.subscribe(
+      move |v| {
+        next(func(v));
+      },
+      err_or_complete,
+    )
   }
 }
 
 #[cfg(test)]
 mod test {
-  use crate::{ops::Map, Observable, Observer, Subject, Subscription, ErrComplete};
+  use crate::{
+    ops::Map, ErrComplete, Observable, Observer, Subject, Subscription,
+  };
 
   #[test]
   fn primitive_type() {
     let mut i = 0;
     {
       let subject = Subject::new();
-      subject.clone().map(|i| i * 2).subscribe(|v| i = v, |_: &ErrComplete<()>|{});
+      subject
+        .clone()
+        .map(|i| i * 2)
+        .subscribe(|v| i = v, |_: &ErrComplete<()>| {});
       subject.next(100);
     }
     assert_eq!(i, 200);
@@ -64,7 +74,10 @@ mod test {
     let mut i = 0;
     {
       let subject = Subject::new();
-      subject.clone().map(|v: &&i32| v).subscribe(|v| i = **v, |_: &ErrComplete<()>|{});
+      subject
+        .clone()
+        .map(|v: &&i32| v)
+        .subscribe(|v| i = **v, |_: &ErrComplete<()>| {});
       subject.next(&100);
     }
     assert_eq!(i, 100);
@@ -78,7 +91,7 @@ mod test {
       subject
         .clone()
         .map(|v: &&i32| v)
-        .subscribe(|v| i = **v, |_: &ErrComplete<()>|{})
+        .subscribe(|v| i = **v, |_: &ErrComplete<()>| {})
         .unsubscribe();
       subject.next(&100);
     }
