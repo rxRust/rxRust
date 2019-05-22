@@ -5,8 +5,8 @@ use std::rc::Rc;
 pub(crate) type CallbackPtr<'a, T, E> = *const Callbacks<'a, T, E>;
 
 pub(crate) struct Callbacks<'a, T, E> {
-  on_next: Box<FnMut(&T) + 'a>,
-  on_err_or_complete: Box<FnMut(&ErrComplete<E>) + 'a>,
+  on_next: Box<Fn(&T) + 'a>,
+  on_err_or_complete: Box<Fn(&ErrComplete<E>) + 'a>,
 }
 
 #[derive(Default)]
@@ -29,13 +29,13 @@ impl<'a, T: 'a, E: 'a> Observable<'a> for Subject<'a, T, E> {
 
   fn subscribe<N, EC>(self, next: N, err_or_complete: EC) -> Self::Unsubscribe
   where
-    N: FnMut(Self::Item) + 'a,
-    EC: 'a + FnMut(&ErrComplete<E>),
+    N: Fn(Self::Item) + 'a,
+    EC: 'a + Fn(&ErrComplete<E>),
   {
-    let next: Box<FnMut(Self::Item)> = Box::new(next);
+    let next: Box<Fn(Self::Item)> = Box::new(next);
     // of course, we know Self::Item and &'a T is the same type, but
     // rust can't infer it, so, write an unsafe code to let rust know.
-    let next: Box<(dyn for<'r> std::ops::FnMut(&'r T) + 'a)> =
+    let next: Box<(dyn for<'r> std::ops::Fn(&'r T) + 'a)> =
       unsafe { std::mem::transmute(next) };
     let cbs = Callbacks {
       on_next: next,
@@ -126,13 +126,12 @@ impl<'a, T: 'a, E: 'a> Subscription for SubjectSubscription<'a, T, E> {
 
 #[test]
 fn base_data_flow() {
-  let mut i = 0;
-  {
-    let broadcast = Subject::new();
-    broadcast
-      .clone()
-      .subscribe(|v| i = *v * 2, |_: &ErrComplete<()>| {});
-    broadcast.next(1);
-  }
-  assert_eq!(i, 2);
+  use std::cell::Cell;
+  let i = Cell::new(0);
+  let broadcast = Subject::new();
+  broadcast
+    .clone()
+    .subscribe(|v| i.set(*v * 2), |_: &ErrComplete<()>| {});
+  broadcast.next(1);
+  assert_eq!(i.get(), 2);
 }

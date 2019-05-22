@@ -29,7 +29,7 @@ pub trait Filter<'a, T> {
   fn filter<F>(self, filter: F) -> FilterOp<Self, F>
   where
     Self: Sized,
-    F: FnMut(&T) -> bool + 'a,
+    F: Fn(&T) -> bool + 'a,
   {
     FilterOp {
       source: self,
@@ -48,20 +48,18 @@ pub struct FilterOp<S, F> {
 impl<'a, S, F> Observable<'a> for FilterOp<S, F>
 where
   S: Observable<'a>,
-  F: 'a + FnMut(&S::Item) -> bool,
+  F: 'a + Fn(&S::Item) -> bool,
 {
   type Item = S::Item;
   type Unsubscribe = S::Unsubscribe;
   type Err = S::Err;
 
-  fn subscribe<N, EC>(
-    self, mut next: N, err_or_complete: EC,
-  ) -> Self::Unsubscribe
+  fn subscribe<N, EC>(self, next: N, err_or_complete: EC) -> Self::Unsubscribe
   where
-    N: 'a + FnMut(Self::Item),
-    EC: 'a + FnMut(&ErrComplete<Self::Err>),
+    N: 'a + Fn(Self::Item),
+    EC: 'a + Fn(&ErrComplete<Self::Err>),
   {
-    let mut filter = self.filter;
+    let filter = self.filter;
     self.source.subscribe(
       move |v| {
         if filter(&v) {

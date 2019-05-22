@@ -7,7 +7,7 @@ pub trait Map<'a, T> {
   fn map<B, F>(self, f: F) -> MapOp<Self, F>
   where
     Self: Sized,
-    F: FnMut(T) -> B + 'a,
+    F: Fn(T) -> B + 'a,
   {
     MapOp {
       source: self,
@@ -26,20 +26,18 @@ pub struct MapOp<S, M> {
 impl<'a, B, S, M> Observable<'a> for MapOp<S, M>
 where
   S: Observable<'a>,
-  M: FnMut(S::Item) -> B + 'a,
+  M: Fn(S::Item) -> B + 'a,
 {
   type Item = B;
   type Unsubscribe = S::Unsubscribe;
   type Err = S::Err;
 
-  fn subscribe<N, EC>(
-    self, mut next: N, err_or_complete: EC,
-  ) -> Self::Unsubscribe
+  fn subscribe<N, EC>(self, next: N, err_or_complete: EC) -> Self::Unsubscribe
   where
-    N: 'a + FnMut(Self::Item),
-    EC: 'a + FnMut(&ErrComplete<Self::Err>),
+    N: 'a + Fn(Self::Item),
+    EC: 'a + Fn(&ErrComplete<Self::Err>),
   {
-    let mut func = self.func;
+    let func = self.func;
     self.source.subscribe(
       move |v| {
         next(func(v));
@@ -54,47 +52,42 @@ mod test {
   use crate::{
     ops::Map, ErrComplete, Observable, Observer, Subject, Subscription,
   };
+  use std::cell::Cell;
 
   #[test]
   fn primitive_type() {
-    let mut i = 0;
-    {
-      let subject = Subject::new();
-      subject
-        .clone()
-        .map(|i| i * 2)
-        .subscribe(|v| i = v, |_: &ErrComplete<()>| {});
-      subject.next(100);
-    }
-    assert_eq!(i, 200);
+    let i = Cell::new(0);
+    let subject = Subject::new();
+    subject
+      .clone()
+      .map(|v| v * 2)
+      .subscribe(|v| i.set(v), |_: &ErrComplete<()>| {});
+    subject.next(100);
+    assert_eq!(i.get(), 200);
   }
 
   #[test]
   fn reference_lifetime_should_work() {
-    let mut i = 0;
-    {
-      let subject = Subject::new();
-      subject
-        .clone()
-        .map(|v: &&i32| v)
-        .subscribe(|v| i = **v, |_: &ErrComplete<()>| {});
-      subject.next(&100);
-    }
-    assert_eq!(i, 100);
+    let i = Cell::new(0);
+    let subject = Subject::new();
+    subject
+      .clone()
+      .map(|v: &&i32| v)
+      .subscribe(|v| i.set(**v), |_: &ErrComplete<()>| {});
+    subject.next(&100);
+    assert_eq!(i.get(), 100);
   }
 
   #[test]
   fn unsubscribe() {
-    let mut i = 0;
-    {
-      let subject = Subject::new();
-      subject
-        .clone()
-        .map(|v: &&i32| v)
-        .subscribe(|v| i = **v, |_: &ErrComplete<()>| {})
-        .unsubscribe();
-      subject.next(&100);
-    }
-    assert_eq!(i, 0);
+    let i = Cell::new(0);
+    let subject = Subject::new();
+    subject
+      .clone()
+      .map(|v: &&i32| v)
+      .subscribe(|v| i.set(**v), |_: &ErrComplete<()>| {})
+      .unsubscribe();
+    subject.next(&100);
+    assert_eq!(i.get(), 0);
   }
 }
