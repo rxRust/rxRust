@@ -145,6 +145,11 @@ where
     self.subscription1.unsubscribe();
     self.subscription2.unsubscribe();
   }
+
+  fn throw_error(&self, err: &Self::Err) {
+    self.subscription1.throw_error(&err);
+    self.subscription2.throw_error(&err);
+  }
 }
 
 #[cfg(test)]
