@@ -53,8 +53,8 @@ where
 
   fn subscribe<N, EC>(self, next: N, err_or_complete: EC) -> Self::Unsubscribe
   where
-    N: 'a + FnMut(Self::Item),
-    EC: 'a + FnMut(&ErrComplete<Self::Err>),
+    N: 'a + Fn(Self::Item),
+    EC: 'a + Fn(&ErrComplete<Self::Err>),
   {
     let next = Rc::new(RefCell::new(next));
     let next_clone = next.clone();
