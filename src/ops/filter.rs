@@ -1,4 +1,4 @@
-use crate::Observable;
+use crate::{Observable, OnNextClousre};
 
 /// Emit only those items from an Observable that pass a predicate test
 /// # Example
@@ -25,29 +25,30 @@ use crate::Observable;
 /// ```
 
 pub trait Filter<'a, T> {
-  fn filter<F>(self, filter: F) -> FilterOp<Self, F>
+  fn filter<N, NE>(self, filter: N) -> FilterOp<Self, N, NE>
   where
     Self: Sized,
     F: Fn(&T) -> bool + 'a,
   {
     FilterOp {
       source: self,
-      filter,
+      filter: OnNextClousre::Next(filter),
     }
   }
 }
 
 impl<'a, T, O> Filter<'a, T> for O where O: Observable<'a, Item = T> {}
 
-pub struct FilterOp<S, F> {
+pub struct FilterOp<S, N, NE> {
   source: S,
-  filter: F,
+  filter: OnNextClousre<N, NE>,
 }
 
-impl<'a, S, F> Observable<'a> for FilterOp<S, F>
+impl<'a, S, F, FE> Observable<'a> for FilterOp<S, F, FE>
 where
   S: Observable<'a>,
   F: 'a + Fn(&S::Item) -> bool,
+  FE: 'a + Fn(&S::Item) -> Result<bool, S::Err>,
 {
   type Err = S::Err;
   type Item = S::Item;
@@ -57,11 +58,21 @@ where
   where
     N: 'a + Fn(Self::Item),
   {
-    let filter = self.filter;
-    self.source.subscribe(move |v| {
-      if filter(&v) {
-        next(v);
+    let mut filter = self.filter;
+    self.source.subscribe(
+      move |v| {
+        let res = filter.call_with_err(&v);
+        match res {
+          Ok(b) => {
+            if b {
+              next(v);
+            }
+          }
+          Err(err) =>{
+             // todo process
+          },
+        }
       }
-    })
+    )
   }
 }

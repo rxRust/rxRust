@@ -120,7 +120,9 @@ pub struct SubjectSubscription<'a, T, E> {
 impl<'a, T: 'a, E: 'a> Subscription<'a> for SubjectSubscription<'a, T, E> {
   type Err = E;
 
-  fn unsubscribe(mut self) { self.source.remove_callback(self.callback); }
+  fn unsubscribe(mut self) {
+    self.source.remove_callback(self.callback);
+  }
 
   fn on_complete<C>(&mut self, complete: C) -> &mut Self
   where
@@ -153,6 +155,18 @@ impl<'a, T: 'a, E: 'a> Subscription<'a> for SubjectSubscription<'a, T, E> {
     }
     self
   }
+
+  fn throw_error(&self, err: &Self::Err) {
+    let mut coll = self.source.cbs.borrow_mut();
+    let cbs = coll
+      .iter_mut()
+      .find(|v| v.on_next.as_ref() as *const _ == self.callback);
+    if let Some(cbs) = cbs {
+      if let Some(ref on_error) = cbs.on_error {
+        on_error(err);
+      }
+    }
+  }
 }
 
 #[test]
@@ -176,4 +190,15 @@ fn error() {
   broadcast.next(1);
 
   broadcast.error("should panic!");
+}
+
+
+#[test]
+fn throw_error() {
+  let broadcast = Subject::new();
+  broadcast
+    .clone()
+    .subscribe(|_: &i32| {})
+    .on_error(|e: &&str| panic!(*e))
+    .throw_error(&"should panic");
 }
