@@ -7,7 +7,7 @@ rx_rs ia a Rust implementation of Reactive Extensions. Which is almost zero cost
 ```rust
 use rx_rs::{ 
   ops::{ Filter, Merge }, Observable, Observer,
-  Subject, Subscription, ErrComplete 
+  Subject, Subscription 
 };
 
 let numbers = Subject::new();
@@ -20,12 +20,9 @@ let odd = numbers.clone().filter(|v| *v % 2 != 0);
 let merged = even.merge(odd);
 
 // attach observers
-let subscription = merged.subscribe(
-  |v| println!("{} ", v),
-  |ec: &ErrComplete<()>| {
-    // process Error or Complete here.
-  }
-);
+let subscription = merged
+  .subscribe(|v| print!("{} ", v))
+  .on_error(|e| println!("Error because of: {}", e));
 
 // shot numbers
 (0..10).into_iter().for_each(|v| {
@@ -34,6 +31,6 @@ let subscription = merged.subscribe(
 
 // "0 1 2 3 4 5 6 7 8 9" will be print.
 
-// unsubscribe the stream.
-subscription.unsubscribe();
+// "Error because of: just trigger an error."
+numbers.error("just trigger an error.");
 ```

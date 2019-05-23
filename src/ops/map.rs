@@ -1,4 +1,4 @@
-use crate::{ErrComplete, Observable};
+use crate::Observable;
 
 /// Creates a new stream which calls a closure on each element and uses
 /// its return as the value.
@@ -29,39 +29,30 @@ where
   M: Fn(S::Item) -> B + 'a,
 {
   type Item = B;
-  type Unsubscribe = S::Unsubscribe;
   type Err = S::Err;
+  type Unsubscribe = S::Unsubscribe;
 
-  fn subscribe<N, EC>(self, next: N, err_or_complete: EC) -> Self::Unsubscribe
+  fn subscribe<N>(self, next: N) -> Self::Unsubscribe
   where
     N: 'a + Fn(Self::Item),
-    EC: 'a + Fn(&ErrComplete<Self::Err>),
   {
     let func = self.func;
-    self.source.subscribe(
-      move |v| {
-        next(func(v));
-      },
-      err_or_complete,
-    )
+    self.source.subscribe(move |v| {
+      next(func(v));
+    })
   }
 }
 
 #[cfg(test)]
 mod test {
-  use crate::{
-    ops::Map, ErrComplete, Observable, Observer, Subject, Subscription,
-  };
+  use crate::{ops::Map, Observable, Observer, Subject, Subscription};
   use std::cell::Cell;
 
   #[test]
   fn primitive_type() {
     let i = Cell::new(0);
-    let subject = Subject::new();
-    subject
-      .clone()
-      .map(|v| v * 2)
-      .subscribe(|v| i.set(v), |_: &ErrComplete<()>| {});
+    let subject = Subject::<'_, i32, ()>::new();
+    subject.clone().map(|v| v * 2).subscribe(|v| i.set(v));
     subject.next(100);
     assert_eq!(i.get(), 200);
   }
@@ -69,11 +60,8 @@ mod test {
   #[test]
   fn reference_lifetime_should_work() {
     let i = Cell::new(0);
-    let subject = Subject::new();
-    subject
-      .clone()
-      .map(|v: &&i32| v)
-      .subscribe(|v| i.set(**v), |_: &ErrComplete<()>| {});
+    let subject = Subject::<'_, &i32, ()>::new();
+    subject.clone().map(|v: &&i32| v).subscribe(|v| i.set(**v));
     subject.next(&100);
     assert_eq!(i.get(), 100);
   }
@@ -81,11 +69,11 @@ mod test {
   #[test]
   fn unsubscribe() {
     let i = Cell::new(0);
-    let subject = Subject::new();
+    let subject = Subject::<'_, &i32, ()>::new();
     subject
       .clone()
       .map(|v: &&i32| v)
-      .subscribe(|v| i.set(**v), |_: &ErrComplete<()>| {})
+      .subscribe(|v| i.set(**v))
       .unsubscribe();
     subject.next(&100);
     assert_eq!(i.get(), 0);

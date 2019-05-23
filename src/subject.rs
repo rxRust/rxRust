@@ -1,15 +1,15 @@
-use crate::{ErrComplete, Observable, Observer, Subscription};
+use crate::{Observable, Observer, Subscription};
 use std::cell::RefCell;
 use std::rc::Rc;
 
-pub(crate) type CallbackPtr<'a, T, E> = *const Callbacks<'a, T, E>;
+pub(crate) type NextPtr<'a, T> = *const (Fn(&T) + 'a);
 
 pub(crate) struct Callbacks<'a, T, E> {
   on_next: Box<Fn(&T) + 'a>,
-  on_err_or_complete: Box<Fn(&ErrComplete<E>) + 'a>,
+  on_complete: Option<Box<Fn() + 'a>>,
+  on_error: Option<Box<Fn(&E) + 'a>>,
 }
 
-#[derive(Default)]
 pub struct Subject<'a, T, E> {
   cbs: Rc<RefCell<Vec<Callbacks<'a, T, E>>>>,
 }
@@ -27,22 +27,22 @@ impl<'a, T: 'a, E: 'a> Observable<'a> for Subject<'a, T, E> {
   type Err = E;
   type Unsubscribe = SubjectSubscription<'a, T, E>;
 
-  fn subscribe<N, EC>(self, next: N, err_or_complete: EC) -> Self::Unsubscribe
+  fn subscribe<N>(self, next: N) -> Self::Unsubscribe
   where
     N: Fn(Self::Item) + 'a,
-    EC: 'a + Fn(&ErrComplete<E>),
   {
     let next: Box<Fn(Self::Item)> = Box::new(next);
     // of course, we know Self::Item and &'a T is the same type, but
     // rust can't infer it, so, write an unsafe code to let rust know.
     let next: Box<(dyn for<'r> std::ops::Fn(&'r T) + 'a)> =
       unsafe { std::mem::transmute(next) };
+    let ptr = next.as_ref() as NextPtr<'a, T>;
     let cbs = Callbacks {
       on_next: next,
-      on_err_or_complete: Box::new(err_or_complete),
+      on_complete: None,
+      on_error: None,
     };
     self.cbs.borrow_mut().push(cbs);
-    let ptr = self.cbs.borrow().last().unwrap() as CallbackPtr<'a, T, E>;
 
     SubjectSubscription {
       source: self,
@@ -52,7 +52,7 @@ impl<'a, T: 'a, E: 'a> Observable<'a> for Subject<'a, T, E> {
 }
 
 impl<'a, T: 'a, E: 'a> Subject<'a, T, E> {
-  pub fn new() -> Subject<'a, T, E> {
+  pub fn new() -> Self {
     Subject {
       cbs: Rc::new(RefCell::new(vec![])),
     }
@@ -62,29 +62,22 @@ impl<'a, T: 'a, E: 'a> Subject<'a, T, E> {
   /// ("fork" the stream)
   pub fn from_stream<S>(stream: S) -> Self
   where
-    S: Observable<'a, Item = T, Err = E>,
+    S: Observable<'a, Item = T>,
   {
     let broadcast = Self::new();
     let for_next = broadcast.clone();
-    let for_ec = broadcast.clone();
-    stream.subscribe(
-      move |v| {
-        for_next.next(v);
-      },
-      move |ec| for_ec.ec(ec),
-    );
+    stream.subscribe(move |v| {
+      for_next.next(v);
+    });
 
     broadcast
   }
 
-  fn remove_callback(&mut self, ptr: CallbackPtr<'a, T, E>) {
-    self.cbs.borrow_mut().retain(|x| x as *const _ != ptr);
-  }
-
-  fn ec(&self, ec: &ErrComplete<E>) {
-    for cbs in self.cbs.borrow_mut().iter_mut() {
-      (cbs.on_err_or_complete)(&ec);
-    }
+  fn remove_callback(&mut self, ptr: NextPtr<'a, T>) {
+    self
+      .cbs
+      .borrow_mut()
+      .retain(|x| x.on_next.as_ref() as *const _ != ptr);
   }
 }
 
@@ -101,15 +94,18 @@ impl<'a, T, E> Observer for Subject<'a, T, E> {
 
   fn complete(self) {
     for cbs in self.cbs.borrow_mut().iter_mut() {
-      (cbs.on_err_or_complete)(&ErrComplete::Complete);
+      if let Some(ref on_complete) = cbs.on_complete {
+        on_complete();
+      }
     }
     self.cbs.borrow_mut().clear();
   }
 
-  fn err(self, err: Self::Err) {
-    let err = ErrComplete::Err(err);
+  fn error(self, err: Self::Err) {
     for cbs in self.cbs.borrow_mut().iter_mut() {
-      (cbs.on_err_or_complete)(&err);
+      if let Some(ref on_error) = cbs.on_error {
+        on_error(&err);
+      }
     }
     self.cbs.borrow_mut().clear();
   }
@@ -117,21 +113,66 @@ impl<'a, T, E> Observer for Subject<'a, T, E> {
 
 pub struct SubjectSubscription<'a, T, E> {
   source: Subject<'a, T, E>,
-  callback: CallbackPtr<'a, T, E>,
+  callback: NextPtr<'a, T>,
 }
 
-impl<'a, T: 'a, E: 'a> Subscription for SubjectSubscription<'a, T, E> {
+impl<'a, T: 'a, E: 'a> Subscription<'a> for SubjectSubscription<'a, T, E> {
+  type Err = E;
+
   fn unsubscribe(mut self) { self.source.remove_callback(self.callback); }
+
+  fn on_complete<C>(&mut self, complete: C) -> &mut Self
+  where
+    C: Fn() + 'a,
+  {
+    {
+      let mut coll = self.source.cbs.borrow_mut();
+      let cbs = coll
+        .iter_mut()
+        .find(|v| v.on_next.as_ref() as *const _ == self.callback);
+      if let Some(cbs) = cbs {
+        cbs.on_complete = Some(Box::new(complete));
+      }
+    }
+    self
+  }
+
+  fn on_error<OE>(&mut self, err: OE) -> &mut Self
+  where
+    OE: Fn(&Self::Err) + 'a,
+  {
+    {
+      let mut coll = self.source.cbs.borrow_mut();
+      let cbs = coll
+        .iter_mut()
+        .find(|v| v.on_next.as_ref() as *const _ == self.callback);
+      if let Some(cbs) = cbs {
+        cbs.on_error = Some(Box::new(err));
+      }
+    }
+    self
+  }
 }
 
 #[test]
 fn base_data_flow() {
   use std::cell::Cell;
   let i = Cell::new(0);
+  let broadcast = Subject::<'_, i32, ()>::new();
+  broadcast.clone().subscribe(|v: &i32| i.set(*v * 2));
+  broadcast.next(1);
+  assert_eq!(i.get(), 2);
+}
+
+#[test]
+#[should_panic]
+fn error() {
   let broadcast = Subject::new();
   broadcast
     .clone()
-    .subscribe(|v| i.set(*v * 2), |_: &ErrComplete<()>| {});
+    .subscribe(|_: &i32| {})
+    .on_error(|e: &&str| panic!(*e));
   broadcast.next(1);
-  assert_eq!(i.get(), 2);
+
+  broadcast.error("should panic!");
 }

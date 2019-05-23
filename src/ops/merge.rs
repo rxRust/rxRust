@@ -1,5 +1,5 @@
-use crate::{ErrComplete, Observable, Subscription};
-use std::cell::RefCell;
+use crate::{Observable, Subscription};
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 /// combine two Observables into one by merging their emissions
@@ -7,10 +7,8 @@ use std::rc::Rc;
 /// # Example
 ///
 /// ```
-/// # use rx_rs::{
-///   ops::{Filter, Merge}, Observable, Observer, Subject, ErrComplete
-///  };
-/// let numbers = Subject::new();
+/// # use rx_rs::{ ops::{Filter, Merge}, Observable, Observer, Subject };
+/// let numbers = Subject::<'_, _, ()>::new();
 /// // crate a even stream by filter
 /// let even = numbers.clone().filter(|v| *v % 2 == 0);
 /// // crate an odd stream by filter
@@ -20,7 +18,7 @@ use std::rc::Rc;
 /// let merged = even.merge(odd);
 ///
 /// // attach observers
-/// merged.subscribe(|v| println!("{} ", v), |ec: &ErrComplete<()>| {});
+/// merged.subscribe(|v| println!("{} ", v));
 /// ```
 pub trait Merge<'a, T> {
   fn merge<S>(self, o: S) -> MergeOp<Self, S>
@@ -42,56 +40,107 @@ pub struct MergeOp<S1, S2> {
   source2: S2,
 }
 
-impl<'a, T, S1, S2, E> Observable<'a> for MergeOp<S1, S2>
+impl<'a, T, E, S1: 'a, S2: 'a> Observable<'a> for MergeOp<S1, S2>
 where
   S1: Observable<'a, Item = T, Err = E>,
   S2: Observable<'a, Item = T, Err = E>,
 {
+  type Err = E;
   type Item = T;
   type Unsubscribe = MergeSubscription<S1::Unsubscribe, S2::Unsubscribe>;
-  type Err = E;
 
-  fn subscribe<N, EC>(self, next: N, err_or_complete: EC) -> Self::Unsubscribe
+  fn subscribe<N>(self, next: N) -> Self::Unsubscribe
   where
     N: 'a + Fn(Self::Item),
-    EC: 'a + Fn(&ErrComplete<Self::Err>),
   {
     let next = Rc::new(RefCell::new(next));
     let next_clone = next.clone();
-    ;
-    let on_ec1 = Rc::new(RefCell::new(err_or_complete));
-    let on_ec2 = on_ec1.clone();
 
-    let subscription1 = self.source1.subscribe(
-      move |v| {
-        (&mut *next.borrow_mut())(v);
-      },
-      move |ec| (&mut *on_ec1.borrow_mut())(ec),
-    );
-    let subscription2 = self.source2.subscribe(
-      move |v| {
-        (&mut *next_clone.borrow_mut())(v);
-      },
-      move |ec| (&mut *on_ec2.borrow_mut())(ec),
-    );
+    let s1 = self.source1.subscribe(move |v| {
+      (&mut *next.borrow_mut())(v);
+    });
+    let s2 = self.source2.subscribe(move |v| {
+      (&mut *next_clone.borrow_mut())(v);
+    });
 
-    MergeSubscription {
-      subscription1,
-      subscription2,
-    }
+    MergeSubscription::new(s1, s2)
   }
 }
 
 pub struct MergeSubscription<S1, S2> {
+  stopped: Rc<Cell<bool>>,
   subscription1: S1,
   subscription2: S2,
 }
 
-impl<S1, S2> Subscription for MergeSubscription<S1, S2>
+impl<S1, S2> MergeSubscription<S1, S2> {
+  fn new(s1: S1, s2: S2) -> Self {
+    MergeSubscription {
+      stopped: Rc::new(Cell::new(false)),
+      subscription1: s1,
+      subscription2: s2,
+    }
+  }
+}
+
+impl<'a, S1: 'a, S2: 'a, E> Subscription<'a> for MergeSubscription<S1, S2>
 where
-  S1: Subscription,
-  S2: Subscription,
+  S1: Subscription<'a, Err = E>,
+  S2: Subscription<'a, Err = E>,
 {
+  type Err = E;
+  fn on_error<OE>(&mut self, err: OE) -> &mut Self
+  where
+    OE: Fn(&Self::Err) + 'a,
+  {
+    let err = Rc::new(RefCell::new(err));
+
+    let cb_err = err.clone();
+    let stopped = self.stopped.clone();
+    self.subscription1.on_error(move |e| {
+      if !stopped.get() {
+        cb_err.borrow()(e);
+        stopped.set(true);
+      }
+    });
+
+    let cb_err = err.clone();
+    let stopped = self.stopped.clone();
+    self.subscription2.on_error(move |e| {
+      if !stopped.get() {
+        cb_err.borrow()(e);
+        stopped.set(true);
+      }
+    });
+    self
+  }
+  fn on_complete<C>(&mut self, complete: C) -> &mut Self
+  where
+    C: Fn() + 'a,
+  {
+    let c = Rc::new(RefCell::new(complete));
+    let completed = Rc::new(Cell::new(0));
+
+    let completed_clone = completed.clone();
+    let c2 = c.clone();
+    self.subscription1.on_complete(move || {
+      if completed_clone.get() == 1 {
+        c2.borrow()()
+      } else {
+        completed_clone.set(1)
+      }
+    });
+
+    self.subscription2.on_complete(move || {
+      if completed.get() == 1 {
+        c.borrow()()
+      } else {
+        completed.set(1)
+      }
+    });
+    self
+  }
+
   fn unsubscribe(self) {
     self.subscription1.unsubscribe();
     self.subscription2.unsubscribe();
@@ -102,9 +151,9 @@ where
 mod test {
   use crate::{
     ops::{Filter, Merge},
-    ErrComplete, Observable, Observer, Subject, Subscription,
+    Observable, Observer, Subject, Subscription,
   };
-  use std::cell::RefCell;
+  use std::cell::{Cell, RefCell};
   use std::rc::Rc;
 
   #[test]
@@ -114,7 +163,7 @@ mod test {
     let even_store = Rc::new(RefCell::new(vec![]));
     let numbers_store = Rc::new(RefCell::new(vec![]));
 
-    let numbers = Subject::new();
+    let numbers = Subject::<'_, _, ()>::new();
     // enabling multiple observers for even stream;
     let even = numbers.clone().filter(|v| *v % 2 == 0).broadcast();
     // enabling multiple observers for odd stream;
@@ -124,18 +173,9 @@ mod test {
     let merged = even.clone().merge(odd.clone());
 
     //  attach observers
-    merged.subscribe(
-      |v| numbers_store.borrow_mut().push(**v),
-      |_ec: &ErrComplete<()>| {},
-    );
-    odd.subscribe(
-      |v| odd_store.borrow_mut().push(**v),
-      |_ec: &ErrComplete<()>| {},
-    );
-    even.subscribe(
-      |v| even_store.borrow_mut().push(**v),
-      |_ec: &ErrComplete<()>| {},
-    );
+    merged.subscribe(|v| numbers_store.borrow_mut().push(**v));
+    odd.subscribe(|v| odd_store.borrow_mut().push(**v));
+    even.subscribe(|v| even_store.borrow_mut().push(**v));
 
     (0..10).into_iter().for_each(|v| {
       numbers.next(v);
@@ -148,7 +188,7 @@ mod test {
 
   #[test]
   fn merge_unsubscribe_work() {
-    let numbers = Subject::new();
+    let numbers = Subject::<'_, _, ()>::new();
     // enabling multiple observers for even stream;
     let even = numbers.clone().filter(|v| *v % 2 == 0).broadcast();
     // enabling multiple observers for odd stream;
@@ -156,13 +196,52 @@ mod test {
 
     even
       .merge(odd)
-      .subscribe(
-        |_| unreachable!("oh, unsubscribe not work."),
-        |_ec: &ErrComplete<()>| {},
-      )
+      .subscribe(|_| unreachable!("oh, unsubscribe not work."))
       .unsubscribe();
 
     numbers.next(1);
   }
 
+  #[test]
+  fn completed_test() {
+    let even = Subject::<'_, _, ()>::new();
+    let odd = Subject::<'_, _, ()>::new();
+
+    let completed = Cell::new(false);
+    even
+      .clone()
+      .merge(odd.clone())
+      .subscribe(|_: &()| {})
+      .on_complete(|| completed.set(true));
+
+    even.complete();
+    assert_eq!(completed.get(), false);
+    odd.complete();
+    assert_eq!(completed.get(), true);
+  }
+
+  #[test]
+
+  fn error_test() {
+    let even = Subject::new();
+    let odd = Subject::new();
+
+    let completed = Cell::new(0);
+    let error = Cell::new(0);
+    even
+      .clone()
+      .merge(odd.clone())
+      .subscribe(|_: &()| {})
+      .on_complete(|| completed.set(completed.get() + 1))
+      .on_error(|_| error.set(error.get() + 1));
+
+    odd.error(());
+    even.clone().error(());
+    even.complete();
+
+    // if error occur,  stream terminated.
+    assert_eq!(completed.get(), 0);
+    // error should be hit just once
+    assert_eq!(error.get(), 1);
+  }
 }
