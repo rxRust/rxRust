@@ -10,6 +10,7 @@ pub(crate) struct Callbacks<'a, T, E> {
   on_error: Option<Box<Fn(&E) + 'a>>,
 }
 
+#[derive(Default)]
 pub struct Subject<'a, T, E> {
   cbs: Rc<RefCell<Vec<Callbacks<'a, T, E>>>>,
 }

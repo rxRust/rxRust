@@ -1,5 +1,5 @@
-#![feature(external_doc)]
-#![doc(include = "../README.md")]
+#![cfg_attr(feature = "nightly", feature(external_doc))]
+#![cfg_attr(feature = "nightly", doc(include = "../README.md"))]
 
 pub mod ops;
 pub mod subject;
