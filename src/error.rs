@@ -4,15 +4,12 @@
 /// `Result` type, to detect if an runtime error occur.
 ///
 /// In the inner of the extension, rx_rs not direct call the closure，but via the `NextWithErr` or
-/// `NextWithoutErr` to call `call_and_consume_err` to execute the closure. 
+/// `NextWithoutErr` to call `call_and_consume_err` to execute the closure.
 /// rx_rs unify the behavior of the two version through `NextWithErr` and `NextWithoutErr`.
-use crate::Subscription;
 
 pub trait NextObserver<T, R> {
   type Err;
-  fn call_and_consume_err<'a, S>(&self, v: &T, subscription: &S) -> Option<R>
-  where
-    S: Subscription<'a, Err = Self::Err>;
+  fn call_with_err<'a>(&self, v: &T) -> Result<R, Self::Err>;
 }
 
 pub struct NextWhitoutError<N>(pub N);
@@ -22,11 +19,8 @@ where
   N: Fn(&T) -> R,
 {
   type Err = ();
-  fn call_and_consume_err<'a, S>(&self, v: &T, _subscription: &S) -> Option<R>
-  where
-    S: Subscription<'a, Err = Self::Err>,
-  {
-    Some(self.0(v))
+  fn call_with_err<'a>(&self, v: &T) -> Result<R, Self::Err> {
+    Ok(self.0(v))
   }
 }
 
@@ -37,16 +31,7 @@ where
   N: Fn(&T) -> Result<R, E>,
 {
   type Err = E;
-  fn call_and_consume_err<'a, S>(&self, v: &T, subscription: &S) -> Option<R>
-  where
-    S: Subscription<'a, Err = Self::Err>,
-  {
-    match self.0(v) {
-      Ok(b) => Some(b),
-      Err(err) => {
-        subscription.throw_error(&err);
-        None
-      }
-    }
+  fn call_with_err<'a>(&self, v: &T) -> Result<R, Self::Err> {
+    self.0(v)
   }
 }
