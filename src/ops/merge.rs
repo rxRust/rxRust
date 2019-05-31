@@ -67,6 +67,7 @@ where
   }
 }
 
+#[derive(Clone)]
 pub struct MergeSubscription<S1, S2> {
   stopped: Rc<Cell<bool>>,
   subscription1: S1,

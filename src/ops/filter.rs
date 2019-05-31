@@ -1,4 +1,4 @@
-use crate::{Observable, OnNextClousre};
+use crate::{NextObserver, NextWhitoutError, NextWithError, Observable};
 
 /// Emit only those items from an Observable that pass a predicate test
 /// # Example
@@ -23,32 +23,50 @@ use crate::{Observable, OnNextClousre};
 /// // only even numbers received.
 /// assert_eq!(coll.borrow().clone(), vec![0, 2, 4, 6, 8]);
 /// ```
+use std::{cell::RefCell, rc::Rc};
+
 
 pub trait Filter<'a, T> {
-  fn filter<N, NE>(self, filter: N) -> FilterOp<Self, N, NE>
+  type Err;
+  fn filter<N>(self, filter: N) -> FilterOp<Self, NextWhitoutError<N>>
   where
     Self: Sized,
-    F: Fn(&T) -> bool + 'a,
+    N: Fn(&T) -> bool + 'a,
   {
     FilterOp {
       source: self,
-      filter: OnNextClousre::Next(filter),
+      filter: NextWhitoutError(filter),
+    }
+  }
+
+  fn filter_with_err<N>(self, filter: N) -> FilterOp<Self, NextWithError<N>>
+  where
+    Self: Sized,
+    N: Fn(&T) -> Result<bool, Self::Err> + 'a,
+  {
+    FilterOp {
+      source: self,
+      filter: NextWithError(filter),
     }
   }
 }
 
-impl<'a, T, O> Filter<'a, T> for O where O: Observable<'a, Item = T> {}
-
-pub struct FilterOp<S, N, NE> {
-  source: S,
-  filter: OnNextClousre<N, NE>,
+impl<'a, T, O> Filter<'a, T> for O
+where
+  O: Observable<'a, Item = T>,
+{
+  type Err = O::Err;
 }
 
-impl<'a, S, F, FE> Observable<'a> for FilterOp<S, F, FE>
+pub struct FilterOp<S, N> {
+  source: S,
+  filter: N,
+}
+
+impl<'a, S, F> Observable<'a> for FilterOp<S, F>
 where
   S: Observable<'a>,
-  F: 'a + Fn(&S::Item) -> bool,
-  FE: 'a + Fn(&S::Item) -> Result<bool, S::Err>,
+  F: NextObserver<S::Item, bool, Err = S::Err> + 'a,
 {
   type Err = S::Err;
   type Item = S::Item;
@@ -58,21 +76,22 @@ where
   where
     N: 'a + Fn(Self::Item),
   {
-    let mut filter = self.filter;
-    self.source.subscribe(
-      move |v| {
-        let res = filter.call_with_err(&v);
-        match res {
-          Ok(b) => {
-            if b {
-              next(v);
-            }
-          }
-          Err(err) =>{
-             // todo process
-          },
-        }
+    let filter = self.filter;
+    let subscription: Rc<RefCell<Option<S::Unsubscribe>>> =
+      Rc::new(RefCell::new(None));
+    let sc = subscription.clone();
+
+    let s = self.source.subscribe(move |v| {
+      let subscription = subscription.borrow_mut();
+      let subscription = subscription.as_ref().unwrap();
+      if let Some(b) = filter.call_and_consume_err(&v, subscription) {
+        if b {
+          next(v)
+        };
       }
-    )
+    });
+    sc.replace(Some(s.clone()));
+    s
   }
 }
+

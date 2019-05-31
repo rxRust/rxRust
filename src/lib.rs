@@ -4,8 +4,7 @@
 pub mod error;
 pub mod ops;
 pub mod subject;
-pub use error::OnNextClousre;
-
+pub use error::{NextObserver, NextWhitoutError, NextWithError};
 pub use subject::Subject;
 
 pub trait Observable<'a>: Sized {
@@ -14,7 +13,7 @@ pub trait Observable<'a>: Sized {
   //
   type Err;
   // the Subscription subsribe method return.
-  type Unsubscribe: Subscription<'a, Err = Self::Err>;
+  type Unsubscribe: Subscription<'a, Err = Self::Err> + 'a;
 
   fn subscribe<N>(self, next: N) -> Self::Unsubscribe
   where
@@ -40,7 +39,7 @@ pub trait Observer {
 }
 
 /// Subscription returns from `Observable.subscribe(Subscriber)` to allow unsubscribing.
-pub trait Subscription<'a> {
+pub trait Subscription<'a>: Clone {
   type Err;
   /// the action you have designed to accept any error notification from the Observable
   fn on_error<E>(&mut self, err: E) -> &mut Self
