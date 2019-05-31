@@ -117,6 +117,15 @@ pub struct SubjectSubscription<'a, T, E> {
   callback: NextPtr<'a, T>,
 }
 
+impl<'a, T, E> Clone for SubjectSubscription<'a, T, E> {
+  fn clone(&self) -> Self {
+    SubjectSubscription {
+      source: self.source.clone(),
+      callback: self.callback.clone(),
+    }
+  }
+}
+
 impl<'a, T: 'a, E: 'a> Subscription<'a> for SubjectSubscription<'a, T, E> {
   type Err = E;
 
@@ -194,6 +203,7 @@ fn error() {
 
 
 #[test]
+#[should_panic]
 fn throw_error() {
   let broadcast = Subject::new();
   broadcast
