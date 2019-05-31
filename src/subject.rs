@@ -2,10 +2,10 @@ use crate::{Observable, Observer, Subscription};
 use std::cell::RefCell;
 use std::rc::Rc;
 
-pub(crate) type NextPtr<'a, T> = *const (Fn(&T) + 'a);
+pub(crate) type NextPtr<'a, T, E> = *const (Fn(&T) -> Option<E> + 'a);
 
 pub(crate) struct Callbacks<'a, T, E> {
-  on_next: Box<Fn(&T) + 'a>,
+  on_next: Box<Fn(&T) -> Option<E> + 'a>,
   on_complete: Option<Box<Fn() + 'a>>,
   on_error: Option<Box<Fn(&E) + 'a>>,
 }
@@ -28,16 +28,17 @@ impl<'a, T: 'a, E: 'a> Observable<'a> for Subject<'a, T, E> {
   type Err = E;
   type Unsubscribe = SubjectSubscription<'a, T, E>;
 
-  fn subscribe<N>(self, next: N) -> Self::Unsubscribe
+
+  fn subscribe_with_err<N>(self, next: N) -> Self::Unsubscribe
   where
-    N: Fn(Self::Item) + 'a,
+    N: 'a + Fn(Self::Item) -> Option<Self::Err>,
   {
-    let next: Box<Fn(Self::Item)> = Box::new(next);
+    let next: Box<Fn(Self::Item) -> Option<E>> = Box::new(next);
     // of course, we know Self::Item and &'a T is the same type, but
     // rust can't infer it, so, write an unsafe code to let rust know.
-    let next: Box<(dyn for<'r> std::ops::Fn(&'r T) + 'a)> =
+    let next: Box<(dyn for<'r> std::ops::Fn(&'r T) -> Option<E> + 'a)> =
       unsafe { std::mem::transmute(next) };
-    let ptr = next.as_ref() as NextPtr<'a, T>;
+    let ptr = next.as_ref() as NextPtr<'a, T, E>;
     let cbs = Callbacks {
       on_next: next,
       on_complete: None,
@@ -74,7 +75,7 @@ impl<'a, T: 'a, E: 'a> Subject<'a, T, E> {
     broadcast
   }
 
-  fn remove_callback(&mut self, ptr: NextPtr<'a, T>) {
+  fn remove_callback(&mut self, ptr: NextPtr<'a, T, E>) {
     self
       .cbs
       .borrow_mut()
@@ -82,13 +83,18 @@ impl<'a, T: 'a, E: 'a> Subject<'a, T, E> {
   }
 }
 
+// todo: need a strategy to remove callback when runtime error occur
 impl<'a, T, E> Observer for Subject<'a, T, E> {
   type Item = T;
   type Err = E;
 
   fn next(&self, v: Self::Item) -> &Self {
     for cbs in self.cbs.borrow_mut().iter_mut() {
-      (cbs.on_next)(&v);
+      if let Some(err) = (cbs.on_next)(&v) {
+        if let Some(ref on_err) = cbs.on_error {
+          on_err(&err);
+        }
+      };
     }
     self
   }
@@ -114,7 +120,7 @@ impl<'a, T, E> Observer for Subject<'a, T, E> {
 
 pub struct SubjectSubscription<'a, T, E> {
   source: Subject<'a, T, E>,
-  callback: NextPtr<'a, T>,
+  callback: NextPtr<'a, T, E>,
 }
 
 impl<'a, T, E> Clone for SubjectSubscription<'a, T, E> {
@@ -211,4 +217,16 @@ fn throw_error() {
     .subscribe(|_: &i32| {})
     .on_error(|e: &&str| panic!(*e))
     .throw_error(&"should panic");
+}
+
+#[test]
+#[should_panic]
+fn runtime_error() {
+  let broadcast = Subject::new();
+  broadcast
+    .clone()
+    .subscribe_with_err(|_| Some("runtime error"))
+    .on_error(|e: &&str| panic!(*e));
+
+  broadcast.next(1);
 }

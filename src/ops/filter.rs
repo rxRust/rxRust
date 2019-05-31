@@ -23,8 +23,6 @@ use crate::{NextObserver, NextWhitoutError, NextWithError, Observable};
 /// // only even numbers received.
 /// assert_eq!(coll.borrow().clone(), vec![0, 2, 4, 6, 8]);
 /// ```
-use std::{cell::RefCell, rc::Rc};
-
 
 pub trait Filter<'a, T> {
   type Err;
@@ -72,26 +70,35 @@ where
   type Item = S::Item;
   type Unsubscribe = S::Unsubscribe;
 
-  fn subscribe<N>(self, next: N) -> Self::Unsubscribe
+  fn subscribe_with_err<N>(self, next: N) -> Self::Unsubscribe
   where
-    N: 'a + Fn(Self::Item),
+    N: 'a + Fn(Self::Item) -> Option<Self::Err>,
   {
     let filter = self.filter;
-    let subscription: Rc<RefCell<Option<S::Unsubscribe>>> =
-      Rc::new(RefCell::new(None));
-    let sc = subscription.clone();
-
-    let s = self.source.subscribe(move |v| {
-      let subscription = subscription.borrow_mut();
-      let subscription = subscription.as_ref().unwrap();
-      if let Some(b) = filter.call_and_consume_err(&v, subscription) {
-        if b {
-          next(v)
-        };
-      }
-    });
-    sc.replace(Some(s.clone()));
-    s
+    self
+      .source
+      .subscribe_with_err(move |v| match filter.call_with_err(&v) {
+        Ok(b) => {
+          let res = if b { next(v) } else { None };
+          res
+        }
+        Err(e) => Some(e),
+      })
   }
 }
 
+#[test]
+#[should_panic]
+fn with_err() {
+  use crate::{Observer, Subject, Subscription};
+
+  let subject = Subject::new();
+
+  subject
+    .clone()
+    .filter_with_err(|_| Err("runtime error"))
+    .subscribe(|_| {})
+    .on_error(|err| panic!(*err));
+
+  subject.next(1);
+}
