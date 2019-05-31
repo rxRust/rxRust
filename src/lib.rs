@@ -4,7 +4,7 @@
 pub mod error;
 pub mod ops;
 pub mod subject;
-pub use error::{NextObserver, NextWhitoutError, NextWithError};
+pub use error::{WithErrByRef, WithErr, NextWhitoutError, NextWithError};
 pub use subject::Subject;
 
 pub trait Observable<'a>: Sized {

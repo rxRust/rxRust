@@ -1,45 +1,70 @@
-use crate::Observable;
+use crate::{NextWhitoutError, NextWithError, Observable, WithErr};
+use std::marker::PhantomData;
 
 /// Creates a new stream which calls a closure on each element and uses
 /// its return as the value.
 ///
 pub trait Map<'a, T> {
-  fn map<B, F>(self, f: F) -> MapOp<Self, F>
+  type Err;
+
+  fn map<B, F>(self, f: F) -> MapOp<Self, NextWhitoutError<F>, B>
   where
     Self: Sized,
     F: Fn(T) -> B + 'a,
   {
     MapOp {
       source: self,
-      func: f,
+      func: NextWhitoutError(f),
+      _p: PhantomData,
+    }
+  }
+
+  fn map_with_err<B, F>(self, f: F) -> MapOp<Self, NextWithError<F>, B>
+  where
+    Self: Sized,
+    F: Fn(T) -> Result<B, Self::Err> + 'a,
+  {
+    MapOp {
+      source: self,
+      func: NextWithError(f),
+      _p: PhantomData,
     }
   }
 }
 
-impl<'a, T, O> Map<'a, T> for O where O: Observable<'a> {}
-
-pub struct MapOp<S, M> {
-  source: S,
-  func: M,
+impl<'a, T, O> Map<'a, T> for O
+where
+  O: Observable<'a>,
+{
+  type Err = O::Err;
 }
 
-impl<'a, B, S, M> Observable<'a> for MapOp<S, M>
+pub struct MapOp<S, M, B> {
+  source: S,
+  func: M,
+  _p: PhantomData<B>,
+}
+
+impl<'a, S, B, M> Observable<'a> for MapOp<S, M, B>
 where
+  M: WithErr<S::Item, B, Err = S::Err> + 'a,
   S: Observable<'a>,
-  M: Fn(S::Item) -> B + 'a,
 {
   type Item = B;
   type Err = S::Err;
   type Unsubscribe = S::Unsubscribe;
 
-  fn subscribe<N>(self, next: N) -> Self::Unsubscribe
+  fn subscribe_with_err<N>(self, next: N) -> Self::Unsubscribe
   where
-    N: 'a + Fn(Self::Item),
+    N: 'a + Fn(Self::Item) -> Option<Self::Err>,
   {
     let func = self.func;
-    self.source.subscribe(move |v| {
-      next(func(v));
-    })
+    self
+      .source
+      .subscribe_with_err(move |v| match func.call_with_err(v) {
+        Ok(v) => next(v),
+        Err(e) => Some(e),
+      })
   }
 }
 
@@ -77,5 +102,19 @@ mod test {
       .unsubscribe();
     subject.next(&100);
     assert_eq!(i.get(), 0);
+  }
+
+  #[test]
+  #[should_panic]
+  fn with_err() {
+    let subject = Subject::new();
+
+    subject
+      .clone()
+      .map_with_err(|_| Err("should panic "))
+      .subscribe(|_: &i32| {})
+      .on_error(|err| panic!(*err));
+
+    subject.next(1);
   }
 }
