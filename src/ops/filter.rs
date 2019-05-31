@@ -1,4 +1,4 @@
-use crate::{NextObserver, NextWhitoutError, NextWithError, Observable};
+use crate::{WithErrByRef, NextWhitoutError, NextWithError, Observable};
 
 /// Emit only those items from an Observable that pass a predicate test
 /// # Example
@@ -64,7 +64,7 @@ pub struct FilterOp<S, N> {
 impl<'a, S, F> Observable<'a> for FilterOp<S, F>
 where
   S: Observable<'a>,
-  F: NextObserver<S::Item, bool, Err = S::Err> + 'a,
+  F: WithErrByRef<S::Item, bool, Err = S::Err> + 'a,
 {
   type Err = S::Err;
   type Item = S::Item;
