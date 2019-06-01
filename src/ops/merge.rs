@@ -21,10 +21,11 @@ use std::rc::Rc;
 /// merged.subscribe(|v| println!("{} ", v));
 /// ```
 pub trait Merge<'a, T> {
+  type Err;
   fn merge<S>(self, o: S) -> MergeOp<Self, S>
   where
     Self: Sized,
-    S: Observable<'a, Item = T>,
+    S: Observable<'a, Item = T, Err = Self::Err>,
   {
     MergeOp {
       source1: self,
@@ -33,7 +34,9 @@ pub trait Merge<'a, T> {
   }
 }
 
-impl<'a, T, O> Merge<'a, T> for O where O: Observable<'a, Item = T> {}
+impl<'a, T, O> Merge<'a, T> for O where O: Observable<'a, Item = T> {
+  type Err=O::Err;
+}
 
 pub struct MergeOp<S1, S2> {
   source1: S1,
@@ -49,9 +52,9 @@ where
   type Item = T;
   type Unsubscribe = MergeSubscription<S1::Unsubscribe, S2::Unsubscribe>;
 
-  fn subscribe<N>(self, next: N) -> Self::Unsubscribe
+  fn subscribe_with_err<N>(self, next: N) -> Self::Unsubscribe
   where
-    N: 'a + Fn(Self::Item),
+    N: 'a + Fn(Self::Item) -> Option<Self::Err>,
   {
     let next = Rc::new(RefCell::new(next));
     let next_clone = next.clone();
@@ -146,11 +149,6 @@ where
     self.subscription1.unsubscribe();
     self.subscription2.unsubscribe();
   }
-
-  fn throw_error(&self, err: &Self::Err) {
-    self.subscription1.throw_error(&err);
-    self.subscription2.throw_error(&err);
-  }
 }
 
 #[cfg(test)]
@@ -227,7 +225,6 @@ mod test {
   }
 
   #[test]
-
   fn error_test() {
     let even = Subject::new();
     let odd = Subject::new();
@@ -241,8 +238,8 @@ mod test {
       .on_complete(|| completed.set(completed.get() + 1))
       .on_error(|_| error.set(error.get() + 1));
 
-    odd.error(());
-    even.clone().error(());
+    odd.error("");
+    even.clone().error("");
     even.complete();
 
     // if error occur,  stream terminated.

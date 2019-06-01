@@ -7,6 +7,8 @@
 /// `NextWithoutErr` to call `call_with_err` to execute the closure.
 /// rx_rs unify the behavior of the two version through `NextWithErr` and `NextWithoutErr`.
 
+use std::marker::PhantomData;
+
 pub trait WithErrByRef<T, R> {
   type Err;
   fn call_with_err(&self, v: &T) -> Result<R, Self::Err>;
@@ -17,23 +19,29 @@ pub trait WithErr<T, R> {
   fn call_with_err(&self, v: T) -> Result<R, Self::Err>;
 }
 
-pub struct NextWhitoutError<N>(pub N);
+pub struct NextWhitoutError<N, E>(pub N, PhantomData<E>);
 
-impl<T, R, N> WithErrByRef<T, R> for NextWhitoutError<N>
+impl<N, E> NextWhitoutError<N, E>  {
+  pub fn new(n:N)-> Self {
+    NextWhitoutError(n, PhantomData)
+  }
+}
+
+impl<T, R, N, E> WithErrByRef<T, R> for NextWhitoutError<N, E>
 where
   N: Fn(&T) -> R,
 {
-  type Err = ();
+  type Err = E;
   fn call_with_err(&self, v: &T) -> Result<R, Self::Err> {
     Ok(self.0(v))
   }
 }
 
-impl<T, R, N> WithErr<T, R> for NextWhitoutError<N>
+impl<T, R, N, E> WithErr<T, R> for NextWhitoutError<N, E>
 where
   N: Fn(T) -> R,
 {
-  type Err = ();
+  type Err = E;
   fn call_with_err(&self, v: T) -> Result<R, Self::Err> {
     Ok(self.0(v))
   }

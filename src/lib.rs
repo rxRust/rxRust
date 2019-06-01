@@ -63,6 +63,7 @@ pub trait Subscription<'a>: Clone {
   /// This allows deregistering an stream before it has finished receiving all events (i.e. before onCompleted is called).
   fn unsubscribe(self);
 
+  // todo: remove this
   /// This allows throw an error into this `Subscription` relative.
   fn throw_error(&self, err: &Self::Err);
 }
