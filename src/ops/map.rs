@@ -7,14 +7,14 @@ use std::marker::PhantomData;
 pub trait Map<'a, T> {
   type Err;
 
-  fn map<B, F>(self, f: F) -> MapOp<Self, NextWhitoutError<F>, B>
+  fn map<B, F>(self, f: F) -> MapOp<Self, NextWhitoutError<F, Self::Err>, B>
   where
     Self: Sized,
     F: Fn(T) -> B + 'a,
   {
     MapOp {
       source: self,
-      func: NextWhitoutError(f),
+      func: NextWhitoutError::new(f),
       _p: PhantomData,
     }
   }

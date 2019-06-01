@@ -26,14 +26,14 @@ use crate::{WithErrByRef, NextWhitoutError, NextWithError, Observable};
 
 pub trait Filter<'a, T> {
   type Err;
-  fn filter<N>(self, filter: N) -> FilterOp<Self, NextWhitoutError<N>>
+  fn filter<N>(self, filter: N) -> FilterOp<Self, NextWhitoutError<N, Self::Err>>
   where
     Self: Sized,
     N: Fn(&T) -> bool + 'a,
   {
     FilterOp {
       source: self,
-      filter: NextWhitoutError(filter),
+      filter: NextWhitoutError::new(filter),
     }
   }
 
@@ -89,7 +89,7 @@ where
 
 #[test]
 #[should_panic]
-fn with_err() {
+fn runtime_error() {
   use crate::{Observer, Subject, Subscription};
 
   let subject = Subject::new();
@@ -101,4 +101,21 @@ fn with_err() {
     .on_error(|err| panic!(*err));
 
   subject.next(1);
+}
+
+
+#[test]
+#[should_panic]
+fn pass_error() {
+   use crate::{Observer, Subject, Subscription};
+
+  let subject = Subject::new();
+
+  subject
+    .clone()
+    .filter(|_:&&i32| true)
+    .subscribe(|_| {})
+    .on_error(|err| panic!(*err));
+
+  subject.error("");
 }
