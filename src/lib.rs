@@ -1,10 +1,10 @@
-#![cfg_attr(feature = "nightly", feature(external_doc))]
-#![cfg_attr(feature = "nightly", doc(include = "../README.md"))]
+#![feature(external_doc)]
+#![doc(include = "../README.md")]
 
 pub mod error;
 pub mod ops;
 pub mod subject;
-pub use error::{WithErrByRef, WithErr, NextWhitoutError, NextWithError};
+pub use error::{NextWhitoutError, NextWithError, WithErr, WithErrByRef};
 pub use subject::Subject;
 
 pub trait Observable<'a>: Sized {
@@ -62,8 +62,4 @@ pub trait Subscription<'a>: Clone {
 
   /// This allows deregistering an stream before it has finished receiving all events (i.e. before onCompleted is called).
   fn unsubscribe(self);
-
-  // todo: remove this
-  /// This allows throw an error into this `Subscription` relative.
-  fn throw_error(&self, err: &Self::Err);
 }
