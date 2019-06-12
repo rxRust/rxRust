@@ -1,4 +1,4 @@
-use crate::{WithErrByRef, NextWhitoutError, NextWithError, Observable};
+use crate::{NextWhitoutError, NextWithError, Observable, WithErrByRef};
 
 /// Emit only those items from an Observable that pass a predicate test
 /// # Example
@@ -26,7 +26,9 @@ use crate::{WithErrByRef, NextWhitoutError, NextWithError, Observable};
 
 pub trait Filter<'a, T> {
   type Err;
-  fn filter<N>(self, filter: N) -> FilterOp<Self, NextWhitoutError<N, Self::Err>>
+  fn filter<N>(
+    self, filter: N,
+  ) -> FilterOp<Self, NextWhitoutError<N, Self::Err>>
   where
     Self: Sized,
     N: Fn(&T) -> bool + 'a,
@@ -79,8 +81,11 @@ where
       .source
       .subscribe_with_err(move |v| match filter.call_with_err(&v) {
         Ok(b) => {
-          let res = if b { next(v) } else { None };
-          res
+          if b {
+            next(v)
+          } else {
+            None
+          }
         }
         Err(e) => Some(e),
       })
@@ -103,17 +108,16 @@ fn runtime_error() {
   subject.next(1);
 }
 
-
 #[test]
 #[should_panic]
 fn pass_error() {
-   use crate::{Observer, Subject, Subscription};
+  use crate::{Observer, Subject, Subscription};
 
   let subject = Subject::new();
 
   subject
     .clone()
-    .filter(|_:&&i32| true)
+    .filter(|_: &&i32| true)
     .subscribe(|_| {})
     .on_error(|err| panic!(*err));
 
