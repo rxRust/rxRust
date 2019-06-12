@@ -34,8 +34,11 @@ pub trait Merge<'a, T> {
   }
 }
 
-impl<'a, T, O> Merge<'a, T> for O where O: Observable<'a, Item = T> {
-  type Err=O::Err;
+impl<'a, T, O> Merge<'a, T> for O
+where
+  O: Observable<'a, Item = T>,
+{
+  type Err = O::Err;
 }
 
 pub struct MergeOp<S1, S2> {

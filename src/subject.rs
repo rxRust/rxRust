@@ -2,12 +2,12 @@ use crate::{Observable, Observer, Subscription};
 use std::cell::RefCell;
 use std::rc::Rc;
 
-pub(crate) type NextPtr<'a, T, E> = *const (Fn(&T) -> Option<E> + 'a);
+pub(crate) type NextPtr<'a, T, E> = *const (dyn Fn(&T) -> Option<E> + 'a);
 
 pub(crate) struct Callbacks<'a, T, E> {
-  on_next: Box<Fn(&T) -> Option<E> + 'a>,
-  on_complete: Option<Box<Fn() + 'a>>,
-  on_error: Option<Box<Fn(&E) + 'a>>,
+  on_next: Box<dyn Fn(&T) -> Option<E> + 'a>,
+  on_complete: Option<Box<dyn Fn() + 'a>>,
+  on_error: Option<Box<dyn Fn(&E) + 'a>>,
 }
 
 #[derive(Default)]
@@ -28,15 +28,15 @@ impl<'a, T: 'a, E: 'a> Observable<'a> for Subject<'a, T, E> {
   type Err = E;
   type Unsubscribe = SubjectSubscription<'a, T, E>;
 
-
   fn subscribe_with_err<N>(self, next: N) -> Self::Unsubscribe
   where
     N: 'a + Fn(Self::Item) -> Option<Self::Err>,
   {
-    let next: Box<Fn(Self::Item) -> Option<E>> = Box::new(next);
+    let next: Box<dyn Fn(Self::Item) -> Option<E>> = Box::new(next);
     // of course, we know Self::Item and &'a T is the same type, but
     // rust can't infer it, so, write an unsafe code to let rust know.
-    let next: Box<(dyn for<'r> std::ops::Fn(&'r T) -> Option<E> + 'a)> =
+    #[allow(clippy::complexity)]
+    let next: Box<(dyn for<'r> Fn(&'r T) -> Option<E> + 'a)> =
       unsafe { std::mem::transmute(next) };
     let ptr = next.as_ref() as NextPtr<'a, T, E>;
     let cbs = Callbacks {
@@ -127,7 +127,7 @@ impl<'a, T, E> Clone for SubjectSubscription<'a, T, E> {
   fn clone(&self) -> Self {
     SubjectSubscription {
       source: self.source.clone(),
-      callback: self.callback.clone(),
+      callback: self.callback,
     }
   }
 }
@@ -135,9 +135,7 @@ impl<'a, T, E> Clone for SubjectSubscription<'a, T, E> {
 impl<'a, T: 'a, E: 'a> Subscription<'a> for SubjectSubscription<'a, T, E> {
   type Err = E;
 
-  fn unsubscribe(mut self) {
-    self.source.remove_callback(self.callback);
-  }
+  fn unsubscribe(mut self) { self.source.remove_callback(self.callback); }
 
   fn on_complete<C>(&mut self, complete: C) -> &mut Self
   where
@@ -170,7 +168,6 @@ impl<'a, T: 'a, E: 'a> Subscription<'a> for SubjectSubscription<'a, T, E> {
     }
     self
   }
-
 }
 
 #[test]
