@@ -31,7 +31,7 @@ pub trait Filter<'a, T> {
   ) -> FilterOp<Self, NextWhitoutError<N, Self::Err>>
   where
     Self: Sized,
-    N: Fn(&T) -> bool + 'a,
+    N: FnMut(&T) -> bool + 'a,
   {
     FilterOp {
       source: self,
@@ -42,7 +42,7 @@ pub trait Filter<'a, T> {
   fn filter_with_err<N>(self, filter: N) -> FilterOp<Self, NextWithError<N>>
   where
     Self: Sized,
-    N: Fn(&T) -> Result<bool, Self::Err> + 'a,
+    N: FnMut(&T) -> Result<bool, Self::Err> + 'a,
   {
     FilterOp {
       source: self,
@@ -72,11 +72,11 @@ where
   type Item = S::Item;
   type Unsubscribe = S::Unsubscribe;
 
-  fn subscribe_return_state<N>(self, next: N) -> Self::Unsubscribe
+  fn subscribe_return_state<N>(self, mut next: N) -> Self::Unsubscribe
   where
-    N: 'a + Fn(Self::Item) -> OState<Self::Err>,
+    N: 'a + FnMut(Self::Item) -> OState<Self::Err>,
   {
-    let filter = self.filter;
+    let mut filter = self.filter;
     self.source.subscribe_return_state(move |v| {
       match filter.call_with_err(&v) {
         Ok(b) => {

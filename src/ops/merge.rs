@@ -57,7 +57,7 @@ where
 
   fn subscribe_return_state<N>(self, next: N) -> Self::Unsubscribe
   where
-    N: 'a + Fn(Self::Item) -> OState<Self::Err>,
+    N: 'a + FnMut(Self::Item) -> OState<Self::Err>,
   {
     let next = Rc::new(RefCell::new(next));
     let next_clone = next.clone();
@@ -98,7 +98,7 @@ where
   type Err = E;
   fn on_error<OE>(&mut self, err: OE) -> &mut Self
   where
-    OE: Fn(&Self::Err) + 'a,
+    OE: FnMut(&Self::Err) + 'a,
   {
     let err = Rc::new(RefCell::new(err));
 
@@ -106,7 +106,7 @@ where
     let stopped = self.stopped.clone();
     self.subscription1.on_error(move |e| {
       if !stopped.get() {
-        cb_err.borrow()(e);
+        (&mut *cb_err.borrow_mut())(e);
         stopped.set(true);
       }
     });
@@ -115,7 +115,7 @@ where
     let stopped = self.stopped.clone();
     self.subscription2.on_error(move |e| {
       if !stopped.get() {
-        cb_err.borrow()(e);
+        (&mut *cb_err.borrow_mut())(e);
         stopped.set(true);
       }
     });
@@ -123,7 +123,7 @@ where
   }
   fn on_complete<C>(&mut self, complete: C) -> &mut Self
   where
-    C: Fn() + 'a,
+    C: FnMut() + 'a,
   {
     let c = Rc::new(RefCell::new(complete));
     let completed = Rc::new(Cell::new(0));
@@ -132,7 +132,7 @@ where
     let c2 = c.clone();
     self.subscription1.on_complete(move || {
       if completed_clone.get() == 1 {
-        c2.borrow()()
+        (&mut *c2.borrow_mut())()
       } else {
         completed_clone.set(1)
       }
@@ -140,7 +140,7 @@ where
 
     self.subscription2.on_complete(move || {
       if completed.get() == 1 {
-        c.borrow()()
+        (&mut *c.borrow_mut())()
       } else {
         completed.set(1)
       }

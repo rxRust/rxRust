@@ -2,12 +2,12 @@ use crate::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-pub(crate) type NextPtr<'a, T, E> = *const (dyn Fn(&T) -> OState<E> + 'a);
+pub(crate) type NextPtr<'a, T, E> = *const (dyn FnMut(&T) -> OState<E> + 'a);
 
 pub(crate) struct Callbacks<'a, T, E> {
-  on_next: Box<dyn Fn(&T) -> OState<E> + 'a>,
-  on_complete: Option<Box<dyn Fn() + 'a>>,
-  on_error: Option<Box<dyn Fn(&E) + 'a>>,
+  on_next: Box<dyn FnMut(&T) -> OState<E> + 'a>,
+  on_complete: Option<Box<dyn FnMut() + 'a>>,
+  on_error: Option<Box<dyn FnMut(&E) + 'a>>,
 }
 
 #[derive(Default)]
@@ -30,13 +30,13 @@ impl<'a, T: 'a, E: 'a> Observable<'a> for Subject<'a, T, E> {
 
   fn subscribe_return_state<N>(self, next: N) -> Self::Unsubscribe
   where
-    N: 'a + Fn(Self::Item) -> OState<Self::Err>,
+    N: 'a + FnMut(Self::Item) -> OState<Self::Err>,
   {
-    let next: Box<dyn Fn(Self::Item) -> OState<E>> = Box::new(next);
+    let next: Box<dyn FnMut(Self::Item) -> OState<E>> = Box::new(next);
     // of course, we know Self::Item and &'a T is the same type, but
     // rust can't infer it, so, write an unsafe code to let rust know.
     #[allow(clippy::complexity)]
-    let next: Box<(dyn for<'r> Fn(&'r T) -> OState<E> + 'a)> =
+    let next: Box<(dyn for<'r> FnMut(&'r T) -> OState<E> + 'a)> =
       unsafe { std::mem::transmute(next) };
     let ptr = next.as_ref() as NextPtr<'a, T, E>;
     let cbs = Callbacks {
@@ -93,12 +93,12 @@ impl<'a, T, E> Observer for Subject<'a, T, E> {
     for cbs in self.cbs.borrow_mut().iter_mut() {
       match (cbs.on_next)(&v) {
         OState::Complete => {
-          if let Some(ref on_comp) = cbs.on_complete {
+          if let Some(ref mut on_comp) = cbs.on_complete {
             on_comp();
           }
         }
         OState::Err(err) => {
-          if let Some(ref on_err) = cbs.on_error {
+          if let Some(ref mut on_err) = cbs.on_error {
             on_err(&err);
           }
         }
@@ -110,7 +110,7 @@ impl<'a, T, E> Observer for Subject<'a, T, E> {
 
   fn complete(self) {
     for cbs in self.cbs.borrow_mut().iter_mut() {
-      if let Some(ref on_complete) = cbs.on_complete {
+      if let Some(ref mut on_complete) = cbs.on_complete {
         on_complete();
       }
     }
@@ -119,7 +119,7 @@ impl<'a, T, E> Observer for Subject<'a, T, E> {
 
   fn error(self, err: Self::Err) {
     for cbs in self.cbs.borrow_mut().iter_mut() {
-      if let Some(ref on_error) = cbs.on_error {
+      if let Some(ref mut on_error) = cbs.on_error {
         on_error(&err);
       }
     }
@@ -148,7 +148,7 @@ impl<'a, T: 'a, E: 'a> Subscription<'a> for SubjectSubscription<'a, T, E> {
 
   fn on_complete<C>(&mut self, complete: C) -> &mut Self
   where
-    C: Fn() + 'a,
+    C: FnMut() + 'a,
   {
     {
       let mut coll = self.source.cbs.borrow_mut();
@@ -164,7 +164,7 @@ impl<'a, T: 'a, E: 'a> Subscription<'a> for SubjectSubscription<'a, T, E> {
 
   fn on_error<OE>(&mut self, err: OE) -> &mut Self
   where
-    OE: Fn(&Self::Err) + 'a,
+    OE: FnMut(&Self::Err) + 'a,
   {
     {
       let mut coll = self.source.cbs.borrow_mut();
