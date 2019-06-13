@@ -5,10 +5,7 @@ rx_rs ia a Rust implementation of Reactive Extensions. Which is almost zero cost
 ## Example 
 
 ```rust
-use rx_rs::{ 
-  ops::{ Filter, Merge }, Observable, Observer,
-  Subject, Subscription, WithErrByRef
-};
+use rx_rs::{ ops::{ Filter, Merge }, prelude::*};
 
 let numbers = Subject::new();
 // crate a even stream by filter
@@ -40,10 +37,7 @@ numbers.error("just trigger an error.");
 In general, if a extension need user provide a closure, this extension will provide a version named 'xxx_with_err' to support propagating a runtime error through return an `Err` type. For examaple:
 
 ```rust
-use rx_rs::{ 
-  ops::{ Map }, Observable, Observer,
-  Subject, Subscription 
-};
+use rx_rs::{ops::{ Map }, prelude::*};
 
 
 // normal version

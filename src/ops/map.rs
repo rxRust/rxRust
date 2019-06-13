@@ -1,4 +1,4 @@
-use crate::{NextWhitoutError, NextWithError, Observable, WithErr};
+use crate::prelude::*;
 use std::marker::PhantomData;
 
 /// Creates a new stream which calls a closure on each element and uses
@@ -70,7 +70,7 @@ where
 
 #[cfg(test)]
 mod test {
-  use crate::{ops::Map, Observable, Observer, Subject, Subscription};
+  use crate::{ops::Map, prelude::*};
   use std::cell::Cell;
 
   #[test]
