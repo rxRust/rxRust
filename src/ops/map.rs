@@ -10,7 +10,7 @@ pub trait Map<'a, T> {
   fn map<B, F>(self, f: F) -> MapOp<Self, NextWhitoutError<F, Self::Err>, B>
   where
     Self: Sized,
-    F: Fn(T) -> B + 'a,
+    F: FnMut(T) -> B + 'a,
   {
     MapOp {
       source: self,
@@ -22,7 +22,7 @@ pub trait Map<'a, T> {
   fn map_with_err<B, F>(self, f: F) -> MapOp<Self, NextWithError<F>, B>
   where
     Self: Sized,
-    F: Fn(T) -> Result<B, Self::Err> + 'a,
+    F: FnMut(T) -> Result<B, Self::Err> + 'a,
   {
     MapOp {
       source: self,
@@ -54,11 +54,11 @@ where
   type Err = S::Err;
   type Unsubscribe = S::Unsubscribe;
 
-  fn subscribe_return_state<N>(self, next: N) -> Self::Unsubscribe
+  fn subscribe_return_state<N>(self, mut next: N) -> Self::Unsubscribe
   where
-    N: 'a + Fn(Self::Item) -> OState<Self::Err>,
+    N: 'a + FnMut(Self::Item) -> OState<Self::Err>,
   {
-    let func = self.func;
+    let mut func = self.func;
     self
       .source
       .subscribe_return_state(move |v| match func.call_with_err(v) {
