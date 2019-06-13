@@ -1,10 +1,10 @@
-use crate::{NextWhitoutError, NextWithError, Observable, WithErrByRef};
+use crate::prelude::*;
 
 /// Emit only those items from an Observable that pass a predicate test
 /// # Example
 ///
 /// ```
-/// use rx_rs::{ops::Filter, Subject, Observable, Observer};
+/// use rx_rs::{ops::Filter, prelude::*};
 /// use std::cell::RefCell;
 /// use std::rc::Rc;
 ///
@@ -95,7 +95,7 @@ where
 #[test]
 #[should_panic]
 fn runtime_error() {
-  use crate::{Observer, Subject, Subscription};
+  use crate::prelude::*;
 
   let subject = Subject::new();
 
@@ -111,7 +111,7 @@ fn runtime_error() {
 #[test]
 #[should_panic]
 fn pass_error() {
-  use crate::{Observer, Subject, Subscription};
+  use crate::prelude::*;
 
   let subject = Subject::new();
 

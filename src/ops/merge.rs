@@ -1,4 +1,4 @@
-use crate::{Observable, Subscription};
+use crate::prelude::*;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
@@ -7,7 +7,7 @@ use std::rc::Rc;
 /// # Example
 ///
 /// ```
-/// # use rx_rs::{ ops::{Filter, Merge}, Observable, Observer, Subject };
+/// # use rx_rs::{ ops::{Filter, Merge}, prelude::*};
 /// let numbers = Subject::<'_, _, ()>::new();
 /// // crate a even stream by filter
 /// let even = numbers.clone().filter(|v| *v % 2 == 0);
@@ -158,7 +158,7 @@ where
 mod test {
   use crate::{
     ops::{Filter, Merge},
-    Observable, Observer, Subject, Subscription,
+    prelude::*,
   };
   use std::cell::{Cell, RefCell};
   use std::rc::Rc;
