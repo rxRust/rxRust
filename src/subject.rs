@@ -2,10 +2,10 @@ use crate::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-pub(crate) type NextPtr<'a, T, E> = *const (dyn Fn(&T) -> Option<E> + 'a);
+pub(crate) type NextPtr<'a, T, E> = *const (dyn Fn(&T) -> OState<E> + 'a);
 
 pub(crate) struct Callbacks<'a, T, E> {
-  on_next: Box<dyn Fn(&T) -> Option<E> + 'a>,
+  on_next: Box<dyn Fn(&T) -> OState<E> + 'a>,
   on_complete: Option<Box<dyn Fn() + 'a>>,
   on_error: Option<Box<dyn Fn(&E) + 'a>>,
 }
@@ -28,15 +28,15 @@ impl<'a, T: 'a, E: 'a> Observable<'a> for Subject<'a, T, E> {
   type Err = E;
   type Unsubscribe = SubjectSubscription<'a, T, E>;
 
-  fn subscribe_with_err<N>(self, next: N) -> Self::Unsubscribe
+  fn subscribe_return_state<N>(self, next: N) -> Self::Unsubscribe
   where
-    N: 'a + Fn(Self::Item) -> Option<Self::Err>,
+    N: 'a + Fn(Self::Item) -> OState<Self::Err>,
   {
-    let next: Box<dyn Fn(Self::Item) -> Option<E>> = Box::new(next);
+    let next: Box<dyn Fn(Self::Item) -> OState<E>> = Box::new(next);
     // of course, we know Self::Item and &'a T is the same type, but
     // rust can't infer it, so, write an unsafe code to let rust know.
     #[allow(clippy::complexity)]
-    let next: Box<(dyn for<'r> Fn(&'r T) -> Option<E> + 'a)> =
+    let next: Box<(dyn for<'r> Fn(&'r T) -> OState<E> + 'a)> =
       unsafe { std::mem::transmute(next) };
     let ptr = next.as_ref() as NextPtr<'a, T, E>;
     let cbs = Callbacks {
@@ -83,18 +83,27 @@ impl<'a, T: 'a, E: 'a> Subject<'a, T, E> {
   }
 }
 
-// todo: need a strategy to remove callback when runtime error occur
+// todo: need a strategy to remove callback when runtime error occur,
+// completed return or unsubscribe called.
 impl<'a, T, E> Observer for Subject<'a, T, E> {
   type Item = T;
   type Err = E;
 
   fn next(&self, v: Self::Item) -> &Self {
     for cbs in self.cbs.borrow_mut().iter_mut() {
-      if let Some(err) = (cbs.on_next)(&v) {
-        if let Some(ref on_err) = cbs.on_error {
-          on_err(&err);
+      match (cbs.on_next)(&v) {
+        OState::Complete => {
+          if let Some(ref on_comp) = cbs.on_complete {
+            on_comp();
+          }
         }
-      };
+        OState::Err(err) => {
+          if let Some(ref on_err) = cbs.on_error {
+            on_err(&err);
+          }
+        }
+        _ => {}
+      }
     }
     self
   }
@@ -199,7 +208,7 @@ fn runtime_error() {
   let broadcast = Subject::new();
   broadcast
     .clone()
-    .subscribe_with_err(|_| Some("runtime error"))
+    .subscribe_return_state(|_| OState::Err("runtime error"))
     .on_error(|e: &&str| panic!(*e));
 
   broadcast.next(1);

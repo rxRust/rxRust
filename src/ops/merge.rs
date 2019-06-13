@@ -55,9 +55,9 @@ where
   type Item = T;
   type Unsubscribe = MergeSubscription<S1::Unsubscribe, S2::Unsubscribe>;
 
-  fn subscribe_with_err<N>(self, next: N) -> Self::Unsubscribe
+  fn subscribe_return_state<N>(self, next: N) -> Self::Unsubscribe
   where
-    N: 'a + Fn(Self::Item) -> Option<Self::Err>,
+    N: 'a + Fn(Self::Item) -> OState<Self::Err>,
   {
     let next = Rc::new(RefCell::new(next));
     let next_clone = next.clone();

@@ -72,23 +72,23 @@ where
   type Item = S::Item;
   type Unsubscribe = S::Unsubscribe;
 
-  fn subscribe_with_err<N>(self, next: N) -> Self::Unsubscribe
+  fn subscribe_return_state<N>(self, next: N) -> Self::Unsubscribe
   where
-    N: 'a + Fn(Self::Item) -> Option<Self::Err>,
+    N: 'a + Fn(Self::Item) -> OState<Self::Err>,
   {
     let filter = self.filter;
-    self
-      .source
-      .subscribe_with_err(move |v| match filter.call_with_err(&v) {
+    self.source.subscribe_return_state(move |v| {
+      match filter.call_with_err(&v) {
         Ok(b) => {
           if b {
             next(v)
           } else {
-            None
+            OState::Next
           }
         }
-        Err(e) => Some(e),
-      })
+        Err(e) => OState::Err(e),
+      }
+    })
   }
 }
 
