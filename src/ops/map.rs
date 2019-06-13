@@ -54,16 +54,16 @@ where
   type Err = S::Err;
   type Unsubscribe = S::Unsubscribe;
 
-  fn subscribe_with_err<N>(self, next: N) -> Self::Unsubscribe
+  fn subscribe_return_state<N>(self, next: N) -> Self::Unsubscribe
   where
-    N: 'a + Fn(Self::Item) -> Option<Self::Err>,
+    N: 'a + Fn(Self::Item) -> OState<Self::Err>,
   {
     let func = self.func;
     self
       .source
-      .subscribe_with_err(move |v| match func.call_with_err(v) {
+      .subscribe_return_state(move |v| match func.call_with_err(v) {
         Ok(v) => next(v),
-        Err(e) => Some(e),
+        Err(e) => OState::Err(e),
       })
   }
 }

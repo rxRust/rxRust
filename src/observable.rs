@@ -1,5 +1,11 @@
 use crate::prelude::*;
 
+pub enum OState<E> {
+  Next,
+  Complete,
+  Err(E),
+}
+
 pub trait Observable<'a>: Sized {
   /// The type of the elements being emitted.
   type Item: Sized;
@@ -8,17 +14,17 @@ pub trait Observable<'a>: Sized {
   // the Subscription subsribe method return.
   type Unsubscribe: Subscription<'a, Err = Self::Err> + 'a;
 
-  fn subscribe_with_err<N>(self, next: N) -> Self::Unsubscribe
+  fn subscribe_return_state<N>(self, next: N) -> Self::Unsubscribe
   where
-    N: 'a + Fn(Self::Item) -> Option<Self::Err>;
+    N: 'a + Fn(Self::Item) -> OState<Self::Err>;
 
   fn subscribe<N>(self, next: N) -> Self::Unsubscribe
   where
     N: 'a + Fn(Self::Item),
   {
-    self.subscribe_with_err(move |v| {
+    self.subscribe_return_state(move |v| {
       next(v);
-      None
+      OState::Next
     })
   }
 
