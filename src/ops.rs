@@ -6,3 +6,5 @@ mod merge;
 pub use merge::Merge;
 mod take;
 pub use take::Take;
+mod first;
+pub use first::{First, FirstOr};
