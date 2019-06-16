@@ -146,7 +146,7 @@ impl<'a, T: 'a, E: 'a> Subscription<'a> for SubjectSubscription<'a, T, E> {
 
   fn unsubscribe(mut self) { self.source.remove_callback(self.callback); }
 
-  fn on_complete<C>(&mut self, complete: C) -> &mut Self
+  fn on_complete<C>(&mut self, mut complete: C) -> &mut Self
   where
     C: FnMut() + 'a,
   {
@@ -156,13 +156,21 @@ impl<'a, T: 'a, E: 'a> Subscription<'a> for SubjectSubscription<'a, T, E> {
         .iter_mut()
         .find(|v| v.on_next.as_ref() as *const _ == self.callback);
       if let Some(cbs) = cbs {
-        cbs.on_complete = Some(Box::new(complete));
+        let old_complete = cbs.on_complete.take();
+        if let Some(mut o) = old_complete {
+          cbs.on_complete.replace(Box::new(move || {
+            o();
+            complete();
+          }));
+        } else {
+          cbs.on_complete.replace(Box::new(complete));
+        }
       }
     }
     self
   }
 
-  fn on_error<OE>(&mut self, err: OE) -> &mut Self
+  fn on_error<OE>(&mut self, mut err: OE) -> &mut Self
   where
     OE: FnMut(&Self::Err) + 'a,
   {
@@ -172,7 +180,15 @@ impl<'a, T: 'a, E: 'a> Subscription<'a> for SubjectSubscription<'a, T, E> {
         .iter_mut()
         .find(|v| v.on_next.as_ref() as *const _ == self.callback);
       if let Some(cbs) = cbs {
-        cbs.on_error = Some(Box::new(err));
+        let old_error = cbs.on_error.take();
+        if let Some(mut o) = old_error {
+          cbs.on_error.replace(Box::new(move |e| {
+            o(&e);
+            err(&e);
+          }));
+        } else {
+          cbs.on_error.replace(Box::new(err));
+        }
       }
     }
     self
@@ -212,4 +228,34 @@ fn runtime_error() {
     .on_error(|e: &&str| panic!(*e));
 
   broadcast.next(1);
+}
+
+#[test]
+fn mulit_on_error() {
+  let ec = std::cell::Cell::new(0);
+  let broadcast = Subject::new();
+  broadcast
+    .clone()
+    .subscribe(|_: &i32| {})
+    .on_error(|_| ec.set(ec.get() + 1))
+    .on_error(|_| ec.set(ec.get() + 1));
+
+  broadcast.error(1);
+
+  assert_eq!(ec.get(), 2);
+}
+
+#[test]
+fn multi_on_complete() {
+  let cc = std::cell::Cell::new(0);
+  let broadcast = Subject::<'_, _, &str>::new();
+  broadcast
+    .clone()
+    .subscribe(|_: &i32| {})
+    .on_complete(|| cc.set(cc.get() + 1))
+    .on_complete(|| cc.set(cc.get() + 1));
+
+  broadcast.complete();
+
+  assert_eq!(cc.get(), 2);
 }
