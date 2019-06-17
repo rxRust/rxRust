@@ -99,7 +99,7 @@ mod test {
       .subscribe(|_| next_count.set(next_count.get() + 1))
       .on_complete(|| completed.set(true));
 
-    (0..10).into_iter().for_each(|v| {
+    (0..10).for_each(|v| {
       numbers.next(v);
     });
 
