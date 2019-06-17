@@ -64,13 +64,18 @@ impl<'a, T: 'a, E: 'a> Subject<'a, T, E> {
   /// ("fork" the stream)
   pub fn from_stream<S>(stream: S) -> Self
   where
-    S: Observable<'a, Item = T>,
+    S: Observable<'a, Item = T, Err = E>,
   {
     let broadcast = Self::new();
     let for_next = broadcast.clone();
-    stream.subscribe(move |v| {
-      for_next.next(v);
-    });
+    let for_complete = broadcast.clone();
+    let for_err = broadcast.clone();
+    stream
+      .subscribe(move |v| {
+        for_next.next(v);
+      })
+      .on_complete(move || for_complete.clone().complete())
+      .on_error(move |err| for_err.clone().error(err));
 
     broadcast
   }
@@ -117,10 +122,10 @@ impl<'a, T, E> Observer for Subject<'a, T, E> {
     self.cbs.borrow_mut().clear();
   }
 
-  fn error(self, err: Self::Err) {
+  fn error(self, err: &Self::Err) {
     for cbs in self.cbs.borrow_mut().iter_mut() {
       if let Some(ref mut on_error) = cbs.on_error {
-        on_error(&err);
+        on_error(err);
       }
     }
     self.cbs.borrow_mut().clear();
@@ -215,7 +220,7 @@ fn error() {
     .on_error(|e: &&str| panic!(*e));
   broadcast.next(1);
 
-  broadcast.error("should panic!");
+  broadcast.error(&"should panic!");
 }
 
 #[test]
@@ -240,7 +245,7 @@ fn mulit_on_error() {
     .on_error(|_| ec.set(ec.get() + 1))
     .on_error(|_| ec.set(ec.get() + 1));
 
-  broadcast.error(1);
+  broadcast.error(&1);
 
   assert_eq!(ec.get(), 2);
 }

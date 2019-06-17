@@ -121,5 +121,5 @@ fn pass_error() {
     .subscribe(|_| {})
     .on_error(|err| panic!(*err));
 
-  subject.error("");
+  subject.error(&"");
 }

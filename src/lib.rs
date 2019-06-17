@@ -25,5 +25,5 @@ pub trait Observer {
 
   fn complete(self);
 
-  fn error(self, err: Self::Err);
+  fn error(self, err: &Self::Err);
 }
