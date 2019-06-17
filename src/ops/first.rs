@@ -87,7 +87,7 @@ mod test {
       .subscribe(|_| next_count.set(next_count.get() + 1))
       .on_complete(|| completed.set(true));
 
-    (0..2).into_iter().for_each(|v| {
+    (0..2).for_each(|v| {
       numbers.next(v);
     });
 
@@ -113,7 +113,7 @@ mod test {
       });
 
     // normal pass value
-    (0..2).into_iter().for_each(|v| {
+    (0..2).for_each(|v| {
       numbers.next(v);
     });
     assert_eq!(next_count.get(), 1);

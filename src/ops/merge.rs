@@ -184,7 +184,7 @@ mod test {
     odd.subscribe(|v| odd_store.borrow_mut().push(**v));
     even.subscribe(|v| even_store.borrow_mut().push(**v));
 
-    (0..10).into_iter().for_each(|v| {
+    (0..10).for_each(|v| {
       numbers.next(v);
     });
 
