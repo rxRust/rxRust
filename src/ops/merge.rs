@@ -241,8 +241,8 @@ mod test {
       .on_complete(|| completed.set(completed.get() + 1))
       .on_error(|_| error.set(error.get() + 1));
 
-    odd.error("");
-    even.clone().error("");
+    odd.error(&"");
+    even.clone().error(&"");
     even.complete();
 
     // if error occur,  stream terminated.

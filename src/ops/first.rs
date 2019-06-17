@@ -4,6 +4,7 @@ use crate::{
 };
 use std::{cell::RefCell, rc::Rc};
 
+/// emit only the first item emitted by an Observable
 pub trait First {
   fn first(self) -> TakeOp<Self>
   where
@@ -15,6 +16,7 @@ pub trait First {
 
 impl<'a, O> First for O where O: Observable<'a> {}
 
+/// emit only the first item (or a default item) emitted by an Observable
 pub trait FirstOr<'a> {
   fn first_or(self, default: Self::Item) -> FirstOrOp<TakeOp<Self>, Self::Item>
   where
@@ -22,7 +24,7 @@ pub trait FirstOr<'a> {
   {
     FirstOrOp {
       source: self.first(),
-      default,
+      default: Some(default),
     }
   }
 }
@@ -31,7 +33,7 @@ impl<'a, O> FirstOr<'a> for O where O: Observable<'a> {}
 
 pub struct FirstOrOp<S, V> {
   source: S,
-  default: V,
+  default: Option<V>,
 }
 
 impl<'a, S, T> Observable<'a> for FirstOrOp<S, T>
@@ -50,18 +52,82 @@ where
     let next = Rc::new(RefCell::new(next));
     let c_next = next.clone();
     let Self { source, default } = self;
-    let mut subscription =
-      source.subscribe_return_state(move |v| (&mut *(c_next.borrow_mut()))(v));
+    let default = Rc::new(RefCell::new(default));
+    let c_default = default.clone();
+    let mut subscription = source.subscribe_return_state(move |v| {
+      c_default.borrow_mut().take();
+      (&mut *(c_next.borrow_mut()))(v)
+    });
 
-    let mut default = Some(default);
-    let mut first = true;
     subscription.on_complete(move || {
-      if first {
-        first = false;
-        let d = default.take().unwrap();
+      let default = default.borrow_mut().take();
+      if let Some(d) = default {
         (&mut *(next.borrow_mut()))(d);
       }
     });
     subscription
+  }
+}
+
+#[cfg(test)]
+mod test {
+  use super::{First, FirstOr};
+  use crate::prelude::*;
+  use std::cell::Cell;
+
+  #[test]
+  fn first() {
+    let completed = Cell::new(false);
+    let next_count = Cell::new(0);
+
+    let numbers = Subject::<'_, _, ()>::new();
+    numbers
+      .clone()
+      .first()
+      .subscribe(|_| next_count.set(next_count.get() + 1))
+      .on_complete(|| completed.set(true));
+
+    (0..2).into_iter().for_each(|v| {
+      numbers.next(v);
+    });
+
+    assert_eq!(completed.get(), true);
+    assert_eq!(next_count.get(), 1);
+  }
+
+  #[test]
+  fn first_or() {
+    let completed = Cell::new(false);
+    let next_count = Cell::new(0);
+    let v = Cell::new(0);
+
+    let numbers = Subject::<'_, i32, ()>::new();
+    numbers
+      .clone()
+      .first_or(&100)
+      .subscribe(|_| {
+        next_count.set(next_count.get() + 1);
+      })
+      .on_complete(|| {
+        completed.set(true);
+      });
+
+    // normal pass value
+    (0..2).into_iter().for_each(|v| {
+      numbers.next(v);
+    });
+    assert_eq!(next_count.get(), 1);
+    assert_eq!(completed.get(), true);
+
+    completed.set(false);
+    numbers
+      .clone()
+      .first_or(&100)
+      .subscribe(|value| v.set(*value))
+      .on_complete(|| completed.set(true));
+
+    numbers.complete();
+    assert_eq!(completed.get(), true);
+    assert_eq!(v.get(), 100);
   }
 }
