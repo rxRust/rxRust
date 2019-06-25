@@ -83,28 +83,31 @@ impl<'a, T: 'a, E: 'a> Subject<'a, T, E> {
   }
 }
 
-// todo: need a strategy to remove callback when runtime error occur,
 // completed return or unsubscribe called.
 impl<'a, T, E> Observer for Subject<'a, T, E> {
   type Item = T;
   type Err = E;
 
   fn next(&self, v: &Self::Item) -> &Self {
-    for cbs in self.cbs.borrow_mut().iter_mut() {
-      match (cbs.on_next)(&v) {
+    self.cbs.borrow_mut().drain_filter(|cb| {
+      let mut stopped = false;
+      match (cb.on_next)(&v) {
         OState::Complete => {
-          if let Some(ref mut on_comp) = cbs.on_complete {
+          if let Some(ref mut on_comp) = cb.on_complete {
             on_comp();
+            stopped = true;
           }
         }
         OState::Err(err) => {
-          if let Some(ref mut on_err) = cbs.on_error {
+          if let Some(ref mut on_err) = cb.on_error {
             on_err(&err);
+            stopped = true;
           }
         }
         _ => {}
-      }
-    }
+      };
+      stopped
+    });
     self
   }
 
@@ -228,6 +231,38 @@ fn runtime_error() {
     .on_error(|e: &&str| panic!(*e));
 
   broadcast.next(&1);
+}
+
+#[test]
+fn return_err_state() {
+  let ec = std::cell::Cell::new(0);
+  let broadcast = Subject::new();
+  broadcast
+    .clone()
+    .subscribe_return_state(|_| OState::Err("runtime error"))
+    .on_error(|_| ec.set(ec.get() + 1));
+
+  broadcast.next(&1);
+  assert_eq!(ec.get(), 1);
+  // should stopped
+  broadcast.next(&1);
+  assert_eq!(ec.get(), 1);
+}
+
+#[test]
+fn return_complete_state() {
+  let cc = std::cell::Cell::new(0);
+  let broadcast = Subject::<'_, _, ()>::new();
+  broadcast
+    .clone()
+    .subscribe_return_state(|_| OState::Complete)
+    .on_complete(|| cc.set(cc.get() + 1));
+
+  broadcast.next(&1);
+  assert_eq!(cc.get(), 1);
+  // should stopped
+  broadcast.next(&1);
+  assert_eq!(cc.get(), 1);
 }
 
 #[test]

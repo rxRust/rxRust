@@ -37,7 +37,7 @@ numbers.error(&"just trigger an error.");
  In rx_rs, every extension has two version method. One version is use when no runtime error will be propagated. This version receive an normal closure. The other is use when when will propagating runtime error, named `xxx_with_err`, and receive an closure that return an `Result` type, to detect if an runtime error occur. For example:
 
 ```rust
-use rx_rs::{ops::{ Map }, prelude::*};
+use rx_rs::{ops::{ Map, MapWithErr }, prelude::*};
 
 
 // normal version
