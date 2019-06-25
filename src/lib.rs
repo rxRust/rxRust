@@ -1,5 +1,6 @@
 #![feature(external_doc)]
 #![doc(include = "../README.md")]
+#![feature(drain_filter)]
 
 pub mod observable;
 pub mod ops;
