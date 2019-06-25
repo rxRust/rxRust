@@ -16,7 +16,7 @@ use crate::prelude::*;
 /// numbers.clone().take(5).subscribe(|v| println!("{}", v));
 ///
 /// (0..10).into_iter().for_each(|v| {
-///    numbers.next(v);
+///    numbers.next(&v);
 /// });
 
 /// // print logs:
@@ -54,7 +54,7 @@ where
 
   fn subscribe_return_state<N>(self, mut next: N) -> Self::Unsubscribe
   where
-    N: 'a + FnMut(Self::Item) -> OState<Self::Err>,
+    N: 'a + FnMut(&Self::Item) -> OState<Self::Err>,
   {
     let total = self.count;
     let mut count = 0;
@@ -100,7 +100,7 @@ mod test {
       .on_complete(|| completed.set(true));
 
     (0..10).for_each(|v| {
-      numbers.next(v);
+      numbers.next(&v);
     });
 
     assert_eq!(completed.get(), true);
