@@ -24,20 +24,15 @@ impl<'a, T, E> Clone for Subject<'a, T, E> {
 }
 
 impl<'a, T: 'a, E: 'a> Observable<'a> for Subject<'a, T, E> {
-  type Item = &'a T;
+  type Item = T;
   type Err = E;
   type Unsubscribe = SubjectSubscription<'a, T, E>;
 
   fn subscribe_return_state<N>(self, next: N) -> Self::Unsubscribe
   where
-    N: 'a + FnMut(Self::Item) -> OState<Self::Err>,
+    N: 'a + FnMut(&Self::Item) -> OState<Self::Err>,
   {
-    let next: Box<dyn FnMut(Self::Item) -> OState<E>> = Box::new(next);
-    // of course, we know Self::Item and &'a T is the same type, but
-    // rust can't infer it, so, write an unsafe code to let rust know.
-    #[allow(clippy::complexity)]
-    let next: Box<(dyn for<'r> FnMut(&'r T) -> OState<E> + 'a)> =
-      unsafe { std::mem::transmute(next) };
+    let next: Box<dyn FnMut(&Self::Item) -> OState<E>> = Box::new(next);
     let ptr = next.as_ref() as NextPtr<'a, T, E>;
     let cbs = Callbacks {
       on_next: next,
@@ -94,7 +89,7 @@ impl<'a, T, E> Observer for Subject<'a, T, E> {
   type Item = T;
   type Err = E;
 
-  fn next(&self, v: Self::Item) -> &Self {
+  fn next(&self, v: &Self::Item) -> &Self {
     for cbs in self.cbs.borrow_mut().iter_mut() {
       match (cbs.on_next)(&v) {
         OState::Complete => {
@@ -206,7 +201,7 @@ fn base_data_flow() {
   let i = Cell::new(0);
   let broadcast = Subject::<'_, i32, ()>::new();
   broadcast.clone().subscribe(|v: &i32| i.set(*v * 2));
-  broadcast.next(1);
+  broadcast.next(&1);
   assert_eq!(i.get(), 2);
 }
 
@@ -218,7 +213,7 @@ fn error() {
     .clone()
     .subscribe(|_: &i32| {})
     .on_error(|e: &&str| panic!(*e));
-  broadcast.next(1);
+  broadcast.next(&1);
 
   broadcast.error(&"should panic!");
 }
@@ -232,7 +227,7 @@ fn runtime_error() {
     .subscribe_return_state(|_| OState::Err("runtime error"))
     .on_error(|e: &&str| panic!(*e));
 
-  broadcast.next(1);
+  broadcast.next(&1);
 }
 
 #[test]

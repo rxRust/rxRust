@@ -47,7 +47,7 @@ where
 
   fn subscribe_return_state<N>(self, next: N) -> Self::Unsubscribe
   where
-    N: 'a + FnMut(Self::Item) -> OState<Self::Err>,
+    N: 'a + FnMut(&Self::Item) -> OState<Self::Err>,
   {
     let next = Rc::new(RefCell::new(next));
     let c_next = next.clone();
@@ -62,7 +62,7 @@ where
     subscription.on_complete(move || {
       let default = default.borrow_mut().take();
       if let Some(d) = default {
-        (&mut *(next.borrow_mut()))(d);
+        (&mut *(next.borrow_mut()))(&d);
       }
     });
     subscription
@@ -88,7 +88,7 @@ mod test {
       .on_complete(|| completed.set(true));
 
     (0..2).for_each(|v| {
-      numbers.next(v);
+      numbers.next(&v);
     });
 
     assert_eq!(completed.get(), true);
@@ -104,7 +104,7 @@ mod test {
     let numbers = Subject::<'_, i32, ()>::new();
     numbers
       .clone()
-      .first_or(&100)
+      .first_or(100)
       .subscribe(|_| {
         next_count.set(next_count.get() + 1);
       })
@@ -114,7 +114,7 @@ mod test {
 
     // normal pass value
     (0..2).for_each(|v| {
-      numbers.next(v);
+      numbers.next(&v);
     });
     assert_eq!(next_count.get(), 1);
     assert_eq!(completed.get(), true);
@@ -122,7 +122,7 @@ mod test {
     completed.set(false);
     numbers
       .clone()
-      .first_or(&100)
+      .first_or(100)
       .subscribe(|value| v.set(*value))
       .on_complete(|| completed.set(true));
 

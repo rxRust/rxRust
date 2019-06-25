@@ -8,7 +8,7 @@ pub enum OState<E> {
 
 pub trait Observable<'a>: Sized {
   /// The type of the elements being emitted.
-  type Item: Sized;
+  type Item;
   //
   type Err;
   // the Subscription subsribe method return.
@@ -16,11 +16,11 @@ pub trait Observable<'a>: Sized {
 
   fn subscribe_return_state<N>(self, next: N) -> Self::Unsubscribe
   where
-    N: 'a + FnMut(Self::Item) -> OState<Self::Err>;
+    N: 'a + FnMut(&Self::Item) -> OState<Self::Err>;
 
   fn subscribe<N>(self, mut next: N) -> Self::Unsubscribe
   where
-    N: 'a + FnMut(Self::Item),
+    N: 'a + FnMut(&Self::Item),
   {
     self.subscribe_return_state(move |v| {
       next(v);

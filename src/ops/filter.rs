@@ -17,7 +17,7 @@ use crate::prelude::*;
 /// });
 
 /// (0..10).into_iter().for_each(|v| {
-///    subject.next(v);
+///    subject.next(&v);
 /// });
 
 /// // only even numbers received.
@@ -25,33 +25,35 @@ use crate::prelude::*;
 /// ```
 
 pub trait Filter<'a, T> {
-  type Err;
-  fn filter<N>(
-    self, filter: N,
-  ) -> FilterOp<Self, NextWhitoutError<N, Self::Err>>
+  fn filter<N>(self, filter: N) -> FilterOp<Self, N>
   where
     Self: Sized,
     N: FnMut(&T) -> bool + 'a,
   {
     FilterOp {
       source: self,
-      filter: NextWhitoutError::new(filter),
-    }
-  }
-
-  fn filter_with_err<N>(self, filter: N) -> FilterOp<Self, NextWithError<N>>
-  where
-    Self: Sized,
-    N: FnMut(&T) -> Result<bool, Self::Err> + 'a,
-  {
-    FilterOp {
-      source: self,
-      filter: NextWithError(filter),
+      filter,
     }
   }
 }
 
-impl<'a, T, O> Filter<'a, T> for O
+pub trait FilterWithErr<'a, T> {
+  type Err;
+  fn filter_with_err<N>(self, filter: N) -> FilterWithErrOp<Self, N>
+  where
+    Self: Sized,
+    N: FnMut(&T) -> Result<bool, Self::Err> + 'a,
+  {
+    FilterWithErrOp {
+      source: self,
+      filter,
+    }
+  }
+}
+
+impl<'a, T, O> Filter<'a, T> for O where O: Observable<'a, Item = T> {}
+
+impl<'a, T, O> FilterWithErr<'a, T> for O
 where
   O: Observable<'a, Item = T>,
 {
@@ -63,10 +65,15 @@ pub struct FilterOp<S, N> {
   filter: N,
 }
 
+pub struct FilterWithErrOp<S, N> {
+  source: S,
+  filter: N,
+}
+
 impl<'a, S, F> Observable<'a> for FilterOp<S, F>
 where
   S: Observable<'a>,
-  F: WithErrByRef<S::Item, bool, Err = S::Err> + 'a,
+  F: FnMut(&S::Item) -> bool + 'a,
 {
   type Err = S::Err;
   type Item = S::Item;
@@ -74,11 +81,32 @@ where
 
   fn subscribe_return_state<N>(self, mut next: N) -> Self::Unsubscribe
   where
-    N: 'a + FnMut(Self::Item) -> OState<Self::Err>,
+    N: FnMut(&Self::Item) -> OState<Self::Err> + 'a,
   {
     let mut filter = self.filter;
     self.source.subscribe_return_state(move |v| {
-      match filter.call_with_err(&v) {
+      if filter(v) { next(v) } else { OState::Next }
+    })
+  }
+}
+
+impl<'a, S, F> Observable<'a> for FilterWithErrOp<S, F>
+where
+  S: Observable<'a>,
+  F: FnMut(&S::Item) -> Result<bool, S::Err> + 'a,
+{
+  type Err = S::Err;
+  type Item = S::Item;
+  type Unsubscribe = S::Unsubscribe;
+
+  fn subscribe_return_state<N>(self, mut next: N) -> Self::Unsubscribe
+  where
+    N: FnMut(&Self::Item) -> OState<Self::Err> + 'a,
+  {
+    let mut filter = self.filter;
+    self
+      .source
+      .subscribe_return_state(move |v| match filter(&v) {
         Ok(b) => {
           if b {
             next(v)
@@ -87,8 +115,7 @@ where
           }
         }
         Err(e) => OState::Err(e),
-      }
-    })
+      })
   }
 }
 
@@ -105,7 +132,7 @@ fn runtime_error() {
     .subscribe(|_| {})
     .on_error(|err| panic!(*err));
 
-  subject.next(1);
+  subject.next(&1);
 }
 
 #[test]

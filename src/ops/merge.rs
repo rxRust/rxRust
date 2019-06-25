@@ -8,7 +8,7 @@ use std::rc::Rc;
 ///
 /// ```
 /// # use rx_rs::{ ops::{Filter, Merge}, prelude::*};
-/// let numbers = Subject::<'_, _, ()>::new();
+/// let numbers = Subject::<'_, i32, ()>::new();
 /// // crate a even stream by filter
 /// let even = numbers.clone().filter(|v| *v % 2 == 0);
 /// // crate an odd stream by filter
@@ -57,7 +57,7 @@ where
 
   fn subscribe_return_state<N>(self, next: N) -> Self::Unsubscribe
   where
-    N: 'a + FnMut(Self::Item) -> OState<Self::Err>,
+    N: 'a + FnMut(&Self::Item) -> OState<Self::Err>,
   {
     let next = Rc::new(RefCell::new(next));
     let next_clone = next.clone();
@@ -172,7 +172,7 @@ mod test {
 
     let numbers = Subject::<'_, _, ()>::new();
     // enabling multiple observers for even stream;
-    let even = numbers.clone().filter(|v| *v % 2 == 0).broadcast();
+    let even = numbers.clone().filter(|v| v % 2 == 0).broadcast();
     // enabling multiple observers for odd stream;
     let odd = numbers.clone().filter(|v| *v % 2 != 0).broadcast();
 
@@ -180,12 +180,12 @@ mod test {
     let merged = even.clone().merge(odd.clone());
 
     //  attach observers
-    merged.subscribe(|v| numbers_store.borrow_mut().push(**v));
-    odd.subscribe(|v| odd_store.borrow_mut().push(**v));
-    even.subscribe(|v| even_store.borrow_mut().push(**v));
+    merged.subscribe(|v| numbers_store.borrow_mut().push(*v));
+    odd.subscribe(|v| odd_store.borrow_mut().push(*v));
+    even.subscribe(|v| even_store.borrow_mut().push(*v));
 
     (0..10).for_each(|v| {
-      numbers.next(v);
+      numbers.next(&v);
     });
 
     assert_eq!(even_store.borrow().clone(), vec![0, 2, 4, 6, 8]);
@@ -206,7 +206,7 @@ mod test {
       .subscribe(|_| unreachable!("oh, unsubscribe not work."))
       .unsubscribe();
 
-    numbers.next(1);
+    numbers.next(&1);
   }
 
   #[test]

@@ -23,7 +23,7 @@ let subscription = merged
 
 // shot numbers
 (0..10).into_iter().for_each(|v| {
-    numbers.next(v);
+    numbers.next(&v);
 });
 // "0 1 2 3 4 5 6 7 8 9" will be printed.
 
@@ -34,7 +34,7 @@ numbers.error(&"just trigger an error.");
 
 ## Runtime error propagating
 
-In general, if a extension need user provide a closure, this extension will provide a version named 'xxx_with_err' to support propagating a runtime error through return an `Err` type. For examaple:
+ In rx_rs, every extension has two version method. One version is use when no runtime error will be propagated. This version receive an normal closure. The other is use when when will propagating runtime error, named `xxx_with_err`, and receive an closure that return an `Result` type, to detect if an runtime error occur. For example:
 
 ```rust
 use rx_rs::{ops::{ Map }, prelude::*};
@@ -57,8 +57,8 @@ subject.clone()
   .subscribe(|v| print!("{} | ", v))
   .on_error(|err|{println!("{} | ", err)});
 
-subject.next(0);
-subject.next(1);
+subject.next(&0);
+subject.next(&1);
 // normal version will print `0 | ` and `2 |`, 
 // runtime error version will print `0 | ` and `odd number should never be pass to here | "
 // this example print "0 | 0 | 2 | odd number should never be pass to here | "
