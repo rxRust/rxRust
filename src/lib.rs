@@ -5,11 +5,13 @@
 pub mod observable;
 pub mod ops;
 pub mod subject;
+pub mod subscriber;
 pub mod subscription;
 
 pub mod prelude {
   pub use crate::observable::*;
   pub use crate::subject::Subject;
+  pub use crate::subscriber::Subscriber;
   pub use crate::subscription::*;
   pub use crate::Observer;
 }

@@ -28,7 +28,7 @@ pub trait Filter<'a, T> {
   fn filter<N>(self, filter: N) -> FilterOp<Self, N>
   where
     Self: Sized,
-    N: FnMut(&T) -> bool + 'a,
+    N: Fn(&T) -> bool + 'a,
   {
     FilterOp {
       source: self,
@@ -42,7 +42,7 @@ pub trait FilterWithErr<'a, T> {
   fn filter_with_err<N>(self, filter: N) -> FilterWithErrOp<Self, N>
   where
     Self: Sized,
-    N: FnMut(&T) -> Result<bool, Self::Err> + 'a,
+    N: Fn(&T) -> Result<bool, Self::Err> + 'a,
   {
     FilterWithErrOp {
       source: self,
@@ -73,17 +73,17 @@ pub struct FilterWithErrOp<S, N> {
 impl<'a, S, F> Observable<'a> for FilterOp<S, F>
 where
   S: Observable<'a>,
-  F: FnMut(&S::Item) -> bool + 'a,
+  F: Fn(&S::Item) -> bool + 'a,
 {
   type Err = S::Err;
   type Item = S::Item;
   type Unsubscribe = S::Unsubscribe;
 
-  fn subscribe_return_state<N>(self, mut next: N) -> Self::Unsubscribe
+  fn subscribe_return_state<N>(self, next: N) -> Self::Unsubscribe
   where
-    N: FnMut(&Self::Item) -> OState<Self::Err> + 'a,
+    N: Fn(&Self::Item) -> OState<Self::Err> + 'a,
   {
-    let mut filter = self.filter;
+    let filter = self.filter;
     self.source.subscribe_return_state(move |v| {
       if filter(v) { next(v) } else { OState::Next }
     })
@@ -93,17 +93,17 @@ where
 impl<'a, S, F> Observable<'a> for FilterWithErrOp<S, F>
 where
   S: Observable<'a>,
-  F: FnMut(&S::Item) -> Result<bool, S::Err> + 'a,
+  F: Fn(&S::Item) -> Result<bool, S::Err> + 'a,
 {
   type Err = S::Err;
   type Item = S::Item;
   type Unsubscribe = S::Unsubscribe;
 
-  fn subscribe_return_state<N>(self, mut next: N) -> Self::Unsubscribe
+  fn subscribe_return_state<N>(self, next: N) -> Self::Unsubscribe
   where
-    N: FnMut(&Self::Item) -> OState<Self::Err> + 'a,
+    N: Fn(&Self::Item) -> OState<Self::Err> + 'a,
   {
-    let mut filter = self.filter;
+    let filter = self.filter;
     self
       .source
       .subscribe_return_state(move |v| match filter(&v) {

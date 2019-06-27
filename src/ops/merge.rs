@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use std::cell::{Cell, RefCell};
+use std::cell::Cell;
 use std::rc::Rc;
 
 /// combine two Observables into one by merging their emissions
@@ -57,16 +57,16 @@ where
 
   fn subscribe_return_state<N>(self, next: N) -> Self::Unsubscribe
   where
-    N: 'a + FnMut(&Self::Item) -> OState<Self::Err>,
+    N: 'a + Fn(&Self::Item) -> OState<Self::Err>,
   {
-    let next = Rc::new(RefCell::new(next));
+    let next = Rc::new(next);
     let next_clone = next.clone();
 
     let s1 = self.source1.subscribe(move |v| {
-      (&mut *next.borrow_mut())(v);
+      next(v);
     });
     let s2 = self.source2.subscribe(move |v| {
-      (&mut *next_clone.borrow_mut())(v);
+      next_clone(v);
     });
 
     MergeSubscription::new(s1, s2)
@@ -96,26 +96,25 @@ where
   S2: Subscription<'a, Err = E>,
 {
   type Err = E;
-  fn on_error<OE>(&mut self, err: OE) -> &mut Self
+  fn on_error<OE>(&mut self, on_err: OE) -> &mut Self
   where
-    OE: FnMut(&Self::Err) + 'a,
+    OE: Fn(&Self::Err) + 'a,
   {
-    let err = Rc::new(RefCell::new(err));
+    let on_err = Rc::new(on_err);
 
-    let cb_err = err.clone();
+    let cb_err = on_err.clone();
     let stopped = self.stopped.clone();
     self.subscription1.on_error(move |e| {
       if !stopped.get() {
-        (&mut *cb_err.borrow_mut())(e);
+        cb_err(e);
         stopped.set(true);
       }
     });
 
-    let cb_err = err.clone();
     let stopped = self.stopped.clone();
     self.subscription2.on_error(move |e| {
       if !stopped.get() {
-        (&mut *cb_err.borrow_mut())(e);
+        on_err(e);
         stopped.set(true);
       }
     });
@@ -123,26 +122,26 @@ where
   }
   fn on_complete<C>(&mut self, complete: C) -> &mut Self
   where
-    C: FnMut() + 'a,
+    C: Fn() + 'a,
   {
-    let c = Rc::new(RefCell::new(complete));
-    let completed = Rc::new(Cell::new(0));
+    let c = Rc::new(complete);
+    let completed = Rc::new(Cell::new(false));
 
     let completed_clone = completed.clone();
     let c2 = c.clone();
     self.subscription1.on_complete(move || {
-      if completed_clone.get() == 1 {
-        (&mut *c2.borrow_mut())()
+      if completed_clone.get() {
+        c2()
       } else {
-        completed_clone.set(1)
+        completed_clone.set(true)
       }
     });
 
     self.subscription2.on_complete(move || {
-      if completed.get() == 1 {
-        (&mut *c.borrow_mut())()
+      if completed.get() {
+        c()
       } else {
-        completed.set(1)
+        completed.set(true)
       }
     });
     self

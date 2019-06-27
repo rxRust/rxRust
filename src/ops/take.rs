@@ -52,19 +52,19 @@ where
   type Err = S::Err;
   type Unsubscribe = S::Unsubscribe;
 
-  fn subscribe_return_state<N>(self, mut next: N) -> Self::Unsubscribe
+  fn subscribe_return_state<N>(self, next: N) -> Self::Unsubscribe
   where
-    N: 'a + FnMut(&Self::Item) -> OState<Self::Err>,
+    N: 'a + Fn(&Self::Item) -> OState<Self::Err>,
   {
     let total = self.count;
-    let mut count = 0;
+    let count = std::cell::Cell::new(0);
     self.source.subscribe_return_state(move |v| {
-      if count < total {
-        count += 1;
+      if count.get() < total {
+        count.set(count.get() + 1);
         let os = next(v);
         match os {
           OState::Next => {
-            if count == total {
+            if count.get() == total {
               OState::Complete
             } else {
               os
