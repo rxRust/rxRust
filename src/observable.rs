@@ -16,11 +16,11 @@ pub trait Observable<'a>: Sized {
 
   fn subscribe_return_state<N>(self, next: N) -> Self::Unsubscribe
   where
-    N: 'a + FnMut(&Self::Item) -> OState<Self::Err>;
+    N: 'a + Fn(&Self::Item) -> OState<Self::Err>;
 
-  fn subscribe<N>(self, mut next: N) -> Self::Unsubscribe
+  fn subscribe<N>(self, next: N) -> Self::Unsubscribe
   where
-    N: 'a + FnMut(&Self::Item),
+    N: 'a + Fn(&Self::Item),
   {
     self.subscribe_return_state(move |v| {
       next(v);

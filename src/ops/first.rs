@@ -47,22 +47,22 @@ where
 
   fn subscribe_return_state<N>(self, next: N) -> Self::Unsubscribe
   where
-    N: 'a + FnMut(&Self::Item) -> OState<Self::Err>,
+    N: 'a + Fn(&Self::Item) -> OState<Self::Err>,
   {
-    let next = Rc::new(RefCell::new(next));
+    let next = Rc::new(next);
     let c_next = next.clone();
     let Self { source, default } = self;
     let default = Rc::new(RefCell::new(default));
     let c_default = default.clone();
     let mut subscription = source.subscribe_return_state(move |v| {
       c_default.borrow_mut().take();
-      (&mut *(c_next.borrow_mut()))(v)
+      c_next(v)
     });
 
     subscription.on_complete(move || {
       let default = default.borrow_mut().take();
       if let Some(d) = default {
-        (&mut *(next.borrow_mut()))(&d);
+        next(&d);
       }
     });
     subscription

@@ -7,7 +7,7 @@ pub trait Map<'a, T> {
   fn map<B, F>(self, f: F) -> MapOp<Self, F>
   where
     Self: Sized,
-    F: FnMut(&T) -> B + 'a,
+    F: Fn(&T) -> B + 'a,
   {
     MapOp {
       source: self,
@@ -20,7 +20,7 @@ pub trait Map<'a, T> {
   fn map_return_ref<B, F>(self, f: F) -> MapReturnRefOp<Self, F>
   where
     Self: Sized,
-    F: for<'r> FnMut(&'r T) -> &'r B + 'a,
+    F: for<'r> Fn(&'r T) -> &'r B + 'a,
   {
     MapReturnRefOp {
       source: self,
@@ -34,7 +34,7 @@ pub trait MapWithErr<'a, T> {
   fn map_with_err<B, F>(self, f: F) -> MapWithErrOp<Self, F>
   where
     Self: Sized,
-    F: FnMut(&T) -> Result<B, Self::Err> + 'a,
+    F: Fn(&T) -> Result<B, Self::Err> + 'a,
   {
     MapWithErrOp {
       source: self,
@@ -47,7 +47,7 @@ pub trait MapWithErr<'a, T> {
   fn map_return_ref_with_err<B, F>(self, f: F) -> MapReturnRefWithErrOp<Self, F>
   where
     Self: Sized,
-    F: for<'r> FnMut(&'r T) -> Result<&'r B, Self::Err> + 'a,
+    F: for<'r> Fn(&'r T) -> Result<&'r B, Self::Err> + 'a,
   {
     MapReturnRefWithErrOp {
       source: self,
@@ -72,18 +72,18 @@ pub struct MapOp<S, M> {
 
 impl<'a, S, B, M> Observable<'a> for MapOp<S, M>
 where
-  M: FnMut(&S::Item) -> B + 'a,
+  M: Fn(&S::Item) -> B + 'a,
   S: Observable<'a>,
 {
   type Item = B;
   type Err = S::Err;
   type Unsubscribe = S::Unsubscribe;
 
-  fn subscribe_return_state<N>(self, mut next: N) -> Self::Unsubscribe
+  fn subscribe_return_state<N>(self, next: N) -> Self::Unsubscribe
   where
-    N: 'a + FnMut(&Self::Item) -> OState<Self::Err>,
+    N: 'a + Fn(&Self::Item) -> OState<Self::Err>,
   {
-    let mut func = self.func;
+    let func = self.func;
     self.source.subscribe_return_state(move |v| next(&func(v)))
   }
 }
@@ -95,18 +95,18 @@ pub struct MapWithErrOp<S, M> {
 
 impl<'a, S, B, M> Observable<'a> for MapWithErrOp<S, M>
 where
-  M: FnMut(&S::Item) -> Result<B, S::Err> + 'a,
+  M: Fn(&S::Item) -> Result<B, S::Err> + 'a,
   S: Observable<'a>,
 {
   type Item = B;
   type Err = S::Err;
   type Unsubscribe = S::Unsubscribe;
 
-  fn subscribe_return_state<N>(self, mut next: N) -> Self::Unsubscribe
+  fn subscribe_return_state<N>(self, next: N) -> Self::Unsubscribe
   where
-    N: 'a + FnMut(&Self::Item) -> OState<Self::Err>,
+    N: 'a + Fn(&Self::Item) -> OState<Self::Err>,
   {
-    let mut func = self.func;
+    let func = self.func;
     self.source.subscribe_return_state(move |v| match func(v) {
       Ok(v) => next(&v),
       Err(e) => OState::Err(e),
@@ -121,18 +121,18 @@ pub struct MapReturnRefOp<S, M> {
 
 impl<'a, S, B, M> Observable<'a> for MapReturnRefOp<S, M>
 where
-  M: for<'r> FnMut(&'r S::Item) -> &'r B + 'a,
+  M: for<'r> Fn(&'r S::Item) -> &'r B + 'a,
   S: Observable<'a>,
 {
   type Item = B;
   type Err = S::Err;
   type Unsubscribe = S::Unsubscribe;
 
-  fn subscribe_return_state<N>(self, mut next: N) -> Self::Unsubscribe
+  fn subscribe_return_state<N>(self, next: N) -> Self::Unsubscribe
   where
-    N: 'a + FnMut(&Self::Item) -> OState<Self::Err>,
+    N: 'a + Fn(&Self::Item) -> OState<Self::Err>,
   {
-    let mut func = self.func;
+    let func = self.func;
     self.source.subscribe_return_state(move |v| next(&func(v)))
   }
 }
@@ -144,18 +144,18 @@ pub struct MapReturnRefWithErrOp<S, M> {
 
 impl<'a, S, B, M> Observable<'a> for MapReturnRefWithErrOp<S, M>
 where
-  M: for<'r> FnMut(&'r S::Item) -> Result<&'r B, S::Err> + 'a,
+  M: for<'r> Fn(&'r S::Item) -> Result<&'r B, S::Err> + 'a,
   S: Observable<'a>,
 {
   type Item = B;
   type Err = S::Err;
   type Unsubscribe = S::Unsubscribe;
 
-  fn subscribe_return_state<N>(self, mut next: N) -> Self::Unsubscribe
+  fn subscribe_return_state<N>(self, next: N) -> Self::Unsubscribe
   where
-    N: 'a + FnMut(&Self::Item) -> OState<Self::Err>,
+    N: 'a + Fn(&Self::Item) -> OState<Self::Err>,
   {
-    let mut func = self.func;
+    let func = self.func;
     self.source.subscribe_return_state(move |v| match func(v) {
       Ok(v) => next(&v),
       Err(e) => OState::Err(e),

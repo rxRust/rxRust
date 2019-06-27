@@ -2,12 +2,12 @@ use crate::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-pub(crate) type NextPtr<'a, T, E> = *const (dyn FnMut(&T) -> OState<E> + 'a);
+pub(crate) type NextPtr<'a, T, E> = *const (dyn Fn(&T) -> OState<E> + 'a);
 
 pub(crate) struct Callbacks<'a, T, E> {
-  on_next: Box<dyn FnMut(&T) -> OState<E> + 'a>,
-  on_complete: Option<Box<dyn FnMut() + 'a>>,
-  on_error: Option<Box<dyn FnMut(&E) + 'a>>,
+  on_next: Box<dyn Fn(&T) -> OState<E> + 'a>,
+  on_complete: Option<Box<dyn Fn() + 'a>>,
+  on_error: Option<Box<dyn Fn(&E) + 'a>>,
 }
 
 #[derive(Default)]
@@ -30,9 +30,9 @@ impl<'a, T: 'a, E: 'a> Observable<'a> for Subject<'a, T, E> {
 
   fn subscribe_return_state<N>(self, next: N) -> Self::Unsubscribe
   where
-    N: 'a + FnMut(&Self::Item) -> OState<Self::Err>,
+    N: 'a + Fn(&Self::Item) -> OState<Self::Err>,
   {
-    let next: Box<dyn FnMut(&Self::Item) -> OState<E>> = Box::new(next);
+    let next: Box<dyn Fn(&Self::Item) -> OState<E>> = Box::new(next);
     let ptr = next.as_ref() as NextPtr<'a, T, E>;
     let cbs = Callbacks {
       on_next: next,
@@ -112,20 +112,20 @@ impl<'a, T, E> Observer for Subject<'a, T, E> {
   }
 
   fn complete(self) {
-    for cbs in self.cbs.borrow_mut().iter_mut() {
-      if let Some(ref mut on_complete) = cbs.on_complete {
+    self.cbs.borrow().iter().for_each(|cbs| {
+      if let Some(ref on_complete) = cbs.on_complete {
         on_complete();
       }
-    }
+    });
     self.cbs.borrow_mut().clear();
   }
 
   fn error(self, err: &Self::Err) {
-    for cbs in self.cbs.borrow_mut().iter_mut() {
-      if let Some(ref mut on_error) = cbs.on_error {
+    self.cbs.borrow().iter().for_each(|cbs| {
+      if let Some(ref on_error) = cbs.on_error {
         on_error(err);
       }
-    }
+    });
     self.cbs.borrow_mut().clear();
   }
 }
@@ -149,9 +149,9 @@ impl<'a, T: 'a, E: 'a> Subscription<'a> for SubjectSubscription<'a, T, E> {
 
   fn unsubscribe(mut self) { self.source.remove_callback(self.callback); }
 
-  fn on_complete<C>(&mut self, mut complete: C) -> &mut Self
+  fn on_complete<C>(&mut self, complete: C) -> &mut Self
   where
-    C: FnMut() + 'a,
+    C: Fn() + 'a,
   {
     {
       let mut coll = self.source.cbs.borrow_mut();
@@ -160,7 +160,7 @@ impl<'a, T: 'a, E: 'a> Subscription<'a> for SubjectSubscription<'a, T, E> {
         .find(|v| v.on_next.as_ref() as *const _ == self.callback);
       if let Some(cbs) = cbs {
         let old_complete = cbs.on_complete.take();
-        if let Some(mut o) = old_complete {
+        if let Some(o) = old_complete {
           cbs.on_complete.replace(Box::new(move || {
             o();
             complete();
@@ -173,9 +173,9 @@ impl<'a, T: 'a, E: 'a> Subscription<'a> for SubjectSubscription<'a, T, E> {
     self
   }
 
-  fn on_error<OE>(&mut self, mut err: OE) -> &mut Self
+  fn on_error<OE>(&mut self, err: OE) -> &mut Self
   where
-    OE: FnMut(&Self::Err) + 'a,
+    OE: Fn(&Self::Err) + 'a,
   {
     {
       let mut coll = self.source.cbs.borrow_mut();
@@ -184,7 +184,7 @@ impl<'a, T: 'a, E: 'a> Subscription<'a> for SubjectSubscription<'a, T, E> {
         .find(|v| v.on_next.as_ref() as *const _ == self.callback);
       if let Some(cbs) = cbs {
         let old_error = cbs.on_error.take();
-        if let Some(mut o) = old_error {
+        if let Some(o) = old_error {
           cbs.on_error.replace(Box::new(move |e| {
             o(&e);
             err(&e);
