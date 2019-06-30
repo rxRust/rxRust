@@ -148,7 +148,7 @@ where
     self
   }
 
-  fn unsubscribe(self) {
+  fn unsubscribe(&mut self) {
     self.subscription1.unsubscribe();
     self.subscription2.unsubscribe();
   }
@@ -211,10 +211,10 @@ mod test {
 
   #[test]
   fn completed_test() {
-    let even = Subject::<'_, _, ()>::new();
-    let odd = Subject::<'_, _, ()>::new();
-
     let completed = Cell::new(false);
+    let mut even = Subject::<'_, _, ()>::new();
+    let mut odd = Subject::<'_, _, ()>::new();
+
     even
       .clone()
       .merge(odd.clone())
@@ -229,11 +229,11 @@ mod test {
 
   #[test]
   fn error_test() {
-    let even = Subject::new();
-    let odd = Subject::new();
-
     let completed = Cell::new(0);
     let error = Cell::new(0);
+    let mut even = Subject::new();
+    let mut odd = Subject::new();
+
     even
       .clone()
       .merge(odd.clone())

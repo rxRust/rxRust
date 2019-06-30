@@ -101,7 +101,7 @@ mod test {
     let next_count = Cell::new(0);
     let v = Cell::new(0);
 
-    let numbers = Subject::<'_, i32, ()>::new();
+    let mut numbers = Subject::<'_, i32, ()>::new();
     numbers
       .clone()
       .first_or(100)
