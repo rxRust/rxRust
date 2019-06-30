@@ -12,13 +12,13 @@ pub trait Subscribable<'a>: Sized {
   //
   type Err;
   // the Subscription subsribe method return.
-  type Unsubscribe: Subscription<'a, Err = Self::Err> + 'a;
+  type Unsubscribable: Subscription<'a, Err = Self::Err> + 'a;
 
-  fn subscribe_return_state<N>(self, next: N) -> Self::Unsubscribe
+  fn subscribe_return_state<N>(self, next: N) -> Self::Unsubscribable
   where
     N: 'a + Fn(&Self::Item) -> OState<Self::Err>;
 
-  fn subscribe<N>(self, next: N) -> Self::Unsubscribe
+  fn subscribe<N>(self, next: N) -> Self::Unsubscribable
   where
     N: 'a + Fn(&Self::Item),
   {

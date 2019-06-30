@@ -26,9 +26,9 @@ impl<'a, T, E> Clone for Subject<'a, T, E> {
 impl<'a, T: 'a, E: 'a> Subscribable<'a> for Subject<'a, T, E> {
   type Item = T;
   type Err = E;
-  type Unsubscribe = SubjectSubscription<'a, T, E>;
+  type Unsubscribable = SubjectSubscription<'a, T, E>;
 
-  fn subscribe_return_state<N>(self, next: N) -> Self::Unsubscribe
+  fn subscribe_return_state<N>(self, next: N) -> Self::Unsubscribable
   where
     N: 'a + Fn(&Self::Item) -> OState<Self::Err>,
   {
