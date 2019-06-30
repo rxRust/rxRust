@@ -77,9 +77,9 @@ where
 {
   type Err = S::Err;
   type Item = S::Item;
-  type Unsubscribe = S::Unsubscribe;
+  type Unsubscribable = S::Unsubscribable;
 
-  fn subscribe_return_state<N>(self, next: N) -> Self::Unsubscribe
+  fn subscribe_return_state<N>(self, next: N) -> Self::Unsubscribable
   where
     N: Fn(&Self::Item) -> OState<Self::Err> + 'a,
   {
@@ -97,9 +97,9 @@ where
 {
   type Err = S::Err;
   type Item = S::Item;
-  type Unsubscribe = S::Unsubscribe;
+  type Unsubscribable = S::Unsubscribable;
 
-  fn subscribe_return_state<N>(self, next: N) -> Self::Unsubscribe
+  fn subscribe_return_state<N>(self, next: N) -> Self::Unsubscribable
   where
     N: Fn(&Self::Item) -> OState<Self::Err> + 'a,
   {

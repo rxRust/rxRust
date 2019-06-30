@@ -53,9 +53,10 @@ where
 {
   type Err = E;
   type Item = T;
-  type Unsubscribe = MergeSubscription<S1::Unsubscribe, S2::Unsubscribe>;
+  type Unsubscribable =
+    MergeSubscription<S1::Unsubscribable, S2::Unsubscribable>;
 
-  fn subscribe_return_state<N>(self, next: N) -> Self::Unsubscribe
+  fn subscribe_return_state<N>(self, next: N) -> Self::Unsubscribable
   where
     N: 'a + Fn(&Self::Item) -> OState<Self::Err>,
   {
