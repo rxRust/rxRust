@@ -111,7 +111,7 @@ impl<'a, T, E> Observer for Subject<'a, T, E> {
     self
   }
 
-  fn complete(self) {
+  fn complete(&mut self) {
     self.cbs.borrow().iter().for_each(|cbs| {
       if let Some(ref on_complete) = cbs.on_complete {
         on_complete();
@@ -120,7 +120,7 @@ impl<'a, T, E> Observer for Subject<'a, T, E> {
     self.cbs.borrow_mut().clear();
   }
 
-  fn error(self, err: &Self::Err) {
+  fn error(&mut self, err: &Self::Err) {
     self.cbs.borrow().iter().for_each(|cbs| {
       if let Some(ref on_error) = cbs.on_error {
         on_error(err);
@@ -147,7 +147,7 @@ impl<'a, T, E> Clone for SubjectSubscription<'a, T, E> {
 impl<'a, T: 'a, E: 'a> Subscription<'a> for SubjectSubscription<'a, T, E> {
   type Err = E;
 
-  fn unsubscribe(mut self) { self.source.remove_callback(self.callback); }
+  fn unsubscribe(&mut self) { self.source.remove_callback(self.callback); }
 
   fn on_complete<C>(&mut self, complete: C) -> &mut Self
   where
@@ -211,7 +211,7 @@ fn base_data_flow() {
 #[test]
 #[should_panic]
 fn error() {
-  let broadcast = Subject::new();
+  let mut broadcast = Subject::new();
   broadcast
     .clone()
     .subscribe(|_: &i32| {})
@@ -268,7 +268,7 @@ fn return_complete_state() {
 #[test]
 fn mulit_on_error() {
   let ec = std::cell::Cell::new(0);
-  let broadcast = Subject::new();
+  let mut broadcast = Subject::new();
   broadcast
     .clone()
     .subscribe(|_: &i32| {})
@@ -283,7 +283,7 @@ fn mulit_on_error() {
 #[test]
 fn multi_on_complete() {
   let cc = std::cell::Cell::new(0);
-  let broadcast = Subject::<'_, _, &str>::new();
+  let mut broadcast = Subject::<'_, _, &str>::new();
   broadcast
     .clone()
     .subscribe(|_: &i32| {})

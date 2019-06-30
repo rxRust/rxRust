@@ -15,5 +15,5 @@ pub trait Subscription<'a> {
 
   /// This allows deregistering an stream before it has finished receiving all
   ///  events (i.e. before onCompleted is called).
-  fn unsubscribe(self);
+  fn unsubscribe(&mut self);
 }

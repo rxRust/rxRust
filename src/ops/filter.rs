@@ -140,7 +140,7 @@ fn runtime_error() {
 fn pass_error() {
   use crate::prelude::*;
 
-  let subject = Subject::new();
+  let mut subject = Subject::new();
 
   subject
     .clone()
