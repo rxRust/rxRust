@@ -25,7 +25,7 @@ pub trait Merge<'a, T> {
   fn merge<S>(self, o: S) -> MergeOp<Self, S>
   where
     Self: Sized,
-    S: Observable<'a, Item = T, Err = Self::Err>,
+    S: Subscribable<'a, Item = T, Err = Self::Err>,
   {
     MergeOp {
       source1: self,
@@ -36,7 +36,7 @@ pub trait Merge<'a, T> {
 
 impl<'a, T, O> Merge<'a, T> for O
 where
-  O: Observable<'a, Item = T>,
+  O: Subscribable<'a, Item = T>,
 {
   type Err = O::Err;
 }
@@ -46,10 +46,10 @@ pub struct MergeOp<S1, S2> {
   source2: S2,
 }
 
-impl<'a, T, E, S1: 'a, S2: 'a> Observable<'a> for MergeOp<S1, S2>
+impl<'a, T, E, S1: 'a, S2: 'a> Subscribable<'a> for MergeOp<S1, S2>
 where
-  S1: Observable<'a, Item = T, Err = E>,
-  S2: Observable<'a, Item = T, Err = E>,
+  S1: Subscribable<'a, Item = T, Err = E>,
+  S2: Subscribable<'a, Item = T, Err = E>,
 {
   type Err = E;
   type Item = T;

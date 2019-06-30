@@ -51,11 +51,11 @@ pub trait FilterWithErr<'a, T> {
   }
 }
 
-impl<'a, T, O> Filter<'a, T> for O where O: Observable<'a, Item = T> {}
+impl<'a, T, O> Filter<'a, T> for O where O: Subscribable<'a, Item = T> {}
 
 impl<'a, T, O> FilterWithErr<'a, T> for O
 where
-  O: Observable<'a, Item = T>,
+  O: Subscribable<'a, Item = T>,
 {
   type Err = O::Err;
 }
@@ -70,9 +70,9 @@ pub struct FilterWithErrOp<S, N> {
   filter: N,
 }
 
-impl<'a, S, F> Observable<'a> for FilterOp<S, F>
+impl<'a, S, F> Subscribable<'a> for FilterOp<S, F>
 where
-  S: Observable<'a>,
+  S: Subscribable<'a>,
   F: Fn(&S::Item) -> bool + 'a,
 {
   type Err = S::Err;
@@ -90,9 +90,9 @@ where
   }
 }
 
-impl<'a, S, F> Observable<'a> for FilterWithErrOp<S, F>
+impl<'a, S, F> Subscribable<'a> for FilterWithErrOp<S, F>
 where
-  S: Observable<'a>,
+  S: Subscribable<'a>,
   F: Fn(&S::Item) -> Result<bool, S::Err> + 'a,
 {
   type Err = S::Err;

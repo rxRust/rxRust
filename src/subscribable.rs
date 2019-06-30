@@ -6,7 +6,7 @@ pub enum OState<E> {
   Err(E),
 }
 
-pub trait Observable<'a>: Sized {
+pub trait Subscribable<'a>: Sized {
   /// The type of the elements being emitted.
   type Item;
   //
