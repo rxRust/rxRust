@@ -56,11 +56,11 @@ pub trait MapWithErr<'a, T> {
   }
 }
 
-impl<'a, O> Map<'a, O::Item> for O where O: Observable<'a> {}
+impl<'a, O> Map<'a, O::Item> for O where O: Subscribable<'a> {}
 
 impl<'a, O> MapWithErr<'a, O::Item> for O
 where
-  O: Observable<'a>,
+  O: Subscribable<'a>,
 {
   type Err = O::Err;
 }
@@ -70,10 +70,10 @@ pub struct MapOp<S, M> {
   func: M,
 }
 
-impl<'a, S, B, M> Observable<'a> for MapOp<S, M>
+impl<'a, S, B, M> Subscribable<'a> for MapOp<S, M>
 where
   M: Fn(&S::Item) -> B + 'a,
-  S: Observable<'a>,
+  S: Subscribable<'a>,
 {
   type Item = B;
   type Err = S::Err;
@@ -93,10 +93,10 @@ pub struct MapWithErrOp<S, M> {
   func: M,
 }
 
-impl<'a, S, B, M> Observable<'a> for MapWithErrOp<S, M>
+impl<'a, S, B, M> Subscribable<'a> for MapWithErrOp<S, M>
 where
   M: Fn(&S::Item) -> Result<B, S::Err> + 'a,
-  S: Observable<'a>,
+  S: Subscribable<'a>,
 {
   type Item = B;
   type Err = S::Err;
@@ -119,10 +119,10 @@ pub struct MapReturnRefOp<S, M> {
   func: M,
 }
 
-impl<'a, S, B, M> Observable<'a> for MapReturnRefOp<S, M>
+impl<'a, S, B, M> Subscribable<'a> for MapReturnRefOp<S, M>
 where
   M: for<'r> Fn(&'r S::Item) -> &'r B + 'a,
-  S: Observable<'a>,
+  S: Subscribable<'a>,
 {
   type Item = B;
   type Err = S::Err;
@@ -142,10 +142,10 @@ pub struct MapReturnRefWithErrOp<S, M> {
   func: M,
 }
 
-impl<'a, S, B, M> Observable<'a> for MapReturnRefWithErrOp<S, M>
+impl<'a, S, B, M> Subscribable<'a> for MapReturnRefWithErrOp<S, M>
 where
   M: for<'r> Fn(&'r S::Item) -> Result<&'r B, S::Err> + 'a,
-  S: Observable<'a>,
+  S: Subscribable<'a>,
 {
   type Item = B;
   type Err = S::Err;
