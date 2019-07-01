@@ -26,6 +26,8 @@ impl<'a, Item, Err> Subscriber<'a, Item, Err> {
       _v: PhantomData,
     }
   }
+
+  pub fn is_stopped(&self) -> bool { self.stopped }
 }
 
 impl<'a, Item, Err> Observer for Subscriber<'a, Item, Err> {

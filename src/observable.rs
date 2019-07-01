@@ -1,9 +1,15 @@
 use crate::prelude::*;
 use std::marker::PhantomData;
 
+mod from_iter;
+pub use from_iter::from_iter;
+
+/// A representation of any set of values over any amount of time. This is the
+/// most basic building block rx_rs
+///
 pub struct Observable<'a, F, Item, Err>
 where
-  F: Fn(&mut Subscriber<'a, Item, Err>),
+  F: FnOnce(&mut Subscriber<'a, Item, Err>),
 {
   subscribe: F,
   _a: PhantomData<&'a ()>,
@@ -13,8 +19,13 @@ where
 
 impl<'a, F, Item, Err> Observable<'a, F, Item, Err>
 where
-  F: Fn(&mut Subscriber<'a, Item, Err>),
+  F: FnOnce(&mut Subscriber<'a, Item, Err>),
 {
+  /// param `subscribe`: the function that is called when the Observable is
+  /// initially subscribed to. This function is given a Subscriber, to which
+  /// new values can be `next`ed, or an `error` method can be called to raise
+  /// an error, or `complete` can be called to notify of a successful
+  /// completion.
   pub fn new(subscribe: F) -> Self {
     Self {
       subscribe,
@@ -27,7 +38,7 @@ where
 
 impl<'a, F, Item: 'a, Err: 'a> Subscribable<'a> for Observable<'a, F, Item, Err>
 where
-  F: Fn(&mut Subscriber<'a, Item, Err>) + 'a,
+  F: FnOnce(&mut Subscriber<'a, Item, Err>) + 'a,
 {
   type Item = Item;
   type Err = Err;
@@ -37,10 +48,9 @@ where
   where
     N: 'a + Fn(&Self::Item) -> OState<Self::Err>,
   {
-    // (self.subscribe)(&mut subscriber);
     let subscriber = Subscriber::new(next);
     ObservableSubscription {
-      subscribe: self.subscribe,
+      subscribe: Some(self.subscribe),
       subscriber,
     }
   }
@@ -48,16 +58,16 @@ where
 
 pub struct ObservableSubscription<'a, Item, Err, F>
 where
-  F: Fn(&mut Subscriber<'a, Item, Err>),
+  F: FnOnce(&mut Subscriber<'a, Item, Err>),
 {
   subscriber: Subscriber<'a, Item, Err>,
-  subscribe: F,
+  subscribe: Option<F>,
 }
 
 impl<'a, F, Item, Err> Subscription<'a>
   for ObservableSubscription<'a, Item, Err, F>
 where
-  F: Fn(&mut Subscriber<'a, Item, Err>),
+  F: FnOnce(&mut Subscriber<'a, Item, Err>),
 {
   type Err = Err;
   fn on_error<E>(&mut self, err: E) -> &mut Self
@@ -80,9 +90,9 @@ where
 
 impl<'a, F, Item, Err> Drop for ObservableSubscription<'a, Item, Err, F>
 where
-  F: Fn(&mut Subscriber<'a, Item, Err>),
+  F: FnOnce(&mut Subscriber<'a, Item, Err>),
 {
-  fn drop(&mut self) { (self.subscribe)(&mut self.subscriber); }
+  fn drop(&mut self) { (self.subscribe.take().unwrap())(&mut self.subscriber); }
 }
 
 #[cfg(test)]
