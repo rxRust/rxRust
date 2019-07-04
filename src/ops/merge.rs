@@ -1,5 +1,8 @@
 use crate::prelude::*;
-use std::sync::{Arc, Mutex};
+use std::sync::{
+  atomic::{AtomicBool, Ordering},
+  Arc,
+};
 
 /// combine two Observables into one by merging their emissions
 ///
@@ -51,11 +54,11 @@ where
     next: impl Fn(&Self::Item) -> OState<Self::Err> + Send + Sync + 'static,
     error: Option<impl Fn(&Self::Err) + Send + Sync + 'static>,
     complete: Option<impl Fn() + Send + Sync + 'static>,
-  ) -> Box<dyn Subscription> {
+  ) -> Box<dyn Subscription + Send + Sync> {
     let next = Arc::new(next);
     let next_clone = next.clone();
 
-    let stopped = Arc::new(Mutex::new(false));
+    let stopped = Arc::new(AtomicBool::new(false));
     let error = error.map(Arc::new);
     let complete = complete.map(Arc::new);
 
@@ -63,24 +66,26 @@ where
       error.clone().map(|err| {
         let stopped = stopped.clone();
         move |e: &_| {
-          if !*stopped.lock().unwrap() {
+          if !stopped.load(Ordering::Relaxed) {
             err(e);
-            *stopped.lock().unwrap() = true
+            stopped.store(true, Ordering::Relaxed);
           }
         }
       })
     };
-    let completed = Arc::new(Mutex::new(false));
+    let completed = Arc::new(AtomicBool::new(false));
     let on_complete_factor = || {
       complete.clone().map(|comp| {
         let stopped = stopped.clone();
         let completed = completed.clone();
         move || {
-          if !*stopped.lock().unwrap() && *completed.lock().unwrap() {
+          if !stopped.load(Ordering::Relaxed)
+            && completed.load(Ordering::Relaxed)
+          {
             comp();
-            *stopped.lock().unwrap() = true
+            stopped.store(true, Ordering::Relaxed);
           } else {
-            *completed.lock().unwrap() = true
+            completed.store(true, Ordering::Relaxed);
           }
         }
       })
@@ -102,12 +107,15 @@ where
 }
 
 pub struct MergeSubscription {
-  subscription1: Box<dyn Subscription>,
-  subscription2: Box<dyn Subscription>,
+  subscription1: Box<dyn Subscription + Send + Sync>,
+  subscription2: Box<dyn Subscription + Send + Sync>,
 }
 
 impl MergeSubscription {
-  fn new(s1: Box<dyn Subscription>, s2: Box<dyn Subscription>) -> Self {
+  fn new(
+    s1: Box<dyn Subscription + Send + Sync>,
+    s2: Box<dyn Subscription + Send + Sync>,
+  ) -> Self {
     MergeSubscription {
       subscription1: s1,
       subscription2: s2,
@@ -156,7 +164,10 @@ mod test {
     ops::{Filter, Fork, Merge, Multicast},
     prelude::*,
   };
-  use std::sync::{Arc, Mutex};
+  use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex,
+  };
 
   #[test]
   fn odd_even_merge() {
@@ -213,23 +224,23 @@ mod test {
 
   #[test]
   fn completed_test() {
-    let completed = Arc::new(Mutex::new(false));
+    let completed = Arc::new(AtomicBool::new(false));
     let c_clone = completed.clone();
     let mut even = Subject::<_, ()>::new();
     let mut odd = Subject::<_, ()>::new();
 
     even.clone().merge(odd.clone()).subscribe_complete(
       |_: &()| {},
-      move || *completed.lock().unwrap() = true,
+      move || completed.store(true, Ordering::Relaxed),
     );
 
     even.complete();
-    assert_eq!(*c_clone.lock().unwrap(), false);
+    assert_eq!(c_clone.load(Ordering::Relaxed), false);
     odd.complete();
-    assert_eq!(*c_clone.lock().unwrap(), true);
-    *c_clone.lock().unwrap() = false;
+    assert_eq!(c_clone.load(Ordering::Relaxed), true);
+    c_clone.store(false, Ordering::Relaxed);
     even.complete();
-    assert_eq!(*c_clone.lock().unwrap(), false);
+    assert_eq!(c_clone.load(Ordering::Relaxed), false);
   }
 
   #[test]

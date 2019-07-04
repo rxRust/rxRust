@@ -40,6 +40,10 @@ In this case, we can use `multicast` convert an unicast stream to a multicast st
  o.fork().subscribe_err(|_| {println!("consume in second")}, |_:&()|{});
 ```
 
+### Scheduler
+
+For now, only a new thread scheduler has been implemented. 
+
 ## Runtime error propagating
 
  In rx_rs, every extension has two version method. One version is use when no runtime error will be propagated. This version receive an normal closure. The other is use when when will propagating runtime error, named `xxx_with_err`, and receive an closure that return an `Result` type, to detect if an runtime error occur. For example:

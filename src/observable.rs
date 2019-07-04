@@ -32,7 +32,7 @@ where
 
 impl<F, Item: 'static, Err: 'static> Multicast for Observable<F, Item, Err>
 where
-  F: RxFn(&mut dyn Observer<Item = Item, Err = Err>),
+  F: RxFn(&mut dyn Observer<Item = Item, Err = Err>) + Send + Sync,
 {
   type Output = Observable<Arc<F>, Item, Err>;
   fn multicast(self) -> Self::Output {
@@ -45,7 +45,7 @@ where
 
 impl<F, Item: 'static, Err: 'static> Fork for Observable<Arc<F>, Item, Err>
 where
-  F: RxFn(&mut dyn Observer<Item = Item, Err = Err>),
+  F: RxFn(&mut dyn Observer<Item = Item, Err = Err>) + Send + Sync,
 {
   type Output = Self;
   fn fork(&self) -> Self::Output {
@@ -59,17 +59,17 @@ where
 impl<F, Item: 'static, Err: 'static> ImplSubscribable
   for Observable<F, Item, Err>
 where
-  F: RxFn(&mut dyn Observer<Item = Item, Err = Err>),
+  F: RxFn(&mut dyn Observer<Item = Item, Err = Err>) + Send + Sync,
 {
   type Item = Item;
   type Err = Err;
 
   fn subscribe_return_state(
     self,
-    next: impl Fn(&Self::Item) -> OState<Self::Err> + 'static,
-    error: Option<impl Fn(&Self::Err) + 'static>,
-    complete: Option<impl Fn() + 'static>,
-  ) -> Box<dyn Subscription> {
+    next: impl Fn(&Self::Item) -> OState<Self::Err> + Send + Sync + 'static,
+    error: Option<impl Fn(&Self::Err) + Send + Sync + 'static>,
+    complete: Option<impl Fn() + Send + Sync + 'static>,
+  ) -> Box<dyn Subscription + Send + Sync> {
     let mut subscriber = Subscriber::new(next);
     if error.is_some() {
       subscriber.on_error(error.unwrap())

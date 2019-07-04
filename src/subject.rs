@@ -1,16 +1,19 @@
 use crate::prelude::*;
 use std::marker::PhantomData;
-use std::sync::{Arc, Mutex};
+use std::sync::{
+  atomic::{AtomicBool, Ordering},
+  Arc, Mutex,
+};
 
 #[derive(Default)]
 pub struct Subject<Item, Err> {
   cbs: Arc<Mutex<Vec<RefPublisher<Item, Err>>>>,
-  stopped: Arc<Mutex<bool>>,
+  stopped: Arc<AtomicBool>,
   _p: PhantomData<(Item, Err)>,
 }
 
 type RefPublisher<Item, Err> =
-  Arc<Mutex<Box<dyn Publisher<Item = Item, Err = Err>>>>;
+  Arc<Mutex<Box<dyn Publisher<Item = Item, Err = Err> + Send + Sync>>>;
 
 impl<'a, T, E> Clone for Subject<T, E> {
   fn clone(&self) -> Self {
@@ -31,7 +34,7 @@ impl<Item: 'static, Err: 'static> ImplSubscribable for Subject<Item, Err> {
     next: impl Fn(&Self::Item) -> OState<Self::Err> + Send + 'static,
     error: Option<impl Fn(&Self::Err) + Send + 'static>,
     complete: Option<impl Fn() + Send + 'static>,
-  ) -> Box<dyn Subscription> {
+  ) -> Box<dyn Subscription + Send + Sync> {
     let mut subscriber = Subscriber::new(next);
     if error.is_some() {
       subscriber.on_error(error.unwrap());
@@ -40,7 +43,7 @@ impl<Item: 'static, Err: 'static> ImplSubscribable for Subject<Item, Err> {
       subscriber.on_complete(complete.unwrap());
     }
 
-    let subscriber: Box<dyn Publisher<Item = Item, Err = Err>> =
+    let subscriber: Box<dyn Publisher<Item = Item, Err = Err> + Send + Sync> =
       Box::new(subscriber);
     let subscriber = Arc::new(Mutex::new(subscriber));
     self.cbs.lock().unwrap().push(subscriber.clone());
@@ -63,15 +66,13 @@ impl<'a, Item: 'a, Err: 'a> Subject<Item, Err> {
   pub fn new() -> Self {
     Subject {
       cbs: Arc::new(Mutex::new(vec![])),
-      stopped: Arc::new(Mutex::new(false)),
+      stopped: Arc::new(AtomicBool::new(false)),
       _p: PhantomData,
     }
   }
 }
 
-impl<Item, Err> Subscription
-  for Arc<Mutex<Box<dyn Publisher<Item = Item, Err = Err>>>>
-{
+impl<Item, Err> Subscription for RefPublisher<Item, Err> {
   #[inline]
   fn unsubscribe(&mut self) { self.lock().unwrap().unsubscribe(); }
 }
@@ -82,7 +83,7 @@ impl<T, E> Observer for Subject<T, E> {
   type Err = E;
 
   fn next(&self, v: &Self::Item) -> OState<Self::Err> {
-    if *self.stopped.lock().unwrap() {
+    if self.stopped.load(Ordering::Relaxed) {
       return OState::Complete;
     };
     let mut publishers = self.cbs.lock().unwrap();
@@ -108,7 +109,7 @@ impl<T, E> Observer for Subject<T, E> {
   }
 
   fn complete(&mut self) {
-    if *self.stopped.lock().unwrap() {
+    if self.stopped.load(Ordering::Relaxed) {
       return;
     };
     let mut publishers = self.cbs.lock().unwrap();
@@ -117,11 +118,11 @@ impl<T, E> Observer for Subject<T, E> {
     });
     publishers.clear();
 
-    *self.stopped.lock().unwrap() = true;
+    self.stopped.store(true, Ordering::Relaxed);
   }
 
   fn error(&mut self, err: &Self::Err) {
-    if *self.stopped.lock().unwrap() {
+    if self.stopped.load(Ordering::Relaxed) {
       return;
     };
     let mut publishers = self.cbs.lock().unwrap();
@@ -129,10 +130,10 @@ impl<T, E> Observer for Subject<T, E> {
       subscriber.lock().unwrap().error(err);
     });
     publishers.clear();
-    *self.stopped.lock().unwrap() = true;
+    self.stopped.store(true, Ordering::Relaxed);
   }
 
-  fn is_stopped(&self) -> bool { *self.stopped.lock().unwrap() }
+  fn is_stopped(&self) -> bool { self.stopped.load(Ordering::Relaxed) }
 }
 
 #[test]
@@ -206,7 +207,7 @@ fn return_complete_state() {
     error,
     Some(Box::new(move || {
       let mut v = cc.lock().unwrap();
-      *v = *v + 1;
+      *v += 1;
     })),
   );
 
