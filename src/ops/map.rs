@@ -87,7 +87,7 @@ where
     next: impl Fn(&Self::Item) -> OState<Self::Err> + Send + Sync + 'static,
     error: Option<impl Fn(&Self::Err) + Send + Sync + 'static>,
     complete: Option<impl Fn() + Send + Sync + 'static>,
-  ) -> Box<dyn Subscription> {
+  ) -> Box<dyn Subscription + Send + Sync> {
     let map = self.func;
     self.source.subscribe_return_state(
       move |v| next(&map.call((v,))),
@@ -143,7 +143,7 @@ where
     next: impl Fn(&Self::Item) -> OState<Self::Err> + Send + Sync + 'static,
     error: Option<impl Fn(&Self::Err) + Send + Sync + 'static>,
     complete: Option<impl Fn() + Send + Sync + Sync + 'static>,
-  ) -> Box<dyn Subscription> {
+  ) -> Box<dyn Subscription + Send + Sync> {
     let map = self.func;
     self.source.subscribe_return_state(
       move |v| match map.call((v,)) {
@@ -202,7 +202,7 @@ where
     next: impl Fn(&Self::Item) -> OState<Self::Err> + Send + Sync + 'static,
     error: Option<impl Fn(&Self::Err) + Send + Sync + 'static>,
     complete: Option<impl Fn() + Send + Sync + 'static>,
-  ) -> Box<dyn Subscription> {
+  ) -> Box<dyn Subscription + Send + Sync> {
     let map = self.func;
     self.source.subscribe_return_state(
       move |v| next(&map.call((v,))),
@@ -258,7 +258,7 @@ where
     next: impl Fn(&Self::Item) -> OState<Self::Err> + Send + Sync + 'static,
     error: Option<impl Fn(&Self::Err) + Send + Sync + 'static>,
     complete: Option<impl Fn() + Send + Sync + 'static>,
-  ) -> Box<dyn Subscription> {
+  ) -> Box<dyn Subscription + Send + Sync> {
     let map = self.func;
     self.source.subscribe_return_state(
       move |v| match map.call((v,)) {

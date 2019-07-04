@@ -55,7 +55,7 @@ where
     next: impl Fn(&Self::Item) -> OState<Self::Err> + Send + Sync + 'static,
     error: Option<impl Fn(&Self::Err) + Send + Sync + 'static>,
     complete: Option<impl Fn() + Send + Sync + 'static>,
-  ) -> Box<dyn Subscription> {
+  ) -> Box<dyn Subscription + Send + Sync> {
     let hit = Mutex::new(0);
     let count = self.count;
     self.source.subscribe_return_state(
@@ -114,22 +114,25 @@ where
 mod test {
   use super::Take;
   use crate::prelude::*;
-  use std::sync::{Arc, Mutex};
+  use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex,
+  };
 
   #[test]
   fn base_function() {
-    let completed = Arc::new(Mutex::new(false));
+    let completed = Arc::new(AtomicBool::new(false));
     let next_count = Arc::new(Mutex::new(0));
     let c_completed = completed.clone();
     let c_next_count = next_count.clone();
 
     observable::from_range(0..100).take(5).subscribe_complete(
       move |_| *next_count.lock().unwrap() += 1,
-      move || *completed.lock().unwrap() = true,
+      move || completed.store(true, Ordering::Relaxed),
     );
 
     assert_eq!(*c_next_count.lock().unwrap(), 5);
-    assert_eq!(*c_completed.lock().unwrap(), true);
+    assert_eq!(c_completed.load(Ordering::Relaxed), true);
   }
 
   #[test]

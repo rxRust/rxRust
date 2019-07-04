@@ -13,6 +13,22 @@ pub struct Subscriber<Item, Err, ON, OE, OC> {
   _v: PhantomData<(Item, Err)>,
 }
 
+unsafe impl<Item, Err, ON, OE, OC> Send for Subscriber<Item, Err, ON, OE, OC>
+where
+  ON: Send,
+  OE: Send,
+  OC: Send,
+{
+}
+
+unsafe impl<Item, Err, ON, OE, OC> Sync for Subscriber<Item, Err, ON, OE, OC>
+where
+  ON: Send,
+  OE: Send,
+  OC: Send,
+{
+}
+
 impl<Item, Err, ON, OE, OC> Subscriber<Item, Err, ON, OE, OC> {
   pub fn new(on_next: ON) -> Self {
     Subscriber {

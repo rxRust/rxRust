@@ -3,7 +3,10 @@ use crate::{
   prelude::*,
 };
 use std::borrow::Borrow;
-use std::sync::{Arc, Mutex};
+use std::sync::{
+  atomic::{AtomicBool, Ordering},
+  Arc,
+};
 
 /// emit only the first item emitted by an Observable
 pub trait First {
@@ -25,7 +28,7 @@ pub trait FirstOr {
   {
     FirstOrOp {
       source: self.first(),
-      default: default,
+      default,
       passed: false,
     }
   }
@@ -51,20 +54,20 @@ where
     next: impl Fn(&Self::Item) -> OState<Self::Err> + Send + Sync + 'static,
     error: Option<impl Fn(&Self::Err) + Send + Sync + 'static>,
     complete: Option<impl Fn() + Send + Sync + 'static>,
-  ) -> Box<dyn Subscription> {
+  ) -> Box<dyn Subscription + Send + Sync> {
     let next = Arc::new(next);
     let c_next = next.clone();
     let default = self.default;
-    let passed = Arc::new(Mutex::new(self.passed));
+    let passed = Arc::new(AtomicBool::new(self.passed));
     let c_passed = passed.clone();
     self.source.subscribe_return_state(
       move |v| {
-        *passed.lock().unwrap() = true;
+        passed.store(true, Ordering::Relaxed);
         c_next(v)
       },
       error,
       Some(move || {
-        if *c_passed.lock().unwrap() == false {
+        if !c_passed.load(Ordering::Relaxed) {
           next(default.borrow());
         }
         if let Some(ref comp) = complete {
@@ -109,27 +112,30 @@ where
 mod test {
   use super::{First, FirstOr};
   use crate::prelude::*;
-  use std::sync::{Arc, Mutex};
+  use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex,
+  };
 
   #[test]
   fn first() {
-    let completed = Arc::new(Mutex::new(false));
+    let completed = Arc::new(AtomicBool::new(false));
     let next_count = Arc::new(Mutex::new(0));
     let c_next_count = next_count.clone();
     let c_completed = completed.clone();
 
     observable::from_range(0..2).first().subscribe_complete(
       move |_| *next_count.lock().unwrap() += 1,
-      move || *completed.lock().unwrap() = true,
+      move || completed.store(true, Ordering::Relaxed),
     );
 
-    assert_eq!(*c_completed.lock().unwrap(), true);
+    assert_eq!(c_completed.load(Ordering::Relaxed), true);
     assert_eq!(*c_next_count.lock().unwrap(), 1);
   }
 
   #[test]
   fn first_or() {
-    let completed = Arc::new(Mutex::new(false));
+    let completed = Arc::new(AtomicBool::new(false));
     let next_count = Arc::new(Mutex::new(0));
     let c_completed = completed.clone();
     let c_next_count = next_count.clone();
@@ -140,13 +146,13 @@ mod test {
       .first_or(100)
       .subscribe_complete(
         move |_| *next_count.lock().unwrap() += 1,
-        move || *completed.lock().unwrap() = true,
+        move || completed.store(true, Ordering::Relaxed),
       );
 
     assert_eq!(*c_next_count.lock().unwrap(), 1);
-    assert_eq!(*c_completed.lock().unwrap(), true);
+    assert_eq!(c_completed.load(Ordering::Relaxed), true);
 
-    *c_completed.lock().unwrap() = false;
+    c_completed.store(false, Ordering::Relaxed);
     let completed = c_completed.clone();
     let v = Arc::new(Mutex::new(0));
     let c_v = v.clone();
@@ -156,10 +162,10 @@ mod test {
       .first_or(100)
       .subscribe_complete(
         move |value| *v.lock().unwrap() = *value,
-        move || *completed.lock().unwrap() = true,
+        move || completed.store(true, Ordering::Relaxed),
       );
 
-    assert_eq!(*c_completed.lock().unwrap(), true);
+    assert_eq!(c_completed.load(Ordering::Relaxed), true);
     assert_eq!(*c_v.lock().unwrap(), 100);
   }
 
