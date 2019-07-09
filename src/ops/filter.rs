@@ -8,17 +8,14 @@ use crate::prelude::*;
 /// use std::cell::RefCell;
 /// use std::rc::Rc;
 ///
-/// let subject = Subject::<'_, _, ()>::new();
 /// let coll = Rc::new(RefCell::new(vec![]));
 /// let coll_clone = coll.clone();
 ///
-/// subject.clone().filter(|v| *v % 2 == 0).subscribe(move |v| {
-///    coll_clone.borrow_mut().push(*v);
-/// });
-
-/// (0..10).into_iter().for_each(|v| {
-///    subject.next(&v);
-/// });
+/// observable::from_iter::<'_, _, _, ()>(0..10)
+///   .filter(|v| *v % 2 == 0)
+///   .subscribe(move |v| {
+///      coll_clone.borrow_mut().push(*v);
+///   });
 
 /// // only even numbers received.
 /// assert_eq!(coll.borrow().clone(), vec![0, 2, 4, 6, 8]);
@@ -79,14 +76,20 @@ where
   type Item = S::Item;
   type Unsubscribable = S::Unsubscribable;
 
-  fn subscribe_return_state<N>(self, next: N) -> Self::Unsubscribable
-  where
-    N: Fn(&Self::Item) -> OState<Self::Err> + 'a,
-  {
+  fn subscribe_return_state(
+    self,
+    next: impl Fn(&Self::Item) -> OState<Self::Err> + 'a,
+    error: Option<impl Fn(&Self::Err) + 'a>,
+    complete: Option<impl Fn() + 'a>,
+  ) -> Self::Unsubscribable {
     let filter = self.filter;
-    self.source.subscribe_return_state(move |v| {
-      if filter(v) { next(v) } else { OState::Next }
-    })
+    self.source.subscribe_return_state(
+      move |v| {
+        if filter(v) { next(v) } else { OState::Next }
+      },
+      error,
+      complete,
+    )
   }
 }
 
@@ -99,14 +102,15 @@ where
   type Item = S::Item;
   type Unsubscribable = S::Unsubscribable;
 
-  fn subscribe_return_state<N>(self, next: N) -> Self::Unsubscribable
-  where
-    N: Fn(&Self::Item) -> OState<Self::Err> + 'a,
-  {
+  fn subscribe_return_state(
+    self,
+    next: impl Fn(&Self::Item) -> OState<Self::Err> + 'a,
+    error: Option<impl Fn(&Self::Err) + 'a>,
+    complete: Option<impl Fn() + 'a>,
+  ) -> Self::Unsubscribable {
     let filter = self.filter;
-    self
-      .source
-      .subscribe_return_state(move |v| match filter(&v) {
+    self.source.subscribe_return_state(
+      move |v| match filter(&v) {
         Ok(b) => {
           if b {
             next(v)
@@ -115,7 +119,10 @@ where
           }
         }
         Err(e) => OState::Err(e),
-      })
+      },
+      error,
+      complete,
+    )
   }
 }
 
@@ -129,8 +136,7 @@ fn runtime_error() {
   subject
     .clone()
     .filter_with_err(|_| Err("runtime error"))
-    .subscribe(|_| {})
-    .on_error(|err| panic!(*err));
+    .subscribe_err(|_| {}, |err| panic!(*err));
 
   subject.next(&1);
 }
@@ -145,8 +151,7 @@ fn pass_error() {
   subject
     .clone()
     .filter(|_: &&i32| true)
-    .subscribe(|_| {})
-    .on_error(|err| panic!(*err));
+    .subscribe_err(|_| {}, |err| panic!(*err));
 
   subject.error(&"");
 }

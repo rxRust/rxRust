@@ -45,27 +45,33 @@ where
   type Err = S::Err;
   type Unsubscribable = S::Unsubscribable;
 
-  fn subscribe_return_state<N>(self, next: N) -> Self::Unsubscribable
-  where
-    N: 'a + Fn(&Self::Item) -> OState<Self::Err>,
-  {
+  fn subscribe_return_state(
+    self,
+    next: impl Fn(&Self::Item) -> OState<Self::Err> + 'a,
+    error: Option<impl Fn(&Self::Err) + 'a>,
+    complete: Option<impl Fn() + 'a>,
+  ) -> Self::Unsubscribable {
     let next = Rc::new(next);
     let c_next = next.clone();
     let Self { source, default } = self;
     let default = Rc::new(RefCell::new(default));
     let c_default = default.clone();
-    let mut subscription = source.subscribe_return_state(move |v| {
-      c_default.borrow_mut().take();
-      c_next(v)
-    });
-
-    subscription.on_complete(move || {
-      let default = default.borrow_mut().take();
-      if let Some(d) = default {
-        next(&d);
-      }
-    });
-    subscription
+    source.subscribe_return_state(
+      move |v| {
+        c_default.borrow_mut().take();
+        c_next(v)
+      },
+      error,
+      Some(move || {
+        let default = default.borrow_mut().take();
+        if let Some(d) = default {
+          next(&d);
+        }
+        if let Some(ref comp) = complete {
+          comp();
+        }
+      }),
+    )
   }
 }
 
@@ -81,11 +87,10 @@ mod test {
     let next_count = Cell::new(0);
 
     let numbers = Subject::<'_, _, ()>::new();
-    numbers
-      .clone()
-      .first()
-      .subscribe(|_| next_count.set(next_count.get() + 1))
-      .on_complete(|| completed.set(true));
+    numbers.clone().first().subscribe_complete(
+      |_| next_count.set(next_count.get() + 1),
+      || completed.set(true),
+    );
 
     (0..2).for_each(|v| {
       numbers.next(&v);
@@ -102,15 +107,10 @@ mod test {
     let v = Cell::new(0);
 
     let mut numbers = Subject::<'_, i32, ()>::new();
-    numbers
-      .clone()
-      .first_or(100)
-      .subscribe(|_| {
-        next_count.set(next_count.get() + 1);
-      })
-      .on_complete(|| {
-        completed.set(true);
-      });
+    numbers.clone().first_or(100).subscribe_complete(
+      |_| next_count.set(next_count.get() + 1),
+      || completed.set(true),
+    );
 
     // normal pass value
     (0..2).for_each(|v| {
@@ -123,8 +123,7 @@ mod test {
     numbers
       .clone()
       .first_or(100)
-      .subscribe(|value| v.set(*value))
-      .on_complete(|| completed.set(true));
+      .subscribe_complete(|value| v.set(*value), || completed.set(true));
 
     numbers.complete();
     assert_eq!(completed.get(), true);

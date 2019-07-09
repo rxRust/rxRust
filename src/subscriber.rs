@@ -7,22 +7,25 @@ use std::marker::PhantomData;
 ///
 pub struct Subscriber<'a, Item, E> {
   stopped: bool,
+  // todo: should unbox the closure when rust support return impl trait in
+  // trait method
   on_next: Box<dyn Fn(&Item) -> OState<E> + 'a>,
   on_err: Option<Box<dyn Fn(&E) + 'a>>,
   on_complete: Option<Box<dyn Fn() + 'a>>,
   _v: PhantomData<Item>,
 }
 
-impl<'a, Item, Err> Subscriber<'a, Item, Err> {
-  pub fn new<ON>(next: ON) -> Self
-  where
-    ON: Fn(&Item) -> OState<Err> + 'a,
-  {
+impl<'a, Item, E> Subscriber<'a, Item, E> {
+  pub fn new(
+    next: impl Fn(&Item) -> OState<E> + 'a,
+    error: Option<impl Fn(&E) + 'a>,
+    complete: Option<impl Fn() + 'a>,
+  ) -> Self {
     Subscriber {
       stopped: false,
       on_next: Box::new(next),
-      on_err: None,
-      on_complete: None,
+      on_err: error.map(|e| Box::new(e) as Box<dyn Fn(&E)>),
+      on_complete: complete.map(|c| Box::new(c) as Box<dyn Fn() + 'a>),
       _v: PhantomData,
     }
   }
@@ -64,31 +67,7 @@ impl<'a, Item, Err> Observer for Subscriber<'a, Item, Err> {
   }
 }
 
-impl<'a, Item, Err> Subscription<'a> for Subscriber<'a, Item, Err> {
-  type Err = Err;
-  fn on_error<E>(&mut self, on_err: E) -> &mut Self
-  where
-    E: Fn(&Self::Err) + 'a,
-  {
-    if self.on_err.is_none() {
-      self.on_err.replace(Box::new(on_err));
-    } else {
-      panic!("Subscriber can only add only once `on_error` callback")
-    }
-    self
-  }
-  fn on_complete<C>(&mut self, on_comp: C) -> &mut Self
-  where
-    C: Fn() + 'a,
-  {
-    if self.on_complete.is_none() {
-      self.on_complete.replace(Box::new(on_comp));
-    } else {
-      panic!("Subscriber can only add only once `on_error` callback")
-    }
-    self
-  }
-
+impl<'a, Item, Err> Subscription for Subscriber<'a, Item, Err> {
   fn unsubscribe(&mut self) { self.stopped = true; }
 }
 
@@ -99,18 +78,18 @@ mod test {
 
   macro_rules! create_subscriber {
     ($next:ident, $err: ident, $complete: ident) => {{
-      let mut subscriber = Subscriber::new(|_v: &i32| {
-        $next.set($next.get() + 1);
-        OState::Next
-      });
-      subscriber
-        .on_error(|_: &()| {
+      Subscriber::new(
+        |_v: &i32| {
+          $next.set($next.get() + 1);
+          OState::Next
+        },
+        Some(|_: &()| {
           $err.set($err.get() + 1);
-        })
-        .on_complete(|| {
+        }),
+        Some(|| {
           $complete.set($complete.get() + 1);
-        });
-      subscriber
+        }),
+      )
     }};
   }
 

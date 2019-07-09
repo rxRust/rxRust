@@ -42,57 +42,18 @@ where
 {
   type Item = Item;
   type Err = Err;
-  type Unsubscribable = ObservableSubscription<'a, Item, Err, F>;
+  type Unsubscribable = Subscriber<'a, Item, Err>;
 
-  fn subscribe_return_state<N>(self, next: N) -> Self::Unsubscribable
-  where
-    N: 'a + Fn(&Self::Item) -> OState<Self::Err>,
-  {
-    let subscriber = Subscriber::new(next);
-    ObservableSubscription {
-      subscribe: Some(self.subscribe),
-      subscriber,
-    }
+  fn subscribe_return_state(
+    self,
+    next: impl Fn(&Self::Item) -> OState<Self::Err> + 'a,
+    error: Option<impl Fn(&Self::Err) + 'a>,
+    complete: Option<impl Fn() + 'a>,
+  ) -> Self::Unsubscribable {
+    let mut subscriber = Subscriber::new(next, error, complete);
+    (self.subscribe)(&mut subscriber);
+    subscriber
   }
-}
-
-pub struct ObservableSubscription<'a, Item, Err, F>
-where
-  F: FnOnce(&mut Subscriber<'a, Item, Err>),
-{
-  subscriber: Subscriber<'a, Item, Err>,
-  subscribe: Option<F>,
-}
-
-impl<'a, F, Item, Err> Subscription<'a>
-  for ObservableSubscription<'a, Item, Err, F>
-where
-  F: FnOnce(&mut Subscriber<'a, Item, Err>),
-{
-  type Err = Err;
-  fn on_error<E>(&mut self, err: E) -> &mut Self
-  where
-    E: Fn(&Self::Err) + 'a,
-  {
-    self.subscriber.on_error(err);
-    self
-  }
-  fn on_complete<C>(&mut self, complete: C) -> &mut Self
-  where
-    C: Fn() + 'a,
-  {
-    self.subscriber.on_complete(complete);;
-    self
-  }
-
-  fn unsubscribe(&mut self) { self.subscriber.unsubscribe(); }
-}
-
-impl<'a, F, Item, Err> Drop for ObservableSubscription<'a, Item, Err, F>
-where
-  F: FnOnce(&mut Subscriber<'a, Item, Err>),
-{
-  fn drop(&mut self) { (self.subscribe.take().unwrap())(&mut self.subscriber); }
 }
 
 #[cfg(test)]
@@ -114,13 +75,11 @@ mod test {
       subscriber.next(&3);
       subscriber.error(&"never dispatch error");
     })
-    .subscribe(|_| {
-      next.set(next.get() + 1);
-    })
-    .on_complete(|| {
-      complete.set(complete.get() + 1);
-    })
-    .on_error(|_: &&str| err.set(err.get() + 1));
+    .subscribe_err_complete(
+      |_| next.set(next.get() + 1),
+      |_: &&str| err.set(err.get() + 1),
+      || complete.set(complete.get() + 1),
+    );
 
     assert_eq!(next.get(), 3);
     assert_eq!(complete.get(), 1);

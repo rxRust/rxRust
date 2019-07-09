@@ -79,12 +79,16 @@ where
   type Err = S::Err;
   type Unsubscribable = S::Unsubscribable;
 
-  fn subscribe_return_state<N>(self, next: N) -> Self::Unsubscribable
-  where
-    N: 'a + Fn(&Self::Item) -> OState<Self::Err>,
-  {
+  fn subscribe_return_state(
+    self,
+    next: impl Fn(&Self::Item) -> OState<Self::Err> + 'a,
+    error: Option<impl Fn(&Self::Err) + 'a>,
+    complete: Option<impl Fn() + 'a>,
+  ) -> Self::Unsubscribable {
     let func = self.func;
-    self.source.subscribe_return_state(move |v| next(&func(v)))
+    self
+      .source
+      .subscribe_return_state(move |v| next(&func(v)), error, complete)
   }
 }
 
@@ -102,15 +106,21 @@ where
   type Err = S::Err;
   type Unsubscribable = S::Unsubscribable;
 
-  fn subscribe_return_state<N>(self, next: N) -> Self::Unsubscribable
-  where
-    N: 'a + Fn(&Self::Item) -> OState<Self::Err>,
-  {
+  fn subscribe_return_state(
+    self,
+    next: impl Fn(&Self::Item) -> OState<Self::Err> + 'a,
+    error: Option<impl Fn(&Self::Err) + 'a>,
+    complete: Option<impl Fn() + 'a>,
+  ) -> Self::Unsubscribable {
     let func = self.func;
-    self.source.subscribe_return_state(move |v| match func(v) {
-      Ok(v) => next(&v),
-      Err(e) => OState::Err(e),
-    })
+    self.source.subscribe_return_state(
+      move |v| match func(v) {
+        Ok(v) => next(&v),
+        Err(e) => OState::Err(e),
+      },
+      error,
+      complete,
+    )
   }
 }
 
@@ -128,12 +138,16 @@ where
   type Err = S::Err;
   type Unsubscribable = S::Unsubscribable;
 
-  fn subscribe_return_state<N>(self, next: N) -> Self::Unsubscribable
-  where
-    N: 'a + Fn(&Self::Item) -> OState<Self::Err>,
-  {
+  fn subscribe_return_state(
+    self,
+    next: impl Fn(&Self::Item) -> OState<Self::Err> + 'a,
+    error: Option<impl Fn(&Self::Err) + 'a>,
+    complete: Option<impl Fn() + 'a>,
+  ) -> Self::Unsubscribable {
     let func = self.func;
-    self.source.subscribe_return_state(move |v| next(&func(v)))
+    self
+      .source
+      .subscribe_return_state(move |v| next(&func(v)), error, complete)
   }
 }
 
@@ -151,15 +165,21 @@ where
   type Err = S::Err;
   type Unsubscribable = S::Unsubscribable;
 
-  fn subscribe_return_state<N>(self, next: N) -> Self::Unsubscribable
-  where
-    N: 'a + Fn(&Self::Item) -> OState<Self::Err>,
-  {
+  fn subscribe_return_state(
+    self,
+    next: impl Fn(&Self::Item) -> OState<Self::Err> + 'a,
+    error: Option<impl Fn(&Self::Err) + 'a>,
+    complete: Option<impl Fn() + 'a>,
+  ) -> Self::Unsubscribable {
     let func = self.func;
-    self.source.subscribe_return_state(move |v| match func(v) {
-      Ok(v) => next(&v),
-      Err(e) => OState::Err(e),
-    })
+    self.source.subscribe_return_state(
+      move |v| match func(v) {
+        Ok(v) => next(&v),
+        Err(e) => OState::Err(e),
+      },
+      error,
+      complete,
+    )
   }
 }
 
@@ -213,8 +233,7 @@ mod test {
     subject
       .clone()
       .map_with_err(|_| Err("should panic "))
-      .subscribe(|_: &i32| {})
-      .on_error(|err| panic!(*err));
+      .subscribe_err(|_: &i32| {}, |err| panic!(*err));
 
     subject.next(&1);
   }
@@ -227,8 +246,7 @@ mod test {
     subject
       .clone()
       .map_return_ref_with_err(|_| Err("should panic "))
-      .subscribe(|_: &i32| {})
-      .on_error(|err| panic!(*err));
+      .subscribe_err(|_: &i32| {}, |err| panic!(*err));
 
     subject.next(&1);
   }

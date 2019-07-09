@@ -52,30 +52,36 @@ where
   type Err = S::Err;
   type Unsubscribable = S::Unsubscribable;
 
-  fn subscribe_return_state<N>(self, next: N) -> Self::Unsubscribable
-  where
-    N: 'a + Fn(&Self::Item) -> OState<Self::Err>,
-  {
+  fn subscribe_return_state(
+    self,
+    next: impl Fn(&Self::Item) -> OState<Self::Err> + 'a,
+    error: Option<impl Fn(&Self::Err) + 'a>,
+    complete: Option<impl Fn() + 'a>,
+  ) -> Self::Unsubscribable {
     let total = self.count;
     let count = std::cell::Cell::new(0);
-    self.source.subscribe_return_state(move |v| {
-      if count.get() < total {
-        count.set(count.get() + 1);
-        let os = next(v);
-        match os {
-          OState::Next => {
-            if count.get() == total {
-              OState::Complete
-            } else {
-              os
+    self.source.subscribe_return_state(
+      move |v| {
+        if count.get() < total {
+          count.set(count.get() + 1);
+          let os = next(v);
+          match os {
+            OState::Next => {
+              if count.get() == total {
+                OState::Complete
+              } else {
+                os
+              }
             }
+            _ => os,
           }
-          _ => os,
+        } else {
+          OState::Complete
         }
-      } else {
-        OState::Complete
-      }
-    })
+      },
+      error,
+      complete,
+    )
   }
 }
 
@@ -92,16 +98,12 @@ mod test {
     let completed = Cell::new(false);
     let next_count = Cell::new(0);
 
-    let numbers = Subject::<'_, _, ()>::new();
-    numbers
-      .clone()
+    observable::from_iter::<'_, _, _, ()>(0..10)
       .take(5)
-      .subscribe(|_| next_count.set(next_count.get() + 1))
-      .on_complete(|| completed.set(true));
-
-    (0..10).for_each(|v| {
-      numbers.next(&v);
-    });
+      .subscribe_complete(
+        |_| next_count.set(next_count.get() + 1),
+        || completed.set(true),
+      );
 
     assert_eq!(completed.get(), true);
     assert_eq!(next_count.get(), 5);
