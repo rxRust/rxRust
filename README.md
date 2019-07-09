@@ -7,24 +7,18 @@ rx_rs ia a Rust implementation of Reactive Extensions. Which is almost zero cost
 ```rust
 use rx_rs::{ ops::{ Filter, Merge }, prelude::*};
 
-let mut numbers = Subject::new();
+let mut numbers = observable::from_iter(0..10).broadcast();
 // crate a even stream by filter
 let even = numbers.clone().filter(|v| *v % 2 == 0);
 // crate an odd stream by filter
 let odd = numbers.clone().filter(|v| *v % 2 != 0);
 
 // merge odd and even stream again
-let mut merged = even.merge(odd);
-
-// attach observers
-let subscription = merged
-  .subscribe(|v| print!("{} ", v))
-  .on_error(|e| println!("Error because of: {}", e));
-
-// shot numbers
-(0..10).into_iter().for_each(|v| {
-    numbers.next(&v);
-});
+even.merge(odd)
+  .subscribe_err(
+    |v| print!("{} ", v, ),
+    |e| println!("Error because of: {}", e)
+  );
 // "0 1 2 3 4 5 6 7 8 9" will be printed.
 
 numbers.error(&"just trigger an error.");
@@ -54,8 +48,7 @@ subject.clone()
     if i % 2 == 0 {Ok(i*2)}
     else {Err("odd number should never be pass to here")}
   })
-  .subscribe(|v| print!("{} | ", v))
-  .on_error(|err|{println!("{} | ", err)});
+  .subscribe_err(|v| print!("{} | ", v), |err|{println!("{} | ", err)});
 
 subject.next(&0);
 subject.next(&1);

@@ -21,7 +21,7 @@ use std::rc::Rc;
 /// merged.subscribe(|v| println!("{} ", v));
 /// ```
 pub trait Merge<'a, T> {
-  type Err;
+  type Err: 'a;
   fn merge<S>(self, o: S) -> MergeOp<Self, S>
   where
     Self: Sized,
@@ -46,7 +46,7 @@ pub struct MergeOp<S1, S2> {
   source2: S2,
 }
 
-impl<'a, T, E, S1: 'a, S2: 'a> Subscribable<'a> for MergeOp<S1, S2>
+impl<'a, T, E: 'a, S1: 'a, S2: 'a> Subscribable<'a> for MergeOp<S1, S2>
 where
   S1: Subscribable<'a, Item = T, Err = E>,
   S2: Subscribable<'a, Item = T, Err = E>,
@@ -56,19 +56,56 @@ where
   type Unsubscribable =
     MergeSubscription<S1::Unsubscribable, S2::Unsubscribable>;
 
-  fn subscribe_return_state<N>(self, next: N) -> Self::Unsubscribable
-  where
-    N: 'a + Fn(&Self::Item) -> OState<Self::Err>,
-  {
+  fn subscribe_return_state(
+    self,
+    next: impl Fn(&Self::Item) -> OState<Self::Err> + 'a,
+    error: Option<impl Fn(&Self::Err) + 'a>,
+    complete: Option<impl Fn() + 'a>,
+  ) -> Self::Unsubscribable {
     let next = Rc::new(next);
     let next_clone = next.clone();
 
-    let s1 = self.source1.subscribe(move |v| {
-      next(v);
-    });
-    let s2 = self.source2.subscribe(move |v| {
-      next_clone(v);
-    });
+    let stopped = Rc::new(Cell::new(false));
+    let error = error.map(Rc::new);
+    let complete = complete.map(Rc::new);
+
+    let on_error_factor = || {
+      error.clone().map(|err| {
+        let stopped = stopped.clone();
+        move |e: &_| {
+          if !stopped.get() {
+            err(e);
+            stopped.set(true);
+          }
+        }
+      })
+    };
+    let completed = Rc::new(Cell::new(false));
+    let on_complete_factor = || {
+      complete.clone().map(|comp| {
+        let stopped = stopped.clone();
+        let completed = completed.clone();
+        move || {
+          if !stopped.get() && completed.get() {
+            comp();
+            stopped.set(true);
+          } else {
+            completed.set(true);
+          }
+        }
+      })
+    };
+
+    let s1 = self.source1.subscribe_return_state(
+      move |v| next(v),
+      on_error_factor(),
+      on_complete_factor(),
+    );
+    let s2 = self.source2.subscribe_return_state(
+      move |v| next_clone(v),
+      on_error_factor(),
+      on_complete_factor(),
+    );
 
     MergeSubscription::new(s1, s2)
   }
@@ -91,63 +128,11 @@ impl<S1, S2> MergeSubscription<S1, S2> {
   }
 }
 
-impl<'a, S1: 'a, S2: 'a, E> Subscription<'a> for MergeSubscription<S1, S2>
+impl<'a, S1: 'a, S2: 'a> Subscription for MergeSubscription<S1, S2>
 where
-  S1: Subscription<'a, Err = E>,
-  S2: Subscription<'a, Err = E>,
+  S1: Subscription,
+  S2: Subscription,
 {
-  type Err = E;
-  fn on_error<OE>(&mut self, on_err: OE) -> &mut Self
-  where
-    OE: Fn(&Self::Err) + 'a,
-  {
-    let on_err = Rc::new(on_err);
-
-    let cb_err = on_err.clone();
-    let stopped = self.stopped.clone();
-    self.subscription1.on_error(move |e| {
-      if !stopped.get() {
-        cb_err(e);
-        stopped.set(true);
-      }
-    });
-
-    let stopped = self.stopped.clone();
-    self.subscription2.on_error(move |e| {
-      if !stopped.get() {
-        on_err(e);
-        stopped.set(true);
-      }
-    });
-    self
-  }
-  fn on_complete<C>(&mut self, complete: C) -> &mut Self
-  where
-    C: Fn() + 'a,
-  {
-    let c = Rc::new(complete);
-    let completed = Rc::new(Cell::new(false));
-
-    let completed_clone = completed.clone();
-    let c2 = c.clone();
-    self.subscription1.on_complete(move || {
-      if completed_clone.get() {
-        c2()
-      } else {
-        completed_clone.set(true)
-      }
-    });
-
-    self.subscription2.on_complete(move || {
-      if completed.get() {
-        c()
-      } else {
-        completed.set(true)
-      }
-    });
-    self
-  }
-
   fn unsubscribe(&mut self) {
     self.subscription1.unsubscribe();
     self.subscription2.unsubscribe();
@@ -218,13 +203,15 @@ mod test {
     even
       .clone()
       .merge(odd.clone())
-      .subscribe(|_: &()| {})
-      .on_complete(|| completed.set(true));
+      .subscribe_complete(|_: &()| {}, || completed.set(true));
 
     even.complete();
     assert_eq!(completed.get(), false);
     odd.complete();
     assert_eq!(completed.get(), true);
+    completed.set(false);
+    even.complete();
+    assert_eq!(completed.get(), false);
   }
 
   #[test]
@@ -234,12 +221,11 @@ mod test {
     let mut even = Subject::new();
     let mut odd = Subject::new();
 
-    even
-      .clone()
-      .merge(odd.clone())
-      .subscribe(|_: &()| {})
-      .on_complete(|| completed.set(completed.get() + 1))
-      .on_error(|_| error.set(error.get() + 1));
+    even.clone().merge(odd.clone()).subscribe_err_complete(
+      |_: &()| {},
+      |_| error.set(error.get() + 1),
+      || completed.set(completed.get() + 1),
+    );
 
     odd.error(&"");
     even.clone().error(&"");

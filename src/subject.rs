@@ -23,21 +23,31 @@ impl<'a, T, E> Clone for Subject<'a, T, E> {
   }
 }
 
-impl<'a, T: 'a, E: 'a> Subscribable<'a> for Subject<'a, T, E> {
+impl<'a, T: 'a, Err: 'a> Subscribable<'a> for Subject<'a, T, Err> {
   type Item = T;
-  type Err = E;
-  type Unsubscribable = SubjectSubscription<'a, T, E>;
+  type Err = Err;
+  type Unsubscribable = SubjectSubscription<'a, T, Err>;
 
-  fn subscribe_return_state<N>(self, next: N) -> Self::Unsubscribable
-  where
-    N: 'a + Fn(&Self::Item) -> OState<Self::Err>,
-  {
-    let next: Box<dyn Fn(&Self::Item) -> OState<E>> = Box::new(next);
-    let ptr = next.as_ref() as NextPtr<'a, T, E>;
+  fn subscribe_return_state(
+    self,
+    next: impl Fn(&Self::Item) -> OState<Self::Err> + 'a,
+    error: Option<impl Fn(&Self::Err) + 'a>,
+    complete: Option<impl Fn() + 'a>,
+  ) -> Self::Unsubscribable {
+    let on_next: Box<dyn Fn(&Self::Item) -> OState<Err>> = Box::new(next);
+    let on_error = error.map(|e| {
+      let e: Box<dyn Fn(&Self::Err)> = Box::new(e);
+      e
+    });
+    let on_complete = complete.map(|c| {
+      let c: Box<dyn Fn()> = Box::new(c);
+      c
+    });
+    let ptr = on_next.as_ref() as NextPtr<'a, T, Err>;
     let cbs = Callbacks {
-      on_next: next,
-      on_complete: None,
-      on_error: None,
+      on_next,
+      on_complete,
+      on_error,
     };
     self.cbs.borrow_mut().push(cbs);
 
@@ -47,7 +57,6 @@ impl<'a, T: 'a, E: 'a> Subscribable<'a> for Subject<'a, T, E> {
     }
   }
 }
-
 impl<'a, T: 'a, E: 'a> Subject<'a, T, E> {
   pub fn new() -> Self {
     Subject {
@@ -65,12 +74,17 @@ impl<'a, T: 'a, E: 'a> Subject<'a, T, E> {
     let for_next = broadcast.clone();
     let for_complete = broadcast.clone();
     let for_err = broadcast.clone();
-    stream
-      .subscribe(move |v| {
+    stream.subscribe_err_complete(
+      move |v| {
         for_next.next(v);
-      })
-      .on_complete(move || for_complete.clone().complete())
-      .on_error(move |err| for_err.clone().error(err));
+      },
+      move |err: &S::Err| {
+        for_err.clone().error(err);
+      },
+      move || {
+        for_complete.clone().complete();
+      },
+    );
 
     broadcast
   }
@@ -144,58 +158,8 @@ impl<'a, T, E> Clone for SubjectSubscription<'a, T, E> {
   }
 }
 
-impl<'a, T: 'a, E: 'a> Subscription<'a> for SubjectSubscription<'a, T, E> {
-  type Err = E;
-
+impl<'a, T: 'a, E: 'a> Subscription for SubjectSubscription<'a, T, E> {
   fn unsubscribe(&mut self) { self.source.remove_callback(self.callback); }
-
-  fn on_complete<C>(&mut self, complete: C) -> &mut Self
-  where
-    C: Fn() + 'a,
-  {
-    {
-      let mut coll = self.source.cbs.borrow_mut();
-      let cbs = coll
-        .iter_mut()
-        .find(|v| v.on_next.as_ref() as *const _ == self.callback);
-      if let Some(cbs) = cbs {
-        let old_complete = cbs.on_complete.take();
-        if let Some(o) = old_complete {
-          cbs.on_complete.replace(Box::new(move || {
-            o();
-            complete();
-          }));
-        } else {
-          cbs.on_complete.replace(Box::new(complete));
-        }
-      }
-    }
-    self
-  }
-
-  fn on_error<OE>(&mut self, err: OE) -> &mut Self
-  where
-    OE: Fn(&Self::Err) + 'a,
-  {
-    {
-      let mut coll = self.source.cbs.borrow_mut();
-      let cbs = coll
-        .iter_mut()
-        .find(|v| v.on_next.as_ref() as *const _ == self.callback);
-      if let Some(cbs) = cbs {
-        let old_error = cbs.on_error.take();
-        if let Some(o) = old_error {
-          cbs.on_error.replace(Box::new(move |e| {
-            o(&e);
-            err(&e);
-          }));
-        } else {
-          cbs.on_error.replace(Box::new(err));
-        }
-      }
-    }
-    self
-  }
 }
 
 #[test]
@@ -214,8 +178,7 @@ fn error() {
   let mut broadcast = Subject::new();
   broadcast
     .clone()
-    .subscribe(|_: &i32| {})
-    .on_error(|e: &&str| panic!(*e));
+    .subscribe_err(|_: &i32| {}, |e: &&'static str| panic!(*e));
   broadcast.next(&1);
 
   broadcast.error(&"should panic!");
@@ -225,10 +188,12 @@ fn error() {
 #[should_panic]
 fn runtime_error() {
   let broadcast = Subject::new();
-  broadcast
-    .clone()
-    .subscribe_return_state(|_| OState::Err("runtime error"))
-    .on_error(|e: &&str| panic!(*e));
+  let complete: Option<fn()> = None;
+  broadcast.clone().subscribe_return_state(
+    |_| OState::Err("runtime error"),
+    Some(Box::new(|e: &&'static str| panic!(*e))),
+    complete,
+  );
 
   broadcast.next(&1);
 }
@@ -237,10 +202,12 @@ fn runtime_error() {
 fn return_err_state() {
   let ec = std::cell::Cell::new(0);
   let broadcast = Subject::new();
-  broadcast
-    .clone()
-    .subscribe_return_state(|_| OState::Err("runtime error"))
-    .on_error(|_| ec.set(ec.get() + 1));
+  let complete: Option<fn()> = None;
+  broadcast.clone().subscribe_return_state(
+    |_| OState::Err("runtime error"),
+    Some(Box::new(|_: &_| ec.set(ec.get() + 1))),
+    complete,
+  );
 
   broadcast.next(&1);
   assert_eq!(ec.get(), 1);
@@ -252,45 +219,17 @@ fn return_err_state() {
 #[test]
 fn return_complete_state() {
   let cc = std::cell::Cell::new(0);
-  let broadcast = Subject::<'_, _, ()>::new();
-  broadcast
-    .clone()
-    .subscribe_return_state(|_| OState::Complete)
-    .on_complete(|| cc.set(cc.get() + 1));
+  let broadcast = Subject::new();
+  let error: Option<fn(&())> = None;
+  broadcast.clone().subscribe_return_state(
+    |_| OState::Complete,
+    error,
+    Some(Box::new(|| cc.set(cc.get() + 1))),
+  );
 
   broadcast.next(&1);
   assert_eq!(cc.get(), 1);
   // should stopped
   broadcast.next(&1);
   assert_eq!(cc.get(), 1);
-}
-
-#[test]
-fn mulit_on_error() {
-  let ec = std::cell::Cell::new(0);
-  let mut broadcast = Subject::new();
-  broadcast
-    .clone()
-    .subscribe(|_: &i32| {})
-    .on_error(|_| ec.set(ec.get() + 1))
-    .on_error(|_| ec.set(ec.get() + 1));
-
-  broadcast.error(&1);
-
-  assert_eq!(ec.get(), 2);
-}
-
-#[test]
-fn multi_on_complete() {
-  let cc = std::cell::Cell::new(0);
-  let mut broadcast = Subject::<'_, _, &str>::new();
-  broadcast
-    .clone()
-    .subscribe(|_: &i32| {})
-    .on_complete(|| cc.set(cc.get() + 1))
-    .on_complete(|| cc.set(cc.get() + 1));
-
-  broadcast.complete();
-
-  assert_eq!(cc.get(), 2);
 }
