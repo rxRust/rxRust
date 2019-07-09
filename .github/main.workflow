@@ -1,5 +1,5 @@
 workflow "Build and Publish on push" {
-  on = ["push", "pull_request"]
+  on = "pull_request"
   resolves = ["build-and-test"]
 }
 
