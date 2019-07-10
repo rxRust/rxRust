@@ -6,7 +6,7 @@ pub enum OState<E> {
   Err(E),
 }
 
-pub trait Subscribable<'a>: Sized {
+pub trait ImplSubscribable<'a>: Sized {
   /// The type of the elements being emitted.
   type Item;
   // The type of the error may propagating.
@@ -19,7 +19,9 @@ pub trait Subscribable<'a>: Sized {
     error: Option<impl Fn(&Self::Err) + 'a>,
     complete: Option<impl Fn() + 'a>,
   ) -> Self::Unsubscribable;
+}
 
+pub trait Subscriable<'a>: ImplSubscribable<'a> {
   /// Invokes an execution of an Observable and registers Observer handlers for
   /// notifications it will emit.
   ///
@@ -87,11 +89,6 @@ pub trait Subscribable<'a>: Sized {
       complete,
     )
   }
-
-  fn broadcast(self) -> Subject<'a, Self::Item, Self::Err>
-  where
-    Self: 'a,
-  {
-    Subject::from_stream(self)
-  }
 }
+
+impl<'a, S: ImplSubscribable<'a>> Subscriable<'a> for S {}

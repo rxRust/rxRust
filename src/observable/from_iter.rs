@@ -2,7 +2,7 @@ use crate::prelude::*;
 
 pub fn from_iter<'a, T: 'a, Item: 'a, Err: 'a>(
   iter: T,
-) -> impl Subscribable<'a, Item = Item, Err = Err>
+) -> impl ImplSubscribable<'a, Item = Item, Err = Err>
 where
   T: IntoIterator<Item = Item>,
 {

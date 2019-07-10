@@ -25,7 +25,7 @@ pub trait Merge<'a, T> {
   fn merge<S>(self, o: S) -> MergeOp<Self, S>
   where
     Self: Sized,
-    S: Subscribable<'a, Item = T, Err = Self::Err>,
+    S: ImplSubscribable<'a, Item = T, Err = Self::Err>,
   {
     MergeOp {
       source1: self,
@@ -36,7 +36,7 @@ pub trait Merge<'a, T> {
 
 impl<'a, T, O> Merge<'a, T> for O
 where
-  O: Subscribable<'a, Item = T>,
+  O: ImplSubscribable<'a, Item = T>,
 {
   type Err = O::Err;
 }
@@ -46,10 +46,10 @@ pub struct MergeOp<S1, S2> {
   source2: S2,
 }
 
-impl<'a, T, E: 'a, S1: 'a, S2: 'a> Subscribable<'a> for MergeOp<S1, S2>
+impl<'a, T, E: 'a, S1: 'a, S2: 'a> ImplSubscribable<'a> for MergeOp<S1, S2>
 where
-  S1: Subscribable<'a, Item = T, Err = E>,
-  S2: Subscribable<'a, Item = T, Err = E>,
+  S1: ImplSubscribable<'a, Item = T, Err = E>,
+  S2: ImplSubscribable<'a, Item = T, Err = E>,
 {
   type Err = E;
   type Item = T;
@@ -142,7 +142,7 @@ where
 #[cfg(test)]
 mod test {
   use crate::{
-    ops::{Filter, Merge},
+    ops::{Filter, Merge, Multicast},
     prelude::*,
   };
   use std::cell::{Cell, RefCell};
@@ -157,9 +157,9 @@ mod test {
 
     let numbers = Subject::<'_, _, ()>::new();
     // enabling multiple observers for even stream;
-    let even = numbers.clone().filter(|v| v % 2 == 0).broadcast();
+    let even = numbers.clone().filter(|v| v % 2 == 0).multicast();
     // enabling multiple observers for odd stream;
-    let odd = numbers.clone().filter(|v| *v % 2 != 0).broadcast();
+    let odd = numbers.clone().filter(|v| *v % 2 != 0).multicast();
 
     // merge odd and even stream again
     let merged = even.clone().merge(odd.clone());
@@ -182,9 +182,9 @@ mod test {
   fn merge_unsubscribe_work() {
     let numbers = Subject::<'_, _, ()>::new();
     // enabling multiple observers for even stream;
-    let even = numbers.clone().filter(|v| *v % 2 == 0).broadcast();
+    let even = numbers.clone().filter(|v| *v % 2 == 0).multicast();
     // enabling multiple observers for odd stream;
-    let odd = numbers.clone().filter(|v| *v % 2 != 0).broadcast();
+    let odd = numbers.clone().filter(|v| *v % 2 != 0).multicast();
 
     even
       .merge(odd)

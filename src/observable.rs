@@ -36,7 +36,8 @@ where
   }
 }
 
-impl<'a, F, Item: 'a, Err: 'a> Subscribable<'a> for Observable<'a, F, Item, Err>
+impl<'a, F, Item: 'a, Err: 'a> ImplSubscribable<'a>
+  for Observable<'a, F, Item, Err>
 where
   F: FnOnce(&mut Subscriber<'a, Item, Err>) + 'a,
 {
