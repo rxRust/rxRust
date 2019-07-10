@@ -23,7 +23,7 @@ impl<'a, T, E> Clone for Subject<'a, T, E> {
   }
 }
 
-impl<'a, T: 'a, Err: 'a> Subscribable<'a> for Subject<'a, T, Err> {
+impl<'a, T: 'a, Err: 'a> ImplSubscribable<'a> for Subject<'a, T, Err> {
   type Item = T;
   type Err = Err;
   type Unsubscribable = SubjectSubscription<'a, T, Err>;
@@ -68,7 +68,7 @@ impl<'a, T: 'a, E: 'a> Subject<'a, T, E> {
   /// ("fork" the stream)
   pub fn from_stream<S>(stream: S) -> Self
   where
-    S: Subscribable<'a, Item = T, Err = E>,
+    S: ImplSubscribable<'a, Item = T, Err = E>,
   {
     let broadcast = Self::new();
     let for_next = broadcast.clone();

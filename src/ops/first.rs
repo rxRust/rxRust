@@ -14,13 +14,13 @@ pub trait First {
   }
 }
 
-impl<'a, O> First for O where O: Subscribable<'a> {}
+impl<'a, O> First for O where O: ImplSubscribable<'a> {}
 
 /// emit only the first item (or a default item) emitted by an Observable
 pub trait FirstOr<'a> {
   fn first_or(self, default: Self::Item) -> FirstOrOp<TakeOp<Self>, Self::Item>
   where
-    Self: Subscribable<'a>,
+    Self: ImplSubscribable<'a>,
   {
     FirstOrOp {
       source: self.first(),
@@ -29,17 +29,17 @@ pub trait FirstOr<'a> {
   }
 }
 
-impl<'a, O> FirstOr<'a> for O where O: Subscribable<'a> {}
+impl<'a, O> FirstOr<'a> for O where O: ImplSubscribable<'a> {}
 
 pub struct FirstOrOp<S, V> {
   source: S,
   default: Option<V>,
 }
 
-impl<'a, S, T> Subscribable<'a> for FirstOrOp<S, T>
+impl<'a, S, T> ImplSubscribable<'a> for FirstOrOp<S, T>
 where
   T: 'a,
-  S: Subscribable<'a, Item = T>,
+  S: ImplSubscribable<'a, Item = T>,
 {
   type Item = S::Item;
   type Err = S::Err;

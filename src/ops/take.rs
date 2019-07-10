@@ -44,9 +44,9 @@ pub struct TakeOp<S> {
   count: u32,
 }
 
-impl<'a, S> Subscribable<'a> for TakeOp<S>
+impl<'a, S> ImplSubscribable<'a> for TakeOp<S>
 where
-  S: Subscribable<'a> + 'a,
+  S: ImplSubscribable<'a> + 'a,
 {
   type Item = S::Item;
   type Err = S::Err;
@@ -85,7 +85,7 @@ where
   }
 }
 
-impl<'a, O> Take for O where O: Subscribable<'a> {}
+impl<'a, O> Take for O where O: ImplSubscribable<'a> {}
 
 #[cfg(test)]
 mod test {
