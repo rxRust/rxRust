@@ -53,15 +53,14 @@ where
 {
   type Err = E;
   type Item = T;
-  type Unsubscribable =
-    MergeSubscription<S1::Unsubscribable, S2::Unsubscribable>;
+  type Unsub = MergeSubscription<S1::Unsub, S2::Unsub>;
 
   fn subscribe_return_state(
     self,
     next: impl Fn(&Self::Item) -> OState<Self::Err> + 'a,
     error: Option<impl Fn(&Self::Err) + 'a>,
     complete: Option<impl Fn() + 'a>,
-  ) -> Self::Unsubscribable {
+  ) -> Self::Unsub {
     let next = Rc::new(next);
     let next_clone = next.clone();
 

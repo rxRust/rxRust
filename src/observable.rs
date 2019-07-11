@@ -12,9 +12,7 @@ where
   F: FnOnce(&mut Subscriber<'a, Item, Err>),
 {
   subscribe: F,
-  _a: PhantomData<&'a ()>,
-  _v: PhantomData<Item>,
-  _e: PhantomData<Err>,
+  _p: PhantomData<&'a (Item, Err)>,
 }
 
 impl<'a, F, Item, Err> Observable<'a, F, Item, Err>
@@ -29,9 +27,7 @@ where
   pub fn new(subscribe: F) -> Self {
     Self {
       subscribe,
-      _a: PhantomData,
-      _v: PhantomData,
-      _e: PhantomData,
+      _p: PhantomData,
     }
   }
 }
@@ -43,14 +39,14 @@ where
 {
   type Item = Item;
   type Err = Err;
-  type Unsubscribable = Subscriber<'a, Item, Err>;
+  type Unsub = Subscriber<'a, Item, Err>;
 
   fn subscribe_return_state(
     self,
     next: impl Fn(&Self::Item) -> OState<Self::Err> + 'a,
     error: Option<impl Fn(&Self::Err) + 'a>,
     complete: Option<impl Fn() + 'a>,
-  ) -> Self::Unsubscribable {
+  ) -> Self::Unsub {
     let mut subscriber = Subscriber::new(next, error, complete);
     (self.subscribe)(&mut subscriber);
     subscriber

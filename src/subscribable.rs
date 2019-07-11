@@ -12,16 +12,16 @@ pub trait ImplSubscribable<'a>: Sized {
   // The type of the error may propagating.
   type Err: 'a;
   // the Subscription subscribe method return.
-  type Unsubscribable: Subscription;
+  type Unsub: Subscription;
   fn subscribe_return_state(
     self,
     next: impl Fn(&Self::Item) -> OState<Self::Err> + 'a,
     error: Option<impl Fn(&Self::Err) + 'a>,
     complete: Option<impl Fn() + 'a>,
-  ) -> Self::Unsubscribable;
+  ) -> Self::Unsub;
 }
 
-pub trait Subscriable<'a>: ImplSubscribable<'a> {
+pub trait Subscribable<'a>: ImplSubscribable<'a> {
   /// Invokes an execution of an Observable and registers Observer handlers for
   /// notifications it will emit.
   ///
@@ -34,7 +34,7 @@ pub trait Subscriable<'a>: ImplSubscribable<'a> {
     next: impl Fn(&Self::Item) + 'a,
     error: impl Fn(&Self::Err) + 'a,
     complete: impl Fn() + 'a,
-  ) -> Self::Unsubscribable {
+  ) -> Self::Unsub {
     self.subscribe_return_state(
       move |v| {
         next(v);
@@ -49,7 +49,7 @@ pub trait Subscriable<'a>: ImplSubscribable<'a> {
     self,
     next: impl Fn(&Self::Item) + 'a,
     error: impl Fn(&Self::Err) + 'a,
-  ) -> Self::Unsubscribable {
+  ) -> Self::Unsub {
     let complete: Option<fn()> = None;
     self.subscribe_return_state(
       move |v| {
@@ -65,7 +65,7 @@ pub trait Subscriable<'a>: ImplSubscribable<'a> {
     self,
     next: impl Fn(&Self::Item) + 'a,
     complete: impl Fn() + 'a,
-  ) -> Self::Unsubscribable {
+  ) -> Self::Unsub {
     let err: Option<fn(&Self::Err)> = None;
     self.subscribe_return_state(
       move |v| {
@@ -77,7 +77,7 @@ pub trait Subscriable<'a>: ImplSubscribable<'a> {
     )
   }
 
-  fn subscribe(self, next: impl Fn(&Self::Item) + 'a) -> Self::Unsubscribable {
+  fn subscribe(self, next: impl Fn(&Self::Item) + 'a) -> Self::Unsub {
     let complete: Option<fn()> = None;
     let err: Option<fn(&Self::Err)> = None;
     self.subscribe_return_state(
@@ -91,4 +91,4 @@ pub trait Subscriable<'a>: ImplSubscribable<'a> {
   }
 }
 
-impl<'a, S: ImplSubscribable<'a>> Subscriable<'a> for S {}
+impl<'a, S: ImplSubscribable<'a>> Subscribable<'a> for S {}

@@ -77,14 +77,14 @@ where
 {
   type Item = B;
   type Err = S::Err;
-  type Unsubscribable = S::Unsubscribable;
+  type Unsub = S::Unsub;
 
   fn subscribe_return_state(
     self,
     next: impl Fn(&Self::Item) -> OState<Self::Err> + 'a,
     error: Option<impl Fn(&Self::Err) + 'a>,
     complete: Option<impl Fn() + 'a>,
-  ) -> Self::Unsubscribable {
+  ) -> Self::Unsub {
     let func = self.func;
     self
       .source
@@ -104,14 +104,14 @@ where
 {
   type Item = B;
   type Err = S::Err;
-  type Unsubscribable = S::Unsubscribable;
+  type Unsub = S::Unsub;
 
   fn subscribe_return_state(
     self,
     next: impl Fn(&Self::Item) -> OState<Self::Err> + 'a,
     error: Option<impl Fn(&Self::Err) + 'a>,
     complete: Option<impl Fn() + 'a>,
-  ) -> Self::Unsubscribable {
+  ) -> Self::Unsub {
     let func = self.func;
     self.source.subscribe_return_state(
       move |v| match func(v) {
@@ -136,14 +136,14 @@ where
 {
   type Item = B;
   type Err = S::Err;
-  type Unsubscribable = S::Unsubscribable;
+  type Unsub = S::Unsub;
 
   fn subscribe_return_state(
     self,
     next: impl Fn(&Self::Item) -> OState<Self::Err> + 'a,
     error: Option<impl Fn(&Self::Err) + 'a>,
     complete: Option<impl Fn() + 'a>,
-  ) -> Self::Unsubscribable {
+  ) -> Self::Unsub {
     let func = self.func;
     self
       .source
@@ -163,14 +163,14 @@ where
 {
   type Item = B;
   type Err = S::Err;
-  type Unsubscribable = S::Unsubscribable;
+  type Unsub = S::Unsub;
 
   fn subscribe_return_state(
     self,
     next: impl Fn(&Self::Item) -> OState<Self::Err> + 'a,
     error: Option<impl Fn(&Self::Err) + 'a>,
     complete: Option<impl Fn() + 'a>,
-  ) -> Self::Unsubscribable {
+  ) -> Self::Unsub {
     let func = self.func;
     self.source.subscribe_return_state(
       move |v| match func(v) {

@@ -26,14 +26,14 @@ impl<'a, T, E> Clone for Subject<'a, T, E> {
 impl<'a, T: 'a, Err: 'a> ImplSubscribable<'a> for Subject<'a, T, Err> {
   type Item = T;
   type Err = Err;
-  type Unsubscribable = SubjectSubscription<'a, T, Err>;
+  type Unsub = SubjectSubscription<'a, T, Err>;
 
   fn subscribe_return_state(
     self,
     next: impl Fn(&Self::Item) -> OState<Self::Err> + 'a,
     error: Option<impl Fn(&Self::Err) + 'a>,
     complete: Option<impl Fn() + 'a>,
-  ) -> Self::Unsubscribable {
+  ) -> Self::Unsub {
     let on_next: Box<dyn Fn(&Self::Item) -> OState<Err>> = Box::new(next);
     let on_error = error.map(|e| {
       let e: Box<dyn Fn(&Self::Err)> = Box::new(e);
