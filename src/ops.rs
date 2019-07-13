@@ -8,5 +8,3 @@ mod take;
 pub use take::Take;
 mod first;
 pub use first::{First, FirstOr};
-mod multicast;
-pub use multicast::Multicast;

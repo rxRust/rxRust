@@ -34,16 +34,48 @@ impl<'a, T: 'a, Err: 'a> ImplSubscribable<'a> for Subject<'a, T, Err> {
     error: Option<impl Fn(&Self::Err) + 'a>,
     complete: Option<impl Fn() + 'a>,
   ) -> Self::Unsub {
-    let on_next: Box<dyn Fn(&Self::Item) -> OState<Err>> = Box::new(next);
+    self.subscribe_impl(next, error, complete)
+  }
+}
+
+impl<'a, T: 'a, Err: 'a> ImplSubscribable<'a> for &'a Subject<'a, T, Err> {
+  type Item = T;
+  type Err = Err;
+  type Unsub = SubjectSubscription<'a, T, Err>;
+
+  fn subscribe_return_state(
+    self,
+    next: impl Fn(&Self::Item) -> OState<Self::Err> + 'a,
+    error: Option<impl Fn(&Self::Err) + 'a>,
+    complete: Option<impl Fn() + 'a>,
+  ) -> Self::Unsub {
+    self.subscribe_impl(next, error, complete)
+  }
+}
+
+impl<'a, T: 'a, E: 'a> Subject<'a, T, E> {
+  pub fn new() -> Self {
+    Subject {
+      cbs: Rc::new(RefCell::new(vec![])),
+    }
+  }
+
+  fn subscribe_impl(
+    &self,
+    next: impl Fn(&T) -> OState<E> + 'a,
+    error: Option<impl Fn(&E) + 'a>,
+    complete: Option<impl Fn() + 'a>,
+  ) -> SubjectSubscription<'a, T, E> {
+    let on_next: Box<dyn Fn(&T) -> OState<E>> = Box::new(next);
     let on_error = error.map(|e| {
-      let e: Box<dyn Fn(&Self::Err)> = Box::new(e);
+      let e: Box<dyn Fn(&E)> = Box::new(e);
       e
     });
     let on_complete = complete.map(|c| {
       let c: Box<dyn Fn()> = Box::new(c);
       c
     });
-    let ptr = on_next.as_ref() as NextPtr<'a, T, Err>;
+    let ptr = on_next.as_ref() as NextPtr<'a, T, E>;
     let cbs = Callbacks {
       on_next,
       on_complete,
@@ -52,41 +84,9 @@ impl<'a, T: 'a, Err: 'a> ImplSubscribable<'a> for Subject<'a, T, Err> {
     self.cbs.borrow_mut().push(cbs);
 
     SubjectSubscription {
-      source: self,
+      source: self.clone(),
       callback: ptr,
     }
-  }
-}
-impl<'a, T: 'a, E: 'a> Subject<'a, T, E> {
-  pub fn new() -> Self {
-    Subject {
-      cbs: Rc::new(RefCell::new(vec![])),
-    }
-  }
-
-  /// Create a new subject from a stream, enabling multiple observers
-  /// ("fork" the stream)
-  pub fn from_stream<S>(stream: S) -> Self
-  where
-    S: ImplSubscribable<'a, Item = T, Err = E>,
-  {
-    let broadcast = Self::new();
-    let for_next = broadcast.clone();
-    let for_complete = broadcast.clone();
-    let for_err = broadcast.clone();
-    stream.subscribe_err_complete(
-      move |v| {
-        for_next.next(v);
-      },
-      move |err: &S::Err| {
-        for_err.clone().error(err);
-      },
-      move || {
-        for_complete.clone().complete();
-      },
-    );
-
-    broadcast
   }
 
   fn remove_callback(&mut self, ptr: NextPtr<'a, T, E>) {
