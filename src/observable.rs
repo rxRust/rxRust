@@ -9,7 +9,7 @@ pub use from_iter::from_iter;
 ///
 pub struct Observable<'a, F, Item, Err>
 where
-  F: FnOnce(&mut Subscriber<'a, Item, Err>),
+  F: FnMut(&mut Subscriber<'a, Item, Err>),
 {
   subscribe: F,
   _p: PhantomData<&'a (Item, Err)>,
@@ -17,7 +17,7 @@ where
 
 impl<'a, F, Item, Err> Observable<'a, F, Item, Err>
 where
-  F: FnOnce(&mut Subscriber<'a, Item, Err>),
+  F: FnMut(&mut Subscriber<'a, Item, Err>),
 {
   /// param `subscribe`: the function that is called when the Observable is
   /// initially subscribed to. This function is given a Subscriber, to which
@@ -35,14 +35,14 @@ where
 impl<'a, F, Item: 'a, Err: 'a> ImplSubscribable<'a>
   for Observable<'a, F, Item, Err>
 where
-  F: FnOnce(&mut Subscriber<'a, Item, Err>) + 'a,
+  F: FnMut(&mut Subscriber<'a, Item, Err>) + 'a,
 {
   type Item = Item;
   type Err = Err;
   type Unsub = Subscriber<'a, Item, Err>;
 
   fn subscribe_return_state(
-    self,
+    mut self,
     next: impl Fn(&Self::Item) -> OState<Self::Err> + 'a,
     error: Option<impl Fn(&Self::Err) + 'a>,
     complete: Option<impl Fn() + 'a>,
