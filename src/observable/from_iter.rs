@@ -6,9 +6,10 @@ pub fn from_iter<'a, T: 'a, Item: 'a, Err: 'a>(
 where
   T: IntoIterator<Item = Item>,
 {
+  let mut iter = iter.into_iter();
   Observable::new(move |subcriber| {
     iter
-      .into_iter()
+      .by_ref()
       .take_while(|_| !subcriber.is_stopped())
       .for_each(|v| {
         subcriber.next(&v);
