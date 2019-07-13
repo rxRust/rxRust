@@ -98,7 +98,7 @@ mod test {
     let completed = Cell::new(false);
     let next_count = Cell::new(0);
 
-    observable::from_iter::<'_, _, _, ()>(0..10)
+    observable::from_iter::<'_, Vec<_>, _, ()>(&(0..10).collect())
       .take(5)
       .subscribe_complete(
         |_| next_count.set(next_count.get() + 1),
