@@ -44,9 +44,44 @@ pub struct TakeOp<S> {
   count: u32,
 }
 
+fn subscribe_source<'a, S>(
+  source: S,
+  total: u32,
+  next: impl Fn(&S::Item) -> OState<S::Err> + 'a,
+  error: Option<impl Fn(&S::Err) + 'a>,
+  complete: Option<impl Fn() + 'a>,
+) -> S::Unsub
+where
+  S: ImplSubscribable<'a>,
+{
+  let count = std::cell::Cell::new(0);
+  source.subscribe_return_state(
+    move |v| {
+      if count.get() < total {
+        count.set(count.get() + 1);
+        let os = next(v);
+        match os {
+          OState::Next => {
+            if count.get() == total {
+              OState::Complete
+            } else {
+              os
+            }
+          }
+          _ => os,
+        }
+      } else {
+        OState::Complete
+      }
+    },
+    error,
+    complete,
+  )
+}
+
 impl<'a, S> ImplSubscribable<'a> for TakeOp<S>
 where
-  S: ImplSubscribable<'a> + 'a,
+  S: ImplSubscribable<'a>,
 {
   type Item = S::Item;
   type Err = S::Err;
@@ -58,30 +93,25 @@ where
     error: Option<impl Fn(&Self::Err) + 'a>,
     complete: Option<impl Fn() + 'a>,
   ) -> Self::Unsub {
-    let total = self.count;
-    let count = std::cell::Cell::new(0);
-    self.source.subscribe_return_state(
-      move |v| {
-        if count.get() < total {
-          count.set(count.get() + 1);
-          let os = next(v);
-          match os {
-            OState::Next => {
-              if count.get() == total {
-                OState::Complete
-              } else {
-                os
-              }
-            }
-            _ => os,
-          }
-        } else {
-          OState::Complete
-        }
-      },
-      error,
-      complete,
-    )
+    subscribe_source(self.source, self.count, next, error, complete)
+  }
+}
+
+impl<'a, S> ImplSubscribable<'a> for &'a TakeOp<S>
+where
+  &'a S: ImplSubscribable<'a>,
+{
+  type Err = <&'a S as ImplSubscribable<'a>>::Err;
+  type Item = <&'a S as ImplSubscribable<'a>>::Item;
+  type Unsub = <&'a S as ImplSubscribable<'a>>::Unsub;
+
+  fn subscribe_return_state(
+    self,
+    next: impl Fn(&Self::Item) -> OState<Self::Err> + 'a,
+    error: Option<impl Fn(&Self::Err) + 'a>,
+    complete: Option<impl Fn() + 'a>,
+  ) -> Self::Unsub {
+    subscribe_source(&self.source, self.count, next, error, complete)
   }
 }
 
@@ -98,14 +128,28 @@ mod test {
     let completed = Cell::new(false);
     let next_count = Cell::new(0);
 
-    observable::from_iter::<'_, Vec<_>, _, ()>(&(0..10).collect())
-      .take(5)
-      .subscribe_complete(
-        |_| next_count.set(next_count.get() + 1),
-        || completed.set(true),
-      );
+    observable::from_iter(0..100).take(5).subscribe_complete(
+      |_| next_count.set(next_count.get() + 1),
+      || completed.set(true),
+    );
 
     assert_eq!(completed.get(), true);
     assert_eq!(next_count.get(), 5);
+  }
+
+  #[test]
+  fn take_support_fork() {
+    use crate::ops::Fork;
+
+    let nc1 = Cell::new(0);
+    let nc2 = Cell::new(0);
+    let take5 = observable::from_iter(0..100).take(5);
+    let f1 = take5.fork();
+    let f2 = take5.fork();
+    f1.take(5).fork().subscribe(|_| nc1.set(nc1.get() + 1));
+    f2.take(5).fork().subscribe(|_| nc2.set(nc2.get() + 1));
+
+    assert_eq!(nc1.get(), 5);
+    assert_eq!(nc2.get(), 5);
   }
 }
