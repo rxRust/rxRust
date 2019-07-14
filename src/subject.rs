@@ -26,6 +26,7 @@ impl<'a, T, E> Clone for Subject<'a, T, E> {
 impl<'a, T: 'a, Err: 'a> ImplSubscribable<'a> for Subject<'a, T, Err> {
   type Item = T;
   type Err = Err;
+  // todo should not return lifetime
   type Unsub = SubjectSubscription<'a, T, Err>;
 
   fn subscribe_return_state(
@@ -49,7 +50,7 @@ impl<'a, T: 'a, Err: 'a> ImplSubscribable<'a> for &'a Subject<'a, T, Err> {
     error: Option<impl Fn(&Self::Err) + 'a>,
     complete: Option<impl Fn() + 'a>,
   ) -> Self::Unsub {
-    self.subscribe_impl(next, error, complete)
+    self.clone().subscribe_impl(next, error, complete)
   }
 }
 
@@ -61,7 +62,7 @@ impl<'a, T: 'a, E: 'a> Subject<'a, T, E> {
   }
 
   fn subscribe_impl(
-    &self,
+    self,
     next: impl Fn(&T) -> OState<E> + 'a,
     error: Option<impl Fn(&E) + 'a>,
     complete: Option<impl Fn() + 'a>,
