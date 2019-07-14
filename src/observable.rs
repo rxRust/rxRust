@@ -7,15 +7,12 @@ pub use from_iter::from_iter;
 /// A representation of any set of values over any amount of time. This is the
 /// most basic building block rx_rs
 ///
-pub struct Observable<'a, F, Item, Err>
-where
-  F: Fn(&mut Subscriber<'a, Item, Err>),
-{
+pub struct Observable<F, Item, Err> {
   subscribe: F,
-  _p: PhantomData<&'a (Item, Err)>,
+  _p: PhantomData<(Item, Err)>,
 }
 
-impl<'a, F, Item, Err> Observable<'a, F, Item, Err>
+impl<'a, F, Item, Err> Observable<F, Item, Err>
 where
   F: Fn(&mut Subscriber<'a, Item, Err>),
 {
@@ -44,8 +41,7 @@ where
   }
 }
 
-impl<'a, F, Item: 'a, Err: 'a> ImplSubscribable<'a>
-  for Observable<'a, F, Item, Err>
+impl<'a, F, Item: 'a, Err: 'a> ImplSubscribable<'a> for Observable<F, Item, Err>
 where
   F: Fn(&mut Subscriber<'a, Item, Err>) + 'a,
 {
@@ -64,7 +60,7 @@ where
 }
 
 impl<'a, F, Item: 'a, Err: 'a> ImplSubscribable<'a>
-  for &'a Observable<'a, F, Item, Err>
+  for &'a Observable<F, Item, Err>
 where
   F: Fn(&mut Subscriber<'a, Item, Err>) + 'a,
 {
@@ -131,5 +127,4 @@ mod test {
     assert_eq!(sum1.get(), 10);
     assert_eq!(sum2.get(), 10);
   }
-
 }
