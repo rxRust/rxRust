@@ -109,12 +109,12 @@ where
 
 impl<'a, S, F> ImplSubscribable<'a> for &'a FilterOp<S, F>
 where
-  S: ImplSubscribable<'a> + Clone,
-  F: Fn(&S::Item) -> bool + 'a,
+  &'a S: ImplSubscribable<'a>,
+  F: Fn(&<&'a S as ImplSubscribable<'a>>::Item) -> bool + 'a,
 {
-  type Err = S::Err;
-  type Item = S::Item;
-  type Unsub = S::Unsub;
+  type Err = <&'a S as ImplSubscribable<'a>>::Err;
+  type Item = <&'a S as ImplSubscribable<'a>>::Item;
+  type Unsub = <&'a S as ImplSubscribable<'a>>::Unsub;
 
   fn subscribe_return_state(
     self,
@@ -122,7 +122,7 @@ where
     error: Option<impl Fn(&Self::Err) + 'a>,
     complete: Option<impl Fn() + 'a>,
   ) -> Self::Unsub {
-    subscribe_source(self.source.clone(), &self.filter, next, error, complete)
+    subscribe_source(&self.source, &self.filter, next, error, complete)
   }
 }
 
@@ -175,12 +175,15 @@ where
 
 impl<'a, S, F> ImplSubscribable<'a> for &'a FilterWithErrOp<S, F>
 where
-  S: ImplSubscribable<'a> + Clone,
-  F: Fn(&S::Item) -> Result<bool, S::Err> + 'a,
+  &'a S: ImplSubscribable<'a>,
+  F: Fn(
+      &<&'a S as ImplSubscribable<'a>>::Item,
+    ) -> Result<bool, <&'a S as ImplSubscribable<'a>>::Err>
+    + 'a,
 {
-  type Err = S::Err;
-  type Item = S::Item;
-  type Unsub = S::Unsub;
+  type Err = <&'a S as ImplSubscribable<'a>>::Err;
+  type Item = <&'a S as ImplSubscribable<'a>>::Item;
+  type Unsub = <&'a S as ImplSubscribable<'a>>::Unsub;
 
   fn subscribe_return_state(
     self,
@@ -188,13 +191,7 @@ where
     error: Option<impl Fn(&Self::Err) + 'a>,
     complete: Option<impl Fn() + 'a>,
   ) -> Self::Unsub {
-    subscribe_source_with_err(
-      self.source.clone(),
-      &self.filter,
-      next,
-      error,
-      complete,
-    )
+    subscribe_source_with_err(&self.source, &self.filter, next, error, complete)
   }
 }
 
@@ -232,7 +229,12 @@ fn pass_error() {
 fn test_fork() {
   use crate::ops::Fork;
   use crate::prelude::*;
-  let obser = observable::from_iter(0..10).filter(|v| v % 2);
-  let f1 = obser.fork();
-  let f2 = obser.fork();
+  let obser = observable::from_iter(0..10).filter(|v| v % 2 == 0);
+  let _f1 = obser.fork();
+  let _f2 = obser.fork();
+
+  // filter with error
+  let obser = observable::from_iter(0..10).filter_with_err(|v| Ok(v % 2 == 0));
+  let _f1 = obser.fork();
+  let _f2 = obser.fork();
 }
