@@ -229,12 +229,12 @@ fn pass_error() {
 fn test_fork() {
   use crate::ops::Fork;
   use crate::prelude::*;
-  let obser = observable::from_iter(0..10).filter(|v| v % 2 == 0);
-  let _f1 = obser.fork();
-  let _f2 = obser.fork();
+  let f = observable::from_iter(0..10).filter(|v| v % 2 == 0);
+  let f1 = f.fork();
+  f1.filter(|_| true).fork().subscribe(|_| {});
 
   // filter with error
-  let obser = observable::from_iter(0..10).filter_with_err(|v| Ok(v % 2 == 0));
-  let _f1 = obser.fork();
-  let _f2 = obser.fork();
+  let f = observable::from_iter(0..10).filter_with_err(|_| Ok(true));
+  let f1 = f.fork();
+  f1.filter_with_err(|_| Ok(true)).fork().subscribe(|_| {});
 }
