@@ -35,11 +35,6 @@ pub trait Fork {
 impl<'a, S: 'a> Fork for S where &'a S: Subscribable<'a> {}
 
 pub struct Sink<S>(S);
-impl<T> Clone for Sink<&T> {
-  fn clone(&self) -> Self {
-    Sink(self.0)
-  }
-}
 
 impl<'a, Item, Err: 'a, S> ImplSubscribable<'a> for Sink<S>
 where

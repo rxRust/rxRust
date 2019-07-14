@@ -23,7 +23,7 @@ fn subscribe_impl<'a, Item: 'a, Err: 'a>(
   .subscribe_return_state(next, error, complete)
 }
 
-pub fn from_iter<'a, Item>(
+pub fn from_iter<Item>(
   iter: impl IntoIterator<Item = Item> + Clone,
 ) -> IterObservable<impl IntoIterator<Item = Item> + Clone> {
   IterObservable(iter)
@@ -92,5 +92,15 @@ mod test {
 
     assert_eq!(hit_count.get(), 100);
     assert_eq!(completed.get(), true);
+  }
+
+  #[test]
+  fn fork() {
+    use crate::ops::{Filter, Fork};
+    observable::from_iter(vec![0; 100].iter())
+      .fork()
+      .filter(|_v| true)
+      .fork()
+      .subscribe(|_| {});
   }
 }
