@@ -36,6 +36,39 @@ pub struct FirstOrOp<S, V> {
   default: Option<V>,
 }
 
+fn subscribe_source<'a, S, V>(
+  source: S,
+  default: Option<V>,
+  next: impl Fn(&S::Item) -> OState<S::Err> + 'a,
+  error: Option<impl Fn(&S::Err) + 'a>,
+  complete: Option<impl Fn() + 'a>,
+) -> S::Unsub
+where
+  V: 'a,
+  S: ImplSubscribable<'a, Item = V>,
+{
+  let next = Rc::new(next);
+  let c_next = next.clone();
+  let default = Rc::new(RefCell::new(default));
+  let c_default = default.clone();
+  source.subscribe_return_state(
+    move |v| {
+      c_default.borrow_mut().take();
+      c_next(v)
+    },
+    error,
+    Some(move || {
+      let default = default.borrow_mut().take();
+      if let Some(d) = default {
+        next(&d);
+      }
+      if let Some(ref comp) = complete {
+        comp();
+      }
+    }),
+  )
+}
+
 impl<'a, S, T> ImplSubscribable<'a> for FirstOrOp<S, T>
 where
   T: 'a,
@@ -51,27 +84,26 @@ where
     error: Option<impl Fn(&Self::Err) + 'a>,
     complete: Option<impl Fn() + 'a>,
   ) -> Self::Unsub {
-    let next = Rc::new(next);
-    let c_next = next.clone();
-    let Self { source, default } = self;
-    let default = Rc::new(RefCell::new(default));
-    let c_default = default.clone();
-    source.subscribe_return_state(
-      move |v| {
-        c_default.borrow_mut().take();
-        c_next(v)
-      },
-      error,
-      Some(move || {
-        let default = default.borrow_mut().take();
-        if let Some(d) = default {
-          next(&d);
-        }
-        if let Some(ref comp) = complete {
-          comp();
-        }
-      }),
-    )
+    subscribe_source(self.source, self.default, next, error, complete)
+  }
+}
+
+impl<'a, S, T> ImplSubscribable<'a> for &'a FirstOrOp<S, T>
+where
+  T: Clone + 'a,
+  &'a S: ImplSubscribable<'a, Item = T>,
+{
+  type Err = <&'a S as ImplSubscribable<'a>>::Err;
+  type Item = <&'a S as ImplSubscribable<'a>>::Item;
+  type Unsub = <&'a S as ImplSubscribable<'a>>::Unsub;
+
+  fn subscribe_return_state(
+    self,
+    next: impl Fn(&Self::Item) -> OState<Self::Err> + 'a,
+    error: Option<impl Fn(&Self::Err) + 'a>,
+    complete: Option<impl Fn() + 'a>,
+  ) -> Self::Unsub {
+    subscribe_source(&self.source, self.default.clone(), next, error, complete)
   }
 }
 
@@ -128,5 +160,38 @@ mod test {
     numbers.complete();
     assert_eq!(completed.get(), true);
     assert_eq!(v.get(), 100);
+  }
+
+  #[test]
+  fn first_support_fork() {
+    use crate::ops::{First, Fork};
+    let value = Cell::new(0);
+    let o = observable::from_iter(1..100).first();
+    let o1 = o.fork().first();
+    let o2 = o.fork().first();
+    o1.subscribe(|v| value.set(*v));
+    assert_eq!(value.get(), 1);
+
+    value.set(0);
+    o2.subscribe(|v| value.set(*v));
+    assert_eq!(value.get(), 1);
+  }
+  #[test]
+  fn first_or_support_fork() {
+    use crate::ops::Fork;
+    let default = Cell::new(0);
+    let o = Observable::new(|subscriber| {
+      subscriber.complete();
+      subscriber.error(&"");
+    })
+    .first_or(100);
+    let o1 = o.fork().first_or(0);
+    let o2 = o.fork().first_or(0);
+    o1.subscribe(|v| default.set(*v));
+    assert_eq!(default.get(), 100);
+
+    default.set(0);
+    o2.subscribe(|v| default.set(*v));
+    assert_eq!(default.get(), 100);
   }
 }
