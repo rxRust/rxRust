@@ -28,7 +28,7 @@ pub trait Observer {
   type Item;
   type Err;
 
-  fn next(&self, v: &Self::Item) -> &Self;
+  fn next(&self, v: &Self::Item);
 
   fn complete(&mut self);
 

@@ -37,11 +37,10 @@ impl<'a, Item, Err> Observer for Subscriber<'a, Item, Err> {
   type Item = Item;
   type Err = Err;
 
-  fn next(&self, v: &Self::Item) -> &Self {
+  fn next(&self, v: &Self::Item) {
     if !self.stopped {
       (self.on_next)(v);
     }
-    self
   }
 
   fn complete(&mut self) {
@@ -101,9 +100,11 @@ mod test {
 
     let mut subscriber = create_subscriber!(next, err, complete);
 
-    subscriber.next(&1).next(&2);
+    subscriber.next(&1);
+    subscriber.next(&2);
     subscriber.complete();
-    subscriber.next(&3).next(&4);
+    subscriber.next(&3);
+    subscriber.next(&4);
     assert_eq!(next.get(), 2);
     assert_eq!(complete.get(), 1);
   }
@@ -116,9 +117,11 @@ mod test {
 
     let mut subscriber = create_subscriber!(next, err, complete);
 
-    subscriber.next(&1).next(&2);
+    subscriber.next(&1);
+    subscriber.next(&2);
     subscriber.error(&());
-    subscriber.next(&3).next(&4);
+    subscriber.next(&3);
+    subscriber.next(&4);
 
     assert_eq!(next.get(), 2);
     assert_eq!(err.get(), 1);
