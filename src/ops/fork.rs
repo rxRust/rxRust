@@ -32,7 +32,7 @@ pub trait Fork {
   fn fork(&self) -> Sink<&Self> { Sink(self) }
 }
 
-impl<'a, S> Fork for S where  S: Subscribable<'a> {}
+impl<'a, S> Fork for S where S: Subscribable<'a> {}
 
 pub struct Sink<S>(S);
 
@@ -49,7 +49,7 @@ where
     self,
     next: impl Fn(&Self::Item) -> OState<Self::Err> + 'a,
     error: Option<impl Fn(&Self::Err) + 'a>,
-  complete: Option<impl Fn() + 'a>,
+    complete: Option<impl Fn() + 'a>,
   ) -> Self::Unsub {
     self.0.subscribe_return_state(next, error, complete)
   }

@@ -35,7 +35,13 @@ where
     error: Option<impl Fn(&Err) + 'a>,
     complete: Option<impl Fn() + 'a>,
   ) -> Subscriber<'a, Item, Err> {
-    let mut subscriber = Subscriber::new(next, error, complete);
+    let mut subscriber = Subscriber::new(next);
+    if error.is_some() {
+      subscriber.on_error(error.unwrap())
+    };
+    if complete.is_some() {
+      subscriber.on_complete(complete.unwrap())
+    };
     (self.subscribe)(&mut subscriber);
     subscriber
   }

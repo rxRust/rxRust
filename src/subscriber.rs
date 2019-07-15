@@ -16,17 +16,29 @@ pub struct Subscriber<'a, Item, E> {
 }
 
 impl<'a, Item, E> Subscriber<'a, Item, E> {
-  pub fn new(
-    next: impl Fn(&Item) -> OState<E> + 'a,
-    error: Option<impl Fn(&E) + 'a>,
-    complete: Option<impl Fn() + 'a>,
-  ) -> Self {
+  pub fn new(next: impl Fn(&Item) -> OState<E> + 'a) -> Self {
     Subscriber {
       stopped: false,
       on_next: Box::new(next),
-      on_err: error.map(|e| Box::new(e) as Box<dyn Fn(&E)>),
-      on_complete: complete.map(|c| Box::new(c) as Box<dyn Fn() + 'a>),
+      on_err: None,
+      on_complete: None,
       _v: PhantomData,
+    }
+  }
+
+  pub fn on_error(&mut self, err: impl Fn(&E) + 'a) {
+    if self.on_err.is_none() {
+      self.on_err.replace(Box::new(err));
+    } else {
+      panic!("subscriber only accept on_error once");
+    }
+  }
+
+  pub fn on_complete(&mut self, comp: impl Fn() + 'a) {
+    if self.on_complete.is_none() {
+      self.on_complete.replace(Box::new(comp));
+    } else {
+      panic!("subscriber only accept on_error once");
     }
   }
 
@@ -77,18 +89,17 @@ mod test {
 
   macro_rules! create_subscriber {
     ($next:ident, $err: ident, $complete: ident) => {{
-      Subscriber::new(
-        |_v: &i32| {
-          $next.set($next.get() + 1);
-          OState::Next
-        },
-        Some(|_: &()| {
-          $err.set($err.get() + 1);
-        }),
-        Some(|| {
-          $complete.set($complete.get() + 1);
-        }),
-      )
+      let mut subscriber = Subscriber::new(|_v: &i32| {
+        $next.set($next.get() + 1);
+        OState::Next
+      });
+      subscriber.on_error(|_: &()| {
+        $err.set($err.get() + 1);
+      });
+      subscriber.on_complete(|| {
+        $complete.set($complete.get() + 1);
+      });
+      subscriber
     }};
   }
 
