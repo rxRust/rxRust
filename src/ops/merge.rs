@@ -20,12 +20,10 @@ use std::rc::Rc;
 /// // attach observers
 /// merged.subscribe(|v| println!("{} ", v));
 /// ```
-pub trait Merge<'a, T> {
-  type Err: 'a;
+pub trait Merge<'a> {
   fn merge<S>(self, o: S) -> MergeOp<Self, S>
   where
     Self: Sized,
-    S: ImplSubscribable<'a, Item = T, Err = Self::Err>,
   {
     MergeOp {
       source1: self,
@@ -34,25 +32,79 @@ pub trait Merge<'a, T> {
   }
 }
 
-impl<'a, T, O> Merge<'a, T> for O
-where
-  O: ImplSubscribable<'a, Item = T>,
-{
-  type Err = O::Err;
-}
+impl<'a, 'b, O> Merge<'b> for O where O: ImplSubscribable<'a> {}
 
 pub struct MergeOp<S1, S2> {
   source1: S1,
   source2: S2,
 }
 
-impl<'a, T, E: 'a, S1: 'a, S2: 'a> ImplSubscribable<'a> for MergeOp<S1, S2>
+fn merge_stream<'a, S1, S2>(
+  s1: S1,
+  s2: S2,
+  next: impl Fn(&S1::Item) -> OState<S1::Err> + 'a,
+  error: Option<impl Fn(&S1::Err) + 'a>,
+  complete: Option<impl Fn() + 'a>,
+) -> MergeSubscription<S1::Unsub, S2::Unsub>
 where
-  S1: ImplSubscribable<'a, Item = T, Err = E>,
-  S2: ImplSubscribable<'a, Item = T, Err = E>,
+  S1: ImplSubscribable<'a>,
+  S2: ImplSubscribable<'a, Item = S1::Item, Err = S1::Err>,
 {
-  type Err = E;
-  type Item = T;
+  let next = Rc::new(next);
+  let next_clone = next.clone();
+
+  let stopped = Rc::new(Cell::new(false));
+  let error = error.map(Rc::new);
+  let complete = complete.map(Rc::new);
+
+  let on_error_factor = || {
+    error.clone().map(|err| {
+      let stopped = stopped.clone();
+      move |e: &_| {
+        if !stopped.get() {
+          err(e);
+          stopped.set(true);
+        }
+      }
+    })
+  };
+  let completed = Rc::new(Cell::new(false));
+  let on_complete_factor = || {
+    complete.clone().map(|comp| {
+      let stopped = stopped.clone();
+      let completed = completed.clone();
+      move || {
+        if !stopped.get() && completed.get() {
+          comp();
+          stopped.set(true);
+        } else {
+          completed.set(true);
+        }
+      }
+    })
+  };
+
+  let unsub1 = s1.subscribe_return_state(
+    move |v| next(v),
+    on_error_factor(),
+    on_complete_factor(),
+  );
+  let unsub2 = s2.subscribe_return_state(
+    move |v| next_clone(v),
+    on_error_factor(),
+    on_complete_factor(),
+  );
+
+  MergeSubscription::new(unsub1, unsub2)
+}
+
+impl<'a, S1, S2> ImplSubscribable<'a> for MergeOp<S1, S2>
+where
+  S1: ImplSubscribable<'a>,
+  S2: ImplSubscribable<'a, Item = S1::Item, Err = S1::Err>,
+{
+  type Err = S1::Err;
+  type Item = S1::Item;
   type Unsub = MergeSubscription<S1::Unsub, S2::Unsub>;
 
   fn subscribe_return_state(
@@ -61,52 +113,33 @@ where
     error: Option<impl Fn(&Self::Err) + 'a>,
     complete: Option<impl Fn() + 'a>,
   ) -> Self::Unsub {
-    let next = Rc::new(next);
-    let next_clone = next.clone();
+    merge_stream(self.source1, self.source2, next, error, complete)
+  }
+}
 
-    let stopped = Rc::new(Cell::new(false));
-    let error = error.map(Rc::new);
-    let complete = complete.map(Rc::new);
+impl<'a, S1, S2> ImplSubscribable<'a> for &'a MergeOp<S1, S2>
+where
+  &'a S1: ImplSubscribable<'a>,
+  &'a S2: ImplSubscribable<
+    'a,
+    Item = <&'a S1 as ImplSubscribable<'a>>::Item,
+    Err = <&'a S1 as ImplSubscribable<'a>>::Err,
+  >,
+{
+  type Err = <&'a S1 as ImplSubscribable<'a>>::Err;
+  type Item = <&'a S1 as ImplSubscribable<'a>>::Item;
+  type Unsub = MergeSubscription<
+    <&'a S1 as ImplSubscribable<'a>>::Unsub,
+    <&'a S2 as ImplSubscribable<'a>>::Unsub,
+  >;
 
-    let on_error_factor = || {
-      error.clone().map(|err| {
-        let stopped = stopped.clone();
-        move |e: &_| {
-          if !stopped.get() {
-            err(e);
-            stopped.set(true);
-          }
-        }
-      })
-    };
-    let completed = Rc::new(Cell::new(false));
-    let on_complete_factor = || {
-      complete.clone().map(|comp| {
-        let stopped = stopped.clone();
-        let completed = completed.clone();
-        move || {
-          if !stopped.get() && completed.get() {
-            comp();
-            stopped.set(true);
-          } else {
-            completed.set(true);
-          }
-        }
-      })
-    };
-
-    let s1 = self.source1.subscribe_return_state(
-      move |v| next(v),
-      on_error_factor(),
-      on_complete_factor(),
-    );
-    let s2 = self.source2.subscribe_return_state(
-      move |v| next_clone(v),
-      on_error_factor(),
-      on_complete_factor(),
-    );
-
-    MergeSubscription::new(s1, s2)
+  fn subscribe_return_state(
+    self,
+    next: impl Fn(&Self::Item) -> OState<Self::Err> + 'a,
+    error: Option<impl Fn(&Self::Err) + 'a>,
+    complete: Option<impl Fn() + 'a>,
+  ) -> Self::Unsub {
+    merge_stream(&self.source1, &self.source2, next, error, complete)
   }
 }
 
@@ -141,7 +174,7 @@ where
 #[cfg(test)]
 mod test {
   use crate::{
-    ops::{Filter, Merge, Multicast},
+    ops::{Filter, Fork, Merge},
     prelude::*,
   };
   use std::cell::{Cell, RefCell};
@@ -149,6 +182,7 @@ mod test {
 
   #[test]
   fn odd_even_merge() {
+    unimplemented!("subject lifetime problem");
     // three collection to store streams emissions
     let odd_store = Rc::new(RefCell::new(vec![]));
     let even_store = Rc::new(RefCell::new(vec![]));
@@ -156,12 +190,12 @@ mod test {
 
     let numbers = Subject::<'_, _, ()>::new();
     // enabling multiple observers for even stream;
-    let even = numbers.clone().filter(|v| v % 2 == 0).multicast();
+    let even = numbers.clone().filter(|v| v % 2 == 0).fork();
     // enabling multiple observers for odd stream;
-    let odd = numbers.clone().filter(|v| *v % 2 != 0).multicast();
+    let odd = numbers.clone().filter(|v| *v % 2 != 0).fork();
 
     // merge odd and even stream again
-    let merged = even.clone().merge(odd.clone());
+    let merged = even.fork().merge(odd.fork());
 
     //  attach observers
     merged.subscribe(|v| numbers_store.borrow_mut().push(*v));
@@ -181,9 +215,9 @@ mod test {
   fn merge_unsubscribe_work() {
     let numbers = Subject::<'_, _, ()>::new();
     // enabling multiple observers for even stream;
-    let even = numbers.clone().filter(|v| *v % 2 == 0).multicast();
+    let even = numbers.clone().filter(|v| *v % 2 == 0);
     // enabling multiple observers for odd stream;
-    let odd = numbers.clone().filter(|v| *v % 2 != 0).multicast();
+    let odd = numbers.clone().filter(|v| *v % 2 != 0);
 
     even
       .merge(odd)
@@ -234,5 +268,17 @@ mod test {
     assert_eq!(completed.get(), 0);
     // error should be hit just once
     assert_eq!(error.get(), 1);
+  }
+
+  #[test]
+  fn merge_fork() {
+    let o = Observable::new(|s| {
+      s.next(&1);
+      s.next(&2);
+      s.error(&());
+    });
+
+    let m = o.fork().merge(o.fork());
+    m.fork().merge(m.fork());
   }
 }
