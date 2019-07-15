@@ -103,7 +103,7 @@ impl<'a, T, E> Observer for Subject<'a, T, E> {
   type Item = T;
   type Err = E;
 
-  fn next(&self, v: &Self::Item) -> &Self {
+  fn next(&self, v: &Self::Item){
     self.cbs.borrow_mut().drain_filter(|cb| {
       let mut stopped = false;
       match (cb.on_next)(&v) {
@@ -123,7 +123,6 @@ impl<'a, T, E> Observer for Subject<'a, T, E> {
       };
       stopped
     });
-    self
   }
 
   fn complete(&mut self) {
