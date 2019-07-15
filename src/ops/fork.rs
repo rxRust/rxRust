@@ -32,16 +32,16 @@ pub trait Fork {
   fn fork(&self) -> Sink<&Self> { Sink(self) }
 }
 
-impl<'a, S: 'a> Fork for S where &'a S: Subscribable<'a> {}
+impl<'a, S> Fork for S where  S: Subscribable<'a> {}
 
 pub struct Sink<S>(S);
 
-impl<'a, Item, Err: 'a, S> ImplSubscribable<'a> for Sink<S>
+impl<'a, S> ImplSubscribable<'a> for Sink<S>
 where
-  S: ImplSubscribable<'a, Item = Item, Err = Err>,
+  S: ImplSubscribable<'a>,
 {
-  type Item = Item;
-  type Err = Err;
+  type Item = S::Item;
+  type Err = S::Err;
   type Unsub = S::Unsub;
 
   #[inline]
@@ -49,18 +49,18 @@ where
     self,
     next: impl Fn(&Self::Item) -> OState<Self::Err> + 'a,
     error: Option<impl Fn(&Self::Err) + 'a>,
-    complete: Option<impl Fn() + 'a>,
+  complete: Option<impl Fn() + 'a>,
   ) -> Self::Unsub {
     self.0.subscribe_return_state(next, error, complete)
   }
 }
 
-impl<'a, Item, Err: 'a, S> ImplSubscribable<'a> for &'a Sink<&S>
+impl<'a, S> ImplSubscribable<'a> for &'a Sink<&S>
 where
-  &'a S: ImplSubscribable<'a, Item = Item, Err = Err>,
+  &'a S: ImplSubscribable<'a>,
 {
-  type Item = Item;
-  type Err = Err;
+  type Item = <&'a S as ImplSubscribable<'a>>::Item;
+  type Err = <&'a S as ImplSubscribable<'a>>::Err;
   type Unsub = <&'a S as ImplSubscribable<'a>>::Unsub;
 
   #[inline]

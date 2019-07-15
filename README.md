@@ -5,24 +5,17 @@ rx_rs ia a Rust implementation of Reactive Extensions. Which is almost zero cost
 ## Example 
 
 ```rust
-use rx_rs::{ ops::{ Filter, Merge, Multicast }, prelude::*};
+use rx_rs::{ ops::{ Filter, Merge, Fork }, prelude::*};
 
-let mut numbers = observable::from_iter(0..10).multicast();
+let mut numbers = observable::from_iter(0..10);
 // crate a even stream by filter
-let even = numbers.clone().filter(|v| *v % 2 == 0);
+let even = numbers.fork().filter(|v| *v % 2 == 0);
 // crate an odd stream by filter
-let odd = numbers.clone().filter(|v| *v % 2 != 0);
+let odd = numbers.fork().filter(|v| *v % 2 != 0);
 
 // merge odd and even stream again
-even.merge(odd)
-  .subscribe_err(
-    |v| print!("{} ", v, ),
-    |e| println!("Error because of: {}", e)
-  );
+even.merge(odd).subscribe(|v| print!("{} ", v, ));
 // "0 1 2 3 4 5 6 7 8 9" will be printed.
-
-numbers.error(&"just trigger an error.");
-// will print: "Error because of: just trigger an error."
 
 ```
 

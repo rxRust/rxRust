@@ -11,7 +11,7 @@ use crate::prelude::*;
 /// let coll = Rc::new(RefCell::new(vec![]));
 /// let coll_clone = coll.clone();
 ///
-/// observable::from_iter::<'_, _, _, ()>(0..10)
+/// observable::from_iter(0..10)
 ///   .filter(|v| *v % 2 == 0)
 ///   .subscribe(move |v| {
 ///      coll_clone.borrow_mut().push(*v);
@@ -21,11 +21,11 @@ use crate::prelude::*;
 /// assert_eq!(coll.borrow().clone(), vec![0, 2, 4, 6, 8]);
 /// ```
 
-pub trait Filter<'a, T> {
+pub trait Filter<T> {
   fn filter<N>(self, filter: N) -> FilterOp<Self, N>
   where
     Self: Sized,
-    N: Fn(&T) -> bool + 'a,
+    N: Fn(&T) -> bool,
   {
     FilterOp {
       source: self,
@@ -48,7 +48,7 @@ pub trait FilterWithErr<'a, T> {
   }
 }
 
-impl<'a, T, O> Filter<'a, T> for O where O: ImplSubscribable<'a, Item = T> {}
+impl<'a, T, O> Filter<T> for O where O: ImplSubscribable<'a, Item = T> {}
 
 impl<'a, T, O> FilterWithErr<'a, T> for O
 where
