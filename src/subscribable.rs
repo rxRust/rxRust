@@ -10,7 +10,7 @@ pub trait ImplSubscribable<'a>: Sized {
   /// The type of the elements being emitted.
   type Item;
   // The type of the error may propagating.
-  type Err: 'a;
+  type Err;
   // the Subscription subscribe method return.
   type Unsub: Subscription;
   fn subscribe_return_state(
@@ -65,7 +65,10 @@ pub trait Subscribable<'a>: ImplSubscribable<'a> {
     self,
     next: impl Fn(&Self::Item) + 'a,
     complete: impl Fn() + 'a,
-  ) -> Self::Unsub {
+  ) -> Self::Unsub
+  where
+    Self::Err: 'a,
+  {
     let err: Option<fn(&Self::Err)> = None;
     self.subscribe_return_state(
       move |v| {
@@ -77,7 +80,10 @@ pub trait Subscribable<'a>: ImplSubscribable<'a> {
     )
   }
 
-  fn subscribe(self, next: impl Fn(&Self::Item) + 'a) -> Self::Unsub {
+  fn subscribe(self, next: impl Fn(&Self::Item) + 'a) -> Self::Unsub
+  where
+    Self::Err: 'a,
+  {
     let complete: Option<fn()> = None;
     let err: Option<fn(&Self::Err)> = None;
     self.subscribe_return_state(
