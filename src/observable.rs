@@ -1,8 +1,8 @@
 use crate::prelude::*;
 use std::marker::PhantomData;
 
-mod from_iter;
-pub use from_iter::from_iter;
+mod from;
+pub use from::*;
 
 /// A representation of any set of values over any amount of time. This is the
 /// most basic building block rx_rs
@@ -14,7 +14,7 @@ pub struct Observable<F, Item, Err> {
 
 impl<'a, F, Item, Err> Observable<F, Item, Err>
 where
-  F: Fn(&mut Subscriber<'a, Item, Err>),
+  F: Fn(&mut dyn Observer<Item = Item, Err = Err>),
 {
   /// param `subscribe`: the function that is called when the Observable is
   /// initially subscribed to. This function is given a Subscriber, to which
@@ -34,7 +34,11 @@ where
     next: impl Fn(&Item) -> OState<Err> + 'a,
     error: Option<impl Fn(&Err) + 'a>,
     complete: Option<impl Fn() + 'a>,
-  ) -> Subscriber<'a, Item, Err> {
+  ) -> Box<dyn Subscription + 'a>
+  where
+    Item: 'a,
+    Err: 'a,
+  {
     let mut subscriber = Subscriber::new(next);
     if error.is_some() {
       subscriber.on_error(error.unwrap())
@@ -43,49 +47,56 @@ where
       subscriber.on_complete(complete.unwrap())
     };
     (self.subscribe)(&mut subscriber);
-    subscriber
+    Box::new(subscriber)
   }
 }
 
 impl<'a, F, Item: 'a, Err: 'a> ImplSubscribable<'a> for Observable<F, Item, Err>
 where
-  F: Fn(&mut Subscriber<'a, Item, Err>) + 'a,
+  F: Fn(&mut dyn Observer<Item = Item, Err = Err>),
 {
   type Item = Item;
   type Err = Err;
-  type Unsub = Subscriber<'a, Item, Err>;
 
   fn subscribe_return_state(
     self,
     next: impl Fn(&Self::Item) -> OState<Self::Err> + 'a,
     error: Option<impl Fn(&Self::Err) + 'a>,
     complete: Option<impl Fn() + 'a>,
-  ) -> Self::Unsub {
-    self.consume(next, error, complete)
+  ) -> Box<dyn Subscription + 'a> {
+    let mut subscriber = Subscriber::new(next);
+    if error.is_some() {
+      subscriber.on_error(error.unwrap())
+    };
+    if complete.is_some() {
+      subscriber.on_complete(complete.unwrap())
+    };
+    (self.subscribe)(&mut subscriber);
+    Box::new(subscriber)
   }
 }
 
 impl<'a, F, Item: 'a, Err: 'a> ImplSubscribable<'a>
   for &'a Observable<F, Item, Err>
 where
-  F: Fn(&mut Subscriber<'a, Item, Err>) + 'a,
+  F: Fn(&mut dyn Observer<Item = Item, Err = Err>),
 {
   type Item = Item;
   type Err = Err;
-  type Unsub = Subscriber<'a, Item, Err>;
 
   fn subscribe_return_state(
     self,
     next: impl Fn(&Self::Item) -> OState<Self::Err> + 'a,
     error: Option<impl Fn(&Self::Err) + 'a>,
     complete: Option<impl Fn() + 'a>,
-  ) -> Self::Unsub {
+  ) -> Box<dyn Subscription + 'a> {
     self.consume(next, error, complete)
   }
 }
 
 #[cfg(test)]
 mod test {
+  use crate::ops::Fork;
   use crate::prelude::*;
   use std::cell::Cell;
 
@@ -132,5 +143,15 @@ mod test {
 
     assert_eq!(sum1.get(), 10);
     assert_eq!(sum2.get(), 10);
+  }
+
+  #[test]
+  fn observable_fork() {
+    let observable = Observable::new(|s| {
+      s.next(&0);
+      s.error(&"");
+      s.complete();
+    });
+    let _o = observable.fork().fork().fork();
   }
 }

@@ -28,9 +28,11 @@ pub trait Observer {
   type Item;
   type Err;
 
-  fn next(&self, v: &Self::Item);
+  fn next(&self, v: &Self::Item) -> subscribable::OState<Self::Err>;
 
   fn complete(&mut self);
 
   fn error(&mut self, err: &Self::Err);
+
+  fn is_stopped(&self) -> bool;
 }
