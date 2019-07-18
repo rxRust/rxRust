@@ -11,14 +11,13 @@ pub trait ImplSubscribable<'a>: Sized {
   type Item;
   // The type of the error may propagating.
   type Err;
-  // the Subscription subscribe method return.
-  type Unsub: Subscription;
+
   fn subscribe_return_state(
     self,
     next: impl Fn(&Self::Item) -> OState<Self::Err> + 'a,
     error: Option<impl Fn(&Self::Err) + 'a>,
     complete: Option<impl Fn() + 'a>,
-  ) -> Self::Unsub;
+  ) -> Box<dyn Subscription + 'a>;
 }
 
 pub trait Subscribable<'a>: ImplSubscribable<'a> {
@@ -34,7 +33,7 @@ pub trait Subscribable<'a>: ImplSubscribable<'a> {
     next: impl Fn(&Self::Item) + 'a,
     error: impl Fn(&Self::Err) + 'a,
     complete: impl Fn() + 'a,
-  ) -> Self::Unsub {
+  ) -> Box<dyn Subscription + 'a> {
     self.subscribe_return_state(
       move |v| {
         next(v);
@@ -49,7 +48,7 @@ pub trait Subscribable<'a>: ImplSubscribable<'a> {
     self,
     next: impl Fn(&Self::Item) + 'a,
     error: impl Fn(&Self::Err) + 'a,
-  ) -> Self::Unsub {
+  ) -> Box<dyn Subscription + 'a> {
     let complete: Option<fn()> = None;
     self.subscribe_return_state(
       move |v| {
@@ -65,7 +64,7 @@ pub trait Subscribable<'a>: ImplSubscribable<'a> {
     self,
     next: impl Fn(&Self::Item) + 'a,
     complete: impl Fn() + 'a,
-  ) -> Self::Unsub
+  ) -> Box<dyn Subscription + 'a>
   where
     Self::Err: 'a,
   {
@@ -80,7 +79,10 @@ pub trait Subscribable<'a>: ImplSubscribable<'a> {
     )
   }
 
-  fn subscribe(self, next: impl Fn(&Self::Item) + 'a) -> Self::Unsub
+  fn subscribe(
+    self,
+    next: impl Fn(&Self::Item) + 'a,
+  ) -> Box<dyn Subscription + 'a>
   where
     Self::Err: 'a,
   {

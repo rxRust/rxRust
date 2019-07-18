@@ -36,7 +36,7 @@ fn subscribe_source<'a, S, M, B>(
   next: impl Fn(&B) -> OState<S::Err> + 'a,
   error: Option<impl Fn(&S::Err) + 'a>,
   complete: Option<impl Fn() + 'a>,
-) -> S::Unsub
+) -> Box<dyn Subscription + 'a>
 where
   M: Fn(&S::Item) -> B + 'a,
   S: ImplSubscribable<'a>,
@@ -78,7 +78,7 @@ fn subscribe_source_with_err<'a, S, M, B>(
   next: impl Fn(&B) -> OState<S::Err> + 'a,
   error: Option<impl Fn(&S::Err) + 'a>,
   complete: Option<impl Fn() + 'a>,
-) -> S::Unsub
+) -> Box<dyn Subscription + 'a>
 where
   M: Fn(&S::Item) -> Result<B, S::Err> + 'a,
   S: ImplSubscribable<'a>,
@@ -113,14 +113,13 @@ where
 {
   type Item = B;
   type Err = S::Err;
-  type Unsub = S::Unsub;
 
   fn subscribe_return_state(
     self,
     next: impl Fn(&Self::Item) -> OState<Self::Err> + 'a,
     error: Option<impl Fn(&Self::Err) + 'a>,
     complete: Option<impl Fn() + 'a>,
-  ) -> Self::Unsub {
+  ) -> Box<dyn Subscription + 'a> {
     subscribe_source(self.source, self.func, next, error, complete)
   }
 }
@@ -132,14 +131,13 @@ where
 {
   type Item = B;
   type Err = <&'a S as ImplSubscribable<'a>>::Err;
-  type Unsub = <&'a S as ImplSubscribable<'a>>::Unsub;
 
   fn subscribe_return_state(
     self,
     next: impl Fn(&Self::Item) -> OState<Self::Err> + 'a,
     error: Option<impl Fn(&Self::Err) + 'a>,
     complete: Option<impl Fn() + 'a>,
-  ) -> Self::Unsub {
+  ) -> Box<dyn Subscription + 'a> {
     subscribe_source(&self.source, &self.func, next, error, complete)
   }
 }
@@ -156,14 +154,13 @@ where
 {
   type Item = B;
   type Err = S::Err;
-  type Unsub = S::Unsub;
 
   fn subscribe_return_state(
     self,
     next: impl Fn(&Self::Item) -> OState<Self::Err> + 'a,
     error: Option<impl Fn(&Self::Err) + 'a>,
     complete: Option<impl Fn() + 'a>,
-  ) -> Self::Unsub {
+  ) -> Box<dyn Subscription + 'a> {
     subscribe_source_with_err(self.source, self.func, next, error, complete)
   }
 }
@@ -178,14 +175,13 @@ where
 {
   type Item = B;
   type Err = <&'a S as ImplSubscribable<'a>>::Err;
-  type Unsub = <&'a S as ImplSubscribable<'a>>::Unsub;
 
   fn subscribe_return_state(
     self,
     next: impl Fn(&Self::Item) -> OState<Self::Err> + 'a,
     error: Option<impl Fn(&Self::Err) + 'a>,
     complete: Option<impl Fn() + 'a>,
-  ) -> Self::Unsub {
+  ) -> Box<dyn Subscription + 'a> {
     subscribe_source_with_err(&self.source, &self.func, next, error, complete)
   }
 }
@@ -202,7 +198,7 @@ fn subscribe_source_ref<'a, S, M, B>(
   next: impl Fn(&B) -> OState<S::Err> + 'a,
   error: Option<impl Fn(&S::Err) + 'a>,
   complete: Option<impl Fn() + 'a>,
-) -> S::Unsub
+) -> Box<dyn Subscription + 'a>
 where
   M: for<'r> Fn(&'r S::Item) -> &'r B + 'a,
   S: ImplSubscribable<'a>,
@@ -217,14 +213,13 @@ where
 {
   type Item = B;
   type Err = S::Err;
-  type Unsub = S::Unsub;
 
   fn subscribe_return_state(
     self,
     next: impl Fn(&Self::Item) -> OState<Self::Err> + 'a,
     error: Option<impl Fn(&Self::Err) + 'a>,
     complete: Option<impl Fn() + 'a>,
-  ) -> Self::Unsub {
+  ) -> Box<dyn Subscription + 'a> {
     subscribe_source_ref(self.source, self.func, next, error, complete)
   }
 }
@@ -236,14 +231,13 @@ where
 {
   type Item = B;
   type Err = <&'a S as ImplSubscribable<'a>>::Err;
-  type Unsub = <&'a S as ImplSubscribable<'a>>::Unsub;
 
   fn subscribe_return_state(
     self,
     next: impl Fn(&Self::Item) -> OState<Self::Err> + 'a,
     error: Option<impl Fn(&Self::Err) + 'a>,
     complete: Option<impl Fn() + 'a>,
-  ) -> Self::Unsub {
+  ) -> Box<dyn Subscription + 'a> {
     subscribe_source_ref(&self.source, &self.func, next, error, complete)
   }
 }
@@ -260,7 +254,7 @@ fn subscribe_source_with_err_ref<'a, S, M, B>(
   next: impl Fn(&B) -> OState<S::Err> + 'a,
   error: Option<impl Fn(&S::Err) + 'a>,
   complete: Option<impl Fn() + 'a>,
-) -> S::Unsub
+) -> Box<dyn Subscription + 'a>
 where
   M: for<'r> Fn(&'r S::Item) -> Result<&'r B, S::Err> + 'a,
   S: ImplSubscribable<'a>,
@@ -282,14 +276,13 @@ where
 {
   type Item = B;
   type Err = S::Err;
-  type Unsub = S::Unsub;
 
   fn subscribe_return_state(
     self,
     next: impl Fn(&Self::Item) -> OState<Self::Err> + 'a,
     error: Option<impl Fn(&Self::Err) + 'a>,
     complete: Option<impl Fn() + 'a>,
-  ) -> Self::Unsub {
+  ) -> Box<dyn Subscription + 'a> {
     subscribe_source_with_err_ref(self.source, self.func, next, error, complete)
   }
 }
@@ -304,14 +297,13 @@ where
 {
   type Item = B;
   type Err = <&'a S as ImplSubscribable<'a>>::Err;
-  type Unsub = <&'a S as ImplSubscribable<'a>>::Unsub;
 
   fn subscribe_return_state(
     self,
     next: impl Fn(&Self::Item) -> OState<Self::Err> + 'a,
     error: Option<impl Fn(&Self::Err) + 'a>,
     complete: Option<impl Fn() + 'a>,
-  ) -> Self::Unsub {
+  ) -> Box<dyn Subscription + 'a> {
     subscribe_source_with_err_ref(
       &self.source,
       &self.func,
@@ -342,26 +334,11 @@ mod test {
   #[test]
   fn reference_lifetime_should_work() {
     let i = Cell::new(0);
-    let subject = Subject::<'_, i32, ()>::new();
-    subject
-      .clone()
+
+    observable::of(100)
       .map_return_ref(|v: &i32| v)
       .subscribe(|v| i.set(*v));
-    subject.next(&100);
     assert_eq!(i.get(), 100);
-  }
-
-  #[test]
-  fn unsubscribe() {
-    let i = Cell::new(0);
-    let subject = Subject::<'_, i32, ()>::new();
-    subject
-      .clone()
-      .map_return_ref(|v: &i32| v)
-      .subscribe(|v| i.set(*v))
-      .unsubscribe();
-    subject.next(&100);
-    assert_eq!(i.get(), 0);
   }
 
   #[test]

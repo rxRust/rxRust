@@ -1,57 +1,62 @@
-use crate::{subscribable::OState, subscription::Subscription, Observer};
+use crate::prelude::*;
 use std::marker::PhantomData;
 
 /// Implements the Observer trait and Subscription trait. While the Observer is
 /// the public API for consuming the values of an Observable, all Observers get
 /// converted to a Subscriber, in order to provide Subscription capabilities.
 ///
-pub struct Subscriber<'a, Item, E> {
+pub struct Subscriber<Item, Err, ON, OE, OC> {
   stopped: bool,
   // todo: should unbox the closure when rust support return impl trait in
   // trait method
-  on_next: Box<dyn Fn(&Item) -> OState<E> + 'a>,
-  on_err: Option<Box<dyn Fn(&E) + 'a>>,
-  on_complete: Option<Box<dyn Fn() + 'a>>,
-  _v: PhantomData<Item>,
+  on_next: ON,
+  on_err: Option<OE>,
+  on_complete: Option<OC>,
+  _v: PhantomData<(Item, Err)>,
 }
 
-impl<'a, Item, E> Subscriber<'a, Item, E> {
-  pub fn new(next: impl Fn(&Item) -> OState<E> + 'a) -> Self {
+impl<Item, Err, ON, OE, OC> Subscriber<Item, Err, ON, OE, OC> {
+  pub fn new(on_next: ON) -> Self {
     Subscriber {
       stopped: false,
-      on_next: Box::new(next),
+      on_next,
       on_err: None,
       on_complete: None,
       _v: PhantomData,
     }
   }
 
-  pub fn on_error(&mut self, err: impl Fn(&E) + 'a) {
+  pub fn on_error(&mut self, on_err: OE) {
     if self.on_err.is_none() {
-      self.on_err.replace(Box::new(err));
+      self.on_err.replace(on_err);
     } else {
       panic!("subscriber only accept on_error once");
     }
   }
 
-  pub fn on_complete(&mut self, comp: impl Fn() + 'a) {
+  pub fn on_complete(&mut self, on_comp: OC) {
     if self.on_complete.is_none() {
-      self.on_complete.replace(Box::new(comp));
+      self.on_complete.replace(on_comp);
     } else {
       panic!("subscriber only accept on_error once");
     }
   }
-
-  pub fn is_stopped(&self) -> bool { self.stopped }
 }
 
-impl<'a, Item, Err> Observer for Subscriber<'a, Item, Err> {
+impl<Item, Err, ON, OE, OC> Observer for Subscriber<Item, Err, ON, OE, OC>
+where
+  ON: Fn(&Item) -> OState<Err>,
+  OE: Fn(&Err),
+  OC: Fn(),
+{
   type Item = Item;
   type Err = Err;
 
-  fn next(&self, v: &Self::Item) {
+  fn next(&self, v: &Self::Item) -> OState<Self::Err> {
     if !self.stopped {
-      (self.on_next)(v);
+      (self.on_next)(v)
+    } else {
+      OState::Complete
     }
   }
 
@@ -76,10 +81,20 @@ impl<'a, Item, Err> Observer for Subscriber<'a, Item, Err> {
       on_err(err);
     }
   }
+
+  fn is_stopped(&self) -> bool { self.stopped }
 }
 
-impl<'a, Item, Err> Subscription for Subscriber<'a, Item, Err> {
+impl<Item, Err, ON, OE, OC> Subscription for Subscriber<Item, Err, ON, OE, OC> {
   fn unsubscribe(&mut self) { self.stopped = true; }
+}
+
+impl<Item, Err, ON, OE, OC> Publisher for Subscriber<Item, Err, ON, OE, OC>
+where
+  ON: Fn(&Item) -> OState<Err>,
+  OE: Fn(&Err),
+  OC: Fn(),
+{
 }
 
 #[cfg(test)]

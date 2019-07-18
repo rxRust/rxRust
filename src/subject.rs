@@ -1,101 +1,68 @@
 use crate::prelude::*;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
+use std::marker::PhantomData;
 use std::rc::Rc;
 
-pub(crate) type NextPtr<'a, T, E> = *const (dyn Fn(&T) -> OState<E> + 'a);
-
-pub(crate) struct Callbacks<'a, T, E> {
-  on_next: Box<dyn Fn(&T) -> OState<E> + 'a>,
-  on_complete: Option<Box<dyn Fn() + 'a>>,
-  on_error: Option<Box<dyn Fn(&E) + 'a>>,
-}
-
-#[derive(Default)]
-pub struct Subject<'a, T, E> {
-  cbs: Rc<RefCell<Vec<Callbacks<'a, T, E>>>>,
+pub struct Subject<'a, Item, Err> {
+  cbs: Rc<
+    RefCell<Vec<Rc<RefCell<Box<dyn Publisher<Item = Item, Err = Err> + 'a>>>>>,
+  >,
+  stopped: Rc<Cell<bool>>,
+  _p: PhantomData<(Item, Err)>,
 }
 
 impl<'a, T, E> Clone for Subject<'a, T, E> {
   fn clone(&self) -> Self {
     Subject {
       cbs: self.cbs.clone(),
+      stopped: self.stopped.clone(),
+      _p: PhantomData,
     }
   }
 }
 
-impl<'a, T, Err> ImplSubscribable<'a> for Subject<'a, T, Err> {
-  type Item = T;
+impl<'a, Item: 'a, Err: 'a> ImplSubscribable<'a> for Subject<'a, Item, Err> {
+  type Item = Item;
   type Err = Err;
-  // todo should not return lifetime
-  type Unsub = SubjectSubscription<'a, T, Err>;
 
   fn subscribe_return_state(
     self,
     next: impl Fn(&Self::Item) -> OState<Self::Err> + 'a,
     error: Option<impl Fn(&Self::Err) + 'a>,
     complete: Option<impl Fn() + 'a>,
-  ) -> Self::Unsub {
-    self.subscribe_impl(next, error, complete)
+  ) -> Box<dyn Subscription + 'a> {
+    let mut subscriber = Subscriber::new(next);
+    if error.is_some() {
+      subscriber.on_error(error.unwrap());
+    }
+    if complete.is_some() {
+      subscriber.on_complete(complete.unwrap());
+    }
+
+    let subscriber: Box<dyn Publisher<Item = Item, Err = Err> + 'a> =
+      Box::new(subscriber);
+    let subscriber = Rc::new(RefCell::new(subscriber));
+    self.cbs.borrow_mut().push(subscriber.clone());
+
+    Box::new(subscriber)
   }
 }
 
-impl<'a, T, Err> ImplSubscribable<'a> for &'a Subject<'a, T, Err> {
-  type Item = T;
-  type Err = Err;
-  type Unsub = SubjectSubscription<'a, T, Err>;
-
-  fn subscribe_return_state(
-    self,
-    next: impl Fn(&Self::Item) -> OState<Self::Err> + 'a,
-    error: Option<impl Fn(&Self::Err) + 'a>,
-    complete: Option<impl Fn() + 'a>,
-  ) -> Self::Unsub {
-    self.clone().subscribe_impl(next, error, complete)
-  }
-}
-
-impl<'a, T, E> Subject<'a, T, E> {
+impl<'a, Item: 'a, Err: 'a> Subject<'a, Item, Err> {
   pub fn new() -> Self {
     Subject {
       cbs: Rc::new(RefCell::new(vec![])),
+      stopped: Rc::new(Cell::new(false)),
+      _p: PhantomData,
     }
   }
+}
 
-  fn subscribe_impl(
-    self,
-    next: impl Fn(&T) -> OState<E> + 'a,
-    error: Option<impl Fn(&E) + 'a>,
-    complete: Option<impl Fn() + 'a>,
-  ) -> SubjectSubscription<'a, T, E> {
-    let on_next: Box<dyn Fn(&T) -> OState<E>> = Box::new(next);
-    let on_error = error.map(|e| {
-      let e: Box<dyn Fn(&E)> = Box::new(e);
-      e
-    });
-    let on_complete = complete.map(|c| {
-      let c: Box<dyn Fn()> = Box::new(c);
-      c
-    });
-    let ptr = on_next.as_ref() as NextPtr<'a, T, E>;
-    let cbs = Callbacks {
-      on_next,
-      on_complete,
-      on_error,
-    };
-    self.cbs.borrow_mut().push(cbs);
-
-    SubjectSubscription {
-      source: self.clone(),
-      callback: ptr,
-    }
-  }
-
-  fn remove_callback(&mut self, ptr: NextPtr<'a, T, E>) {
-    self
-      .cbs
-      .borrow_mut()
-      .retain(|x| x.on_next.as_ref() as *const _ != ptr);
-  }
+impl<'a, Item, Err> Subscription
+  for Rc<RefCell<Box<dyn Publisher<Item = Item, Err = Err> + 'a>>>
+{
+  #[inline]
+  fn unsubscribe(&mut self) { self.borrow_mut().unsubscribe(); }
 }
 
 // completed return or unsubscribe called.
@@ -103,73 +70,65 @@ impl<'a, T, E> Observer for Subject<'a, T, E> {
   type Item = T;
   type Err = E;
 
-  fn next(&self, v: &Self::Item) {
-    self.cbs.borrow_mut().drain_filter(|cb| {
-      let mut stopped = false;
-      match (cb.on_next)(&v) {
+  fn next(&self, v: &Self::Item) -> OState<Self::Err> {
+    if self.stopped.get() {
+      return OState::Complete;
+    };
+    self.cbs.borrow_mut().drain_filter(|subscriber| {
+      let mut subscriber = subscriber.borrow_mut();
+      match subscriber.next(&v) {
         OState::Complete => {
-          if let Some(ref mut on_comp) = cb.on_complete {
-            on_comp();
-            stopped = true;
-          }
+          subscriber.complete();
         }
         OState::Err(err) => {
-          if let Some(ref mut on_err) = cb.on_error {
-            on_err(&err);
-            stopped = true;
-          }
+          subscriber.error(&err);
         }
         _ => {}
       };
-      stopped
+      subscriber.is_stopped()
     });
+
+    if self.cbs.borrow().len() > 0 {
+      OState::Next
+    } else {
+      OState::Complete
+    }
   }
 
   fn complete(&mut self) {
-    self.cbs.borrow().iter().for_each(|cbs| {
-      if let Some(ref on_complete) = cbs.on_complete {
-        on_complete();
-      }
+    if self.stopped.get() {
+      return;
+    };
+    self.cbs.borrow().iter().for_each(|subscriber| {
+      subscriber.borrow_mut().complete();
     });
     self.cbs.borrow_mut().clear();
+    self.stopped.set(true);
   }
 
   fn error(&mut self, err: &Self::Err) {
-    self.cbs.borrow().iter().for_each(|cbs| {
-      if let Some(ref on_error) = cbs.on_error {
-        on_error(err);
-      }
+    if self.stopped.get() {
+      return;
+    };
+    self.cbs.borrow().iter().for_each(|subscriber| {
+      subscriber.borrow_mut().error(err);
     });
     self.cbs.borrow_mut().clear();
+    self.stopped.set(true);
   }
-}
 
-pub struct SubjectSubscription<'a, T, E> {
-  source: Subject<'a, T, E>,
-  callback: NextPtr<'a, T, E>,
-}
-
-impl<'a, T, E> Clone for SubjectSubscription<'a, T, E> {
-  fn clone(&self) -> Self {
-    SubjectSubscription {
-      source: self.source.clone(),
-      callback: self.callback,
-    }
-  }
-}
-
-impl<'a, T, E> Subscription for SubjectSubscription<'a, T, E> {
-  fn unsubscribe(&mut self) { self.source.remove_callback(self.callback); }
+  fn is_stopped(&self) -> bool { self.stopped.get() }
 }
 
 #[test]
 fn base_data_flow() {
-  use std::cell::Cell;
-  let i = Cell::new(0);
-  let broadcast = Subject::<'_, i32, ()>::new();
-  broadcast.clone().subscribe(|v: &i32| i.set(*v * 2));
+  use std::{cell::Cell, rc::Rc};
+  let i = Rc::new(Cell::new(0));
+  let ic = i.clone();
+  let broadcast = Subject::<i32, ()>::new();
+  broadcast.clone().subscribe(move |v: &i32| i.set(*v * 2));
   broadcast.next(&1);
-  assert_eq!(i.get(), 2);
+  assert_eq!(ic.get(), 2);
 }
 
 #[test]
@@ -178,7 +137,7 @@ fn error() {
   let mut broadcast = Subject::new();
   broadcast
     .clone()
-    .subscribe_err(|_: &i32| {}, |e: &&'static str| panic!(*e));
+    .subscribe_err(|_: &i32| {}, |e: &_| panic!(*e));
   broadcast.next(&1);
 
   broadcast.error(&"should panic!");
@@ -191,7 +150,7 @@ fn runtime_error() {
   let complete: Option<fn()> = None;
   broadcast.clone().subscribe_return_state(
     |_| OState::Err("runtime error"),
-    Some(Box::new(|e: &&'static str| panic!(*e))),
+    Some(Box::new(|e: &_| panic!(*e))),
     complete,
   );
 
@@ -200,7 +159,8 @@ fn runtime_error() {
 
 #[test]
 fn return_err_state() {
-  let ec = std::cell::Cell::new(0);
+  use std::cell::Cell;
+  let ec = Cell::new(0);
   let broadcast = Subject::new();
   let complete: Option<fn()> = None;
   broadcast.clone().subscribe_return_state(
@@ -218,13 +178,15 @@ fn return_err_state() {
 
 #[test]
 fn return_complete_state() {
-  let cc = std::cell::Cell::new(0);
+  use std::{cell::Cell, rc::Rc};
+  let cc = Rc::new(Cell::new(0));
   let broadcast = Subject::new();
   let error: Option<fn(&())> = None;
+  let b_c = cc.clone();
   broadcast.clone().subscribe_return_state(
     |_| OState::Complete,
     error,
-    Some(Box::new(|| cc.set(cc.get() + 1))),
+    Some(Box::new(move || b_c.set(b_c.get() + 1))),
   );
 
   broadcast.next(&1);
@@ -232,4 +194,14 @@ fn return_complete_state() {
   // should stopped
   broadcast.next(&1);
   assert_eq!(cc.get(), 1);
+}
+
+#[test]
+fn unsubscribe() {
+  use std::cell::Cell;
+  let i = Cell::new(0);
+  let subject = Subject::<'_, _, ()>::new();
+  subject.clone().subscribe(|v| i.set(*v)).unsubscribe();
+  subject.next(&0);
+  assert_eq!(i.get(), 0);
 }

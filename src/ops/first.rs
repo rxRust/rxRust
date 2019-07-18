@@ -42,7 +42,7 @@ fn subscribe_source<'a, S, V>(
   next: impl Fn(&S::Item) -> OState<S::Err> + 'a,
   error: Option<impl Fn(&S::Err) + 'a>,
   complete: Option<impl Fn() + 'a>,
-) -> S::Unsub
+) -> Box<dyn Subscription + 'a>
 where
   V: 'a,
   S: ImplSubscribable<'a, Item = V>,
@@ -76,14 +76,12 @@ where
 {
   type Item = S::Item;
   type Err = S::Err;
-  type Unsub = S::Unsub;
-
   fn subscribe_return_state(
     self,
     next: impl Fn(&Self::Item) -> OState<Self::Err> + 'a,
     error: Option<impl Fn(&Self::Err) + 'a>,
     complete: Option<impl Fn() + 'a>,
-  ) -> Self::Unsub {
+  ) -> Box<dyn Subscription + 'a> {
     subscribe_source(self.source, self.default, next, error, complete)
   }
 }
@@ -95,14 +93,13 @@ where
 {
   type Err = <&'a S as ImplSubscribable<'a>>::Err;
   type Item = <&'a S as ImplSubscribable<'a>>::Item;
-  type Unsub = <&'a S as ImplSubscribable<'a>>::Unsub;
 
   fn subscribe_return_state(
     self,
     next: impl Fn(&Self::Item) -> OState<Self::Err> + 'a,
     error: Option<impl Fn(&Self::Err) + 'a>,
     complete: Option<impl Fn() + 'a>,
-  ) -> Self::Unsub {
+  ) -> Box<dyn Subscription + 'a> {
     subscribe_source(&self.source, self.default.clone(), next, error, complete)
   }
 }
@@ -118,15 +115,10 @@ mod test {
     let completed = Cell::new(false);
     let next_count = Cell::new(0);
 
-    let numbers = Subject::<'_, _, ()>::new();
-    numbers.clone().first().subscribe_complete(
+    observable::from_iter(0..2).first().subscribe_complete(
       |_| next_count.set(next_count.get() + 1),
       || completed.set(true),
     );
-
-    (0..2).for_each(|v| {
-      numbers.next(&v);
-    });
 
     assert_eq!(completed.get(), true);
     assert_eq!(next_count.get(), 1);
@@ -134,30 +126,28 @@ mod test {
 
   #[test]
   fn first_or() {
+    use crate::ops::Fork;
     let completed = Cell::new(false);
     let next_count = Cell::new(0);
     let v = Cell::new(0);
 
-    let mut numbers = Subject::<'_, i32, ()>::new();
-    numbers.clone().first_or(100).subscribe_complete(
-      |_| next_count.set(next_count.get() + 1),
-      || completed.set(true),
-    );
+    observable::from_iter(0..2)
+      .fork()
+      .first_or(100)
+      .subscribe_complete(
+        |_| next_count.set(next_count.get() + 1),
+        || completed.set(true),
+      );
 
-    // normal pass value
-    (0..2).for_each(|v| {
-      numbers.next(&v);
-    });
     assert_eq!(next_count.get(), 1);
     assert_eq!(completed.get(), true);
 
     completed.set(false);
-    numbers
-      .clone()
+    observable::empty()
+      .fork()
       .first_or(100)
       .subscribe_complete(|value| v.set(*value), || completed.set(true));
 
-    numbers.complete();
     assert_eq!(completed.get(), true);
     assert_eq!(v.get(), 100);
   }
