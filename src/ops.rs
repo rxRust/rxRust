@@ -10,3 +10,5 @@ mod first;
 pub use first::{First, FirstOr};
 mod fork;
 pub use fork::Fork;
+mod multicast;
+pub use multicast::Multicast;

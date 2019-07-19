@@ -28,13 +28,21 @@
 /// ```
 use crate::prelude::*;
 
-pub trait Fork {
+pub trait Fork<'a> {
   #[inline]
-  fn fork(&self) -> Sink<&Self> { Sink(self) }
+  type Output;
+  fn fork(&'a self) -> Self::Output;
 }
 
-impl<'a, S> Fork for S where S: Subscribable<'a> {}
+impl<'a, S: 'a> Fork<'a> for S
+where
+  &'a S: Subscribable<'a>,
+{
+  type Output = Sink<&'a S>;
+  fn fork(&'a self) -> Self::Output { Sink(self) }
+}
 
+#[repr(transparent)]
 pub struct Sink<S>(S);
 
 impl<'a, S> ImplSubscribable<'a> for Sink<S>

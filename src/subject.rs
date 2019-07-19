@@ -1,8 +1,10 @@
+use crate::ops::Fork;
 use crate::prelude::*;
 use std::cell::{Cell, RefCell};
 use std::marker::PhantomData;
 use std::rc::Rc;
 
+#[derive(Default)]
 pub struct Subject<'a, Item, Err> {
   cbs: Rc<
     RefCell<Vec<Rc<RefCell<Box<dyn Publisher<Item = Item, Err = Err> + 'a>>>>>,
@@ -46,6 +48,11 @@ impl<'a, Item: 'a, Err: 'a> ImplSubscribable<'a> for Subject<'a, Item, Err> {
 
     Box::new(subscriber)
   }
+}
+
+impl<'a, 'b, Item: 'a, Err: 'a> Fork<'a> for Subject<'b, Item, Err> {
+  type Output = Self;
+  fn fork(&'a self) -> Self::Output { self.clone() }
 }
 
 impl<'a, Item: 'a, Err: 'a> Subject<'a, Item, Err> {
@@ -204,4 +211,10 @@ fn unsubscribe() {
   subject.clone().subscribe(|v| i.set(*v)).unsubscribe();
   subject.next(&0);
   assert_eq!(i.get(), 0);
+}
+
+#[test]
+fn fork() {
+  let subject = Subject::<'_, (), ()>::new();
+  subject.fork().fork().fork().fork();
 }
