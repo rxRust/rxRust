@@ -165,7 +165,7 @@ impl<'a> Subscription for MergeSubscription<'a> {
 #[cfg(test)]
 mod test {
   use crate::{
-    ops::{Filter, Fork, Merge, ToSubject},
+    ops::{Filter, Fork, Merge, Multicast},
     prelude::*,
   };
   use std::cell::{Cell, RefCell};
@@ -180,9 +180,9 @@ mod test {
 
     let numbers = Subject::<_, ()>::new();
     // enabling multiple observers for even stream;
-    let even = numbers.clone().filter(|v| v % 2 == 0).to_subject();
+    let even = numbers.fork().filter(|v| v % 2 == 0).multicast();
     // enabling multiple observers for odd stream;
-    let odd = numbers.clone().filter(|v| *v % 2 != 0).to_subject();
+    let odd = numbers.fork().filter(|v| *v % 2 != 0).multicast();
 
     // merge odd and even stream again
     let merged = even.clone().merge(odd.clone());
