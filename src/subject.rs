@@ -4,11 +4,11 @@ use std::cell::{Cell, RefCell};
 use std::marker::PhantomData;
 use std::rc::Rc;
 
+type RefPublisher<'a, Item, Err> =
+  Rc<RefCell<Box<dyn Publisher<Item = Item, Err = Err> + 'a>>>;
 #[derive(Default)]
 pub struct Subject<'a, Item, Err> {
-  cbs: Rc<
-    RefCell<Vec<Rc<RefCell<Box<dyn Publisher<Item = Item, Err = Err> + 'a>>>>>,
-  >,
+  cbs: Rc<RefCell<Vec<RefPublisher<'a, Item, Err>>>>,
   stopped: Rc<Cell<bool>>,
   _p: PhantomData<(Item, Err)>,
 }
