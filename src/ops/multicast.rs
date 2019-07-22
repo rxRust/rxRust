@@ -28,7 +28,7 @@
 ///   .subscribe(|v| println!("{}", v));
 ///
 /// // This will print nothing, because a subscribe is called inner multicast
-/// // and consumed the data.  
+/// // and consumed the data.
 /// ```
 use crate::prelude::*;
 
