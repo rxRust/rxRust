@@ -1,7 +1,7 @@
-#![feature(external_doc)]
+#![feature(external_doc, fn_traits, step_trait, unboxed_closures, drain_filter)]
 #![doc(include = "../README.md")]
-#![feature(drain_filter)]
 
+pub mod function;
 pub mod observable;
 pub mod ops;
 pub mod subject;
@@ -10,6 +10,7 @@ pub mod subscriber;
 pub mod subscription;
 
 pub mod prelude {
+  pub use crate::function::*;
   pub use crate::observable;
   pub use crate::observable::Observable;
   pub use crate::ops;
@@ -22,6 +23,7 @@ pub mod prelude {
   pub use crate::subscription;
   pub use crate::subscription::*;
   pub use crate::Observer;
+  pub use ops::{Fork, Multicast};
 }
 
 pub trait Observer {

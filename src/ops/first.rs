@@ -2,7 +2,8 @@ use crate::{
   ops::{take::TakeOp, Take},
   prelude::*,
 };
-use std::{cell::RefCell, rc::Rc};
+use std::borrow::Borrow;
+use std::sync::{Arc, Mutex};
 
 /// emit only the first item emitted by an Observable
 pub trait First {
@@ -14,93 +15,93 @@ pub trait First {
   }
 }
 
-impl<'a, O> First for O where O: ImplSubscribable<'a> {}
+impl<'a, O> First for O where O: ImplSubscribable {}
 
 /// emit only the first item (or a default item) emitted by an Observable
-pub trait FirstOr<'a> {
+pub trait FirstOr {
   fn first_or(self, default: Self::Item) -> FirstOrOp<TakeOp<Self>, Self::Item>
   where
-    Self: ImplSubscribable<'a>,
+    Self: ImplSubscribable,
   {
     FirstOrOp {
       source: self.first(),
-      default: Some(default),
+      default: default,
+      passed: false,
     }
   }
 }
 
-impl<'a, O> FirstOr<'a> for O where O: ImplSubscribable<'a> {}
+impl<O> FirstOr for O where O: ImplSubscribable {}
 
 pub struct FirstOrOp<S, V> {
   source: S,
-  default: Option<V>,
+  default: V,
+  passed: bool,
 }
 
-fn subscribe_source<'a, S, V>(
-  source: S,
-  default: Option<V>,
-  next: impl Fn(&S::Item) -> OState<S::Err> + 'a,
-  error: Option<impl Fn(&S::Err) + 'a>,
-  complete: Option<impl Fn() + 'a>,
-) -> Box<dyn Subscription + 'a>
+impl<S, T> ImplSubscribable for FirstOrOp<S, T>
 where
-  V: 'a,
-  S: ImplSubscribable<'a, Item = V>,
-{
-  let next = Rc::new(next);
-  let c_next = next.clone();
-  let default = Rc::new(RefCell::new(default));
-  let c_default = default.clone();
-  source.subscribe_return_state(
-    move |v| {
-      c_default.borrow_mut().take();
-      c_next(v)
-    },
-    error,
-    Some(move || {
-      let default = default.borrow_mut().take();
-      if let Some(d) = default {
-        next(&d);
-      }
-      if let Some(ref comp) = complete {
-        comp();
-      }
-    }),
-  )
-}
-
-impl<'a, S, T> ImplSubscribable<'a> for FirstOrOp<S, T>
-where
-  T: 'a,
-  S: ImplSubscribable<'a, Item = T>,
+  T: Borrow<S::Item> + Send + Sync + 'static,
+  S: ImplSubscribable,
 {
   type Item = S::Item;
   type Err = S::Err;
   fn subscribe_return_state(
     self,
-    next: impl Fn(&Self::Item) -> OState<Self::Err> + 'a,
-    error: Option<impl Fn(&Self::Err) + 'a>,
-    complete: Option<impl Fn() + 'a>,
-  ) -> Box<dyn Subscription + 'a> {
-    subscribe_source(self.source, self.default, next, error, complete)
+    next: impl Fn(&Self::Item) -> OState<Self::Err> + Send + Sync + 'static,
+    error: Option<impl Fn(&Self::Err) + Send + Sync + 'static>,
+    complete: Option<impl Fn() + Send + Sync + 'static>,
+  ) -> Box<dyn Subscription> {
+    let next = Arc::new(next);
+    let c_next = next.clone();
+    let default = self.default;
+    let passed = Arc::new(Mutex::new(self.passed));
+    let c_passed = passed.clone();
+    self.source.subscribe_return_state(
+      move |v| {
+        *passed.lock().unwrap() = true;
+        c_next(v)
+      },
+      error,
+      Some(move || {
+        if *c_passed.lock().unwrap() == false {
+          next(default.borrow());
+        }
+        if let Some(ref comp) = complete {
+          comp();
+        }
+      }),
+    )
   }
 }
 
-impl<'a, S, T> ImplSubscribable<'a> for &'a FirstOrOp<S, T>
+impl<S, T> Multicast for FirstOrOp<S, T>
 where
-  T: Clone + 'a,
-  &'a S: ImplSubscribable<'a, Item = T>,
+  T: Send + Sync + 'static,
+  S: Multicast<Item = T>,
 {
-  type Err = <&'a S as ImplSubscribable<'a>>::Err;
-  type Item = <&'a S as ImplSubscribable<'a>>::Item;
+  type Output = FirstOrOp<S::Output, Arc<T>>;
+  fn multicast(self) -> Self::Output {
+    FirstOrOp {
+      source: self.source.multicast(),
+      default: Arc::new(self.default),
+      passed: self.passed,
+    }
+  }
+}
 
-  fn subscribe_return_state(
-    self,
-    next: impl Fn(&Self::Item) -> OState<Self::Err> + 'a,
-    error: Option<impl Fn(&Self::Err) + 'a>,
-    complete: Option<impl Fn() + 'a>,
-  ) -> Box<dyn Subscription + 'a> {
-    subscribe_source(&self.source, self.default.clone(), next, error, complete)
+impl<S, T> Fork for FirstOrOp<S, Arc<T>>
+where
+  T: Send + Sync + 'static,
+  S: Fork<Item = T>,
+{
+  type Output = FirstOrOp<S::Output, Arc<T>>;
+  fn fork(&self) -> Self::Output {
+    FirstOrOp {
+      source: self.source.fork(),
+      default: self.default.clone(),
+      passed: self.passed,
+    }
   }
 }
 
@@ -108,80 +109,94 @@ where
 mod test {
   use super::{First, FirstOr};
   use crate::prelude::*;
-  use std::cell::Cell;
+  use std::sync::{Arc, Mutex};
 
   #[test]
   fn first() {
-    let completed = Cell::new(false);
-    let next_count = Cell::new(0);
+    let completed = Arc::new(Mutex::new(false));
+    let next_count = Arc::new(Mutex::new(0));
+    let c_next_count = next_count.clone();
+    let c_completed = completed.clone();
 
-    observable::from_iter(0..2).first().subscribe_complete(
-      |_| next_count.set(next_count.get() + 1),
-      || completed.set(true),
+    observable::from_range(0..2).first().subscribe_complete(
+      move |_| *next_count.lock().unwrap() += 1,
+      move || *completed.lock().unwrap() = true,
     );
 
-    assert_eq!(completed.get(), true);
-    assert_eq!(next_count.get(), 1);
+    assert_eq!(*c_completed.lock().unwrap(), true);
+    assert_eq!(*c_next_count.lock().unwrap(), 1);
   }
 
   #[test]
   fn first_or() {
-    use crate::ops::Fork;
-    let completed = Cell::new(false);
-    let next_count = Cell::new(0);
-    let v = Cell::new(0);
+    let completed = Arc::new(Mutex::new(false));
+    let next_count = Arc::new(Mutex::new(0));
+    let c_completed = completed.clone();
+    let c_next_count = next_count.clone();
 
-    observable::from_iter(0..2)
+    observable::from_range(0..2)
+      .multicast()
       .fork()
       .first_or(100)
       .subscribe_complete(
-        |_| next_count.set(next_count.get() + 1),
-        || completed.set(true),
+        move |_| *next_count.lock().unwrap() += 1,
+        move || *completed.lock().unwrap() = true,
       );
 
-    assert_eq!(next_count.get(), 1);
-    assert_eq!(completed.get(), true);
+    assert_eq!(*c_next_count.lock().unwrap(), 1);
+    assert_eq!(*c_completed.lock().unwrap(), true);
 
-    completed.set(false);
+    *c_completed.lock().unwrap() = false;
+    let completed = c_completed.clone();
+    let v = Arc::new(Mutex::new(0));
+    let c_v = v.clone();
     observable::empty()
+      .multicast()
       .fork()
       .first_or(100)
-      .subscribe_complete(|value| v.set(*value), || completed.set(true));
+      .subscribe_complete(
+        move |value| *v.lock().unwrap() = *value,
+        move || *completed.lock().unwrap() = true,
+      );
 
-    assert_eq!(completed.get(), true);
-    assert_eq!(v.get(), 100);
+    assert_eq!(*c_completed.lock().unwrap(), true);
+    assert_eq!(*c_v.lock().unwrap(), 100);
   }
 
   #[test]
   fn first_support_fork() {
     use crate::ops::{First, Fork};
-    let value = Cell::new(0);
-    let o = observable::from_iter(1..100).first();
+    let value = Arc::new(Mutex::new(0));
+    let c_value = value.clone();
+    let o = observable::from_range(1..100).first().multicast();
     let o1 = o.fork().first();
     let o2 = o.fork().first();
-    o1.subscribe(|v| value.set(*v));
-    assert_eq!(value.get(), 1);
+    o1.subscribe(move |v| *value.lock().unwrap() = *v);
+    assert_eq!(*c_value.lock().unwrap(), 1);
 
-    value.set(0);
-    o2.subscribe(|v| value.set(*v));
-    assert_eq!(value.get(), 1);
+    *c_value.lock().unwrap() = 0;
+    let value = c_value.clone();
+    o2.subscribe(move |v| *value.lock().unwrap() = *v);
+    assert_eq!(*c_value.lock().unwrap(), 1);
   }
   #[test]
   fn first_or_support_fork() {
-    use crate::ops::Fork;
-    let default = Cell::new(0);
+    let default = Arc::new(Mutex::new(0));
+    let c_default = default.clone();
     let o = Observable::new(|subscriber| {
       subscriber.complete();
       subscriber.error(&"");
     })
-    .first_or(100);
+    .first_or(100)
+    .multicast();
     let o1 = o.fork().first_or(0);
     let o2 = o.fork().first_or(0);
-    o1.subscribe(|v| default.set(*v));
-    assert_eq!(default.get(), 100);
+    o1.subscribe(move |v| *default.lock().unwrap() = *v);
+    assert_eq!(*c_default.lock().unwrap(), 100);
 
-    default.set(0);
-    o2.subscribe(|v| default.set(*v));
-    assert_eq!(default.get(), 100);
+    *c_default.lock().unwrap() = 0;
+    let default = c_default.clone();
+    o2.subscribe(move |v| *default.lock().unwrap() = *v);
+    assert_eq!(*c_default.lock().unwrap(), 100);
   }
 }

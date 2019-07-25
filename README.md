@@ -7,7 +7,7 @@ rx_rs ia a Rust implementation of Reactive Extensions. Which is almost zero cost
 ```rust
 use rx_rs::{ ops::{ Filter, Merge, Fork }, prelude::*};
 
-let mut numbers = observable::from_iter(0..10);
+let mut numbers = observable::from_range(0..10).multicast();
 // crate a even stream by filter
 let even = numbers.fork().filter(|v| *v % 2 == 0);
 // crate an odd stream by filter
@@ -17,6 +17,27 @@ let odd = numbers.fork().filter(|v| *v % 2 != 0);
 even.merge(odd).subscribe(|v| print!("{} ", v, ));
 // "0 1 2 3 4 5 6 7 8 9" will be printed.
 
+```
+
+### Fork Stream
+
+In `rx_rs` almost all extensions consume the upstream. So as usual it's unicast. So when you try to subscribe a stream twice, the compiler will complain. 
+
+```rust ignore
+ # use rx_rs::prelude::*;
+ let o = observable::from_range(0..10);
+ o.subscribe(|_| {println!("consume in first")}, |_:&()|{});
+ o.subscribe(|_| {println!("consume in second")}, |_:&()|{});
+```
+
+In this case, we can use `multicast` convert an unicast stream to a multicast stream. A multicast stream is a stream that implements `Fork` trait, let you can fork stream from it. Subject is an multicast stream default, so you can direct fork it. 
+
+```rust
+ # use rx_rs::prelude::*;
+ # use rx_rs::ops::Fork;
+ let o = observable::from_range(0..10).multicast();
+ o.fork().subscribe_err(|_| {println!("consume in first")}, |_:&()|{});
+ o.fork().subscribe_err(|_| {println!("consume in second")}, |_:&()|{});
 ```
 
 ## Runtime error propagating
