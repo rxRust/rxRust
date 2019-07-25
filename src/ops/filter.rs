@@ -1,58 +1,61 @@
 use crate::prelude::*;
+use std::sync::Arc;
 
 /// Emit only those items from an Observable that pass a predicate test
 /// # Example
 ///
 /// ```
 /// use rx_rs::{ops::Filter, prelude::*};
-/// use std::cell::RefCell;
-/// use std::rc::Rc;
+/// use std::sync::{Arc, Mutex};
 ///
-/// let coll = Rc::new(RefCell::new(vec![]));
+/// let coll = Arc::new(Mutex::new(vec![]));
 /// let coll_clone = coll.clone();
 ///
-/// observable::from_iter(0..10)
+/// observable::from_range(0..10)
 ///   .filter(|v| *v % 2 == 0)
 ///   .subscribe(move |v| {
-///      coll_clone.borrow_mut().push(*v);
+///      coll_clone.lock().unwrap().push(*v);
 ///   });
 
 /// // only even numbers received.
-/// assert_eq!(coll.borrow().clone(), vec![0, 2, 4, 6, 8]);
+/// assert_eq!(*coll.lock().unwrap(), vec![0, 2, 4, 6, 8]);
 /// ```
 
 pub trait Filter<T> {
-  fn filter<N>(self, filter: N) -> FilterOp<Self, N>
+  fn filter<N>(self, filter: N) -> FilterOp<Self, RxFnWrapper<N>>
   where
     Self: Sized,
     N: Fn(&T) -> bool,
   {
     FilterOp {
       source: self,
-      filter,
+      filter: RxFnWrapper::new(filter),
     }
   }
 }
 
 pub trait FilterWithErr<'a, T> {
   type Err;
-  fn filter_with_err<N>(self, filter: N) -> FilterWithErrOp<Self, N>
+  fn filter_with_err<N>(
+    self,
+    filter: N,
+  ) -> FilterWithErrOp<Self, RxFnWrapper<N>>
   where
     Self: Sized,
     N: Fn(&T) -> Result<bool, Self::Err> + 'a,
   {
     FilterWithErrOp {
       source: self,
-      filter,
+      filter: RxFnWrapper::new(filter),
     }
   }
 }
 
-impl<'a, T, O> Filter<T> for O where O: ImplSubscribable<'a, Item = T> {}
+impl<'a, T, O> Filter<T> for O where O: ImplSubscribable<Item = T> {}
 
 impl<'a, T, O> FilterWithErr<'a, T> for O
 where
-  O: ImplSubscribable<'a, Item = T>,
+  O: ImplSubscribable<Item = T>,
 {
   type Err = O::Err;
 }
@@ -67,127 +70,120 @@ pub struct FilterWithErrOp<S, N> {
   filter: N,
 }
 
-#[inline]
-fn subscribe_source<'a, S, F>(
-  source: S,
-  filter: F,
-  next: impl Fn(&S::Item) -> OState<S::Err> + 'a,
-  error: Option<impl Fn(&S::Err) + 'a>,
-  complete: Option<impl Fn() + 'a>,
-) -> Box<dyn Subscription + 'a>
+impl<S, F> ImplSubscribable for FilterOp<S, F>
 where
-  S: ImplSubscribable<'a>,
-  F: Fn(&S::Item) -> bool + 'a,
-{
-  source.subscribe_return_state(
-    move |v| {
-      if filter(v) { next(v) } else { OState::Next }
-    },
-    error,
-    complete,
-  )
-}
-
-impl<'a, S, F> ImplSubscribable<'a> for FilterOp<S, F>
-where
-  S: ImplSubscribable<'a>,
-  F: Fn(&S::Item) -> bool + 'a,
+  S: ImplSubscribable,
+  F: RxFn(&S::Item) -> bool + Send + Sync + 'static,
 {
   type Err = S::Err;
   type Item = S::Item;
 
   fn subscribe_return_state(
     self,
-    next: impl Fn(&Self::Item) -> OState<Self::Err> + 'a,
-    error: Option<impl Fn(&Self::Err) + 'a>,
-    complete: Option<impl Fn() + 'a>,
-  ) -> Box<dyn Subscription + 'a> {
-    subscribe_source(self.source, self.filter, next, error, complete)
-  }
-}
-
-impl<'a, S, F> ImplSubscribable<'a> for &'a FilterOp<S, F>
-where
-  &'a S: ImplSubscribable<'a>,
-  F: Fn(&<&'a S as ImplSubscribable<'a>>::Item) -> bool + 'a,
-{
-  type Err = <&'a S as ImplSubscribable<'a>>::Err;
-  type Item = <&'a S as ImplSubscribable<'a>>::Item;
-
-  fn subscribe_return_state(
-    self,
-    next: impl Fn(&Self::Item) -> OState<Self::Err> + 'a,
-    error: Option<impl Fn(&Self::Err) + 'a>,
-    complete: Option<impl Fn() + 'a>,
-  ) -> Box<dyn Subscription + 'a> {
-    subscribe_source(&self.source, &self.filter, next, error, complete)
-  }
-}
-
-#[inline]
-fn subscribe_source_with_err<'a, S, F>(
-  source: S,
-  filter: F,
-  next: impl Fn(&S::Item) -> OState<S::Err> + 'a,
-  error: Option<impl Fn(&S::Err) + 'a>,
-  complete: Option<impl Fn() + 'a>,
-) -> Box<dyn Subscription + 'a>
-where
-  S: ImplSubscribable<'a>,
-  F: Fn(&S::Item) -> Result<bool, S::Err> + 'a,
-{
-  source.subscribe_return_state(
-    move |v| match filter(&v) {
-      Ok(b) => {
-        if b {
+    next: impl Fn(&Self::Item) -> OState<Self::Err> + Send + Sync + 'static,
+    error: Option<impl Fn(&Self::Err) + Send + Sync + 'static>,
+    complete: Option<impl Fn() + Send + Sync + 'static>,
+  ) -> Box<dyn Subscription> {
+    let filter = self.filter;
+    self.source.subscribe_return_state(
+      move |v| {
+        if filter.call((v,)) {
           next(v)
         } else {
           OState::Next
         }
-      }
-      Err(e) => OState::Err(e),
-    },
-    error,
-    complete,
-  )
+      },
+      error,
+      complete,
+    )
+  }
 }
 
-impl<'a, S, F> ImplSubscribable<'a> for FilterWithErrOp<S, F>
+impl<S, F> Multicast for FilterOp<S, F>
 where
-  S: ImplSubscribable<'a>,
-  F: Fn(&S::Item) -> Result<bool, S::Err> + 'a,
+  S: Multicast,
+  F: RxFn(&S::Item) -> bool + Send + Sync + 'static,
+{
+  type Output = FilterOp<S::Output, Arc<F>>;
+  fn multicast(self) -> Self::Output {
+    FilterOp {
+      source: self.source.multicast(),
+      filter: Arc::new(self.filter),
+    }
+  }
+}
+
+impl<S, F> Fork for FilterOp<S, Arc<F>>
+where
+  S: Fork,
+  F: RxFn(&S::Item) -> bool + Send + Sync + 'static,
+{
+  type Output = FilterOp<S::Output, Arc<F>>;
+  fn fork(&self) -> Self::Output {
+    FilterOp {
+      source: self.source.fork(),
+      filter: self.filter.clone(),
+    }
+  }
+}
+
+impl<S, F> ImplSubscribable for FilterWithErrOp<S, F>
+where
+  S: ImplSubscribable,
+  F: RxFn(&S::Item) -> Result<bool, S::Err> + Send + Sync + 'static,
 {
   type Err = S::Err;
   type Item = S::Item;
 
   fn subscribe_return_state(
     self,
-    next: impl Fn(&Self::Item) -> OState<Self::Err> + 'a,
-    error: Option<impl Fn(&Self::Err) + 'a>,
-    complete: Option<impl Fn() + 'a>,
-  ) -> Box<dyn Subscription + 'a> {
-    subscribe_source_with_err(self.source, self.filter, next, error, complete)
+    next: impl Fn(&Self::Item) -> OState<Self::Err> + Send + Sync + 'static,
+    error: Option<impl Fn(&Self::Err) + Send + Sync + 'static>,
+    complete: Option<impl Fn() + Send + Sync + 'static>,
+  ) -> Box<dyn Subscription> {
+    let filter = self.filter;
+    self.source.subscribe_return_state(
+      move |v| match filter.call((&v,)) {
+        Ok(b) => {
+          if b {
+            next(v)
+          } else {
+            OState::Next
+          }
+        }
+        Err(e) => OState::Err(e),
+      },
+      error,
+      complete,
+    )
   }
 }
 
-impl<'a, S, F> ImplSubscribable<'a> for &'a FilterWithErrOp<S, F>
+impl<S, F> Multicast for FilterWithErrOp<S, F>
 where
-  &'a S: ImplSubscribable<'a>,
-  F: Fn(
-      &<&'a S as ImplSubscribable<'a>>::Item,
-    ) -> Result<bool, <&'a S as ImplSubscribable<'a>>::Err>
-    + 'a,
+  S: Multicast,
+  F: RxFn(&S::Item) -> Result<bool, S::Err> + Send + Sync + 'static,
 {
-  type Err = <&'a S as ImplSubscribable<'a>>::Err;
-  type Item = <&'a S as ImplSubscribable<'a>>::Item;
+  type Output = FilterWithErrOp<S::Output, Arc<F>>;
+  fn multicast(self) -> Self::Output {
+    FilterWithErrOp {
+      source: self.source.multicast(),
+      filter: Arc::new(self.filter),
+    }
+  }
+}
 
-  fn subscribe_return_state(
-    self,
-    next: impl Fn(&Self::Item) -> OState<Self::Err> + 'a,
-    error: Option<impl Fn(&Self::Err) + 'a>,
-    complete: Option<impl Fn() + 'a>,
-  ) -> Box<dyn Subscription + 'a> {
-    subscribe_source_with_err(&self.source, &self.filter, next, error, complete)
+impl<S, F> Fork for FilterWithErrOp<S, Arc<F>>
+where
+  S: Fork,
+  F: RxFn(&S::Item) -> Result<bool, S::Err> + Send + Sync + 'static,
+{
+  type Output = FilterWithErrOp<S::Output, Arc<F>>;
+  fn fork(&self) -> Self::Output {
+    FilterWithErrOp {
+      source: self.source.fork(),
+      filter: self.filter.clone(),
+    }
   }
 }
 
@@ -223,14 +219,23 @@ fn pass_error() {
 
 #[test]
 fn test_fork() {
-  use crate::ops::Fork;
   use crate::prelude::*;
-  let f = observable::from_iter(0..10).filter(|v| v % 2 == 0);
-  let f1 = f.fork();
-  f1.filter(|_| true).fork().subscribe(|_| {});
+  observable::from_range(0..10)
+    .filter(|v| v % 2 == 0)
+    .multicast()
+    .fork()
+    .filter(|_| true)
+    .multicast()
+    .fork()
+    .subscribe(|_| {});
 
   // filter with error
-  let f = observable::from_iter(0..10).filter_with_err(|_| Ok(true));
-  let f1 = f.fork();
-  f1.filter_with_err(|_| Ok(true)).fork().subscribe(|_| {});
+  observable::from_range(0..10)
+    .filter_with_err(|_| Ok(true))
+    .multicast()
+    .fork()
+    .filter_with_err(|_| Ok(true))
+    .multicast()
+    .fork()
+    .subscribe(|_| {});
 }

@@ -6,7 +6,7 @@ pub enum OState<E> {
   Err(E),
 }
 
-pub trait ImplSubscribable<'a>: Sized {
+pub trait ImplSubscribable: Sized {
   /// The type of the elements being emitted.
   type Item;
   // The type of the error may propagating.
@@ -14,13 +14,13 @@ pub trait ImplSubscribable<'a>: Sized {
 
   fn subscribe_return_state(
     self,
-    next: impl Fn(&Self::Item) -> OState<Self::Err> + 'a,
-    error: Option<impl Fn(&Self::Err) + 'a>,
-    complete: Option<impl Fn() + 'a>,
-  ) -> Box<dyn Subscription + 'a>;
+    next: impl Fn(&Self::Item) -> OState<Self::Err> + Send + Sync + 'static,
+    error: Option<impl Fn(&Self::Err) + Send + Sync + 'static>,
+    complete: Option<impl Fn() + Send + Sync + 'static>,
+  ) -> Box<dyn Subscription>;
 }
 
-pub trait Subscribable<'a>: ImplSubscribable<'a> {
+pub trait Subscribable: ImplSubscribable {
   /// Invokes an execution of an Observable and registers Observer handlers for
   /// notifications it will emit.
   ///
@@ -30,10 +30,10 @@ pub trait Subscribable<'a>: ImplSubscribable<'a> {
   ///
   fn subscribe_err_complete(
     self,
-    next: impl Fn(&Self::Item) + 'a,
-    error: impl Fn(&Self::Err) + 'a,
-    complete: impl Fn() + 'a,
-  ) -> Box<dyn Subscription + 'a> {
+    next: impl Fn(&Self::Item) + Send + Sync + 'static,
+    error: impl Fn(&Self::Err) + Send + Sync + 'static,
+    complete: impl Fn() + Send + Sync + 'static,
+  ) -> Box<dyn Subscription> {
     self.subscribe_return_state(
       move |v| {
         next(v);
@@ -46,9 +46,9 @@ pub trait Subscribable<'a>: ImplSubscribable<'a> {
 
   fn subscribe_err(
     self,
-    next: impl Fn(&Self::Item) + 'a,
-    error: impl Fn(&Self::Err) + 'a,
-  ) -> Box<dyn Subscription + 'a> {
+    next: impl Fn(&Self::Item) + Send + Sync + 'static,
+    error: impl Fn(&Self::Err) + Send + Sync + 'static,
+  ) -> Box<dyn Subscription> {
     let complete: Option<fn()> = None;
     self.subscribe_return_state(
       move |v| {
@@ -62,11 +62,11 @@ pub trait Subscribable<'a>: ImplSubscribable<'a> {
 
   fn subscribe_complete(
     self,
-    next: impl Fn(&Self::Item) + 'a,
-    complete: impl Fn() + 'a,
-  ) -> Box<dyn Subscription + 'a>
+    next: impl Fn(&Self::Item) + Send + Sync + 'static,
+    complete: impl Fn() + Send + Sync + 'static,
+  ) -> Box<dyn Subscription>
   where
-    Self::Err: 'a,
+    Self::Err: 'static,
   {
     let err: Option<fn(&Self::Err)> = None;
     self.subscribe_return_state(
@@ -81,10 +81,10 @@ pub trait Subscribable<'a>: ImplSubscribable<'a> {
 
   fn subscribe(
     self,
-    next: impl Fn(&Self::Item) + 'a,
-  ) -> Box<dyn Subscription + 'a>
+    next: impl Fn(&Self::Item) + Send + Sync + 'static,
+  ) -> Box<dyn Subscription>
   where
-    Self::Err: 'a,
+    Self::Err: 'static,
   {
     let complete: Option<fn()> = None;
     let err: Option<fn(&Self::Err)> = None;
@@ -99,4 +99,4 @@ pub trait Subscribable<'a>: ImplSubscribable<'a> {
   }
 }
 
-impl<'a, S: ImplSubscribable<'a>> Subscribable<'a> for S {}
+impl<'a, S: ImplSubscribable> Subscribable for S {}

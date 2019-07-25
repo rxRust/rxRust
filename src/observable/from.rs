@@ -1,12 +1,15 @@
 use crate::prelude::*;
+use std::iter::Step;
+use std::ops::Range;
 
-pub fn from_iter<Item>(
-  iter: impl IntoIterator<Item = Item> + Clone,
-) -> Observable<impl Fn(&mut dyn Observer<Item = Item, Err = ()>), Item, ()> {
+pub fn from_range<Idx>(
+  rg: Range<Idx>,
+) -> Observable<impl RxFn(&mut dyn Observer<Item = Idx, Err = ()>), Idx, ()>
+where
+  Idx: Step,
+{
   Observable::new(move |subscriber| {
-    iter
-      .clone()
-      .into_iter()
+    rg.clone()
       .take_while(|_| !subscriber.is_stopped())
       .for_each(|v| {
         subscriber.next(&v);
@@ -17,9 +20,29 @@ pub fn from_iter<Item>(
   })
 }
 
+pub fn from_vec<Item>(
+  vec: Vec<Item>,
+) -> Observable<impl RxFn(&mut dyn Observer<Item = Item, Err = ()>), Item, ()> {
+  Observable::new(move |subscriber| {
+    vec
+      .iter()
+      .take_while(|_| !subscriber.is_stopped())
+      .for_each(|v| {
+        subscriber.next(v);
+      });
+    if !subscriber.is_stopped() {
+      subscriber.complete();
+    }
+  })
+}
+
 pub fn of<Item>(
   v: Item,
-) -> Observable<impl Fn(&mut dyn Observer<Item = Item, Err = ()>), Item, ()> {
+) -> Observable<
+  RxFnWrapper<impl Fn(&mut dyn Observer<Item = Item, Err = ()>)>,
+  Item,
+  (),
+> {
   Observable::new(move |subscriber| {
     subscriber.next(&v);
     subscriber.complete();
@@ -27,77 +50,91 @@ pub fn of<Item>(
 }
 
 pub fn empty<Item>()
--> Observable<impl Fn(&mut dyn Observer<Item = Item, Err = ()>), Item, ()> {
+-> Observable<impl RxFn(&mut dyn Observer<Item = Item, Err = ()>), Item, ()> {
   Observable::new(move |subscriber| subscriber.complete())
 }
 
 #[cfg(test)]
 mod test {
   use crate::prelude::*;
-  use std::cell::Cell;
+  use std::sync::{Arc, Mutex};
 
   #[test]
   fn from_range() {
-    let hit_count = Cell::new(0);
-    let completed = Cell::new(false);
-    observable::from_iter(0..100).subscribe_complete(
-      |_| hit_count.set(hit_count.get() + 1),
-      || completed.set(true),
+    let hit_count = Arc::new(Mutex::new(0));
+    let completed = Arc::new(Mutex::new(false));
+    let c_hit_count = hit_count.clone();
+    let c_completed = completed.clone();
+    observable::from_range(0..100).subscribe_complete(
+      move |_| *hit_count.lock().unwrap() += 1,
+      move || *completed.lock().unwrap() = true,
     );
 
-    assert_eq!(hit_count.get(), 100);
-    assert_eq!(completed.get(), true);
+    assert_eq!(*c_hit_count.lock().unwrap(), 100);
+    assert_eq!(*c_completed.lock().unwrap(), true);
   }
 
   #[test]
   fn from_vec() {
-    let hit_count = Cell::new(0);
-    let completed = Cell::new(false);
-    observable::from_iter(vec![0; 100].iter()).subscribe_complete(
-      |_| hit_count.set(hit_count.get() + 1),
-      || completed.set(true),
+    let hit_count = Arc::new(Mutex::new(0));
+    let completed = Arc::new(Mutex::new(false));
+    let c_hit_count = hit_count.clone();
+    let c_completed = completed.clone();
+    observable::from_vec(vec![0; 100]).subscribe_complete(
+      move |_| *hit_count.lock().unwrap() += 1,
+      move || *completed.lock().unwrap() = true,
     );
 
-    assert_eq!(hit_count.get(), 100);
-    assert_eq!(completed.get(), true);
+    assert_eq!(*c_hit_count.lock().unwrap(), 100);
+    assert_eq!(*c_completed.lock().unwrap(), true);
   }
 
   #[test]
   fn of() {
-    let value = Cell::new(0);
-    let completed = Cell::new(false);
-    observable::of(100)
-      .subscribe_complete(|v| value.set(*v), || completed.set(true));
+    let value = Arc::new(Mutex::new(0));
+    let completed = Arc::new(Mutex::new(false));
+    let c_value = value.clone();
+    let c_completed = completed.clone();
+    observable::of(100).subscribe_complete(
+      move |v| *value.lock().unwrap() = *v,
+      move || *completed.lock().unwrap() = true,
+    );
 
-    assert_eq!(value.get(), 100);
-    assert_eq!(completed.get(), true);
+    assert_eq!(*c_value.lock().unwrap(), 100);
+    assert_eq!(*c_completed.lock().unwrap(), true);
   }
 
   #[test]
   fn empty() {
-    let hits = Cell::new(0);
-    let completed = Cell::new(false);
+    let hits = Arc::new(Mutex::new(0));
+    let completed = Arc::new(Mutex::new(false));
+    let c_hits = hits.clone();
+    let c_completed = completed.clone();
     observable::empty().subscribe_complete(
-      |_: &i32| hits.set(hits.get() + 1),
-      || completed.set(true),
+      move |_: &i32| *hits.lock().unwrap() += 1,
+      move || *completed.lock().unwrap() = true,
     );
 
-    assert_eq!(hits.get(), 0);
-    assert_eq!(completed.get(), true);
+    assert_eq!(*c_hits.lock().unwrap(), 0);
+    assert_eq!(*c_completed.lock().unwrap(), true);
   }
 
   #[test]
   fn fork() {
-    use crate::ops::{Filter, Fork};
-    observable::from_iter(vec![0; 100].iter())
+    use crate::ops::{Filter, Fork, Multicast};
+    observable::from_vec(vec![0; 100])
+      .multicast()
       .fork()
       .filter(|_v| true)
+      .multicast()
       .fork()
       .subscribe(|_| {});
 
     observable::of(0)
+      .multicast()
       .fork()
       .filter(|_v| true)
+      .multicast()
       .fork()
       .subscribe(|_| {});
   }

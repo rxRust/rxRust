@@ -1,19 +1,18 @@
-use crate::ops::Fork;
 use crate::prelude::*;
-use std::cell::{Cell, RefCell};
 use std::marker::PhantomData;
-use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
-type RefPublisher<'a, Item, Err> =
-  Rc<RefCell<Box<dyn Publisher<Item = Item, Err = Err> + 'a>>>;
 #[derive(Default)]
-pub struct Subject<'a, Item, Err> {
-  cbs: Rc<RefCell<Vec<RefPublisher<'a, Item, Err>>>>,
-  stopped: Rc<Cell<bool>>,
+pub struct Subject<Item, Err> {
+  cbs: Arc<Mutex<Vec<RefPublisher<Item, Err>>>>,
+  stopped: Arc<Mutex<bool>>,
   _p: PhantomData<(Item, Err)>,
 }
 
-impl<'a, T, E> Clone for Subject<'a, T, E> {
+type RefPublisher<Item, Err> =
+  Arc<Mutex<Box<dyn Publisher<Item = Item, Err = Err>>>>;
+
+impl<'a, T, E> Clone for Subject<T, E> {
   fn clone(&self) -> Self {
     Subject {
       cbs: self.cbs.clone(),
@@ -23,16 +22,16 @@ impl<'a, T, E> Clone for Subject<'a, T, E> {
   }
 }
 
-impl<'a, Item: 'a, Err: 'a> ImplSubscribable<'a> for Subject<'a, Item, Err> {
+impl<Item: 'static, Err: 'static> ImplSubscribable for Subject<Item, Err> {
   type Item = Item;
   type Err = Err;
 
   fn subscribe_return_state(
     self,
-    next: impl Fn(&Self::Item) -> OState<Self::Err> + 'a,
-    error: Option<impl Fn(&Self::Err) + 'a>,
-    complete: Option<impl Fn() + 'a>,
-  ) -> Box<dyn Subscription + 'a> {
+    next: impl Fn(&Self::Item) -> OState<Self::Err> + Send + 'static,
+    error: Option<impl Fn(&Self::Err) + Send + 'static>,
+    complete: Option<impl Fn() + Send + 'static>,
+  ) -> Box<dyn Subscription> {
     let mut subscriber = Subscriber::new(next);
     if error.is_some() {
       subscriber.on_error(error.unwrap());
@@ -41,48 +40,54 @@ impl<'a, Item: 'a, Err: 'a> ImplSubscribable<'a> for Subject<'a, Item, Err> {
       subscriber.on_complete(complete.unwrap());
     }
 
-    let subscriber: Box<dyn Publisher<Item = Item, Err = Err> + 'a> =
+    let subscriber: Box<dyn Publisher<Item = Item, Err = Err>> =
       Box::new(subscriber);
-    let subscriber = Rc::new(RefCell::new(subscriber));
-    self.cbs.borrow_mut().push(subscriber.clone());
+    let subscriber = Arc::new(Mutex::new(subscriber));
+    self.cbs.lock().unwrap().push(subscriber.clone());
 
     Box::new(subscriber)
   }
 }
-
-impl<'a, 'b, Item: 'a, Err: 'a> Fork<'a> for Subject<'b, Item, Err> {
+impl<Item: 'static, Err: 'static> Fork for Subject<Item, Err> {
   type Output = Self;
-  fn fork(&'a self) -> Self::Output { self.clone() }
+  fn fork(&self) -> Self::Output { self.clone() }
 }
 
-impl<'a, Item: 'a, Err: 'a> Subject<'a, Item, Err> {
+impl<Item: 'static, Err: 'static> Multicast for Subject<Item, Err> {
+  type Output = Self;
+  #[inline(always)]
+  fn multicast(self) -> Self::Output { self }
+}
+
+impl<'a, Item: 'a, Err: 'a> Subject<Item, Err> {
   pub fn new() -> Self {
     Subject {
-      cbs: Rc::new(RefCell::new(vec![])),
-      stopped: Rc::new(Cell::new(false)),
+      cbs: Arc::new(Mutex::new(vec![])),
+      stopped: Arc::new(Mutex::new(false)),
       _p: PhantomData,
     }
   }
 }
 
-impl<'a, Item, Err> Subscription
-  for Rc<RefCell<Box<dyn Publisher<Item = Item, Err = Err> + 'a>>>
+impl<Item, Err> Subscription
+  for Arc<Mutex<Box<dyn Publisher<Item = Item, Err = Err>>>>
 {
   #[inline]
-  fn unsubscribe(&mut self) { self.borrow_mut().unsubscribe(); }
+  fn unsubscribe(&mut self) { self.lock().unwrap().unsubscribe(); }
 }
 
 // completed return or unsubscribe called.
-impl<'a, T, E> Observer for Subject<'a, T, E> {
+impl<T, E> Observer for Subject<T, E> {
   type Item = T;
   type Err = E;
 
   fn next(&self, v: &Self::Item) -> OState<Self::Err> {
-    if self.stopped.get() {
+    if *self.stopped.lock().unwrap() {
       return OState::Complete;
     };
-    self.cbs.borrow_mut().drain_filter(|subscriber| {
-      let mut subscriber = subscriber.borrow_mut();
+    let mut publishers = self.cbs.lock().unwrap();
+    publishers.drain_filter(|subscriber| {
+      let mut subscriber = subscriber.lock().unwrap();
       match subscriber.next(&v) {
         OState::Complete => {
           subscriber.complete();
@@ -95,7 +100,7 @@ impl<'a, T, E> Observer for Subject<'a, T, E> {
       subscriber.is_stopped()
     });
 
-    if self.cbs.borrow().len() > 0 {
+    if publishers.len() > 0 {
       OState::Next
     } else {
       OState::Complete
@@ -103,39 +108,44 @@ impl<'a, T, E> Observer for Subject<'a, T, E> {
   }
 
   fn complete(&mut self) {
-    if self.stopped.get() {
+    if *self.stopped.lock().unwrap() {
       return;
     };
-    self.cbs.borrow().iter().for_each(|subscriber| {
-      subscriber.borrow_mut().complete();
+    let mut publishers = self.cbs.lock().unwrap();
+    publishers.iter().for_each(|subscriber| {
+      subscriber.lock().unwrap().complete();
     });
-    self.cbs.borrow_mut().clear();
-    self.stopped.set(true);
+    publishers.clear();
+
+    *self.stopped.lock().unwrap() = true;
   }
 
   fn error(&mut self, err: &Self::Err) {
-    if self.stopped.get() {
+    if *self.stopped.lock().unwrap() {
       return;
     };
-    self.cbs.borrow().iter().for_each(|subscriber| {
-      subscriber.borrow_mut().error(err);
+    let mut publishers = self.cbs.lock().unwrap();
+    publishers.iter().for_each(|subscriber| {
+      subscriber.lock().unwrap().error(err);
     });
-    self.cbs.borrow_mut().clear();
-    self.stopped.set(true);
+    publishers.clear();
+    *self.stopped.lock().unwrap() = true;
   }
 
-  fn is_stopped(&self) -> bool { self.stopped.get() }
+  fn is_stopped(&self) -> bool { *self.stopped.lock().unwrap() }
 }
 
 #[test]
 fn base_data_flow() {
-  use std::{cell::Cell, rc::Rc};
-  let i = Rc::new(Cell::new(0));
-  let ic = i.clone();
+  use std::sync::{Arc, Mutex};
+  let i = Arc::new(Mutex::new(0));
+  let c_i = i.clone();
   let broadcast = Subject::<i32, ()>::new();
-  broadcast.clone().subscribe(move |v: &i32| i.set(*v * 2));
+  broadcast
+    .clone()
+    .subscribe(move |v: &i32| *i.lock().unwrap() = *v * 2);
   broadcast.next(&1);
-  assert_eq!(ic.get(), 2);
+  assert_eq!(*c_i.lock().unwrap(), 2);
 }
 
 #[test]
@@ -166,55 +176,63 @@ fn runtime_error() {
 
 #[test]
 fn return_err_state() {
-  use std::cell::Cell;
-  let ec = Cell::new(0);
+  use std::sync::{Arc, Mutex};
+  let ec = Arc::new(Mutex::new(0));
+  let c_ec = ec.clone();
   let broadcast = Subject::new();
   let complete: Option<fn()> = None;
   broadcast.clone().subscribe_return_state(
     |_| OState::Err("runtime error"),
-    Some(Box::new(|_: &_| ec.set(ec.get() + 1))),
+    Some(Box::new(move |_: &_| *ec.lock().unwrap() += 1)),
     complete,
   );
 
   broadcast.next(&1);
-  assert_eq!(ec.get(), 1);
+  assert_eq!(*c_ec.lock().unwrap(), 1);
   // should stopped
   broadcast.next(&1);
-  assert_eq!(ec.get(), 1);
+  assert_eq!(*c_ec.lock().unwrap(), 1);
 }
 
 #[test]
 fn return_complete_state() {
-  use std::{cell::Cell, rc::Rc};
-  let cc = Rc::new(Cell::new(0));
+  use std::sync::{Arc, Mutex};
+  let cc = Arc::new(Mutex::new(0));
+  let c_cc = cc.clone();
   let broadcast = Subject::new();
   let error: Option<fn(&())> = None;
-  let b_c = cc.clone();
   broadcast.clone().subscribe_return_state(
     |_| OState::Complete,
     error,
-    Some(Box::new(move || b_c.set(b_c.get() + 1))),
+    Some(Box::new(move || {
+      let mut v = cc.lock().unwrap();
+      *v = *v + 1;
+    })),
   );
 
   broadcast.next(&1);
-  assert_eq!(cc.get(), 1);
+  assert_eq!(*c_cc.lock().unwrap(), 1);
   // should stopped
   broadcast.next(&1);
-  assert_eq!(cc.get(), 1);
+  assert_eq!(*c_cc.lock().unwrap(), 1);
 }
 
 #[test]
 fn unsubscribe() {
-  use std::cell::Cell;
-  let i = Cell::new(0);
-  let subject = Subject::<'_, _, ()>::new();
-  subject.clone().subscribe(|v| i.set(*v)).unsubscribe();
-  subject.next(&0);
-  assert_eq!(i.get(), 0);
+  use std::sync::{Arc, Mutex};
+  let i = Arc::new(Mutex::new(0));
+  let c_i = i.clone();
+  let subject = Subject::<_, ()>::new();
+  subject
+    .clone()
+    .subscribe(move |v| *i.lock().unwrap() = *v)
+    .unsubscribe();
+  subject.next(&100);
+  assert_eq!(*c_i.lock().unwrap(), 0);
 }
 
 #[test]
 fn fork() {
-  let subject = Subject::<'_, (), ()>::new();
+  let subject = Subject::<(), ()>::new();
   subject.fork().fork().fork().fork();
 }

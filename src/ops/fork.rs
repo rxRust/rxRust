@@ -1,15 +1,15 @@
 /// In `rx_rs` almost all extensions consume the upstream. So as usual it's
-/// single-chain. Have to use `fork` to fork stream.
+/// single-chain. Have to use `multicast` and `fork` to fork stream.
 /// # Example
 /// ```rust ignore
 ///  # use rx_rs::prelude::*;
-///  let o = observable::from_iter(0..10);
+///  let o = observable::from_range(0..10);
 ///  o.subscribe_err(|_| {println!("consume in first")}, |_:&()|{});
 ///  o.subscribe_err(|_| {println!("consume in second")}, |_:&()|{});
 /// ```
 /// it will compile failed, complains like this:
 /// ```
-// 5 |  let o = observable::from_iter(0..10);
+// 5 |  let o = observable::from_range(0..10);
 //   |      - move occurs because `o` has type `rx_rs::observable::Observable`,
 //   |        which does not implement the `Copy` trait
 // 6 |  o.subscribe_err(|_| {println!("consume in first")}, |_:&()|{});
@@ -18,65 +18,23 @@
 //   |  ^ value used here after move
 /// ```
 
-/// use `fork` to resolve it
+/// use `multicast` convert a single-chain stream to one-multi stream.  Then use
+/// `fork` to fork a new stream.
 /// ```rust
 ///  # use rx_rs::prelude::*;
 ///  # use rx_rs::ops::Fork;
-///  let o = observable::from_iter(0..10);
+///  let o = observable::from_range(0..10).multicast();
 ///  o.fork().subscribe_err(|_| {println!("consume in first")}, |_:&()|{});
 ///  o.fork().subscribe_err(|_| {println!("consume in second")}, |_:&()|{});
 /// ```
 use crate::prelude::*;
 
-pub trait Fork<'a> {
-  #[inline]
-  type Output;
-  fn fork(&'a self) -> Self::Output;
+pub trait Multicast: ImplSubscribable {
+  type Output: Fork<Item = Self::Item, Err = Self::Err>;
+  fn multicast(self) -> Self::Output;
 }
 
-impl<'a, S: 'a> Fork<'a> for S
-where
-  &'a S: Subscribable<'a>,
-{
-  type Output = Sink<&'a S>;
-  fn fork(&'a self) -> Self::Output { Sink(self) }
-}
-
-#[repr(transparent)]
-pub struct Sink<S>(S);
-
-impl<'a, S> ImplSubscribable<'a> for Sink<S>
-where
-  S: ImplSubscribable<'a>,
-{
-  type Item = S::Item;
-  type Err = S::Err;
-
-  #[inline]
-  fn subscribe_return_state(
-    self,
-    next: impl Fn(&Self::Item) -> OState<Self::Err> + 'a,
-    error: Option<impl Fn(&Self::Err) + 'a>,
-    complete: Option<impl Fn() + 'a>,
-  ) -> Box<dyn Subscription + 'a> {
-    self.0.subscribe_return_state(next, error, complete)
-  }
-}
-
-impl<'a, S> ImplSubscribable<'a> for &'a Sink<&S>
-where
-  &'a S: ImplSubscribable<'a>,
-{
-  type Item = <&'a S as ImplSubscribable<'a>>::Item;
-  type Err = <&'a S as ImplSubscribable<'a>>::Err;
-
-  #[inline]
-  fn subscribe_return_state(
-    self,
-    next: impl Fn(&Self::Item) -> OState<Self::Err> + 'a,
-    error: Option<impl Fn(&Self::Err) + 'a>,
-    complete: Option<impl Fn() + 'a>,
-  ) -> Box<dyn Subscription + 'a> {
-    self.0.subscribe_return_state(next, error, complete)
-  }
+pub trait Fork: ImplSubscribable {
+  type Output: ImplSubscribable<Item = Self::Item, Err = Self::Err>;
+  fn fork(&self) -> Self::Output;
 }

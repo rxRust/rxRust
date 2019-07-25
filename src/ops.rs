@@ -9,6 +9,4 @@ pub use take::Take;
 mod first;
 pub use first::{First, FirstOr};
 mod fork;
-pub use fork::Fork;
-mod multicast;
-pub use multicast::Multicast;
+pub use fork::{Fork, Multicast};

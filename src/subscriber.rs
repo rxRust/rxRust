@@ -7,8 +7,6 @@ use std::marker::PhantomData;
 ///
 pub struct Subscriber<Item, Err, ON, OE, OC> {
   stopped: bool,
-  // todo: should unbox the closure when rust support return impl trait in
-  // trait method
   on_next: ON,
   on_err: Option<OE>,
   on_complete: Option<OC>,
