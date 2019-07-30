@@ -12,8 +12,7 @@ pub struct Subject<Item, Err> {
   _p: PhantomData<(Item, Err)>,
 }
 
-type RefPublisher<Item, Err> =
-  Arc<Mutex<Box<dyn Publisher<Item = Item, Err = Err> + Send + Sync>>>;
+type RefPublisher<Item, Err> = Arc<Mutex<Box<dyn Publisher<Item = Item, Err = Err> + Send + Sync>>>;
 
 impl<'a, T, E> Clone for Subject<T, E> {
   fn clone(&self) -> Self {
@@ -31,26 +30,21 @@ impl<Item: 'static, Err: 'static> ImplSubscribable for Subject<Item, Err> {
 
   fn subscribe_return_state(
     self,
-    next: impl Fn(&Self::Item) -> RxReturn<Self::Err> + Send + 'static,
-    error: Option<impl Fn(&Self::Err) + Send + 'static>,
-    complete: Option<impl Fn() + Send + 'static>,
+    subscribe: impl RxFn(RxValue<'_, Self::Item, Self::Err>) -> RxReturn<Self::Err>
+      + Send
+      + Sync
+      + 'static,
   ) -> Box<dyn Subscription + Send + Sync> {
-    let mut subscriber = Subscriber::new(next);
-    if error.is_some() {
-      subscriber.on_error(error.unwrap());
-    }
-    if complete.is_some() {
-      subscriber.on_complete(complete.unwrap());
-    }
+    let subscriber = Subscriber::new(subscribe);
 
-    let subscriber: Box<dyn Publisher<Item = Item, Err = Err> + Send + Sync> =
-      Box::new(subscriber);
+    let subscriber: Box<dyn Publisher<Item = Item, Err = Err> + Send + Sync> = Box::new(subscriber);
     let subscriber = Arc::new(Mutex::new(subscriber));
     self.cbs.lock().unwrap().push(subscriber.clone());
 
     Box::new(subscriber)
   }
 }
+
 impl<Item: 'static, Err: 'static> Fork for Subject<Item, Err> {
   type Output = Self;
   fn fork(&self) -> Self::Output { self.clone() }
@@ -160,15 +154,16 @@ fn error() {
 #[test]
 #[should_panic]
 fn runtime_error() {
-  let broadcast = Subject::new();
-  let complete: Option<fn()> = None;
-  broadcast.clone().subscribe_return_state(
-    |_| RxReturn::Err("runtime error"),
-    Some(Box::new(|e: &_| panic!(*e))),
-    complete,
-  );
+  let subject = Subject::new();
+  subject
+    .clone()
+    .subscribe_return_state(RxFnWrapper::new(|v: RxValue<'_, _, _>| match v {
+      RxValue::Next(_) => RxReturn::Err("runtime error"),
+      RxValue::Err(e) => panic!(*e),
+      _ => RxReturn::Continue,
+    }));
 
-  broadcast.next(&1);
+  subject.next(&1);
 }
 
 #[test]
@@ -176,18 +171,22 @@ fn return_err_state() {
   use std::sync::{Arc, Mutex};
   let ec = Arc::new(Mutex::new(0));
   let c_ec = ec.clone();
-  let broadcast = Subject::new();
-  let complete: Option<fn()> = None;
-  broadcast.clone().subscribe_return_state(
-    |_| RxReturn::Err("runtime error"),
-    Some(Box::new(move |_: &_| *ec.lock().unwrap() += 1)),
-    complete,
-  );
+  let subject = Subject::new();
+  subject
+    .clone()
+    .subscribe_return_state(RxFnWrapper::new(move |v: RxValue<'_, _, _>| match v {
+      RxValue::Next(_) => RxReturn::Err("runtime error"),
+      RxValue::Err(_) => {
+        *ec.lock().unwrap() += 1;
+        RxReturn::Continue
+      }
+      _ => RxReturn::Continue,
+    }));
 
-  broadcast.next(&1);
+  subject.next(&1);
   assert_eq!(*c_ec.lock().unwrap(), 1);
   // should stopped
-  broadcast.next(&1);
+  subject.next(&1);
   assert_eq!(*c_ec.lock().unwrap(), 1);
 }
 
@@ -197,15 +196,16 @@ fn return_complete_state() {
   let cc = Arc::new(Mutex::new(0));
   let c_cc = cc.clone();
   let broadcast = Subject::new();
-  let error: Option<fn(&())> = None;
-  broadcast.clone().subscribe_return_state(
-    |_| RxReturn::Complete,
-    error,
-    Some(Box::new(move || {
-      let mut v = cc.lock().unwrap();
-      *v += 1;
-    })),
-  );
+  broadcast.clone().subscribe_return_state(RxFnWrapper::new(
+    move |v: RxValue<'_, i32, ()>| match v {
+      RxValue::Next(_) => RxReturn::Complete,
+      RxValue::Err(_) => RxReturn::Continue,
+      _ => {
+        *cc.lock().unwrap() += 1;
+        RxReturn::Continue
+      }
+    },
+  ));
 
   broadcast.next(&1);
   assert_eq!(*c_cc.lock().unwrap(), 1);

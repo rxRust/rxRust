@@ -51,30 +51,31 @@ where
   type Err = S::Err;
   fn subscribe_return_state(
     self,
-    next: impl Fn(&Self::Item) -> RxReturn<Self::Err> + Send + Sync + 'static,
-    error: Option<impl Fn(&Self::Err) + Send + Sync + 'static>,
-    complete: Option<impl Fn() + Send + Sync + 'static>,
+    subscribe: impl RxFn(RxValue<'_, Self::Item, Self::Err>) -> RxReturn<Self::Err>
+      + Send
+      + Sync
+      + 'static,
   ) -> Box<dyn Subscription + Send + Sync> {
-    let next = Arc::new(next);
-    let c_next = next.clone();
     let default = self.default;
-    let passed = Arc::new(AtomicBool::new(self.passed));
-    let c_passed = passed.clone();
-    self.source.subscribe_return_state(
-      move |v| {
-        passed.store(true, Ordering::Relaxed);
-        c_next(v)
-      },
-      error,
-      Some(move || {
-        if !c_passed.load(Ordering::Relaxed) {
-          next(default.borrow());
+    let passed = AtomicBool::new(self.passed);
+    self
+      .source
+      .subscribe_return_state(RxFnWrapper::new(move |v: RxValue<'_, _, _>| match v {
+        RxValue::Next(nv) => {
+          passed.store(true, Ordering::Relaxed);
+          subscribe.call((RxValue::Next(nv),))
         }
-        if let Some(ref comp) = complete {
-          comp();
+        err @ RxValue::Err(_) => subscribe.call((err,)),
+        RxValue::Complete => {
+          if !passed.load(Ordering::Relaxed) {
+            let rv = subscribe.call((RxValue::Next(default.borrow()),));
+            if let err @ RxReturn::Err(_) = rv {
+              return err;
+            }
+          }
+          subscribe.call((RxValue::Complete,))
         }
-      }),
-    )
+      }))
   }
 }
 
@@ -141,8 +142,6 @@ mod test {
     let c_next_count = next_count.clone();
 
     observable::from_range(0..2)
-      .multicast()
-      .fork()
       .first_or(100)
       .subscribe_complete(
         move |_| *next_count.lock().unwrap() += 1,
@@ -156,14 +155,10 @@ mod test {
     let completed = c_completed.clone();
     let v = Arc::new(Mutex::new(0));
     let c_v = v.clone();
-    observable::empty()
-      .multicast()
-      .fork()
-      .first_or(100)
-      .subscribe_complete(
-        move |value| *v.lock().unwrap() = *value,
-        move || completed.store(true, Ordering::Relaxed),
-      );
+    observable::empty().first_or(100).subscribe_complete(
+      move |value| *v.lock().unwrap() = *value,
+      move || completed.store(true, Ordering::Relaxed),
+    );
 
     assert_eq!(c_completed.load(Ordering::Relaxed), true);
     assert_eq!(*c_v.lock().unwrap(), 100);

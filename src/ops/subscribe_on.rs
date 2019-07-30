@@ -74,14 +74,15 @@ where
 
   fn subscribe_return_state(
     mut self,
-    next: impl Fn(&Self::Item) -> RxReturn<Self::Err> + Send + Sync + 'static,
-    error: Option<impl Fn(&Self::Err) + Send + Sync + 'static>,
-    complete: Option<impl Fn() + Send + Sync + 'static>,
+    subscribe: impl RxFn(RxValue<'_, Self::Item, Self::Err>) -> RxReturn<Self::Err>
+      + Send
+      + Sync
+      + 'static,
   ) -> Box<dyn Subscription + Send + Sync> {
     let source = self.source;
     self
       .scheduler
-      .schedule(move || source.subscribe_return_state(next, error, complete))
+      .schedule(move || source.subscribe_return_state(subscribe))
   }
 }
 

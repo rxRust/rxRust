@@ -36,10 +36,7 @@ pub trait Filter<T> {
 
 pub trait FilterWithErr<'a, T> {
   type Err;
-  fn filter_with_err<N>(
-    self,
-    filter: N,
-  ) -> FilterWithErrOp<Self, RxFnWrapper<N>>
+  fn filter_with_err<N>(self, filter: N) -> FilterWithErrOp<Self, RxFnWrapper<N>>
   where
     Self: Sized,
     N: Fn(&T) -> Result<bool, Self::Err> + 'a,
@@ -80,22 +77,24 @@ where
 
   fn subscribe_return_state(
     self,
-    next: impl Fn(&Self::Item) -> RxReturn<Self::Err> + Send + Sync + 'static,
-    error: Option<impl Fn(&Self::Err) + Send + Sync + 'static>,
-    complete: Option<impl Fn() + Send + Sync + 'static>,
+    subscribe: impl RxFn(RxValue<'_, Self::Item, Self::Err>) -> RxReturn<Self::Err>
+      + Send
+      + Sync
+      + 'static,
   ) -> Box<dyn Subscription + Send + Sync> {
     let filter = self.filter;
-    self.source.subscribe_return_state(
-      move |v| {
-        if filter.call((v,)) {
-          next(v)
-        } else {
-          RxReturn::Continue
+    self
+      .source
+      .subscribe_return_state(RxFnWrapper::new(move |v: RxValue<'_, _, _>| match v {
+        RxValue::Next(ne) => {
+          if filter.call((ne,)) {
+            subscribe.call((RxValue::Next(ne),))
+          } else {
+            RxReturn::Continue
+          }
         }
-      },
-      error,
-      complete,
-    )
+        vv => subscribe.call((vv,)),
+      }))
   }
 }
 
@@ -137,25 +136,27 @@ where
 
   fn subscribe_return_state(
     self,
-    next: impl Fn(&Self::Item) -> RxReturn<Self::Err> + Send + Sync + 'static,
-    error: Option<impl Fn(&Self::Err) + Send + Sync + 'static>,
-    complete: Option<impl Fn() + Send + Sync + 'static>,
+    subscribe: impl RxFn(RxValue<'_, Self::Item, Self::Err>) -> RxReturn<Self::Err>
+      + Send
+      + Sync
+      + 'static,
   ) -> Box<dyn Subscription + Send + Sync> {
     let filter = self.filter;
-    self.source.subscribe_return_state(
-      move |v| match filter.call((&v,)) {
-        Ok(b) => {
-          if b {
-            next(v)
-          } else {
-            RxReturn::Continue
+    self
+      .source
+      .subscribe_return_state(RxFnWrapper::new(move |v: RxValue<'_, _, _>| match v {
+        RxValue::Next(nv) => match filter.call((&nv,)) {
+          Ok(b) => {
+            if b {
+              subscribe.call((RxValue::Next(nv),))
+            } else {
+              RxReturn::Continue
+            }
           }
-        }
-        Err(e) => RxReturn::Err(e),
-      },
-      error,
-      complete,
-    )
+          Err(e) => RxReturn::Err(e),
+        },
+        vv => subscribe.call((vv,)),
+      }))
   }
 }
 

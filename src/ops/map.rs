@@ -45,10 +45,7 @@ pub trait MapWithErr<T> {
 
   /// A version of map_with_err extension which return reference, and
   /// furthermore， return item and input item has same lifetime.
-  fn map_return_ref_with_err<B, F>(
-    self,
-    f: F,
-  ) -> MapReturnRefWithErrOp<Self, RxFnWrapper<F>>
+  fn map_return_ref_with_err<B, F>(self, f: F) -> MapReturnRefWithErrOp<Self, RxFnWrapper<F>>
   where
     Self: Sized,
     F: for<'r> Fn(&'r T) -> Result<&'r B, Self::Err>,
@@ -74,6 +71,16 @@ pub struct MapOp<S, M> {
   func: M,
 }
 
+macro_rules! map_subscribe {
+  ($subscribe: ident, $map: ident) => {
+    RxFnWrapper::new(move |v: RxValue<'_, _, _>| match v {
+      RxValue::Next(nv) => $subscribe.call((RxValue::Next(&$map.call((nv,))),)),
+      RxValue::Err(err) => $subscribe.call((RxValue::Err(err),)),
+      RxValue::Complete => $subscribe.call((RxValue::Complete,)),
+    })
+  };
+}
+
 impl<S, B, M> ImplSubscribable for MapOp<S, M>
 where
   M: RxFn(&S::Item) -> B + Send + Sync + 'static,
@@ -84,16 +91,15 @@ where
 
   fn subscribe_return_state(
     self,
-    next: impl Fn(&Self::Item) -> RxReturn<Self::Err> + Send + Sync + 'static,
-    error: Option<impl Fn(&Self::Err) + Send + Sync + 'static>,
-    complete: Option<impl Fn() + Send + Sync + 'static>,
+    subscribe: impl RxFn(RxValue<'_, Self::Item, Self::Err>) -> RxReturn<Self::Err>
+      + Send
+      + Sync
+      + 'static,
   ) -> Box<dyn Subscription + Send + Sync> {
     let map = self.func;
-    self.source.subscribe_return_state(
-      move |v| next(&map.call((v,))),
-      error,
-      complete,
-    )
+    self
+      .source
+      .subscribe_return_state(map_subscribe!(subscribe, map))
   }
 }
 
@@ -130,6 +136,18 @@ pub struct MapWithErrOp<S, M> {
   func: M,
 }
 
+macro_rules! map_subscribe_with_err {
+  ($subscribe:ident, $map:ident) => {
+    RxFnWrapper::new(move |v: RxValue<'_, _, _>| match v {
+      RxValue::Next(nv) => match $map.call((nv,)) {
+        Ok(ref mv) => $subscribe.call((RxValue::Next(mv),)),
+        Err(e) => RxReturn::Err(e),
+      },
+      RxValue::Err(err) => $subscribe.call((RxValue::Err(err),)),
+      RxValue::Complete => $subscribe.call((RxValue::Complete,)),
+    })
+  };
+}
 impl<'a, S, B, M> ImplSubscribable for MapWithErrOp<S, M>
 where
   M: RxFn(&S::Item) -> Result<B, S::Err> + Send + Sync + 'static,
@@ -140,19 +158,15 @@ where
 
   fn subscribe_return_state(
     self,
-    next: impl Fn(&Self::Item) -> RxReturn<Self::Err> + Send + Sync + 'static,
-    error: Option<impl Fn(&Self::Err) + Send + Sync + 'static>,
-    complete: Option<impl Fn() + Send + Sync + Sync + 'static>,
+    subscribe: impl RxFn(RxValue<'_, Self::Item, Self::Err>) -> RxReturn<Self::Err>
+      + Send
+      + Sync
+      + 'static,
   ) -> Box<dyn Subscription + Send + Sync> {
     let map = self.func;
-    self.source.subscribe_return_state(
-      move |v| match map.call((v,)) {
-        Ok(v) => next(&v),
-        Err(e) => RxReturn::Err(e),
-      },
-      error,
-      complete,
-    )
+    self
+      .source
+      .subscribe_return_state(map_subscribe_with_err!(subscribe, map))
   }
 }
 
@@ -199,16 +213,15 @@ where
 
   fn subscribe_return_state(
     self,
-    next: impl Fn(&Self::Item) -> RxReturn<Self::Err> + Send + Sync + 'static,
-    error: Option<impl Fn(&Self::Err) + Send + Sync + 'static>,
-    complete: Option<impl Fn() + Send + Sync + 'static>,
+    subscribe: impl RxFn(RxValue<'_, Self::Item, Self::Err>) -> RxReturn<Self::Err>
+      + Send
+      + Sync
+      + 'static,
   ) -> Box<dyn Subscription + Send + Sync> {
     let map = self.func;
-    self.source.subscribe_return_state(
-      move |v| next(&map.call((v,))),
-      error,
-      complete,
-    )
+    self
+      .source
+      .subscribe_return_state(map_subscribe!(subscribe, map))
   }
 }
 
@@ -255,19 +268,15 @@ where
 
   fn subscribe_return_state(
     self,
-    next: impl Fn(&Self::Item) -> RxReturn<Self::Err> + Send + Sync + 'static,
-    error: Option<impl Fn(&Self::Err) + Send + Sync + 'static>,
-    complete: Option<impl Fn() + Send + Sync + 'static>,
+    subscribe: impl RxFn(RxValue<'_, Self::Item, Self::Err>) -> RxReturn<Self::Err>
+      + Send
+      + Sync
+      + 'static,
   ) -> Box<dyn Subscription + Send + Sync> {
     let map = self.func;
-    self.source.subscribe_return_state(
-      move |v| match map.call((v,)) {
-        Ok(v) => next(&v),
-        Err(e) => RxReturn::Err(e),
-      },
-      error,
-      complete,
-    )
+    self
+      .source
+      .subscribe_return_state(map_subscribe_with_err!(subscribe, map))
   }
 }
 

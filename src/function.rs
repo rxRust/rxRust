@@ -20,9 +20,7 @@ where
 {
   type Output = F::Output;
   #[inline(always)]
-  extern "rust-call" fn call(&self, args: Args) -> Self::Output {
-    self.0.call(args)
-  }
+  extern "rust-call" fn call(&self, args: Args) -> Self::Output { self.0.call(args) }
 }
 
 impl<F, Args> RxFn<Args> for Arc<F>

@@ -1,16 +1,17 @@
 use crate::prelude::*;
 
-pub enum RxValue<T, E> {
-  Next(T),
-  Err(E),
+pub enum RxValue<'a, T, E> {
+  Next(&'a T),
+  Err(&'a E),
   Complete,
 }
 
 /// The Observer's return state, can intervention the source stream's data
-/// consume mechanism. `Continue` will do nothing, just let the source stream 
-/// consume data in its way, `Err` means should early termination because an 
-/// runtime error occur. `Complete` tell upstream I don't want to consume data 
+/// consume mechanism. `Continue` will do nothing, just let the source stream
+/// consume data in its way, `Err` means should early termination because an
+/// runtime error occur. `Complete` tell upstream I don't want to consume data
 /// more, and let's complete now.
+#[derive(PartialEq)]
 pub enum RxReturn<E> {
   Continue,
   Err(E),
@@ -25,9 +26,10 @@ pub trait ImplSubscribable: Sized {
 
   fn subscribe_return_state(
     self,
-    next: impl Fn(&Self::Item) -> RxReturn<Self::Err> + Send + Sync + 'static,
-    error: Option<impl Fn(&Self::Err) + Send + Sync + 'static>,
-    complete: Option<impl Fn() + Send + Sync + 'static>,
+    subscribe: impl RxFn(RxValue<'_, Self::Item, Self::Err>) -> RxReturn<Self::Err>
+      + Send
+      + Sync
+      + 'static,
   ) -> Box<dyn Subscription + Send + Sync>;
 }
 
@@ -45,14 +47,15 @@ pub trait Subscribable: ImplSubscribable {
     error: impl Fn(&Self::Err) + Send + Sync + 'static,
     complete: impl Fn() + Send + Sync + 'static,
   ) -> Box<dyn Subscription> {
-    self.subscribe_return_state(
-      move |v| {
-        next(v);
-        RxReturn::Continue
-      },
-      Some(error),
-      Some(complete),
-    )
+    self.subscribe_return_state(RxFnWrapper::new(move |v: RxValue<'_, _, _>| {
+      match v {
+        RxValue::Next(v) => next(v),
+        RxValue::Err(e) => error(e),
+        RxValue::Complete => complete(),
+      };
+
+      RxReturn::Continue
+    }))
   }
 
   fn subscribe_err(
@@ -60,15 +63,15 @@ pub trait Subscribable: ImplSubscribable {
     next: impl Fn(&Self::Item) + Send + Sync + 'static,
     error: impl Fn(&Self::Err) + Send + Sync + 'static,
   ) -> Box<dyn Subscription> {
-    let complete: Option<fn()> = None;
-    self.subscribe_return_state(
-      move |v| {
-        next(v);
-        RxReturn::Continue
-      },
-      Some(error),
-      complete,
-    )
+    self.subscribe_return_state(RxFnWrapper::new(move |v: RxValue<'_, _, _>| {
+      match v {
+        RxValue::Next(v) => next(v),
+        RxValue::Err(e) => error(e),
+        _ => {}
+      };
+
+      RxReturn::Continue
+    }))
   }
 
   fn subscribe_complete(
@@ -79,34 +82,28 @@ pub trait Subscribable: ImplSubscribable {
   where
     Self::Err: 'static,
   {
-    let err: Option<fn(&Self::Err)> = None;
-    self.subscribe_return_state(
-      move |v| {
-        next(v);
-        RxReturn::Continue
-      },
-      err,
-      Some(complete),
-    )
+    self.subscribe_return_state(RxFnWrapper::new(move |v: RxValue<'_, _, _>| {
+      match v {
+        RxValue::Next(v) => next(v),
+        RxValue::Complete => complete(),
+        _ => {}
+      };
+
+      RxReturn::Continue
+    }))
   }
 
-  fn subscribe(
-    self,
-    next: impl Fn(&Self::Item) + Send + Sync + 'static,
-  ) -> Box<dyn Subscription>
+  fn subscribe(self, next: impl Fn(&Self::Item) + Send + Sync + 'static) -> Box<dyn Subscription>
   where
     Self::Err: 'static,
   {
-    let complete: Option<fn()> = None;
-    let err: Option<fn(&Self::Err)> = None;
-    self.subscribe_return_state(
-      move |v| {
+    self.subscribe_return_state(RxFnWrapper::new(move |v: RxValue<'_, _, _>| {
+      if let RxValue::Next(v) = v {
         next(v);
-        RxReturn::Continue
-      },
-      err,
-      complete,
-    )
+      }
+
+      RxReturn::Continue
+    }))
   }
 }
 
