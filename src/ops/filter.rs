@@ -36,7 +36,10 @@ pub trait Filter<T> {
 
 pub trait FilterWithErr<'a, T> {
   type Err;
-  fn filter_with_err<N>(self, filter: N) -> FilterWithErrOp<Self, RxFnWrapper<N>>
+  fn filter_with_err<N>(
+    self,
+    filter: N,
+  ) -> FilterWithErrOp<Self, RxFnWrapper<N>>
   where
     Self: Sized,
     N: Fn(&T) -> Result<bool, Self::Err> + 'a,
@@ -77,15 +80,16 @@ where
 
   fn subscribe_return_state(
     self,
-    subscribe: impl RxFn(RxValue<'_, Self::Item, Self::Err>) -> RxReturn<Self::Err>
+    subscribe: impl RxFn(
+        RxValue<&'_ Self::Item, &'_ Self::Err>,
+      ) -> RxReturn<Self::Err>
       + Send
       + Sync
       + 'static,
   ) -> Box<dyn Subscription + Send + Sync> {
     let filter = self.filter;
-    self
-      .source
-      .subscribe_return_state(RxFnWrapper::new(move |v: RxValue<'_, _, _>| match v {
+    self.source.subscribe_return_state(RxFnWrapper::new(
+      move |v: RxValue<&'_ _, &'_ _>| match v {
         RxValue::Next(ne) => {
           if filter.call((ne,)) {
             subscribe.call((RxValue::Next(ne),))
@@ -94,7 +98,8 @@ where
           }
         }
         vv => subscribe.call((vv,)),
-      }))
+      },
+    ))
   }
 }
 
@@ -136,15 +141,16 @@ where
 
   fn subscribe_return_state(
     self,
-    subscribe: impl RxFn(RxValue<'_, Self::Item, Self::Err>) -> RxReturn<Self::Err>
+    subscribe: impl RxFn(
+        RxValue<&'_ Self::Item, &'_ Self::Err>,
+      ) -> RxReturn<Self::Err>
       + Send
       + Sync
       + 'static,
   ) -> Box<dyn Subscription + Send + Sync> {
     let filter = self.filter;
-    self
-      .source
-      .subscribe_return_state(RxFnWrapper::new(move |v: RxValue<'_, _, _>| match v {
+    self.source.subscribe_return_state(RxFnWrapper::new(
+      move |v: RxValue<&'_ _, &'_ _>| match v {
         RxValue::Next(nv) => match filter.call((&nv,)) {
           Ok(b) => {
             if b {
@@ -156,7 +162,8 @@ where
           Err(e) => RxReturn::Err(e),
         },
         vv => subscribe.call((vv,)),
-      }))
+      },
+    ))
   }
 }
 

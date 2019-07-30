@@ -38,14 +38,19 @@ pub fn from_vec<Item>(
 
 pub fn of<Item>(
   v: Item,
-) -> Observable<RxFnWrapper<impl Fn(&mut dyn Observer<Item = Item, Err = ()>)>, Item, ()> {
+) -> Observable<
+  RxFnWrapper<impl Fn(&mut dyn Observer<Item = Item, Err = ()>)>,
+  Item,
+  (),
+> {
   Observable::new(move |subscriber| {
     subscriber.next(&v);
     subscriber.complete();
   })
 }
 
-pub fn empty<Item>() -> Observable<impl RxFn(&mut dyn Observer<Item = Item, Err = ()>), Item, ()> {
+pub fn empty<Item>()
+-> Observable<impl RxFn(&mut dyn Observer<Item = Item, Err = ()>), Item, ()> {
   Observable::new(move |subscriber| subscriber.complete())
 }
 

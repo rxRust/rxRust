@@ -45,7 +45,10 @@ pub trait MapWithErr<T> {
 
   /// A version of map_with_err extension which return reference, and
   /// furthermore， return item and input item has same lifetime.
-  fn map_return_ref_with_err<B, F>(self, f: F) -> MapReturnRefWithErrOp<Self, RxFnWrapper<F>>
+  fn map_return_ref_with_err<B, F>(
+    self,
+    f: F,
+  ) -> MapReturnRefWithErrOp<Self, RxFnWrapper<F>>
   where
     Self: Sized,
     F: for<'r> Fn(&'r T) -> Result<&'r B, Self::Err>,
@@ -73,7 +76,7 @@ pub struct MapOp<S, M> {
 
 macro_rules! map_subscribe {
   ($subscribe: ident, $map: ident) => {
-    RxFnWrapper::new(move |v: RxValue<'_, _, _>| match v {
+    RxFnWrapper::new(move |v: RxValue<&'_ _, &'_ _>| match v {
       RxValue::Next(nv) => $subscribe.call((RxValue::Next(&$map.call((nv,))),)),
       RxValue::Err(err) => $subscribe.call((RxValue::Err(err),)),
       RxValue::Complete => $subscribe.call((RxValue::Complete,)),
@@ -91,7 +94,9 @@ where
 
   fn subscribe_return_state(
     self,
-    subscribe: impl RxFn(RxValue<'_, Self::Item, Self::Err>) -> RxReturn<Self::Err>
+    subscribe: impl RxFn(
+        RxValue<&'_ Self::Item, &'_ Self::Err>,
+      ) -> RxReturn<Self::Err>
       + Send
       + Sync
       + 'static,
@@ -138,7 +143,7 @@ pub struct MapWithErrOp<S, M> {
 
 macro_rules! map_subscribe_with_err {
   ($subscribe:ident, $map:ident) => {
-    RxFnWrapper::new(move |v: RxValue<'_, _, _>| match v {
+    RxFnWrapper::new(move |v: RxValue<&'_ _, &'_ _>| match v {
       RxValue::Next(nv) => match $map.call((nv,)) {
         Ok(ref mv) => $subscribe.call((RxValue::Next(mv),)),
         Err(e) => RxReturn::Err(e),
@@ -158,7 +163,9 @@ where
 
   fn subscribe_return_state(
     self,
-    subscribe: impl RxFn(RxValue<'_, Self::Item, Self::Err>) -> RxReturn<Self::Err>
+    subscribe: impl RxFn(
+        RxValue<&'_ Self::Item, &'_ Self::Err>,
+      ) -> RxReturn<Self::Err>
       + Send
       + Sync
       + 'static,
@@ -213,7 +220,9 @@ where
 
   fn subscribe_return_state(
     self,
-    subscribe: impl RxFn(RxValue<'_, Self::Item, Self::Err>) -> RxReturn<Self::Err>
+    subscribe: impl RxFn(
+        RxValue<&'_ Self::Item, &'_ Self::Err>,
+      ) -> RxReturn<Self::Err>
       + Send
       + Sync
       + 'static,
@@ -268,7 +277,9 @@ where
 
   fn subscribe_return_state(
     self,
-    subscribe: impl RxFn(RxValue<'_, Self::Item, Self::Err>) -> RxReturn<Self::Err>
+    subscribe: impl RxFn(
+        RxValue<&'_ Self::Item, &'_ Self::Err>,
+      ) -> RxReturn<Self::Err>
       + Send
       + Sync
       + 'static,

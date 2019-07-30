@@ -1,9 +1,41 @@
 use crate::prelude::*;
 
-pub enum RxValue<'a, T, E> {
-  Next(&'a T),
-  Err(&'a E),
+pub enum RxValue<T, E> {
+  Next(T),
+  Err(E),
   Complete,
+}
+
+impl<T, E> RxValue<T, E> {
+  pub fn as_ref(&self) -> RxValue<&T, &E> {
+    match self {
+      RxValue::Next(n) => RxValue::Next(&n),
+      RxValue::Err(e) => RxValue::Err(&e),
+      RxValue::Complete => RxValue::Complete,
+    }
+  }
+
+  pub fn as_mut(&mut self) -> RxValue<&T, &E> {
+    match self {
+      RxValue::Next(ref mut n) => RxValue::Next(n),
+      RxValue::Err(ref mut e) => RxValue::Err(e),
+      RxValue::Complete => RxValue::Complete,
+    }
+  }
+}
+
+impl<T, E> RxValue<&T, &E>
+where
+  T: Clone,
+  E: Clone,
+{
+  pub fn to_owned(&self) -> RxValue<T, E> {
+    match self {
+      RxValue::Next(n) => RxValue::Next((*n).clone()),
+      RxValue::Err(e) => RxValue::Err((*e).clone()),
+      RxValue::Complete => RxValue::Complete,
+    }
+  }
 }
 
 /// The Observer's return state, can intervention the source stream's data
@@ -26,7 +58,9 @@ pub trait ImplSubscribable: Sized {
 
   fn subscribe_return_state(
     self,
-    subscribe: impl RxFn(RxValue<'_, Self::Item, Self::Err>) -> RxReturn<Self::Err>
+    subscribe: impl RxFn(
+        RxValue<&'_ Self::Item, &'_ Self::Err>,
+      ) -> RxReturn<Self::Err>
       + Send
       + Sync
       + 'static,
@@ -47,15 +81,17 @@ pub trait Subscribable: ImplSubscribable {
     error: impl Fn(&Self::Err) + Send + Sync + 'static,
     complete: impl Fn() + Send + Sync + 'static,
   ) -> Box<dyn Subscription> {
-    self.subscribe_return_state(RxFnWrapper::new(move |v: RxValue<'_, _, _>| {
-      match v {
-        RxValue::Next(v) => next(v),
-        RxValue::Err(e) => error(e),
-        RxValue::Complete => complete(),
-      };
+    self.subscribe_return_state(RxFnWrapper::new(
+      move |v: RxValue<&'_ _, &'_ _>| {
+        match v {
+          RxValue::Next(v) => next(v),
+          RxValue::Err(e) => error(e),
+          RxValue::Complete => complete(),
+        };
 
-      RxReturn::Continue
-    }))
+        RxReturn::Continue
+      },
+    ))
   }
 
   fn subscribe_err(
@@ -63,15 +99,17 @@ pub trait Subscribable: ImplSubscribable {
     next: impl Fn(&Self::Item) + Send + Sync + 'static,
     error: impl Fn(&Self::Err) + Send + Sync + 'static,
   ) -> Box<dyn Subscription> {
-    self.subscribe_return_state(RxFnWrapper::new(move |v: RxValue<'_, _, _>| {
-      match v {
-        RxValue::Next(v) => next(v),
-        RxValue::Err(e) => error(e),
-        _ => {}
-      };
+    self.subscribe_return_state(RxFnWrapper::new(
+      move |v: RxValue<&'_ _, &'_ _>| {
+        match v {
+          RxValue::Next(v) => next(v),
+          RxValue::Err(e) => error(e),
+          _ => {}
+        };
 
-      RxReturn::Continue
-    }))
+        RxReturn::Continue
+      },
+    ))
   }
 
   fn subscribe_complete(
@@ -82,28 +120,35 @@ pub trait Subscribable: ImplSubscribable {
   where
     Self::Err: 'static,
   {
-    self.subscribe_return_state(RxFnWrapper::new(move |v: RxValue<'_, _, _>| {
-      match v {
-        RxValue::Next(v) => next(v),
-        RxValue::Complete => complete(),
-        _ => {}
-      };
+    self.subscribe_return_state(RxFnWrapper::new(
+      move |v: RxValue<&'_ _, &'_ _>| {
+        match v {
+          RxValue::Next(v) => next(v),
+          RxValue::Complete => complete(),
+          _ => {}
+        };
 
-      RxReturn::Continue
-    }))
+        RxReturn::Continue
+      },
+    ))
   }
 
-  fn subscribe(self, next: impl Fn(&Self::Item) + Send + Sync + 'static) -> Box<dyn Subscription>
+  fn subscribe(
+    self,
+    next: impl Fn(&Self::Item) + Send + Sync + 'static,
+  ) -> Box<dyn Subscription>
   where
     Self::Err: 'static,
   {
-    self.subscribe_return_state(RxFnWrapper::new(move |v: RxValue<'_, _, _>| {
-      if let RxValue::Next(v) = v {
-        next(v);
-      }
+    self.subscribe_return_state(RxFnWrapper::new(
+      move |v: RxValue<&'_ _, &'_ _>| {
+        if let RxValue::Next(v) = v {
+          next(v);
+        }
 
-      RxReturn::Continue
-    }))
+        RxReturn::Continue
+      },
+    ))
   }
 }
 

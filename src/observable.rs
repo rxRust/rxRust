@@ -56,7 +56,8 @@ where
   }
 }
 
-impl<F, Item: 'static, Err: 'static> ImplSubscribable for Observable<F, Item, Err>
+impl<F, Item: 'static, Err: 'static> ImplSubscribable
+  for Observable<F, Item, Err>
 where
   F: RxFn(&mut dyn Observer<Item = Item, Err = Err>) + Send + Sync,
 {
@@ -65,7 +66,9 @@ where
 
   fn subscribe_return_state(
     self,
-    subscribe: impl RxFn(RxValue<'_, Self::Item, Self::Err>) -> RxReturn<Self::Err>
+    subscribe: impl RxFn(
+        RxValue<&'_ Self::Item, &'_ Self::Err>,
+      ) -> RxReturn<Self::Err>
       + Send
       + Sync
       + 'static,

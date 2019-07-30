@@ -27,7 +27,7 @@ impl<Item, Err, Sub> Subscriber<Item, Err, Sub> {
 
 impl<Item, Err, Sub> Observer for Subscriber<Item, Err, Sub>
 where
-  Sub: RxFn(RxValue<'_, Item, Err>) -> RxReturn<Err>,
+  Sub: RxFn(RxValue<&'_ Item, &'_ Err>) -> RxReturn<Err>,
 {
   type Item = Item;
   type Err = Err;
@@ -64,7 +64,7 @@ impl<Item, Err, Sub> Subscription for Subscriber<Item, Err, Sub> {
 }
 
 impl<Item, Err, Sub> Publisher for Subscriber<Item, Err, Sub> where
-  Sub: RxFn(RxValue<'_, Item, Err>) -> RxReturn<Err>
+  Sub: RxFn(RxValue<&'_ Item, &'_ Err>) -> RxReturn<Err>
 {
 }
 
@@ -75,7 +75,7 @@ mod test {
 
   macro_rules! create_subscriber {
     ($next:ident, $err: ident, $complete: ident) => {{
-      Subscriber::new(RxFnWrapper::new(|v: RxValue<'_, _, ()>| {
+      Subscriber::new(RxFnWrapper::new(|v: RxValue<&'_ _, &'_ ()>| {
         match v {
           RxValue::Next(_) => $next.set($next.get() + 1),
           RxValue::Complete => $complete.set($complete.get() + 1),
