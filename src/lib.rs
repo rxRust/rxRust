@@ -31,7 +31,7 @@ pub trait Observer {
   type Item;
   type Err;
 
-  fn next(&self, v: &Self::Item) -> subscribable::OState<Self::Err>;
+  fn next(&self, v: &Self::Item) -> subscribable::RxReturn<Self::Err>;
 
   fn complete(&mut self);
 

@@ -66,7 +66,7 @@ where
 
   fn subscribe_return_state(
     self,
-    next: impl Fn(&Self::Item) -> OState<Self::Err> + Send + Sync + 'static,
+    next: impl Fn(&Self::Item) -> RxReturn<Self::Err> + Send + Sync + 'static,
     error: Option<impl Fn(&Self::Err) + Send + Sync + 'static>,
     complete: Option<impl Fn() + Send + Sync + 'static>,
   ) -> Box<dyn Subscription + Send + Sync> {

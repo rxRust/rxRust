@@ -52,7 +52,7 @@ where
 
   fn subscribe_return_state(
     self,
-    next: impl Fn(&Self::Item) -> OState<Self::Err> + Send + Sync + 'static,
+    next: impl Fn(&Self::Item) -> RxReturn<Self::Err> + Send + Sync + 'static,
     error: Option<impl Fn(&Self::Err) + Send + Sync + 'static>,
     complete: Option<impl Fn() + Send + Sync + 'static>,
   ) -> Box<dyn Subscription + Send + Sync> {
@@ -65,9 +65,9 @@ where
           *hit += 1;
           let os = next(v);
           match os {
-            OState::Next => {
+            RxReturn::Continue => {
               if *hit == count {
-                OState::Complete
+                RxReturn::Complete
               } else {
                 os
               }
@@ -75,7 +75,7 @@ where
             _ => os,
           }
         } else {
-          OState::Complete
+          RxReturn::Complete
         }
       },
       error,

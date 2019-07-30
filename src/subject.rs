@@ -31,7 +31,7 @@ impl<Item: 'static, Err: 'static> ImplSubscribable for Subject<Item, Err> {
 
   fn subscribe_return_state(
     self,
-    next: impl Fn(&Self::Item) -> OState<Self::Err> + Send + 'static,
+    next: impl Fn(&Self::Item) -> RxReturn<Self::Err> + Send + 'static,
     error: Option<impl Fn(&Self::Err) + Send + 'static>,
     complete: Option<impl Fn() + Send + 'static>,
   ) -> Box<dyn Subscription + Send + Sync> {
@@ -82,18 +82,18 @@ impl<T, E> Observer for Subject<T, E> {
   type Item = T;
   type Err = E;
 
-  fn next(&self, v: &Self::Item) -> OState<Self::Err> {
+  fn next(&self, v: &Self::Item) -> RxReturn<Self::Err> {
     if self.stopped.load(Ordering::Relaxed) {
-      return OState::Complete;
+      return RxReturn::Continue;
     };
     let mut publishers = self.cbs.lock().unwrap();
     publishers.drain_filter(|subscriber| {
       let mut subscriber = subscriber.lock().unwrap();
       match subscriber.next(&v) {
-        OState::Complete => {
+        RxReturn::Complete => {
           subscriber.complete();
         }
-        OState::Err(err) => {
+        RxReturn::Err(err) => {
           subscriber.error(&err);
         }
         _ => {}
@@ -101,11 +101,7 @@ impl<T, E> Observer for Subject<T, E> {
       subscriber.is_stopped()
     });
 
-    if publishers.len() > 0 {
-      OState::Next
-    } else {
-      OState::Complete
-    }
+    RxReturn::Continue
   }
 
   fn complete(&mut self) {
@@ -167,7 +163,7 @@ fn runtime_error() {
   let broadcast = Subject::new();
   let complete: Option<fn()> = None;
   broadcast.clone().subscribe_return_state(
-    |_| OState::Err("runtime error"),
+    |_| RxReturn::Err("runtime error"),
     Some(Box::new(|e: &_| panic!(*e))),
     complete,
   );
@@ -183,7 +179,7 @@ fn return_err_state() {
   let broadcast = Subject::new();
   let complete: Option<fn()> = None;
   broadcast.clone().subscribe_return_state(
-    |_| OState::Err("runtime error"),
+    |_| RxReturn::Err("runtime error"),
     Some(Box::new(move |_: &_| *ec.lock().unwrap() += 1)),
     complete,
   );
@@ -203,7 +199,7 @@ fn return_complete_state() {
   let broadcast = Subject::new();
   let error: Option<fn(&())> = None;
   broadcast.clone().subscribe_return_state(
-    |_| OState::Complete,
+    |_| RxReturn::Complete,
     error,
     Some(Box::new(move || {
       let mut v = cc.lock().unwrap();

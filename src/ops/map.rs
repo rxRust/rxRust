@@ -84,7 +84,7 @@ where
 
   fn subscribe_return_state(
     self,
-    next: impl Fn(&Self::Item) -> OState<Self::Err> + Send + Sync + 'static,
+    next: impl Fn(&Self::Item) -> RxReturn<Self::Err> + Send + Sync + 'static,
     error: Option<impl Fn(&Self::Err) + Send + Sync + 'static>,
     complete: Option<impl Fn() + Send + Sync + 'static>,
   ) -> Box<dyn Subscription + Send + Sync> {
@@ -140,7 +140,7 @@ where
 
   fn subscribe_return_state(
     self,
-    next: impl Fn(&Self::Item) -> OState<Self::Err> + Send + Sync + 'static,
+    next: impl Fn(&Self::Item) -> RxReturn<Self::Err> + Send + Sync + 'static,
     error: Option<impl Fn(&Self::Err) + Send + Sync + 'static>,
     complete: Option<impl Fn() + Send + Sync + Sync + 'static>,
   ) -> Box<dyn Subscription + Send + Sync> {
@@ -148,7 +148,7 @@ where
     self.source.subscribe_return_state(
       move |v| match map.call((v,)) {
         Ok(v) => next(&v),
-        Err(e) => OState::Err(e),
+        Err(e) => RxReturn::Err(e),
       },
       error,
       complete,
@@ -199,7 +199,7 @@ where
 
   fn subscribe_return_state(
     self,
-    next: impl Fn(&Self::Item) -> OState<Self::Err> + Send + Sync + 'static,
+    next: impl Fn(&Self::Item) -> RxReturn<Self::Err> + Send + Sync + 'static,
     error: Option<impl Fn(&Self::Err) + Send + Sync + 'static>,
     complete: Option<impl Fn() + Send + Sync + 'static>,
   ) -> Box<dyn Subscription + Send + Sync> {
@@ -255,7 +255,7 @@ where
 
   fn subscribe_return_state(
     self,
-    next: impl Fn(&Self::Item) -> OState<Self::Err> + Send + Sync + 'static,
+    next: impl Fn(&Self::Item) -> RxReturn<Self::Err> + Send + Sync + 'static,
     error: Option<impl Fn(&Self::Err) + Send + Sync + 'static>,
     complete: Option<impl Fn() + Send + Sync + 'static>,
   ) -> Box<dyn Subscription + Send + Sync> {
@@ -263,7 +263,7 @@ where
     self.source.subscribe_return_state(
       move |v| match map.call((v,)) {
         Ok(v) => next(&v),
-        Err(e) => OState::Err(e),
+        Err(e) => RxReturn::Err(e),
       },
       error,
       complete,
