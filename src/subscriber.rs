@@ -59,18 +59,18 @@ impl<Item, Err, ON, OE, OC> Subscriber<Item, Err, ON, OE, OC> {
 
 impl<Item, Err, ON, OE, OC> Observer for Subscriber<Item, Err, ON, OE, OC>
 where
-  ON: Fn(&Item) -> OState<Err>,
+  ON: Fn(&Item) -> RxReturn<Err>,
   OE: Fn(&Err),
   OC: Fn(),
 {
   type Item = Item;
   type Err = Err;
 
-  fn next(&self, v: &Self::Item) -> OState<Self::Err> {
+  fn next(&self, v: &Self::Item) -> RxReturn<Self::Err> {
     if !self.stopped {
       (self.on_next)(v)
     } else {
-      OState::Complete
+      RxReturn::Continue
     }
   }
 
@@ -105,7 +105,7 @@ impl<Item, Err, ON, OE, OC> Subscription for Subscriber<Item, Err, ON, OE, OC> {
 
 impl<Item, Err, ON, OE, OC> Publisher for Subscriber<Item, Err, ON, OE, OC>
 where
-  ON: Fn(&Item) -> OState<Err>,
+  ON: Fn(&Item) -> RxReturn<Err>,
   OE: Fn(&Err),
   OC: Fn(),
 {
@@ -120,7 +120,7 @@ mod test {
     ($next:ident, $err: ident, $complete: ident) => {{
       let mut subscriber = Subscriber::new(|_v: &i32| {
         $next.set($next.get() + 1);
-        OState::Next
+        RxReturn::Continue
       });
       subscriber.on_error(|_: &()| {
         $err.set($err.get() + 1);

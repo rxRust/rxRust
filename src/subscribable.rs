@@ -1,9 +1,20 @@
 use crate::prelude::*;
 
-pub enum OState<E> {
-  Next,
-  Complete,
+pub enum RxValue<T, E> {
+  Next(T),
   Err(E),
+  Complete,
+}
+
+/// The Observer's return state, can intervention the source stream's data
+/// consume mechanism. `Continue` will do nothing, just let the source stream 
+/// consume data in its way, `Err` means should early termination because an 
+/// runtime error occur. `Complete` tell upstream I don't want to consume data 
+/// more, and let's complete now.
+pub enum RxReturn<E> {
+  Continue,
+  Err(E),
+  Complete,
 }
 
 pub trait ImplSubscribable: Sized {
@@ -14,7 +25,7 @@ pub trait ImplSubscribable: Sized {
 
   fn subscribe_return_state(
     self,
-    next: impl Fn(&Self::Item) -> OState<Self::Err> + Send + Sync + 'static,
+    next: impl Fn(&Self::Item) -> RxReturn<Self::Err> + Send + Sync + 'static,
     error: Option<impl Fn(&Self::Err) + Send + Sync + 'static>,
     complete: Option<impl Fn() + Send + Sync + 'static>,
   ) -> Box<dyn Subscription + Send + Sync>;
@@ -37,7 +48,7 @@ pub trait Subscribable: ImplSubscribable {
     self.subscribe_return_state(
       move |v| {
         next(v);
-        OState::Next
+        RxReturn::Continue
       },
       Some(error),
       Some(complete),
@@ -53,7 +64,7 @@ pub trait Subscribable: ImplSubscribable {
     self.subscribe_return_state(
       move |v| {
         next(v);
-        OState::Next
+        RxReturn::Continue
       },
       Some(error),
       complete,
@@ -72,7 +83,7 @@ pub trait Subscribable: ImplSubscribable {
     self.subscribe_return_state(
       move |v| {
         next(v);
-        OState::Next
+        RxReturn::Continue
       },
       err,
       Some(complete),
@@ -91,7 +102,7 @@ pub trait Subscribable: ImplSubscribable {
     self.subscribe_return_state(
       move |v| {
         next(v);
-        OState::Next
+        RxReturn::Continue
       },
       err,
       complete,
