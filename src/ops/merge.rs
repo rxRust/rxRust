@@ -51,57 +51,39 @@ where
 
   fn subscribe_return_state(
     self,
-    next: impl Fn(&Self::Item) -> RxReturn<Self::Err> + Send + Sync + 'static,
-    error: Option<impl Fn(&Self::Err) + Send + Sync + 'static>,
-    complete: Option<impl Fn() + Send + Sync + 'static>,
+    subscribe: impl RxFn(RxValue<'_, Self::Item, Self::Err>) -> RxReturn<Self::Err>
+      + Send
+      + Sync
+      + 'static,
   ) -> Box<dyn Subscription + Send + Sync> {
-    let next = Arc::new(next);
-    let next_clone = next.clone();
+    let stopped = AtomicBool::new(false);
+    let completed = AtomicBool::new(false);
 
-    let stopped = Arc::new(AtomicBool::new(false));
-    let error = error.map(Arc::new);
-    let complete = complete.map(Arc::new);
-
-    let on_error_factor = || {
-      error.clone().map(|err| {
-        let stopped = stopped.clone();
-        move |e: &_| {
-          if !stopped.load(Ordering::Relaxed) {
-            err(e);
-            stopped.store(true, Ordering::Relaxed);
-          }
+    let merge_subscribe = move |v: RxValue<'_, Self::Item, Self::Err>| match v {
+      nv @ RxValue::Next(_) => subscribe.call((nv,)),
+      ev @ RxValue::Err(_) => {
+        if !stopped.load(Ordering::Relaxed) {
+          stopped.store(true, Ordering::Relaxed);
+          subscribe.call((ev,))
+        } else {
+          RxReturn::Continue
         }
-      })
-    };
-    let completed = Arc::new(AtomicBool::new(false));
-    let on_complete_factor = || {
-      complete.clone().map(|comp| {
-        let stopped = stopped.clone();
-        let completed = completed.clone();
-        move || {
-          if !stopped.load(Ordering::Relaxed)
-            && completed.load(Ordering::Relaxed)
-          {
-            comp();
-            stopped.store(true, Ordering::Relaxed);
-          } else {
-            completed.store(true, Ordering::Relaxed);
-          }
+      }
+      RxValue::Complete => {
+        if !stopped.load(Ordering::Relaxed) && completed.load(Ordering::Relaxed) {
+          stopped.store(true, Ordering::Relaxed);
+          subscribe.call((RxValue::Complete,))
+        } else {
+          completed.store(true, Ordering::Relaxed);
+          RxReturn::Continue
         }
-      })
+      }
     };
 
-    let unsub1 = self.source1.subscribe_return_state(
-      move |v| next(v),
-      on_error_factor(),
-      on_complete_factor(),
-    );
-    let unsub2 = self.source2.subscribe_return_state(
-      move |v| next_clone(v),
-      on_error_factor(),
-      on_complete_factor(),
-    );
+    let merge_subscribe = Arc::new(RxFnWrapper::new(merge_subscribe));
 
+    let unsub1 = self.source1.subscribe_return_state(merge_subscribe.clone());
+    let unsub2 = self.source2.subscribe_return_state(merge_subscribe);
     Box::new(MergeSubscription::new(unsub1, unsub2))
   }
 }
@@ -112,10 +94,7 @@ pub struct MergeSubscription {
 }
 
 impl MergeSubscription {
-  fn new(
-    s1: Box<dyn Subscription + Send + Sync>,
-    s2: Box<dyn Subscription + Send + Sync>,
-  ) -> Self {
+  fn new(s1: Box<dyn Subscription + Send + Sync>, s2: Box<dyn Subscription + Send + Sync>) -> Self {
     MergeSubscription {
       subscription1: s1,
       subscription2: s2,

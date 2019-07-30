@@ -52,35 +52,33 @@ where
 
   fn subscribe_return_state(
     self,
-    next: impl Fn(&Self::Item) -> RxReturn<Self::Err> + Send + Sync + 'static,
-    error: Option<impl Fn(&Self::Err) + Send + Sync + 'static>,
-    complete: Option<impl Fn() + Send + Sync + 'static>,
+    subscribe: impl RxFn(RxValue<'_, Self::Item, Self::Err>) -> RxReturn<Self::Err>
+      + Send
+      + Sync
+      + 'static,
   ) -> Box<dyn Subscription + Send + Sync> {
     let hit = Mutex::new(0);
     let count = self.count;
-    self.source.subscribe_return_state(
-      move |v| {
-        let mut hit = hit.lock().unwrap();
-        if *hit < count {
-          *hit += 1;
-          let os = next(v);
-          match os {
-            RxReturn::Continue => {
+    self
+      .source
+      .subscribe_return_state(RxFnWrapper::new(move |v: RxValue<'_, _, _>| match v {
+        RxValue::Next(nv) => {
+          let mut hit = hit.lock().unwrap();
+          if *hit < count {
+            *hit += 1;
+            let os = subscribe.call((RxValue::Next(nv),));
+            if let RxReturn::Continue = os {
               if *hit == count {
-                RxReturn::Complete
-              } else {
-                os
+                return RxReturn::Complete;
               }
             }
-            _ => os,
+            os
+          } else {
+            RxReturn::Continue
           }
-        } else {
-          RxReturn::Complete
         }
-      },
-      error,
-      complete,
-    )
+        vv => subscribe.call((vv,)),
+      }))
   }
 }
 

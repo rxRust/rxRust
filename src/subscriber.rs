@@ -5,70 +5,36 @@ use std::marker::PhantomData;
 /// the public API for consuming the values of an Observable, all Observers get
 /// converted to a Subscriber, in order to provide Subscription capabilities.
 ///
-pub struct Subscriber<Item, Err, ON, OE, OC> {
+pub struct Subscriber<Item, Err, Sub> {
   stopped: bool,
-  on_next: ON,
-  on_err: Option<OE>,
-  on_complete: Option<OC>,
+  subscribe: Sub,
   _v: PhantomData<(Item, Err)>,
 }
 
-unsafe impl<Item, Err, ON, OE, OC> Send for Subscriber<Item, Err, ON, OE, OC>
-where
-  ON: Send,
-  OE: Send,
-  OC: Send,
-{
-}
+unsafe impl<Item, Err, Sub> Send for Subscriber<Item, Err, Sub> where Sub: Send {}
 
-unsafe impl<Item, Err, ON, OE, OC> Sync for Subscriber<Item, Err, ON, OE, OC>
-where
-  ON: Send,
-  OE: Send,
-  OC: Send,
-{
-}
+unsafe impl<Item, Err, Sub> Sync for Subscriber<Item, Err, Sub> where Sub: Send {}
 
-impl<Item, Err, ON, OE, OC> Subscriber<Item, Err, ON, OE, OC> {
-  pub fn new(on_next: ON) -> Self {
+impl<Item, Err, Sub> Subscriber<Item, Err, Sub> {
+  pub fn new(subscribe: Sub) -> Self {
     Subscriber {
       stopped: false,
-      on_next,
-      on_err: None,
-      on_complete: None,
+      subscribe,
       _v: PhantomData,
     }
   }
-
-  pub fn on_error(&mut self, on_err: OE) {
-    if self.on_err.is_none() {
-      self.on_err.replace(on_err);
-    } else {
-      panic!("subscriber only accept on_error once");
-    }
-  }
-
-  pub fn on_complete(&mut self, on_comp: OC) {
-    if self.on_complete.is_none() {
-      self.on_complete.replace(on_comp);
-    } else {
-      panic!("subscriber only accept on_error once");
-    }
-  }
 }
 
-impl<Item, Err, ON, OE, OC> Observer for Subscriber<Item, Err, ON, OE, OC>
+impl<Item, Err, Sub> Observer for Subscriber<Item, Err, Sub>
 where
-  ON: Fn(&Item) -> RxReturn<Err>,
-  OE: Fn(&Err),
-  OC: Fn(),
+  Sub: RxFn(RxValue<'_, Item, Err>) -> RxReturn<Err>,
 {
   type Item = Item;
   type Err = Err;
 
   fn next(&self, v: &Self::Item) -> RxReturn<Self::Err> {
     if !self.stopped {
-      (self.on_next)(v)
+      self.subscribe.call((RxValue::Next(v),))
     } else {
       RxReturn::Continue
     }
@@ -77,37 +43,28 @@ where
   fn complete(&mut self) {
     if self.stopped {
       return;
-    } else {
-      self.stopped = true;
     }
-    if let Some(comp) = self.on_complete.take() {
-      comp();
-    }
+    self.stopped = true;
+    self.subscribe.call((RxValue::Complete,));
   }
 
   fn error(&mut self, err: &Self::Err) {
     if self.stopped {
       return;
-    } else {
-      self.stopped = true;
     }
-    if let Some(on_err) = self.on_err.take() {
-      on_err(err);
-    }
+    self.stopped = true;
+    self.subscribe.call((RxValue::Err(err),));
   }
 
   fn is_stopped(&self) -> bool { self.stopped }
 }
 
-impl<Item, Err, ON, OE, OC> Subscription for Subscriber<Item, Err, ON, OE, OC> {
+impl<Item, Err, Sub> Subscription for Subscriber<Item, Err, Sub> {
   fn unsubscribe(&mut self) { self.stopped = true; }
 }
 
-impl<Item, Err, ON, OE, OC> Publisher for Subscriber<Item, Err, ON, OE, OC>
-where
-  ON: Fn(&Item) -> RxReturn<Err>,
-  OE: Fn(&Err),
-  OC: Fn(),
+impl<Item, Err, Sub> Publisher for Subscriber<Item, Err, Sub> where
+  Sub: RxFn(RxValue<'_, Item, Err>) -> RxReturn<Err>
 {
 }
 
@@ -118,17 +75,14 @@ mod test {
 
   macro_rules! create_subscriber {
     ($next:ident, $err: ident, $complete: ident) => {{
-      let mut subscriber = Subscriber::new(|_v: &i32| {
-        $next.set($next.get() + 1);
+      Subscriber::new(RxFnWrapper::new(|v: RxValue<'_, _, ()>| {
+        match v {
+          RxValue::Next(_) => $next.set($next.get() + 1),
+          RxValue::Complete => $complete.set($complete.get() + 1),
+          RxValue::Err(_) => $err.set($err.get() + 1),
+        };
         RxReturn::Continue
-      });
-      subscriber.on_error(|_: &()| {
-        $err.set($err.get() + 1);
-      });
-      subscriber.on_complete(|| {
-        $complete.set($complete.get() + 1);
-      });
-      subscriber
+      }))
     }};
   }
 
