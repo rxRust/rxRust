@@ -73,16 +73,19 @@ where
   type Err = S::Err;
 
   fn subscribe_return_state(
-    mut self,
-    subscribe: impl RxFn(RxValue<'_, Self::Item, Self::Err>) -> RxReturn<Self::Err>
+    self,
+    subscribe: impl RxFn(
+        RxValue<&'_ Self::Item, &'_ Self::Err>,
+      ) -> RxReturn<Self::Err>
       + Send
       + Sync
       + 'static,
   ) -> Box<dyn Subscription + Send + Sync> {
     let source = self.source;
-    self
-      .scheduler
-      .schedule(move || source.subscribe_return_state(subscribe))
+    self.scheduler.schedule(
+      move |_: Option<()>| source.subscribe_return_state(subscribe),
+      None,
+    )
   }
 }
 

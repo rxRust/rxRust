@@ -51,7 +51,9 @@ where
 
   fn subscribe_return_state(
     self,
-    subscribe: impl RxFn(RxValue<'_, Self::Item, Self::Err>) -> RxReturn<Self::Err>
+    subscribe: impl RxFn(
+        RxValue<&'_ Self::Item, &'_ Self::Err>,
+      ) -> RxReturn<Self::Err>
       + Send
       + Sync
       + 'static,
@@ -59,26 +61,29 @@ where
     let stopped = AtomicBool::new(false);
     let completed = AtomicBool::new(false);
 
-    let merge_subscribe = move |v: RxValue<'_, Self::Item, Self::Err>| match v {
-      nv @ RxValue::Next(_) => subscribe.call((nv,)),
-      ev @ RxValue::Err(_) => {
-        if !stopped.load(Ordering::Relaxed) {
-          stopped.store(true, Ordering::Relaxed);
-          subscribe.call((ev,))
-        } else {
-          RxReturn::Continue
+    let merge_subscribe =
+      move |v: RxValue<&'_ Self::Item, &'_ Self::Err>| match v {
+        nv @ RxValue::Next(_) => subscribe.call((nv,)),
+        ev @ RxValue::Err(_) => {
+          if !stopped.load(Ordering::Relaxed) {
+            stopped.store(true, Ordering::Relaxed);
+            subscribe.call((ev,))
+          } else {
+            RxReturn::Continue
+          }
         }
-      }
-      RxValue::Complete => {
-        if !stopped.load(Ordering::Relaxed) && completed.load(Ordering::Relaxed) {
-          stopped.store(true, Ordering::Relaxed);
-          subscribe.call((RxValue::Complete,))
-        } else {
-          completed.store(true, Ordering::Relaxed);
-          RxReturn::Continue
+        RxValue::Complete => {
+          if !stopped.load(Ordering::Relaxed)
+            && completed.load(Ordering::Relaxed)
+          {
+            stopped.store(true, Ordering::Relaxed);
+            subscribe.call((RxValue::Complete,))
+          } else {
+            completed.store(true, Ordering::Relaxed);
+            RxReturn::Continue
+          }
         }
-      }
-    };
+      };
 
     let merge_subscribe = Arc::new(RxFnWrapper::new(merge_subscribe));
 
@@ -94,7 +99,10 @@ pub struct MergeSubscription {
 }
 
 impl MergeSubscription {
-  fn new(s1: Box<dyn Subscription + Send + Sync>, s2: Box<dyn Subscription + Send + Sync>) -> Self {
+  fn new(
+    s1: Box<dyn Subscription + Send + Sync>,
+    s2: Box<dyn Subscription + Send + Sync>,
+  ) -> Self {
     MergeSubscription {
       subscription1: s1,
       subscription2: s2,

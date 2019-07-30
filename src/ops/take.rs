@@ -52,16 +52,17 @@ where
 
   fn subscribe_return_state(
     self,
-    subscribe: impl RxFn(RxValue<'_, Self::Item, Self::Err>) -> RxReturn<Self::Err>
+    subscribe: impl RxFn(
+        RxValue<&'_ Self::Item, &'_ Self::Err>,
+      ) -> RxReturn<Self::Err>
       + Send
       + Sync
       + 'static,
   ) -> Box<dyn Subscription + Send + Sync> {
     let hit = Mutex::new(0);
     let count = self.count;
-    self
-      .source
-      .subscribe_return_state(RxFnWrapper::new(move |v: RxValue<'_, _, _>| match v {
+    self.source.subscribe_return_state(RxFnWrapper::new(
+      move |v: RxValue<&'_ _, &'_ _>| match v {
         RxValue::Next(nv) => {
           let mut hit = hit.lock().unwrap();
           if *hit < count {
@@ -78,7 +79,8 @@ where
           }
         }
         vv => subscribe.call((vv,)),
-      }))
+      },
+    ))
   }
 }
 

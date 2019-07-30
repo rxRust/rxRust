@@ -12,3 +12,5 @@ mod fork;
 pub use fork::{Fork, Multicast};
 mod subscribe_on;
 pub use subscribe_on::SubscribeOn;
+mod observe_on;
+pub use observe_on::ObserveOn;
