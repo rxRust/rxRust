@@ -13,7 +13,7 @@ pub struct Observable<F, Item, Err> {
   _p: PhantomData<(Item, Err)>,
 }
 
-impl<'a, F, Item, Err> Observable<RxFnWrapper<F>, Item, Err>
+impl<F, Item, Err> Observable<RxFnWrapper<F>, Item, Err>
 where
   F: Fn(&mut dyn Observer<Item = Item, Err = Err>),
 {
