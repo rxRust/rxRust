@@ -29,12 +29,12 @@
 /// ```
 use crate::prelude::*;
 
-pub trait Multicast: ImplSubscribable {
+pub trait Multicast: RawSubscribable {
   type Output: Fork<Item = Self::Item, Err = Self::Err>;
   fn multicast(self) -> Self::Output;
 }
 
-pub trait Fork: ImplSubscribable {
-  type Output: ImplSubscribable<Item = Self::Item, Err = Self::Err>;
+pub trait Fork: RawSubscribable {
+  type Output: RawSubscribable<Item = Self::Item, Err = Self::Err>;
   fn fork(&self) -> Self::Output;
 }

@@ -60,11 +60,11 @@ pub trait MapWithErr<T> {
   }
 }
 
-impl<'a, O> Map<O::Item> for O where O: ImplSubscribable {}
+impl<'a, O> Map<O::Item> for O where O: RawSubscribable {}
 
 impl<'a, O> MapWithErr<O::Item> for O
 where
-  O: ImplSubscribable,
+  O: RawSubscribable,
 {
   type Err = O::Err;
 }
@@ -84,15 +84,15 @@ macro_rules! map_subscribe {
   };
 }
 
-impl<S, B, M> ImplSubscribable for MapOp<S, M>
+impl<S, B, M> RawSubscribable for MapOp<S, M>
 where
   M: RxFn(&S::Item) -> B + Send + Sync + 'static,
-  S: ImplSubscribable,
+  S: RawSubscribable,
 {
   type Item = B;
   type Err = S::Err;
 
-  fn subscribe_return_state(
+  fn raw_subscribe(
     self,
     subscribe: impl RxFn(
         RxValue<&'_ Self::Item, &'_ Self::Err>,
@@ -102,9 +102,7 @@ where
       + 'static,
   ) -> Box<dyn Subscription + Send + Sync> {
     let map = self.func;
-    self
-      .source
-      .subscribe_return_state(map_subscribe!(subscribe, map))
+    self.source.raw_subscribe(map_subscribe!(subscribe, map))
   }
 }
 
@@ -153,15 +151,15 @@ macro_rules! map_subscribe_with_err {
     })
   };
 }
-impl<'a, S, B, M> ImplSubscribable for MapWithErrOp<S, M>
+impl<'a, S, B, M> RawSubscribable for MapWithErrOp<S, M>
 where
   M: RxFn(&S::Item) -> Result<B, S::Err> + Send + Sync + 'static,
-  S: ImplSubscribable,
+  S: RawSubscribable,
 {
   type Item = B;
   type Err = S::Err;
 
-  fn subscribe_return_state(
+  fn raw_subscribe(
     self,
     subscribe: impl RxFn(
         RxValue<&'_ Self::Item, &'_ Self::Err>,
@@ -173,7 +171,7 @@ where
     let map = self.func;
     self
       .source
-      .subscribe_return_state(map_subscribe_with_err!(subscribe, map))
+      .raw_subscribe(map_subscribe_with_err!(subscribe, map))
   }
 }
 
@@ -210,15 +208,15 @@ pub struct MapReturnRefOp<S, M> {
   func: M,
 }
 
-impl<S, B, M> ImplSubscribable for MapReturnRefOp<S, M>
+impl<S, B, M> RawSubscribable for MapReturnRefOp<S, M>
 where
   M: for<'r> RxFn(&'r S::Item) -> &'r B + Send + Sync + 'static,
-  S: ImplSubscribable,
+  S: RawSubscribable,
 {
   type Item = B;
   type Err = S::Err;
 
-  fn subscribe_return_state(
+  fn raw_subscribe(
     self,
     subscribe: impl RxFn(
         RxValue<&'_ Self::Item, &'_ Self::Err>,
@@ -228,9 +226,7 @@ where
       + 'static,
   ) -> Box<dyn Subscription + Send + Sync> {
     let map = self.func;
-    self
-      .source
-      .subscribe_return_state(map_subscribe!(subscribe, map))
+    self.source.raw_subscribe(map_subscribe!(subscribe, map))
   }
 }
 
@@ -267,15 +263,15 @@ pub struct MapReturnRefWithErrOp<S, M> {
   func: M,
 }
 
-impl<S, B, M> ImplSubscribable for MapReturnRefWithErrOp<S, M>
+impl<S, B, M> RawSubscribable for MapReturnRefWithErrOp<S, M>
 where
   M: for<'r> RxFn(&'r S::Item) -> Result<&'r B, S::Err> + Send + Sync + 'static,
-  S: ImplSubscribable,
+  S: RawSubscribable,
 {
   type Item = B;
   type Err = S::Err;
 
-  fn subscribe_return_state(
+  fn raw_subscribe(
     self,
     subscribe: impl RxFn(
         RxValue<&'_ Self::Item, &'_ Self::Err>,
@@ -287,7 +283,7 @@ where
     let map = self.func;
     self
       .source
-      .subscribe_return_state(map_subscribe_with_err!(subscribe, map))
+      .raw_subscribe(map_subscribe_with_err!(subscribe, map))
   }
 }
 

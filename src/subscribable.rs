@@ -50,13 +50,13 @@ pub enum RxReturn<E> {
   Complete,
 }
 
-pub trait ImplSubscribable: Sized {
+pub trait RawSubscribable: Sized {
   /// The type of the elements being emitted.
   type Item;
   // The type of the error may propagating.
   type Err;
 
-  fn subscribe_return_state(
+  fn raw_subscribe(
     self,
     subscribe: impl RxFn(
         RxValue<&'_ Self::Item, &'_ Self::Err>,
@@ -67,7 +67,7 @@ pub trait ImplSubscribable: Sized {
   ) -> Box<dyn Subscription + Send + Sync>;
 }
 
-pub trait Subscribable: ImplSubscribable {
+pub trait Subscribable: RawSubscribable {
   /// Invokes an execution of an Observable and registers Observer handlers for
   /// notifications it will emit.
   ///
@@ -81,17 +81,15 @@ pub trait Subscribable: ImplSubscribable {
     error: impl Fn(&Self::Err) + Send + Sync + 'static,
     complete: impl Fn() + Send + Sync + 'static,
   ) -> Box<dyn Subscription> {
-    self.subscribe_return_state(RxFnWrapper::new(
-      move |v: RxValue<&'_ _, &'_ _>| {
-        match v {
-          RxValue::Next(v) => next(v),
-          RxValue::Err(e) => error(e),
-          RxValue::Complete => complete(),
-        };
+    self.raw_subscribe(RxFnWrapper::new(move |v: RxValue<&'_ _, &'_ _>| {
+      match v {
+        RxValue::Next(v) => next(v),
+        RxValue::Err(e) => error(e),
+        RxValue::Complete => complete(),
+      };
 
-        RxReturn::Continue
-      },
-    ))
+      RxReturn::Continue
+    }))
   }
 
   fn subscribe_err(
@@ -99,17 +97,15 @@ pub trait Subscribable: ImplSubscribable {
     next: impl Fn(&Self::Item) + Send + Sync + 'static,
     error: impl Fn(&Self::Err) + Send + Sync + 'static,
   ) -> Box<dyn Subscription> {
-    self.subscribe_return_state(RxFnWrapper::new(
-      move |v: RxValue<&'_ _, &'_ _>| {
-        match v {
-          RxValue::Next(v) => next(v),
-          RxValue::Err(e) => error(e),
-          _ => {}
-        };
+    self.raw_subscribe(RxFnWrapper::new(move |v: RxValue<&'_ _, &'_ _>| {
+      match v {
+        RxValue::Next(v) => next(v),
+        RxValue::Err(e) => error(e),
+        _ => {}
+      };
 
-        RxReturn::Continue
-      },
-    ))
+      RxReturn::Continue
+    }))
   }
 
   fn subscribe_complete(
@@ -120,17 +116,15 @@ pub trait Subscribable: ImplSubscribable {
   where
     Self::Err: 'static,
   {
-    self.subscribe_return_state(RxFnWrapper::new(
-      move |v: RxValue<&'_ _, &'_ _>| {
-        match v {
-          RxValue::Next(v) => next(v),
-          RxValue::Complete => complete(),
-          _ => {}
-        };
+    self.raw_subscribe(RxFnWrapper::new(move |v: RxValue<&'_ _, &'_ _>| {
+      match v {
+        RxValue::Next(v) => next(v),
+        RxValue::Complete => complete(),
+        _ => {}
+      };
 
-        RxReturn::Continue
-      },
-    ))
+      RxReturn::Continue
+    }))
   }
 
   fn subscribe(
@@ -140,16 +134,14 @@ pub trait Subscribable: ImplSubscribable {
   where
     Self::Err: 'static,
   {
-    self.subscribe_return_state(RxFnWrapper::new(
-      move |v: RxValue<&'_ _, &'_ _>| {
-        if let RxValue::Next(v) = v {
-          next(v);
-        }
+    self.raw_subscribe(RxFnWrapper::new(move |v: RxValue<&'_ _, &'_ _>| {
+      if let RxValue::Next(v) = v {
+        next(v);
+      }
 
-        RxReturn::Continue
-      },
-    ))
+      RxReturn::Continue
+    }))
   }
 }
 
-impl<'a, S: ImplSubscribable> Subscribable for S {}
+impl<'a, S: RawSubscribable> Subscribable for S {}
