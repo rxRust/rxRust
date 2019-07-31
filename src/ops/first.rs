@@ -18,13 +18,13 @@ pub trait First {
   }
 }
 
-impl<'a, O> First for O where O: ImplSubscribable {}
+impl<'a, O> First for O where O: RawSubscribable {}
 
 /// emit only the first item (or a default item) emitted by an Observable
 pub trait FirstOr {
   fn first_or(self, default: Self::Item) -> FirstOrOp<TakeOp<Self>, Self::Item>
   where
-    Self: ImplSubscribable,
+    Self: RawSubscribable,
   {
     FirstOrOp {
       source: self.first(),
@@ -34,7 +34,7 @@ pub trait FirstOr {
   }
 }
 
-impl<O> FirstOr for O where O: ImplSubscribable {}
+impl<O> FirstOr for O where O: RawSubscribable {}
 
 pub struct FirstOrOp<S, V> {
   source: S,
@@ -42,14 +42,14 @@ pub struct FirstOrOp<S, V> {
   passed: bool,
 }
 
-impl<S, T> ImplSubscribable for FirstOrOp<S, T>
+impl<S, T> RawSubscribable for FirstOrOp<S, T>
 where
   T: Borrow<S::Item> + Send + Sync + 'static,
-  S: ImplSubscribable,
+  S: RawSubscribable,
 {
   type Item = S::Item;
   type Err = S::Err;
-  fn subscribe_return_state(
+  fn raw_subscribe(
     self,
     subscribe: impl RxFn(
         RxValue<&'_ Self::Item, &'_ Self::Err>,
@@ -60,7 +60,7 @@ where
   ) -> Box<dyn Subscription + Send + Sync> {
     let default = self.default;
     let passed = AtomicBool::new(self.passed);
-    self.source.subscribe_return_state(RxFnWrapper::new(
+    self.source.raw_subscribe(RxFnWrapper::new(
       move |v: RxValue<&'_ _, &'_ _>| match v {
         RxValue::Next(nv) => {
           passed.store(true, Ordering::Relaxed);

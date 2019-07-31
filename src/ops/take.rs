@@ -36,21 +36,21 @@ pub trait Take {
   }
 }
 
-impl<'a, O> Take for O where O: ImplSubscribable {}
+impl<'a, O> Take for O where O: RawSubscribable {}
 
 pub struct TakeOp<S> {
   source: S,
   count: u32,
 }
 
-impl<S> ImplSubscribable for TakeOp<S>
+impl<S> RawSubscribable for TakeOp<S>
 where
-  S: ImplSubscribable,
+  S: RawSubscribable,
 {
   type Item = S::Item;
   type Err = S::Err;
 
-  fn subscribe_return_state(
+  fn raw_subscribe(
     self,
     subscribe: impl RxFn(
         RxValue<&'_ Self::Item, &'_ Self::Err>,
@@ -61,7 +61,7 @@ where
   ) -> Box<dyn Subscription + Send + Sync> {
     let hit = Mutex::new(0);
     let count = self.count;
-    self.source.subscribe_return_state(RxFnWrapper::new(
+    self.source.raw_subscribe(RxFnWrapper::new(
       move |v: RxValue<&'_ _, &'_ _>| match v {
         RxValue::Next(nv) => {
           let mut hit = hit.lock().unwrap();

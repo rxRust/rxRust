@@ -25,11 +25,11 @@ impl<'a, T, E> Clone for Subject<T, E> {
   }
 }
 
-impl<Item: 'static, Err: 'static> ImplSubscribable for Subject<Item, Err> {
+impl<Item: 'static, Err: 'static> RawSubscribable for Subject<Item, Err> {
   type Item = Item;
   type Err = Err;
 
-  fn subscribe_return_state(
+  fn raw_subscribe(
     self,
     subscribe: impl RxFn(
         RxValue<&'_ Self::Item, &'_ Self::Err>,
@@ -159,7 +159,7 @@ fn error() {
 #[should_panic]
 fn runtime_error() {
   let subject = Subject::new();
-  subject.clone().subscribe_return_state(RxFnWrapper::new(
+  subject.clone().raw_subscribe(RxFnWrapper::new(
     |v: RxValue<&'_ _, &'_ _>| match v {
       RxValue::Next(_) => RxReturn::Err("runtime error"),
       RxValue::Err(e) => panic!(*e),
@@ -176,7 +176,7 @@ fn return_err_state() {
   let ec = Arc::new(Mutex::new(0));
   let c_ec = ec.clone();
   let subject = Subject::new();
-  subject.clone().subscribe_return_state(RxFnWrapper::new(
+  subject.clone().raw_subscribe(RxFnWrapper::new(
     move |v: RxValue<&'_ _, &'_ _>| match v {
       RxValue::Next(_) => RxReturn::Err("runtime error"),
       RxValue::Err(_) => {
@@ -200,7 +200,7 @@ fn return_complete_state() {
   let cc = Arc::new(Mutex::new(0));
   let c_cc = cc.clone();
   let broadcast = Subject::new();
-  broadcast.clone().subscribe_return_state(RxFnWrapper::new(
+  broadcast.clone().raw_subscribe(RxFnWrapper::new(
     move |v: RxValue<&'_ i32, &'_ ()>| match v {
       RxValue::Next(_) => RxReturn::Complete,
       RxValue::Err(_) => RxReturn::Continue,

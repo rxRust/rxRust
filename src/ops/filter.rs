@@ -51,11 +51,11 @@ pub trait FilterWithErr<'a, T> {
   }
 }
 
-impl<'a, T, O> Filter<T> for O where O: ImplSubscribable<Item = T> {}
+impl<'a, T, O> Filter<T> for O where O: RawSubscribable<Item = T> {}
 
 impl<'a, T, O> FilterWithErr<'a, T> for O
 where
-  O: ImplSubscribable<Item = T>,
+  O: RawSubscribable<Item = T>,
 {
   type Err = O::Err;
 }
@@ -70,15 +70,15 @@ pub struct FilterWithErrOp<S, N> {
   filter: N,
 }
 
-impl<S, F> ImplSubscribable for FilterOp<S, F>
+impl<S, F> RawSubscribable for FilterOp<S, F>
 where
-  S: ImplSubscribable,
+  S: RawSubscribable,
   F: RxFn(&S::Item) -> bool + Send + Sync + 'static,
 {
   type Err = S::Err;
   type Item = S::Item;
 
-  fn subscribe_return_state(
+  fn raw_subscribe(
     self,
     subscribe: impl RxFn(
         RxValue<&'_ Self::Item, &'_ Self::Err>,
@@ -88,7 +88,7 @@ where
       + 'static,
   ) -> Box<dyn Subscription + Send + Sync> {
     let filter = self.filter;
-    self.source.subscribe_return_state(RxFnWrapper::new(
+    self.source.raw_subscribe(RxFnWrapper::new(
       move |v: RxValue<&'_ _, &'_ _>| match v {
         RxValue::Next(ne) => {
           if filter.call((ne,)) {
@@ -131,15 +131,15 @@ where
   }
 }
 
-impl<S, F> ImplSubscribable for FilterWithErrOp<S, F>
+impl<S, F> RawSubscribable for FilterWithErrOp<S, F>
 where
-  S: ImplSubscribable,
+  S: RawSubscribable,
   F: RxFn(&S::Item) -> Result<bool, S::Err> + Send + Sync + 'static,
 {
   type Err = S::Err;
   type Item = S::Item;
 
-  fn subscribe_return_state(
+  fn raw_subscribe(
     self,
     subscribe: impl RxFn(
         RxValue<&'_ Self::Item, &'_ Self::Err>,
@@ -149,7 +149,7 @@ where
       + 'static,
   ) -> Box<dyn Subscription + Send + Sync> {
     let filter = self.filter;
-    self.source.subscribe_return_state(RxFnWrapper::new(
+    self.source.raw_subscribe(RxFnWrapper::new(
       move |v: RxValue<&'_ _, &'_ _>| match v {
         RxValue::Next(nv) => match filter.call((&nv,)) {
           Ok(b) => {

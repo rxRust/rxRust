@@ -62,17 +62,17 @@ pub struct SubscribeOnOP<S, SD> {
   scheduler: SD,
 }
 
-impl<S> SubscribeOn for S where S: ImplSubscribable {}
+impl<S> SubscribeOn for S where S: RawSubscribable {}
 
-impl<S, SD> ImplSubscribable for SubscribeOnOP<S, SD>
+impl<S, SD> RawSubscribable for SubscribeOnOP<S, SD>
 where
-  S: ImplSubscribable + Send + Sync + 'static,
+  S: RawSubscribable + Send + Sync + 'static,
   SD: Scheduler,
 {
   type Item = S::Item;
   type Err = S::Err;
 
-  fn subscribe_return_state(
+  fn raw_subscribe(
     self,
     subscribe: impl RxFn(
         RxValue<&'_ Self::Item, &'_ Self::Err>,
@@ -82,10 +82,9 @@ where
       + 'static,
   ) -> Box<dyn Subscription + Send + Sync> {
     let source = self.source;
-    self.scheduler.schedule(
-      move |_: Option<()>| source.subscribe_return_state(subscribe),
-      None,
-    )
+    self
+      .scheduler
+      .schedule(move |_: Option<()>| source.raw_subscribe(subscribe), None)
   }
 }
 

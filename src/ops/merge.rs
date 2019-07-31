@@ -34,22 +34,22 @@ pub trait Merge {
   }
 }
 
-impl<O> Merge for O where O: ImplSubscribable {}
+impl<O> Merge for O where O: RawSubscribable {}
 
 pub struct MergeOp<S1, S2> {
   source1: S1,
   source2: S2,
 }
 
-impl<S1, S2> ImplSubscribable for MergeOp<S1, S2>
+impl<S1, S2> RawSubscribable for MergeOp<S1, S2>
 where
-  S1: ImplSubscribable,
-  S2: ImplSubscribable<Item = S1::Item, Err = S1::Err>,
+  S1: RawSubscribable,
+  S2: RawSubscribable<Item = S1::Item, Err = S1::Err>,
 {
   type Err = S1::Err;
   type Item = S1::Item;
 
-  fn subscribe_return_state(
+  fn raw_subscribe(
     self,
     subscribe: impl RxFn(
         RxValue<&'_ Self::Item, &'_ Self::Err>,
@@ -87,8 +87,8 @@ where
 
     let merge_subscribe = Arc::new(RxFnWrapper::new(merge_subscribe));
 
-    let unsub1 = self.source1.subscribe_return_state(merge_subscribe.clone());
-    let unsub2 = self.source2.subscribe_return_state(merge_subscribe);
+    let unsub1 = self.source1.raw_subscribe(merge_subscribe.clone());
+    let unsub2 = self.source2.raw_subscribe(merge_subscribe);
     Box::new(MergeSubscription::new(unsub1, unsub2))
   }
 }
