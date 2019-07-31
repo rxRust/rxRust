@@ -12,8 +12,8 @@ use crate::scheduler::Scheduler;
 /// # Example
 /// Given the following code:
 /// ```rust
-/// use rx_rs::prelude::*;
-/// use rx_rs::ops::{ Merge };
+/// use rxrust::prelude::*;
+/// use rxrust::ops::{ Merge };
 ///
 /// let a = observable::from_range(1..5);
 /// let b = observable::from_range(5..10);
@@ -27,9 +27,9 @@ use crate::scheduler::Scheduler;
 /// But if we instead use the `subscribe_on` operator declaring that we want to
 /// use the new thread scheduler for values emitted by Observable `a`:
 /// ```rust
-/// use rx_rs::prelude::*;
-/// use rx_rs::scheduler::new_thread;
-/// use rx_rs::ops::{ Merge, SubscribeOn };
+/// use rxrust::prelude::*;
+/// use rxrust::scheduler::new_thread;
+/// use rxrust::ops::{ Merge, SubscribeOn };
 /// use std::thread;
 /// let a = observable::from_range(1..5).subscribe_on(new_thread());
 /// let b = observable::from_range(5..10);

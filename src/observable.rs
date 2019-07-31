@@ -6,7 +6,7 @@ mod from;
 pub use from::*;
 
 /// A representation of any set of values over any amount of time. This is the
-/// most basic building block rx_rs
+/// most basic building block rxrust
 ///
 pub struct Observable<F, Item, Err> {
   subscribe: F,

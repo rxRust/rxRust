@@ -7,16 +7,16 @@
     {
       "type": "lldb",
       "request": "launch",
-      "name": "Debug unit tests in library 'rx_rs'",
+      "name": "Debug unit tests in library 'rxrust'",
       "cargo": {
         "args": [
           "test",
           "--no-run",
           "--lib",
-          "--package=rx_rs"
+          "--package=rxrust"
         ],
         "filter": {
-          "name": "rx_rs",
+          "name": "rxrust",
           "kind": "lib"
         }
       },
