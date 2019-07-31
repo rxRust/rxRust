@@ -11,9 +11,9 @@ pub struct Subscriber<Item, Err, Sub> {
   _v: PhantomData<(Item, Err)>,
 }
 
-unsafe impl<Item, Err, Sub> Send for Subscriber<Item, Err, Sub> where Sub: Send {}
+unsafe impl<Item, E, Sub> Send for Subscriber<Item, E, Sub> where Sub: Send {}
 
-unsafe impl<Item, Err, Sub> Sync for Subscriber<Item, Err, Sub> where Sub: Send {}
+unsafe impl<Item, E, Sub> Sync for Subscriber<Item, E, Sub> where Sub: Send {}
 
 impl<Item, Err, Sub> Subscriber<Item, Err, Sub> {
   pub fn new(subscribe: Sub) -> Self {
