@@ -11,7 +11,7 @@ use std::sync::Mutex;
 /// Take the first 5 seconds of an infinite 1-second interval Observable
 ///
 /// ```
-/// # use rx_rs::{ ops::{Take}, prelude::*};
+/// # use rxrust::{ ops::{Take}, prelude::*};
 ///
 /// observable::from_range(0..10).take(5).subscribe(|v| println!("{}", v));
 ///

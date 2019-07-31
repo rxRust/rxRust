@@ -5,7 +5,7 @@ use std::sync::Arc;
 /// # Example
 ///
 /// ```
-/// use rx_rs::{ops::Filter, prelude::*};
+/// use rxrust::{ops::Filter, prelude::*};
 /// use std::sync::{Arc, Mutex};
 ///
 /// let coll = Arc::new(Mutex::new(vec![]));
