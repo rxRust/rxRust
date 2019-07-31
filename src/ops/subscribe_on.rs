@@ -43,7 +43,7 @@ use crate::scheduler::Scheduler;
 ///  5(thread 2) 6(thread 2) 7(thread 2) 8(thread 2) 9(thread id2)`.
 /// The reason for this is that Observable `b` emits its values directly like
 /// before, but the emissions from `a` are scheduled on a new thread because we
-/// are now using the [`new_thread()`] Scheduler for that specific Observable.
+/// are now using the `new_thread` Scheduler for that specific Observable.
 
 pub trait SubscribeOn {
   fn subscribe_on<SD>(self, scheduler: SD) -> SubscribeOnOP<Self, SD>
