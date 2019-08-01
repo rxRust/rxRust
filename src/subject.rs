@@ -1,5 +1,4 @@
 use crate::prelude::*;
-use std::marker::PhantomData;
 use std::sync::{
   atomic::{AtomicBool, Ordering},
   Arc, Mutex,
@@ -9,7 +8,6 @@ use std::sync::{
 pub struct Subject<Item, Err> {
   cbs: Arc<Mutex<Vec<RefPublisher<Item, Err>>>>,
   stopped: Arc<AtomicBool>,
-  _p: PhantomData<(Item, Err)>,
 }
 
 type RefPublisher<Item, Err> =
@@ -20,7 +18,6 @@ impl<'a, T, E> Clone for Subject<T, E> {
     Subject {
       cbs: self.cbs.clone(),
       stopped: self.stopped.clone(),
-      _p: PhantomData,
     }
   }
 }
@@ -65,7 +62,6 @@ impl<'a, Item: 'a, Err: 'a> Subject<Item, Err> {
     Subject {
       cbs: Arc::new(Mutex::new(vec![])),
       stopped: Arc::new(AtomicBool::new(false)),
-      _p: PhantomData,
     }
   }
 }

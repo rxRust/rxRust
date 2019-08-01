@@ -24,7 +24,7 @@ impl<'a, O> First for O where O: RawSubscribable {}
 pub trait FirstOr {
   fn first_or(self, default: Self::Item) -> FirstOrOp<TakeOp<Self>, Self::Item>
   where
-    Self: RawSubscribable,
+    Self: RawSubscribable + Sized,
   {
     FirstOrOp {
       source: self.first(),

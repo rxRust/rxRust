@@ -50,7 +50,7 @@ pub enum RxReturn<E> {
   Complete,
 }
 
-pub trait RawSubscribable: Sized {
+pub trait RawSubscribable {
   /// The type of the elements being emitted.
   type Item;
   // The type of the error may propagating.
@@ -75,6 +75,36 @@ pub trait Subscribable: RawSubscribable {
   /// * `complete`: A handler for a terminal event resulting from successful
   /// completion.
   ///
+  fn subscribe_err_complete(
+    self,
+    next: impl Fn(&Self::Item) + Send + Sync + 'static,
+    error: impl Fn(&Self::Err) + Send + Sync + 'static,
+    complete: impl Fn() + Send + Sync + 'static,
+  ) -> Box<dyn Subscription>;
+
+  fn subscribe_err(
+    self,
+    next: impl Fn(&Self::Item) + Send + Sync + 'static,
+    error: impl Fn(&Self::Err) + Send + Sync + 'static,
+  ) -> Box<dyn Subscription>;
+
+  fn subscribe_complete(
+    self,
+    next: impl Fn(&Self::Item) + Send + Sync + 'static,
+    complete: impl Fn() + Send + Sync + 'static,
+  ) -> Box<dyn Subscription>
+  where
+    Self::Err: 'static;
+
+  fn subscribe(
+    self,
+    next: impl Fn(&Self::Item) + Send + Sync + 'static,
+  ) -> Box<dyn Subscription>
+  where
+    Self::Err: 'static;
+}
+
+impl<S: RawSubscribable> Subscribable for S {
   fn subscribe_err_complete(
     self,
     next: impl Fn(&Self::Item) + Send + Sync + 'static,
@@ -143,5 +173,3 @@ pub trait Subscribable: RawSubscribable {
     }))
   }
 }
-
-impl<'a, S: RawSubscribable> Subscribable for S {}
