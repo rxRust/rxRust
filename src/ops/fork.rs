@@ -27,7 +27,7 @@
 ///  o.fork().subscribe_err(|_| {println!("consume in first")}, |_:&()|{});
 ///  o.fork().subscribe_err(|_| {println!("consume in second")}, |_:&()|{});
 /// ```
-use crate::prelude::*;
+use crate::subscribable::*;
 
 pub trait Multicast: RawSubscribable {
   type Output: Fork<Item = Self::Item, Err = Self::Err>;
@@ -37,4 +37,52 @@ pub trait Multicast: RawSubscribable {
 pub trait Fork: RawSubscribable {
   type Output: RawSubscribable<Item = Self::Item, Err = Self::Err>;
   fn fork(&self) -> Self::Output;
+}
+
+pub trait BoxFork {
+  type Item;
+  type Err;
+  fn box_fork(
+    &self,
+  ) -> Box<dyn SubscribableByBox<Item = Self::Item, Err = Self::Err>>;
+}
+
+pub trait FnPtrFork {
+  type Item;
+  type Err;
+  fn fn_ptr_fork(
+    &self,
+  ) -> Box<dyn SubscribableByFnPtr<Item = Self::Item, Err = Self::Err>>;
+}
+
+impl<S> BoxFork for S
+where
+  S: Fork,
+  S::Output: 'static,
+  S::Item: 'static,
+  S::Err: 'static,
+{
+  type Item = S::Item;
+  type Err = S::Err;
+  fn box_fork(
+    &self,
+  ) -> Box<dyn SubscribableByBox<Item = Self::Item, Err = Self::Err>> {
+    Box::new(self.fork())
+  }
+}
+
+impl<S> FnPtrFork for S
+where
+  S: Fork,
+  S::Output: 'static,
+  S::Item: 'static,
+  S::Err: 'static,
+{
+  type Item = S::Item;
+  type Err = S::Err;
+  fn fn_ptr_fork(
+    &self,
+  ) -> Box<dyn SubscribableByFnPtr<Item = Self::Item, Err = Self::Err>> {
+    Box::new(self.fork())
+  }
 }

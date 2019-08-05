@@ -9,7 +9,7 @@ pub use take::Take;
 mod first;
 pub use first::{First, FirstOr};
 mod fork;
-pub use fork::{Fork, Multicast};
+pub use fork::{BoxFork, FnPtrFork, Fork, Multicast};
 mod subscribe_on;
 pub use subscribe_on::SubscribeOn;
 mod observe_on;
