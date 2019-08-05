@@ -1,10 +1,44 @@
 use crate::prelude::*;
+use crate::subscribable::Subscribable;
 
-pub trait SubscribableByBox: Subscribable + Sized
+pub trait SubscribableByBox {
+  type Item;
+  type Err;
+
+  fn subscribe_err_complete(
+    self,
+    next: Box<dyn Fn(&Self::Item) + Send + Sync>,
+    error: Box<dyn Fn(&Self::Err) + Send + Sync>,
+    complete: Box<dyn Fn() + Send + Sync>,
+  ) -> Box<dyn Subscription>;
+
+  fn subscribe_err(
+    self,
+    next: Box<dyn Fn(&Self::Item) + Send + Sync>,
+    error: Box<dyn Fn(&Self::Err) + Send + Sync>,
+  ) -> Box<dyn Subscription>;
+
+  fn subscribe_complete(
+    self,
+    next: Box<dyn Fn(&Self::Item) + Send + Sync>,
+    complete: Box<dyn Fn() + Send + Sync>,
+  ) -> Box<dyn Subscription>;
+
+  fn subscribe(
+    self,
+    next: Box<dyn Fn(&Self::Item) + Send + Sync>,
+  ) -> Box<dyn Subscription>;
+}
+
+impl<S> SubscribableByBox for S
 where
-  Self::Item: 'static,
-  Self::Err: 'static,
+  S: Subscribable,
+  S::Item: 'static,
+  S::Err: 'static,
 {
+  type Item = S::Item;
+  type Err = S::Err;
+
   fn subscribe_err_complete(
     self,
     next: Box<dyn Fn(&Self::Item) + Send + Sync>,
@@ -35,11 +69,17 @@ where
 
   fn subscribe(
     self,
-    next: impl Fn(&Self::Item) + Send + Sync + 'static,
+    next: Box<dyn Fn(&Self::Item) + Send + Sync>,
   ) -> Box<dyn Subscription>
   where
     Self::Err: 'static,
   {
     self::Subscribable::subscribe(self, next)
   }
+}
+
+#[test]
+fn object_safety() {
+  let _so: Box<dyn SubscribableByBox<Item = i32, Err = ()>> =
+    Box::new(observable::of(1));
 }

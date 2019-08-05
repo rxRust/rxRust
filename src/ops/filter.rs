@@ -5,7 +5,7 @@ use std::sync::Arc;
 /// # Example
 ///
 /// ```
-/// use rxrust::{ops::Filter, prelude::*};
+/// use rxrust::{ops::Filter, prelude::*, subscribable::Subscribable};
 /// use std::sync::{Arc, Mutex};
 ///
 /// let coll = Arc::new(Mutex::new(vec![]));
@@ -195,55 +195,59 @@ where
   }
 }
 
-#[test]
-#[should_panic]
-fn runtime_error() {
-  use crate::prelude::*;
+#[cfg(test)]
+mod test {
+  use crate::{
+    ops::{Filter, FilterWithErr},
+    prelude::*,
+    subscribable::Subscribable,
+  };
 
-  let subject = Subject::new();
+  #[test]
+  #[should_panic]
+  fn runtime_error() {
+    let subject = Subject::new();
 
-  subject
-    .clone()
-    .filter_with_err(|_| Err("runtime error"))
-    .subscribe_err(|_| {}, |err| panic!(*err));
+    subject
+      .clone()
+      .filter_with_err(|_| Err("runtime error"))
+      .subscribe_err(|_| {}, |err| panic!(*err));
 
-  subject.next(&1);
-}
+    subject.next(&1);
+  }
 
-#[test]
-#[should_panic]
-fn pass_error() {
-  use crate::prelude::*;
+  #[test]
+  #[should_panic]
+  fn pass_error() {
+    let mut subject = Subject::new();
 
-  let mut subject = Subject::new();
+    subject
+      .clone()
+      .filter(|_: &&i32| true)
+      .subscribe_err(|_| {}, |err| panic!(*err));
 
-  subject
-    .clone()
-    .filter(|_: &&i32| true)
-    .subscribe_err(|_| {}, |err| panic!(*err));
+    subject.error(&"");
+  }
 
-  subject.error(&"");
-}
+  #[test]
+  fn test_fork() {
+    observable::from_range(0..10)
+      .filter(|v| v % 2 == 0)
+      .multicast()
+      .fork()
+      .filter(|_| true)
+      .multicast()
+      .fork()
+      .subscribe(|_| {});
 
-#[test]
-fn test_fork() {
-  use crate::prelude::*;
-  observable::from_range(0..10)
-    .filter(|v| v % 2 == 0)
-    .multicast()
-    .fork()
-    .filter(|_| true)
-    .multicast()
-    .fork()
-    .subscribe(|_| {});
-
-  // filter with error
-  observable::from_range(0..10)
-    .filter_with_err(|_| Ok(true))
-    .multicast()
-    .fork()
-    .filter_with_err(|_| Ok(true))
-    .multicast()
-    .fork()
-    .subscribe(|_| {});
+    // filter with error
+    observable::from_range(0..10)
+      .filter_with_err(|_| Ok(true))
+      .multicast()
+      .fork()
+      .filter_with_err(|_| Ok(true))
+      .multicast()
+      .fork()
+      .subscribe(|_| {});
+  }
 }

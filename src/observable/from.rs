@@ -56,7 +56,7 @@ pub fn empty<Item>()
 
 #[cfg(test)]
 mod test {
-  use crate::prelude::*;
+  use crate::{prelude::*, subscribable::Subscribable};
   use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc, Mutex,

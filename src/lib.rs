@@ -18,7 +18,7 @@ pub mod prelude {
   pub use crate::subject;
   pub use crate::subject::Subject;
   pub use crate::subscribable;
-  pub use crate::subscribable::*;
+  pub use crate::subscribable::{RawSubscribable, RxReturn, RxValue};
   pub use crate::subscriber;
   pub use crate::subscriber::Subscriber;
   pub use crate::subscription;

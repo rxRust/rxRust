@@ -126,110 +126,113 @@ impl<T, E> Observer for Subject<T, E> {
   fn is_stopped(&self) -> bool { self.stopped.load(Ordering::Relaxed) }
 }
 
-#[test]
-fn base_data_flow() {
+#[cfg(test)]
+mod test {
+
+  use crate::{prelude::*, subscribable::Subscribable};
   use std::sync::{Arc, Mutex};
-  let i = Arc::new(Mutex::new(0));
-  let c_i = i.clone();
-  let broadcast = Subject::<i32, ()>::new();
-  broadcast
-    .clone()
-    .subscribe(move |v: &i32| *i.lock().unwrap() = *v * 2);
-  broadcast.next(&1);
-  assert_eq!(*c_i.lock().unwrap(), 2);
-}
 
-#[test]
-#[should_panic]
-fn error() {
-  let mut broadcast = Subject::new();
-  broadcast
-    .clone()
-    .subscribe_err(|_: &i32| {}, |e: &_| panic!(*e));
-  broadcast.next(&1);
+  #[test]
+  fn base_data_flow() {
+    let i = Arc::new(Mutex::new(0));
+    let c_i = i.clone();
+    let broadcast = Subject::<i32, ()>::new();
+    broadcast
+      .clone()
+      .subscribe(move |v: &i32| *i.lock().unwrap() = *v * 2);
+    broadcast.next(&1);
+    assert_eq!(*c_i.lock().unwrap(), 2);
+  }
 
-  broadcast.error(&"should panic!");
-}
+  #[test]
+  #[should_panic]
+  fn error() {
+    let mut broadcast = Subject::new();
+    broadcast
+      .clone()
+      .subscribe_err(|_: &i32| {}, |e: &_| panic!(*e));
+    broadcast.next(&1);
 
-#[test]
-#[should_panic]
-fn runtime_error() {
-  let subject = Subject::new();
-  subject.clone().raw_subscribe(RxFnWrapper::new(
-    |v: RxValue<&'_ _, &'_ _>| match v {
-      RxValue::Next(_) => RxReturn::Err("runtime error"),
-      RxValue::Err(e) => panic!(*e),
-      _ => RxReturn::Continue,
-    },
-  ));
+    broadcast.error(&"should panic!");
+  }
 
-  subject.next(&1);
-}
+  #[test]
+  #[should_panic]
+  fn runtime_error() {
+    let subject = Subject::new();
+    subject.clone().raw_subscribe(RxFnWrapper::new(
+      |v: RxValue<&'_ _, &'_ _>| match v {
+        RxValue::Next(_) => RxReturn::Err("runtime error"),
+        RxValue::Err(e) => panic!(*e),
+        _ => RxReturn::Continue,
+      },
+    ));
 
-#[test]
-fn return_err_state() {
-  use std::sync::{Arc, Mutex};
-  let ec = Arc::new(Mutex::new(0));
-  let c_ec = ec.clone();
-  let subject = Subject::new();
-  subject.clone().raw_subscribe(RxFnWrapper::new(
-    move |v: RxValue<&'_ _, &'_ _>| match v {
-      RxValue::Next(_) => RxReturn::Err("runtime error"),
-      RxValue::Err(_) => {
-        *ec.lock().unwrap() += 1;
-        RxReturn::Continue
-      }
-      _ => RxReturn::Continue,
-    },
-  ));
+    subject.next(&1);
+  }
 
-  subject.next(&1);
-  assert_eq!(*c_ec.lock().unwrap(), 1);
-  // should stopped
-  subject.next(&1);
-  assert_eq!(*c_ec.lock().unwrap(), 1);
-}
+  #[test]
+  fn return_err_state() {
+    let ec = Arc::new(Mutex::new(0));
+    let c_ec = ec.clone();
+    let subject = Subject::new();
+    subject.clone().raw_subscribe(RxFnWrapper::new(
+      move |v: RxValue<&'_ _, &'_ _>| match v {
+        RxValue::Next(_) => RxReturn::Err("runtime error"),
+        RxValue::Err(_) => {
+          *ec.lock().unwrap() += 1;
+          RxReturn::Continue
+        }
+        _ => RxReturn::Continue,
+      },
+    ));
 
-#[test]
-fn return_complete_state() {
-  use std::sync::{Arc, Mutex};
-  let cc = Arc::new(Mutex::new(0));
-  let c_cc = cc.clone();
-  let broadcast = Subject::new();
-  broadcast.clone().raw_subscribe(RxFnWrapper::new(
-    move |v: RxValue<&'_ i32, &'_ ()>| match v {
-      RxValue::Next(_) => RxReturn::Complete,
-      RxValue::Err(_) => RxReturn::Continue,
-      _ => {
-        *cc.lock().unwrap() += 1;
-        RxReturn::Continue
-      }
-    },
-  ));
+    subject.next(&1);
+    assert_eq!(*c_ec.lock().unwrap(), 1);
+    // should stopped
+    subject.next(&1);
+    assert_eq!(*c_ec.lock().unwrap(), 1);
+  }
 
-  broadcast.next(&1);
-  assert_eq!(*c_cc.lock().unwrap(), 1);
-  // should stopped
-  broadcast.next(&1);
-  assert_eq!(*c_cc.lock().unwrap(), 1);
-}
+  #[test]
+  fn return_complete_state() {
+    let cc = Arc::new(Mutex::new(0));
+    let c_cc = cc.clone();
+    let broadcast = Subject::new();
+    broadcast.clone().raw_subscribe(RxFnWrapper::new(
+      move |v: RxValue<&'_ i32, &'_ ()>| match v {
+        RxValue::Next(_) => RxReturn::Complete,
+        RxValue::Err(_) => RxReturn::Continue,
+        _ => {
+          *cc.lock().unwrap() += 1;
+          RxReturn::Continue
+        }
+      },
+    ));
 
-#[test]
-fn unsubscribe() {
-  use std::sync::{Arc, Mutex};
-  let i = Arc::new(Mutex::new(0));
-  let c_i = i.clone();
-  let subject = Subject::<_, ()>::new();
-  subject
-    .clone()
-    .subscribe(move |v| *i.lock().unwrap() = *v)
-    .unsubscribe();
-  subject.next(&100);
-  assert_eq!(*c_i.lock().unwrap(), 0);
-}
+    broadcast.next(&1);
+    assert_eq!(*c_cc.lock().unwrap(), 1);
+    // should stopped
+    broadcast.next(&1);
+    assert_eq!(*c_cc.lock().unwrap(), 1);
+  }
 
-#[test]
-fn fork() {
-  let subject = Subject::<(), ()>::new();
-  subject.fork().fork().fork().fork();
+  #[test]
+  fn unsubscribe() {
+    let i = Arc::new(Mutex::new(0));
+    let c_i = i.clone();
+    let subject = Subject::<_, ()>::new();
+    subject
+      .clone()
+      .subscribe(move |v| *i.lock().unwrap() = *v)
+      .unsubscribe();
+    subject.next(&100);
+    assert_eq!(*c_i.lock().unwrap(), 0);
+  }
+
+  #[test]
+  fn fork() {
+    let subject = Subject::<(), ()>::new();
+    subject.fork().fork().fork().fork();
+  }
 }

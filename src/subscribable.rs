@@ -1,12 +1,20 @@
+//! As default, rxrust always try to use static dispatch to get better
+//! performance. So, as the basic trait [`Subscribable`] accept observer
+//! handlers with generic arguments(maybe a impl syntax sugar). The bad case is
+//! [`Subscribable`] can't be made into a trait object, because it's not object
+//! safety. But don't worry, rxrust also provider two version object safety
+//! 'Subscribable', one named [`SubscribableByFnPtr`] only accept function
+//! pointer, the other is [`SubscribableByBox`] which only accept boxed closure.
+//!
 use crate::prelude::*;
 
 mod static_subscribe;
-pub use static_subscribe::Subscribable;
+pub use static_subscribe::*;
 
-mod subscribe_by_fn_ptr;
-pub use subscribe_by_fn_ptr::SubscribableByFnPtr;
 mod subscribe_by_box;
-pub use subscribe_by_box::SubscribableByBox;
+mod subscribe_by_fn_ptr;
+pub use subscribe_by_box::*;
+pub use subscribe_by_fn_ptr::*;
 
 pub enum RxValue<T, E> {
   Next(T),

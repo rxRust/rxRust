@@ -65,8 +65,8 @@ where
 
 #[test]
 fn switch_thread() {
-  use crate::prelude::*;
   use crate::{ops::ObserveOn, scheduler};
+  use crate::{prelude::*, subscribable::Subscribable};
   use std::sync::{Arc, Mutex};
   use std::thread;
 

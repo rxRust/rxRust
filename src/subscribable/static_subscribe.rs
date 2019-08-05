@@ -1,6 +1,8 @@
 use crate::prelude::*;
 
-pub trait Subscribable: RawSubscribable + Sized {
+pub trait Subscribable {
+  type Item;
+  type Err;
   /// Invokes an execution of an Observable and registers Observer handlers for
   /// notifications it will emit.
   ///
@@ -8,6 +10,38 @@ pub trait Subscribable: RawSubscribable + Sized {
   /// * `complete`: A handler for a terminal event resulting from successful
   /// completion.
   ///
+  fn subscribe_err_complete(
+    self,
+    next: impl Fn(&Self::Item) + Send + Sync + 'static,
+    error: impl Fn(&Self::Err) + Send + Sync + 'static,
+    complete: impl Fn() + Send + Sync + 'static,
+  ) -> Box<dyn Subscription>;
+
+  fn subscribe_err(
+    self,
+    next: impl Fn(&Self::Item) + Send + Sync + 'static,
+    error: impl Fn(&Self::Err) + Send + Sync + 'static,
+  ) -> Box<dyn Subscription>;
+
+  fn subscribe_complete(
+    self,
+    next: impl Fn(&Self::Item) + Send + Sync + 'static,
+    complete: impl Fn() + Send + Sync + 'static,
+  ) -> Box<dyn Subscription>
+  where
+    Self::Err: 'static;
+
+  fn subscribe(
+    self,
+    next: impl Fn(&Self::Item) + Send + Sync + 'static,
+  ) -> Box<dyn Subscription>
+  where
+    Self::Err: 'static;
+}
+
+impl<S: RawSubscribable> Subscribable for S {
+  type Item = S::Item;
+  type Err = S::Err;
   fn subscribe_err_complete(
     self,
     next: impl Fn(&Self::Item) + Send + Sync + 'static,
@@ -76,5 +110,3 @@ pub trait Subscribable: RawSubscribable + Sized {
     }))
   }
 }
-
-impl<S: RawSubscribable> Subscribable for S {}

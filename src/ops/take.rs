@@ -11,7 +11,10 @@ use std::sync::Mutex;
 /// Take the first 5 seconds of an infinite 1-second interval Observable
 ///
 /// ```
-/// # use rxrust::{ ops::{Take}, prelude::*};
+/// # use rxrust::{
+///   ops::{Take}, prelude::*,
+///   subscribable::Subscribable
+/// };
 ///
 /// observable::from_range(0..10).take(5).subscribe(|v| println!("{}", v));
 ///
@@ -113,7 +116,7 @@ where
 #[cfg(test)]
 mod test {
   use super::Take;
-  use crate::prelude::*;
+  use crate::{prelude::*, subscribable::Subscribable};
   use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc, Mutex,

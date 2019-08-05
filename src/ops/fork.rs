@@ -2,7 +2,7 @@
 /// single-chain. Have to use `multicast` and `fork` to fork stream.
 /// # Example
 /// ```rust ignore
-///  # use rxrust::prelude::*;
+///  # use rxrust::{prelude::*, subscribable::Subscribable};
 ///  let o = observable::from_range(0..10);
 ///  o.subscribe_err(|_| {println!("consume in first")}, |_:&()|{});
 ///  o.subscribe_err(|_| {println!("consume in second")}, |_:&()|{});
@@ -21,7 +21,7 @@
 /// use `multicast` convert a single-chain stream to one-multi stream.  Then use
 /// `fork` to fork a new stream.
 /// ```rust
-///  # use rxrust::prelude::*;
+///  # use rxrust::{prelude::*, subscribable::Subscribable};
 ///  # use rxrust::ops::Fork;
 ///  let o = observable::from_range(0..10).multicast();
 ///  o.fork().subscribe_err(|_| {println!("consume in first")}, |_:&()|{});
