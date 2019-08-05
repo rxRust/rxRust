@@ -72,7 +72,7 @@ impl<Item, Err> Subscription for RefPublisher<Item, Err> {
 }
 
 // completed return or unsubscribe called.
-impl<T, E> Observer for Subject<T, E> {
+impl<T: 'static, E: 'static> Observer for Subject<T, E> {
   type Item = T;
   type Err = E;
 
@@ -98,7 +98,35 @@ impl<T, E> Observer for Subject<T, E> {
     RxReturn::Continue
   }
 
-  fn complete(&mut self) {
+  #[inline(always)]
+  fn complete(&mut self) { Subject::complete(self) }
+
+  #[inline(always)]
+  fn error(&mut self, err: &Self::Err) { Subject::error(self, err) }
+
+  fn is_stopped(&self) -> bool { self.stopped.load(Ordering::Relaxed) }
+}
+
+impl<Item: 'static, Err: 'static> Subject<Item, Err> {
+  pub fn from_subscribable(
+    o: impl RawSubscribable<Item = Item, Err = Err>,
+  ) -> Self {
+    let subject = Subject::new();
+    let r_subject = subject.fork();
+    o.raw_subscribe(RxFnWrapper::new(move |v: RxValue<&'_ _, &'_ _>| {
+      match v {
+        RxValue::Next(value) => {
+          subject.next(value);
+        }
+        RxValue::Err(err) => subject.error(err),
+        RxValue::Complete => subject.complete(),
+      };
+      RxReturn::Continue
+    }));
+    r_subject
+  }
+
+  fn complete(&self) {
     if self.stopped.load(Ordering::Relaxed) {
       return;
     };
@@ -111,7 +139,7 @@ impl<T, E> Observer for Subject<T, E> {
     self.stopped.store(true, Ordering::Relaxed);
   }
 
-  fn error(&mut self, err: &Self::Err) {
+  fn error(&self, err: &Err) {
     if self.stopped.load(Ordering::Relaxed) {
       return;
     };
@@ -122,8 +150,6 @@ impl<T, E> Observer for Subject<T, E> {
     publishers.clear();
     self.stopped.store(true, Ordering::Relaxed);
   }
-
-  fn is_stopped(&self) -> bool { self.stopped.load(Ordering::Relaxed) }
 }
 
 #[cfg(test)]
@@ -147,7 +173,7 @@ mod test {
   #[test]
   #[should_panic]
   fn error() {
-    let mut broadcast = Subject::new();
+    let broadcast = Subject::new();
     broadcast
       .clone()
       .subscribe_err(|_: &i32| {}, |e: &_| panic!(*e));
@@ -234,5 +260,14 @@ mod test {
   fn fork() {
     let subject = Subject::<(), ()>::new();
     subject.fork().fork().fork().fork();
+  }
+
+  #[test]
+  #[should_panic]
+  fn from_subscribable() {
+    let o = Subject::new();
+    Subject::<(), ()>::from_subscribable(o.clone())
+      .subscribe(|_| panic!("hit next"));
+    o.next(&());
   }
 }

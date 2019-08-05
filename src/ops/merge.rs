@@ -10,7 +10,7 @@ use std::sync::{
 ///
 /// ```
 /// # use rxrust::{
-///  ops::{Filter, Merge}, 
+///  ops::{Filter, Merge},
 ///  prelude::*, subscribable::Subscribable
 /// };
 /// let numbers = Subject::<i32, ()>::new();

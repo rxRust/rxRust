@@ -31,7 +31,7 @@ use crate::scheduler::Scheduler;
 /// use rxrust::scheduler::new_thread;
 /// use rxrust::ops::{ Merge, SubscribeOn };
 /// use std::thread;
-/// 
+///
 /// let a = observable::from_range(1..5).subscribe_on(new_thread());
 /// let b = observable::from_range(5..10);
 /// a.merge(b).subscribe(|v|{
