@@ -4,7 +4,7 @@ use std::ops::Range;
 
 pub fn from_range<Idx>(
   rg: Range<Idx>,
-) -> Observable<impl RxFn(&mut dyn Observer<Item = Idx, Err = ()>), Idx, ()>
+) -> Observable<impl RxFn(&mut dyn Observer<Idx, ()>), Idx, ()>
 where
   Idx: Step,
 {
@@ -22,7 +22,7 @@ where
 
 pub fn from_vec<Item>(
   vec: Vec<Item>,
-) -> Observable<impl RxFn(&mut dyn Observer<Item = Item, Err = ()>), Item, ()> {
+) -> Observable<impl RxFn(&mut dyn Observer<Item, ()>), Item, ()> {
   Observable::new(move |subscriber| {
     vec
       .iter()
@@ -38,11 +38,7 @@ pub fn from_vec<Item>(
 
 pub fn of<Item>(
   v: Item,
-) -> Observable<
-  RxFnWrapper<impl Fn(&mut dyn Observer<Item = Item, Err = ()>)>,
-  Item,
-  (),
-> {
+) -> Observable<RxFnWrapper<impl Fn(&mut dyn Observer<Item, ()>)>, Item, ()> {
   Observable::new(move |subscriber| {
     subscriber.next(&v);
     subscriber.complete();
@@ -50,7 +46,7 @@ pub fn of<Item>(
 }
 
 pub fn empty<Item>()
--> Observable<impl RxFn(&mut dyn Observer<Item = Item, Err = ()>), Item, ()> {
+-> Observable<impl RxFn(&mut dyn Observer<Item, ()>), Item, ()> {
   Observable::new(move |subscriber| subscriber.complete())
 }
 

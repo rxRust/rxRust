@@ -27,15 +27,12 @@ pub mod prelude {
   pub use ops::{Fork, Multicast};
 }
 
-pub trait Observer {
-  type Item;
-  type Err;
-
-  fn next(&self, v: &Self::Item) -> subscribable::RxReturn<Self::Err>;
+pub trait Observer<Item, Err> {
+  fn next(&self, v: &Item) -> subscribable::RxReturn<Err>;
 
   fn complete(&mut self);
 
-  fn error(&mut self, err: &Self::Err);
+  fn error(&mut self, err: &Err);
 
   fn is_stopped(&self) -> bool;
 }

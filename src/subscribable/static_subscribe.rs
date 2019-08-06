@@ -27,16 +27,12 @@ pub trait Subscribable {
     self,
     next: impl Fn(&Self::Item) + Send + Sync + 'static,
     complete: impl Fn() + Send + Sync + 'static,
-  ) -> Box<dyn Subscription>
-  where
-    Self::Err: 'static;
+  ) -> Box<dyn Subscription>;
 
   fn subscribe(
     self,
     next: impl Fn(&Self::Item) + Send + Sync + 'static,
-  ) -> Box<dyn Subscription>
-  where
-    Self::Err: 'static;
+  ) -> Box<dyn Subscription>;
 }
 
 impl<S: RawSubscribable> Subscribable for S {
@@ -79,10 +75,7 @@ impl<S: RawSubscribable> Subscribable for S {
     self,
     next: impl Fn(&Self::Item) + Send + Sync + 'static,
     complete: impl Fn() + Send + Sync + 'static,
-  ) -> Box<dyn Subscription>
-  where
-    Self::Err: 'static,
-  {
+  ) -> Box<dyn Subscription> {
     self.raw_subscribe(RxFnWrapper::new(move |v: RxValue<&'_ _, &'_ _>| {
       match v {
         RxValue::Next(v) => next(v),
@@ -97,10 +90,7 @@ impl<S: RawSubscribable> Subscribable for S {
   fn subscribe(
     self,
     next: impl Fn(&Self::Item) + Send + Sync + 'static,
-  ) -> Box<dyn Subscription>
-  where
-    Self::Err: 'static,
-  {
+  ) -> Box<dyn Subscription> {
     self.raw_subscribe(RxFnWrapper::new(move |v: RxValue<&'_ _, &'_ _>| {
       if let RxValue::Next(v) = v {
         next(v);

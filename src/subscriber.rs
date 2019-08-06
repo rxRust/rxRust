@@ -1,39 +1,44 @@
 use crate::prelude::*;
-use std::marker::PhantomData;
+use std::sync::{
+  atomic::{AtomicBool, Ordering},
+  Arc,
+};
+
+pub type SimpleSubscription = Arc<AtomicBool>;
 
 /// Implements the Observer trait and Subscription trait. While the Observer is
 /// the public API for consuming the values of an Observable, all Observers get
 /// converted to a Subscriber, in order to provide Subscription capabilities.
 ///
-pub struct Subscriber<Item, Err, Sub> {
-  stopped: bool,
+pub struct Subscriber<Sub> {
+  stopped: SimpleSubscription,
   subscribe: Sub,
-  _v: PhantomData<(Item, Err)>,
 }
 
-unsafe impl<Item, E, Sub> Send for Subscriber<Item, E, Sub> where Sub: Send {}
+unsafe impl<Sub> Send for Subscriber<Sub> where Sub: Send {}
 
-unsafe impl<Item, E, Sub> Sync for Subscriber<Item, E, Sub> where Sub: Send {}
+unsafe impl<Sub> Sync for Subscriber<Sub> where Sub: Send {}
 
-impl<Item, Err, Sub> Subscriber<Item, Err, Sub> {
+impl<Sub> Subscriber<Sub> {
   pub fn new(subscribe: Sub) -> Self {
     Subscriber {
-      stopped: false,
+      stopped: Arc::new(AtomicBool::new(false)),
       subscribe,
-      _v: PhantomData,
     }
+  }
+
+  #[inline(always)]
+  pub fn clone_subscription(&self) -> SimpleSubscription {
+    self.stopped.clone()
   }
 }
 
-impl<Item, Err, Sub> Observer for Subscriber<Item, Err, Sub>
+impl<Item, Err, Sub> Observer<Item, Err> for Subscriber<Sub>
 where
   Sub: RxFn(RxValue<&'_ Item, &'_ Err>) -> RxReturn<Err>,
 {
-  type Item = Item;
-  type Err = Err;
-
-  fn next(&self, v: &Self::Item) -> RxReturn<Self::Err> {
-    if !self.stopped {
+  fn next(&self, v: &Item) -> RxReturn<Err> {
+    if !self.stopped.load(Ordering::Relaxed) {
       self.subscribe.call((RxValue::Next(v),))
     } else {
       RxReturn::Continue
@@ -41,31 +46,32 @@ where
   }
 
   fn complete(&mut self) {
-    if self.stopped {
+    if self.stopped.load(Ordering::Relaxed) {
       return;
     }
-    self.stopped = true;
+    self.stopped.store(true, Ordering::Relaxed);
     self.subscribe.call((RxValue::Complete,));
   }
 
-  fn error(&mut self, err: &Self::Err) {
-    if self.stopped {
+  fn error(&mut self, err: &Err) {
+    if self.stopped.load(Ordering::Relaxed) {
       return;
     }
-    self.stopped = true;
+    self.stopped.store(true, Ordering::Relaxed);
     self.subscribe.call((RxValue::Err(err),));
   }
 
-  fn is_stopped(&self) -> bool { self.stopped }
+  fn is_stopped(&self) -> bool { self.stopped.load(Ordering::Relaxed) }
 }
 
-impl<Item, Err, Sub> Subscription for Subscriber<Item, Err, Sub> {
-  fn unsubscribe(&mut self) { self.stopped = true; }
+impl Subscription for SimpleSubscription {
+  #[inline(always)]
+  fn unsubscribe(&mut self) { self.store(true, Ordering::Relaxed); }
 }
 
-impl<Item, Err, Sub> Publisher for Subscriber<Item, Err, Sub> where
-  Sub: RxFn(RxValue<&'_ Item, &'_ Err>) -> RxReturn<Err>
-{
+impl<Sub> Subscription for Subscriber<Sub> {
+  #[inline(always)]
+  fn unsubscribe(&mut self) { self.stopped.unsubscribe(); }
 }
 
 #[cfg(test)]

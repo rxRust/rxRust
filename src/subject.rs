@@ -11,7 +11,7 @@ pub struct Subject<Item, Err> {
 }
 
 type RefPublisher<Item, Err> =
-  Arc<Mutex<Box<dyn Publisher<Item = Item, Err = Err> + Send + Sync>>>;
+  Arc<Mutex<Box<dyn Observer<Item, Err> + Send + Sync>>>;
 
 impl<'a, T, E> Clone for Subject<T, E> {
   fn clone(&self) -> Self {
@@ -22,7 +22,7 @@ impl<'a, T, E> Clone for Subject<T, E> {
   }
 }
 
-impl<Item: 'static, Err: 'static> RawSubscribable for Subject<Item, Err> {
+impl<Item, Err> RawSubscribable for Subject<Item, Err> {
   type Item = Item;
   type Err = Err;
 
@@ -36,22 +36,23 @@ impl<Item: 'static, Err: 'static> RawSubscribable for Subject<Item, Err> {
       + 'static,
   ) -> Box<dyn Subscription + Send + Sync> {
     let subscriber = Subscriber::new(subscribe);
+    let subscription = subscriber.clone_subscription();
 
-    let subscriber: Box<dyn Publisher<Item = Item, Err = Err> + Send + Sync> =
+    let subscriber: Box<dyn Observer<Item, Err> + Send + Sync> =
       Box::new(subscriber);
     let subscriber = Arc::new(Mutex::new(subscriber));
     self.cbs.lock().unwrap().push(subscriber.clone());
 
-    Box::new(subscriber)
+    Box::new(subscription)
   }
 }
 
-impl<Item: 'static, Err: 'static> Fork for Subject<Item, Err> {
+impl<Item, Err> Fork for Subject<Item, Err> {
   type Output = Self;
   fn fork(&self) -> Self::Output { self.clone() }
 }
 
-impl<Item: 'static, Err: 'static> Multicast for Subject<Item, Err> {
+impl<Item, Err> Multicast for Subject<Item, Err> {
   type Output = Self;
   #[inline(always)]
   fn multicast(self) -> Self::Output { self }
@@ -66,17 +67,9 @@ impl<'a, Item: 'a, Err: 'a> Subject<Item, Err> {
   }
 }
 
-impl<Item, Err> Subscription for RefPublisher<Item, Err> {
-  #[inline]
-  fn unsubscribe(&mut self) { self.lock().unwrap().unsubscribe(); }
-}
-
 // completed return or unsubscribe called.
-impl<T: 'static, E: 'static> Observer for Subject<T, E> {
-  type Item = T;
-  type Err = E;
-
-  fn next(&self, v: &Self::Item) -> RxReturn<Self::Err> {
+impl<Item, Err> Observer<Item, Err> for Subject<Item, Err> {
+  fn next(&self, v: &Item) -> RxReturn<Err> {
     if self.stopped.load(Ordering::Relaxed) {
       return RxReturn::Continue;
     };
@@ -102,15 +95,19 @@ impl<T: 'static, E: 'static> Observer for Subject<T, E> {
   fn complete(&mut self) { Subject::complete(self) }
 
   #[inline(always)]
-  fn error(&mut self, err: &Self::Err) { Subject::error(self, err) }
+  fn error(&mut self, err: &Err) { Subject::error(self, err) }
 
   fn is_stopped(&self) -> bool { self.stopped.load(Ordering::Relaxed) }
 }
 
-impl<Item: 'static, Err: 'static> Subject<Item, Err> {
+impl<Item, Err> Subject<Item, Err> {
   pub fn from_subscribable(
     o: impl RawSubscribable<Item = Item, Err = Err>,
-  ) -> Self {
+  ) -> Self
+  where
+    Item: 'static,
+    Err: 'static,
+  {
     let subject = Subject::new();
     let r_subject = subject.fork();
     o.raw_subscribe(RxFnWrapper::new(move |v: RxValue<&'_ _, &'_ _>| {

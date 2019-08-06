@@ -60,20 +60,14 @@ where
     self,
     next: Box<dyn Fn(&Self::Item) + Send + Sync>,
     complete: Box<dyn Fn() + Send + Sync>,
-  ) -> Box<dyn Subscription>
-  where
-    Self::Err: 'static,
-  {
+  ) -> Box<dyn Subscription> {
     self::Subscribable::subscribe_complete(self, next, complete)
   }
 
   fn subscribe(
     self,
     next: Box<dyn Fn(&Self::Item) + Send + Sync>,
-  ) -> Box<dyn Subscription>
-  where
-    Self::Err: 'static,
-  {
+  ) -> Box<dyn Subscription> {
     self::Subscribable::subscribe(self, next)
   }
 }

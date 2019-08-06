@@ -15,7 +15,7 @@ pub struct Observable<F, Item, Err> {
 
 impl<F, Item, Err> Observable<RxFnWrapper<F>, Item, Err>
 where
-  F: Fn(&mut dyn Observer<Item = Item, Err = Err>),
+  F: Fn(&mut dyn Observer<Item, Err>),
 {
   /// param `subscribe`: the function that is called when the Observable is
   /// initially subscribed to. This function is given a Subscriber, to which
@@ -30,9 +30,9 @@ where
   }
 }
 
-impl<F, Item: 'static, Err: 'static> Multicast for Observable<F, Item, Err>
+impl<F, Item, Err> Multicast for Observable<F, Item, Err>
 where
-  F: RxFn(&mut dyn Observer<Item = Item, Err = Err>) + Send + Sync,
+  F: RxFn(&mut dyn Observer<Item, Err>) + Send + Sync,
 {
   type Output = Observable<Arc<F>, Item, Err>;
   fn multicast(self) -> Self::Output {
@@ -43,9 +43,9 @@ where
   }
 }
 
-impl<F, Item: 'static, Err: 'static> Fork for Observable<Arc<F>, Item, Err>
+impl<F, Item, Err> Fork for Observable<Arc<F>, Item, Err>
 where
-  F: RxFn(&mut dyn Observer<Item = Item, Err = Err>) + Send + Sync,
+  F: RxFn(&mut dyn Observer<Item, Err>) + Send + Sync,
 {
   type Output = Self;
   fn fork(&self) -> Self::Output {
@@ -56,10 +56,9 @@ where
   }
 }
 
-impl<F, Item: 'static, Err: 'static> RawSubscribable
-  for Observable<F, Item, Err>
+impl<F, Item, Err> RawSubscribable for Observable<F, Item, Err>
 where
-  F: RxFn(&mut dyn Observer<Item = Item, Err = Err>) + Send + Sync,
+  F: RxFn(&mut dyn Observer<Item, Err>) + Send + Sync,
 {
   type Item = Item;
   type Err = Err;
