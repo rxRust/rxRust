@@ -82,7 +82,7 @@ where
 #[cfg(test)]
 mod test {
   use crate::ops::{Fork, Multicast};
-  use crate::{prelude::*, subscribable::Subscribable};
+  use crate::prelude::*;
   use std::sync::{Arc, Mutex};
 
   #[test]

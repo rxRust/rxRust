@@ -320,7 +320,6 @@ mod test {
   use crate::{
     ops::{Map, MapWithErr},
     prelude::*,
-    subscribable::Subscribable,
   };
   use std::sync::{Arc, Mutex};
 

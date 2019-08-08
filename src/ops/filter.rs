@@ -5,7 +5,7 @@ use std::sync::Arc;
 /// # Example
 ///
 /// ```
-/// use rxrust::{ops::Filter, prelude::*, subscribable::Subscribable};
+/// use rxrust::{ops::Filter, prelude::*};
 /// use std::sync::{Arc, Mutex};
 ///
 /// let coll = Arc::new(Mutex::new(vec![]));
@@ -200,7 +200,6 @@ mod test {
   use crate::{
     ops::{Filter, FilterWithErr},
     prelude::*,
-    subscribable::Subscribable,
   };
 
   #[test]

@@ -9,10 +9,7 @@ use std::sync::{
 /// # Example
 ///
 /// ```
-/// # use rxrust::{
-///  ops::{Filter, Merge},
-///  prelude::*, subscribable::Subscribable
-/// };
+/// # use rxrust::{ ops::{Filter, Merge}, prelude::*};
 /// let numbers = Subject::<i32, ()>::new();
 /// // crate a even stream by filter
 /// let even = numbers.fork().filter(|v| *v % 2 == 0);
@@ -153,7 +150,6 @@ mod test {
   use crate::{
     ops::{Filter, Fork, Merge, Multicast},
     prelude::*,
-    subscribable::Subscribable,
   };
   use std::sync::{
     atomic::{AtomicBool, Ordering},

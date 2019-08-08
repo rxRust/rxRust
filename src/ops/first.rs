@@ -114,7 +114,7 @@ where
 #[cfg(test)]
 mod test {
   use super::{First, FirstOr};
-  use crate::{prelude::*, subscribable::Subscribable};
+  use crate::prelude::*;
   use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc, Mutex,

@@ -1,20 +1,4 @@
-//! As default, rxrust always try to use static dispatch to get better
-//! performance. So, as the basic trait [`Subscribable`] accept observer
-//! handlers with generic arguments(maybe a impl syntax sugar). The bad case is
-//! [`Subscribable`] can't be made into a trait object, because it's not object
-//! safety. But don't worry, rxrust also provider two version object safety
-//! 'Subscribable', one named [`SubscribableByFnPtr`] only accept function
-//! pointer, the other is [`SubscribableByBox`] which only accept boxed closure.
-//!
 use crate::prelude::*;
-
-mod static_subscribe;
-pub use static_subscribe::*;
-
-mod subscribe_by_box;
-mod subscribe_by_fn_ptr;
-pub use subscribe_by_box::*;
-pub use subscribe_by_fn_ptr::*;
 
 pub enum RxValue<T, E> {
   Next(T),
@@ -81,4 +65,105 @@ pub trait RawSubscribable {
       + Sync
       + 'static,
   ) -> Box<dyn Subscription + Send + Sync>;
+}
+
+pub trait Subscribable {
+  type Item;
+  type Err;
+  /// Invokes an execution of an Observable and registers Observer handlers for
+  /// notifications it will emit.
+  ///
+  /// * `error`: A handler for a terminal event resulting from an error.
+  /// * `complete`: A handler for a terminal event resulting from successful
+  /// completion.
+  ///
+  fn subscribe_err_complete(
+    self,
+    next: impl Fn(&Self::Item) + Send + Sync + 'static,
+    error: impl Fn(&Self::Err) + Send + Sync + 'static,
+    complete: impl Fn() + Send + Sync + 'static,
+  ) -> Box<dyn Subscription>;
+
+  fn subscribe_err(
+    self,
+    next: impl Fn(&Self::Item) + Send + Sync + 'static,
+    error: impl Fn(&Self::Err) + Send + Sync + 'static,
+  ) -> Box<dyn Subscription>;
+
+  fn subscribe_complete(
+    self,
+    next: impl Fn(&Self::Item) + Send + Sync + 'static,
+    complete: impl Fn() + Send + Sync + 'static,
+  ) -> Box<dyn Subscription>;
+
+  fn subscribe(
+    self,
+    next: impl Fn(&Self::Item) + Send + Sync + 'static,
+  ) -> Box<dyn Subscription>;
+}
+
+impl<S: RawSubscribable> Subscribable for S {
+  type Item = S::Item;
+  type Err = S::Err;
+  fn subscribe_err_complete(
+    self,
+    next: impl Fn(&Self::Item) + Send + Sync + 'static,
+    error: impl Fn(&Self::Err) + Send + Sync + 'static,
+    complete: impl Fn() + Send + Sync + 'static,
+  ) -> Box<dyn Subscription> {
+    self.raw_subscribe(RxFnWrapper::new(move |v: RxValue<&'_ _, &'_ _>| {
+      match v {
+        RxValue::Next(v) => next(v),
+        RxValue::Err(e) => error(e),
+        RxValue::Complete => complete(),
+      };
+
+      RxReturn::Continue
+    }))
+  }
+
+  fn subscribe_err(
+    self,
+    next: impl Fn(&Self::Item) + Send + Sync + 'static,
+    error: impl Fn(&Self::Err) + Send + Sync + 'static,
+  ) -> Box<dyn Subscription> {
+    self.raw_subscribe(RxFnWrapper::new(move |v: RxValue<&'_ _, &'_ _>| {
+      match v {
+        RxValue::Next(v) => next(v),
+        RxValue::Err(e) => error(e),
+        _ => {}
+      };
+
+      RxReturn::Continue
+    }))
+  }
+
+  fn subscribe_complete(
+    self,
+    next: impl Fn(&Self::Item) + Send + Sync + 'static,
+    complete: impl Fn() + Send + Sync + 'static,
+  ) -> Box<dyn Subscription> {
+    self.raw_subscribe(RxFnWrapper::new(move |v: RxValue<&'_ _, &'_ _>| {
+      match v {
+        RxValue::Next(v) => next(v),
+        RxValue::Complete => complete(),
+        _ => {}
+      };
+
+      RxReturn::Continue
+    }))
+  }
+
+  fn subscribe(
+    self,
+    next: impl Fn(&Self::Item) + Send + Sync + 'static,
+  ) -> Box<dyn Subscription> {
+    self.raw_subscribe(RxFnWrapper::new(move |v: RxValue<&'_ _, &'_ _>| {
+      if let RxValue::Next(v) = v {
+        next(v);
+      }
+
+      RxReturn::Continue
+    }))
+  }
 }

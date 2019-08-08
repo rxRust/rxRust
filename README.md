@@ -7,7 +7,6 @@ rxrust ia a Rust implementation of Reactive Extensions. Which is almost zero cos
 ```rust
 use rxrust::{
   ops::{ Filter, Merge, Fork }, prelude::*, 
-  subscribable::Subscribable
 };
 
 let mut numbers = observable::from_range(0..10).multicast();
@@ -27,7 +26,7 @@ even.merge(odd).subscribe(|v| print!("{} ", v, ));
 In `rxrust` almost all extensions consume the upstream. So in general it is unicast. So when you try to subscribe a stream twice, the compiler will complain. 
 
 ```rust ignore
- # use rxrust::{prelude::*, subscribable::Subscribable};
+ # use rxrust::prelude::*;
  let o = observable::from_range(0..10);
  o.subscribe(|_| {println!("consume in first")});
  o.subscribe(|_| {println!("consume in second")});
@@ -36,7 +35,7 @@ In `rxrust` almost all extensions consume the upstream. So in general it is unic
 In this case, we can use `multicast` convert an unicast stream to a multicast stream. A multicast stream is a stream that implements `Fork` trait, let you can fork stream from it. Subject is an multicast stream default, so you can direct fork it. 
 
 ```rust
- # use rxrust::{prelude::*, subscribable::Subscribable};
+ # use rxrust::prelude::*;
  # use rxrust::ops::Fork;
  let o = observable::from_range(0..10).multicast();
  o.fork().subscribe(|_| {println!("consume in first")});
@@ -48,7 +47,7 @@ In this case, we can use `multicast` convert an unicast stream to a multicast st
 For now, only a new thread scheduler has been implemented. 
 
 ```rust 
-use rxrust::{prelude::*, subscribable::Subscribable};
+use rxrust::prelude::*;
 use rxrust::{ops::{ ObserveOn, SubscribeOn, Map }, scheduler };
 
 observable::from_range(0..10)
@@ -63,7 +62,7 @@ observable::from_range(0..10)
  In rxrust, almost every extension which accept closure as argument has two version method. One version is use when no runtime error will be propagated. This version receive an normal closure. The other is use when when you want propagating runtime error, named `xxx_with_err`, and receive an closure that return an `Result` type, to detect if an runtime error occur. For example:
 
 ```rust
-use rxrust::{ops::{ Map, MapWithErr }, prelude::*, subscribable::Subscribable};
+use rxrust::{ops::{ Map, MapWithErr }, prelude::*};
 
 // normal version
 // double a number

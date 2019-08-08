@@ -13,7 +13,6 @@ use std::sync::Mutex;
 /// ```
 /// # use rxrust::{
 ///   ops::{Take}, prelude::*,
-///   subscribable::Subscribable
 /// };
 ///
 /// observable::from_range(0..10).take(5).subscribe(|v| println!("{}", v));
@@ -116,7 +115,7 @@ where
 #[cfg(test)]
 mod test {
   use super::Take;
-  use crate::{prelude::*, subscribable::Subscribable};
+  use crate::prelude::*;
   use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc, Mutex,

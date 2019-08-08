@@ -152,7 +152,7 @@ impl<Item, Err> Subject<Item, Err> {
 #[cfg(test)]
 mod test {
 
-  use crate::{prelude::*, subscribable::Subscribable};
+  use crate::prelude::*;
   use std::sync::{Arc, Mutex};
 
   #[test]
