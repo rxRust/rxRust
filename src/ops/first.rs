@@ -186,7 +186,7 @@ mod test {
   fn first_or_support_fork() {
     let default = Arc::new(Mutex::new(0));
     let c_default = default.clone();
-    let o = Observable::new(|subscriber| {
+    let o = Observable::new(|mut subscriber| {
       subscriber.complete();
       subscriber.error(&"");
     })

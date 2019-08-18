@@ -1,5 +1,7 @@
 #![feature(external_doc, fn_traits, step_trait, unboxed_closures, drain_filter)]
 #![doc(include = "../README.md")]
+#[macro_use]
+extern crate lazy_static;
 
 pub mod function;
 pub mod observable;

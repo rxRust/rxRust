@@ -4,6 +4,10 @@ use std::sync::Arc;
 
 mod from;
 pub use from::*;
+mod from_future;
+pub use from_future::{from_future, from_future_with_err};
+mod once;
+pub use once::{once, ObservableOnce};
 
 /// A representation of any set of values over any amount of time. This is the
 /// most basic building block rxrust
@@ -15,7 +19,7 @@ pub struct Observable<F, Item, Err> {
 
 impl<F, Item, Err> Observable<RxFnWrapper<F>, Item, Err>
 where
-  F: Fn(&mut dyn Observer<Item, Err>),
+  F: Fn(Box<dyn Observer<Item, Err> + Send>),
 {
   /// param `subscribe`: the function that is called when the Observable is
   /// initially subscribed to. This function is given a Subscriber, to which
@@ -32,7 +36,7 @@ where
 
 impl<F, Item, Err> Multicast for Observable<F, Item, Err>
 where
-  F: RxFn(&mut dyn Observer<Item, Err>) + Send + Sync,
+  F: RxFn(Box<dyn Observer<Item, Err> + Send>) + Send + Sync,
 {
   type Output = Observable<Arc<F>, Item, Err>;
   fn multicast(self) -> Self::Output {
@@ -45,7 +49,7 @@ where
 
 impl<F, Item, Err> Fork for Observable<Arc<F>, Item, Err>
 where
-  F: RxFn(&mut dyn Observer<Item, Err>) + Send + Sync,
+  F: RxFn(Box<dyn Observer<Item, Err> + Send>) + Send + Sync,
 {
   type Output = Self;
   fn fork(&self) -> Self::Output {
@@ -58,7 +62,7 @@ where
 
 impl<F, Item, Err> RawSubscribable for Observable<F, Item, Err>
 where
-  F: RxFn(&mut dyn Observer<Item, Err>) + Send + Sync,
+  F: RxFn(Box<dyn Observer<Item, Err> + Send>) + Send + Sync,
 {
   type Item = Item;
   type Err = Err;
@@ -72,10 +76,11 @@ where
       + Sync
       + 'static,
   ) -> Box<dyn Subscription + Send + Sync> {
-    let mut subscriber = Subscriber::new(subscribe);
+    let subscriber = Subscriber::new(subscribe);
 
-    self.subscribe.call((&mut subscriber,));
-    Box::new(subscriber)
+    let subscription = subscriber.clone_subscription();
+    self.subscribe.call((Box::new(subscriber),));
+    Box::new(subscription)
   }
 }
 
@@ -94,7 +99,7 @@ mod test {
     let c_err = err.clone();
     let c_complete = complete.clone();
 
-    Observable::new(|subscriber| {
+    Observable::new(|mut subscriber| {
       subscriber.next(&1);
       subscriber.next(&2);
       subscriber.next(&3);
@@ -115,7 +120,7 @@ mod test {
 
   #[test]
   fn support_fork() {
-    let o = Observable::new(|subscriber| {
+    let o = Observable::new(|mut subscriber| {
       subscriber.next(&1);
       subscriber.next(&2);
       subscriber.next(&3);
@@ -136,7 +141,7 @@ mod test {
 
   #[test]
   fn observable_fork() {
-    let observable = Observable::new(|s| {
+    let observable = Observable::new(|mut s| {
       s.next(&0);
       s.error(&"");
       s.complete();

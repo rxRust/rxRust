@@ -4,11 +4,11 @@ use std::ops::Range;
 
 pub fn from_range<Idx>(
   rg: Range<Idx>,
-) -> Observable<impl RxFn(&mut dyn Observer<Idx, ()>), Idx, ()>
+) -> Observable<impl RxFn(Box<dyn Observer<Idx, ()> + Send>), Idx, ()>
 where
   Idx: Step,
 {
-  Observable::new(move |subscriber| {
+  Observable::new(move |mut subscriber| {
     rg.clone()
       .take_while(|_| !subscriber.is_stopped())
       .for_each(|v| {
@@ -22,8 +22,8 @@ where
 
 pub fn from_vec<Item>(
   vec: Vec<Item>,
-) -> Observable<impl RxFn(&mut dyn Observer<Item, ()>), Item, ()> {
-  Observable::new(move |subscriber| {
+) -> Observable<impl RxFn(Box<dyn Observer<Item, ()> + Send>), Item, ()> {
+  Observable::new(move |mut subscriber| {
     vec
       .iter()
       .take_while(|_| !subscriber.is_stopped())
@@ -38,16 +38,20 @@ pub fn from_vec<Item>(
 
 pub fn of<Item>(
   v: Item,
-) -> Observable<RxFnWrapper<impl Fn(&mut dyn Observer<Item, ()>)>, Item, ()> {
-  Observable::new(move |subscriber| {
+) -> Observable<
+  RxFnWrapper<impl Fn(Box<dyn Observer<Item, ()> + Send>)>,
+  Item,
+  (),
+> {
+  Observable::new(move |mut subscriber| {
     subscriber.next(&v);
     subscriber.complete();
   })
 }
 
 pub fn empty<Item>()
--> Observable<impl RxFn(&mut dyn Observer<Item, ()>), Item, ()> {
-  Observable::new(move |subscriber| subscriber.complete())
+-> Observable<impl RxFn(Box<dyn Observer<Item, ()> + Send>), Item, ()> {
+  Observable::new(move |mut subscriber| subscriber.complete())
 }
 
 #[cfg(test)]
