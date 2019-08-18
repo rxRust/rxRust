@@ -107,7 +107,7 @@ mod test {
       subscriber.next(&3);
       subscriber.error(&"never dispatch error");
     })
-    .subscribe_err_complete(
+    .subscribe_all(
       move |_| *next.lock().unwrap() += 1,
       move |_: &&str| *err.lock().unwrap() += 1,
       move || *complete.lock().unwrap() += 1,

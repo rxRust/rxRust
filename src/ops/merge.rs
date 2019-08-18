@@ -239,7 +239,7 @@ mod test {
     let mut even = Subject::new();
     let mut odd = Subject::new();
 
-    even.clone().merge(odd.clone()).subscribe_err_complete(
+    even.clone().merge(odd.clone()).subscribe_all(
       |_: &()| {},
       move |_| *error.lock().unwrap() += 1,
       move || *completed.lock().unwrap() += 1,

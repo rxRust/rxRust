@@ -77,7 +77,7 @@ pub trait Subscribable {
   /// * `complete`: A handler for a terminal event resulting from successful
   /// completion.
   ///
-  fn subscribe_err_complete(
+  fn subscribe_all(
     self,
     next: impl Fn(&Self::Item) + Send + Sync + 'static,
     error: impl Fn(&Self::Err) + Send + Sync + 'static,
@@ -105,7 +105,7 @@ pub trait Subscribable {
 impl<S: RawSubscribable> Subscribable for S {
   type Item = S::Item;
   type Err = S::Err;
-  fn subscribe_err_complete(
+  fn subscribe_all(
     self,
     next: impl Fn(&Self::Item) + Send + Sync + 'static,
     error: impl Fn(&Self::Err) + Send + Sync + 'static,
