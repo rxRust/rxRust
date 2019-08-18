@@ -4,7 +4,7 @@ use futures::{executor::ThreadPool, future::FutureExt, task::SpawnExt};
 use std::sync::Mutex;
 
 lazy_static! {
-  static ref THREAD_POOL: Mutex<ThreadPool> =
+  pub(crate) static ref DEFAULT_RUNTIME: Mutex<ThreadPool> =
     Mutex::new(ThreadPool::new().unwrap());
 }
 
@@ -42,7 +42,7 @@ where
         subscriber.complete();
       }
     });
-    THREAD_POOL.lock().unwrap().spawn(f).unwrap();
+    DEFAULT_RUNTIME.lock().unwrap().spawn(f).unwrap();
   })
 }
 
@@ -69,7 +69,7 @@ where
         };
       }
     });
-    THREAD_POOL.lock().unwrap().spawn(f).unwrap();
+    DEFAULT_RUNTIME.lock().unwrap().spawn(f).unwrap();
   })
 }
 
@@ -82,6 +82,6 @@ fn smoke() {
   from_future_with_err::<_, _, ()>(future::ok(1)).subscribe(move |v| {
     *res.lock().unwrap() = *v;
   });
-  std::thread::sleep(std::time::Duration::new(1, 0));
+  std::thread::sleep(std::time::Duration::from_millis(1));
   assert_eq!(*c_res.lock().unwrap(), 1);
 }

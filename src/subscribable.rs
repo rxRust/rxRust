@@ -100,6 +100,15 @@ pub trait Subscribable {
     self,
     next: impl Fn(&Self::Item) + Send + Sync + 'static,
   ) -> Box<dyn Subscription>;
+
+  /// Convert a Subscribable to Subject. This is different to [`Fork`]. `fork`
+  /// only fork a new stream from the origin, it's a lazy operator, but
+  /// `into_subject` will subscribe origin stream immediately and return an
+  /// subject.
+  fn into_subject(self) -> Subject<Self::Item, Self::Err>
+  where
+    Self::Item: 'static,
+    Self::Err: 'static;
 }
 
 impl<S: RawSubscribable> Subscribable for S {
@@ -165,5 +174,13 @@ impl<S: RawSubscribable> Subscribable for S {
 
       RxReturn::Continue
     }))
+  }
+  #[inline(always)]
+  fn into_subject(self) -> Subject<Self::Item, Self::Err>
+  where
+    Self::Item: 'static,
+    Self::Err: 'static,
+  {
+    Subject::from_subscribable(self)
   }
 }

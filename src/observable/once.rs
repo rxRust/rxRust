@@ -2,7 +2,8 @@ use crate::prelude::*;
 use std::marker::PhantomData;
 
 /// Create an observable which can only subscribe once time.
-/// `ObservableOnce` and its downstream can't be fork.
+/// `ObservableOnce` and its downstream can't be fork, but you can use
+/// [`Subscribable::into_subject`] convert it to a [`Subject`]
 pub struct ObservableOnce<F, Item, Err> {
   subscribe: F,
   _p: PhantomData<(Item, Err)>,

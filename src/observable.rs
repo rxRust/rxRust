@@ -4,10 +4,12 @@ use std::sync::Arc;
 
 mod from;
 pub use from::*;
-mod from_future;
+pub(crate) mod from_future;
 pub use from_future::{from_future, from_future_with_err};
 mod once;
 pub use once::{once, ObservableOnce};
+mod interval;
+pub use interval::interval;
 
 /// A representation of any set of values over any amount of time. This is the
 /// most basic building block rxrust
