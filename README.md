@@ -48,12 +48,12 @@ For now, only a new thread scheduler has been implemented.
 
 ```rust 
 use rxrust::prelude::*;
-use rxrust::{ops::{ ObserveOn, SubscribeOn, Map }, scheduler };
+use rxrust::{ops::{ ObserveOn, SubscribeOn, Map }, scheduler::Schedulers };
 
 observable::from_range(0..10)
-  .subscribe_on(scheduler::new_thread())
+  .subscribe_on(Schedulers::NewThread)
   .map(|v| *v*2)
-  .observe_on(scheduler::new_thread())
+  .observe_on(Schedulers::NewThread)
   .subscribe(|v| {println!("{},", v)});
 ```
 

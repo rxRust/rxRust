@@ -28,11 +28,11 @@ use crate::scheduler::Scheduler;
 /// use the new thread scheduler for values emitted by Observable `a`:
 /// ```rust
 /// use rxrust::prelude::*;
-/// use rxrust::scheduler::new_thread;
+/// use rxrust::scheduler::Schedulers;
 /// use rxrust::ops::{ Merge, SubscribeOn };
 /// use std::thread;
 ///
-/// let a = observable::from_range(1..5).subscribe_on(new_thread());
+/// let a = observable::from_range(1..5).subscribe_on(Schedulers::NewThread);
 /// let b = observable::from_range(5..10);
 /// a.merge(b).subscribe(|v|{
 ///   let handle = thread::current();
@@ -44,7 +44,7 @@ use crate::scheduler::Scheduler;
 ///  5(thread 2) 6(thread 2) 7(thread 2) 8(thread 2) 9(thread id2)`.
 /// The reason for this is that Observable `b` emits its values directly like
 /// before, but the emissions from `a` are scheduled on a new thread because we
-/// are now using the `new_thread` Scheduler for that specific Observable.
+/// are now using the `NewThread` Scheduler for that specific Observable.
 
 pub trait SubscribeOn {
   fn subscribe_on<SD>(self, scheduler: SD) -> SubscribeOnOP<Self, SD>
@@ -93,13 +93,13 @@ where
 fn new_thread() {
   use crate::ops::{Merge, SubscribeOn};
   use crate::prelude::*;
-  use crate::scheduler::new_thread;
+  use crate::scheduler::Schedulers;
   use std::sync::{Arc, Mutex};
   use std::thread;
 
   let res = Arc::new(Mutex::new(vec![]));
   let c_res = res.clone();
-  let a = observable::from_range(1..5).subscribe_on(new_thread());
+  let a = observable::from_range(1..5).subscribe_on(Schedulers::NewThread);
   let b = observable::from_range(5..10);
   let thread = Arc::new(Mutex::new(vec![]));
   let c_thread = thread.clone();
