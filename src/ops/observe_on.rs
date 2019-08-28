@@ -79,7 +79,7 @@ fn switch_thread() {
     s.next(&1);
     *emit_thread.lock().unwrap() = thread::current().id();
   })
-  .observe_on(scheduler::new_thread())
+  .observe_on(scheduler::Schedulers::NewThread)
   .subscribe(move |_v| {
     observe_thread.lock().unwrap().push(thread::current().id());
   });

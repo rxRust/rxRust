@@ -1,4 +1,11 @@
-#![feature(external_doc, fn_traits, step_trait, unboxed_closures, drain_filter)]
+#![feature(
+  external_doc,
+  fn_traits,
+  step_trait,
+  unboxed_closures,
+  drain_filter,
+  test
+)]
 #![doc(include = "../README.md")]
 #[macro_use]
 extern crate lazy_static;

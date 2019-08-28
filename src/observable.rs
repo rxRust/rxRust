@@ -6,9 +6,9 @@ mod from;
 pub use from::*;
 pub(crate) mod from_future;
 pub use from_future::{from_future, from_future_with_err};
-mod once;
+pub(crate) mod once;
 pub use once::{once, ObservableOnce};
-mod interval;
+pub(crate) mod interval;
 pub use interval::interval;
 
 /// A representation of any set of values over any amount of time. This is the
