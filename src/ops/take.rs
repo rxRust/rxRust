@@ -54,35 +54,32 @@ where
 
   fn raw_subscribe(
     self,
-    subscribe: impl RxFn(
-        RxValue<&'_ Self::Item, &'_ Self::Err>,
-      ) -> RxReturn<Self::Err>
+    subscribe: impl RxFn(RxValue<&'_ Self::Item, &'_ Self::Err>)
       + Send
       + Sync
       + 'static,
   ) -> Box<dyn Subscription + Send + Sync> {
     let hit = Mutex::new(0);
     let count = self.count;
-    self.source.raw_subscribe(RxFnWrapper::new(
+    let proxy = SubscriptionProxy::new();
+    let c_proxy = proxy.clone();
+    let sub = self.source.raw_subscribe(RxFnWrapper::new(
       move |v: RxValue<&'_ _, &'_ _>| match v {
         RxValue::Next(nv) => {
           let mut hit = hit.lock().unwrap();
           if *hit < count {
             *hit += 1;
-            let os = subscribe.call((RxValue::Next(nv),));
-            if let RxReturn::Continue = os {
-              if *hit == count {
-                return RxReturn::Complete;
-              }
+            subscribe.call((RxValue::Next(nv),));
+            if *hit == count {
+              proxy.unsubscribe();
             }
-            os
-          } else {
-            RxReturn::Continue
           }
         }
         vv => subscribe.call((vv,)),
       },
-    ))
+    ));
+    c_proxy.proxy(sub);
+    Box::new(c_proxy)
   }
 }
 

@@ -37,7 +37,7 @@ pub mod prelude {
 }
 
 pub trait Observer<Item, Err> {
-  fn next(&self, v: &Item) -> subscribable::RxReturn<Err>;
+  fn next(&self, v: &Item);
 
   fn complete(&mut self);
 

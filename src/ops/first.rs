@@ -51,9 +51,7 @@ where
   type Err = S::Err;
   fn raw_subscribe(
     self,
-    subscribe: impl RxFn(
-        RxValue<&'_ Self::Item, &'_ Self::Err>,
-      ) -> RxReturn<Self::Err>
+    subscribe: impl RxFn(RxValue<&'_ Self::Item, &'_ Self::Err>)
       + Send
       + Sync
       + 'static,
@@ -69,10 +67,7 @@ where
         err @ RxValue::Err(_) => subscribe.call((err,)),
         RxValue::Complete => {
           if !passed.load(Ordering::Relaxed) {
-            let rv = subscribe.call((RxValue::Next(default.borrow()),));
-            if let err @ RxReturn::Err(_) = rv {
-              return err;
-            }
+            subscribe.call((RxValue::Next(default.borrow()),));
           }
           subscribe.call((RxValue::Complete,))
         }

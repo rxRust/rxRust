@@ -5,11 +5,11 @@ use thread_pool_scheduler::thread_pool_schedule;
 
 /// A Scheduler is an object to order task and schedule their execution.
 pub trait Scheduler {
-  fn schedule<T: Send + Sync + 'static, R: Send + Sync + 'static>(
+  fn schedule<T: Send + Sync + 'static>(
     &self,
-    task: impl FnOnce(Option<T>) -> R + Send + 'static,
+    task: impl FnOnce(Option<T>) + Send + 'static,
     state: Option<T>,
-  ) -> R;
+  );
 }
 
 pub enum Schedulers {
@@ -22,16 +22,16 @@ pub enum Schedulers {
 }
 
 impl Scheduler for Schedulers {
-  fn schedule<T: Send + Sync + 'static, R: Send + Sync + 'static>(
+  fn schedule<T: Send + Sync + 'static>(
     &self,
-    task: impl FnOnce(Option<T>) -> R + Send + 'static,
+    task: impl FnOnce(Option<T>) + Send + 'static,
     state: Option<T>,
-  ) -> R {
+  ) {
     match self {
       Schedulers::NewThread => new_thread_schedule(task, state),
       Schedulers::ThreadPool => thread_pool_schedule(task, state),
       Schedulers::Sync => task(state),
-    }
+    };
   }
 }
 
@@ -58,10 +58,11 @@ mod test {
 
   fn sum_of_sqrt(scheduler: Schedulers) {
     let sum = Arc::new(Mutex::new(0.));
-    observable::from_range(0..1000)
+    observable::from_range(0..200)
       .observe_on(scheduler)
       .subscribe(move |v| {
-        *sum.lock().unwrap() += (*v as f32).sqrt();
+        *sum.lock().unwrap() =
+          (0..1000).fold((*v as f32).sqrt(), |acc, _| acc.sqrt());
       });
   }
 }
