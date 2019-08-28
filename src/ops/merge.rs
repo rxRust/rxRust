@@ -51,9 +51,7 @@ where
 
   fn raw_subscribe(
     self,
-    subscribe: impl RxFn(
-        RxValue<&'_ Self::Item, &'_ Self::Err>,
-      ) -> RxReturn<Self::Err>
+    subscribe: impl RxFn(RxValue<&'_ Self::Item, &'_ Self::Err>)
       + Send
       + Sync
       + 'static,
@@ -68,8 +66,6 @@ where
           if !stopped.load(Ordering::Relaxed) {
             stopped.store(true, Ordering::Relaxed);
             subscribe.call((ev,))
-          } else {
-            RxReturn::Continue
           }
         }
         RxValue::Complete => {
@@ -77,10 +73,9 @@ where
             && completed.load(Ordering::Relaxed)
           {
             stopped.store(true, Ordering::Relaxed);
-            subscribe.call((RxValue::Complete,))
+            subscribe.call((RxValue::Complete,));
           } else {
             completed.store(true, Ordering::Relaxed);
-            RxReturn::Continue
           }
         }
       };

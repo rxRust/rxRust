@@ -30,44 +30,7 @@ pub trait Map<T> {
   }
 }
 
-pub trait MapWithErr<T> {
-  type Err;
-  fn map_with_err<B, F>(self, f: F) -> MapWithErrOp<Self, RxFnWrapper<F>>
-  where
-    Self: Sized,
-    F: Fn(&T) -> Result<B, Self::Err>,
-  {
-    MapWithErrOp {
-      source: self,
-      func: RxFnWrapper::new(f),
-    }
-  }
-
-  /// A version of map_with_err extension which return reference, and
-  /// furthermore， return item and input item has same lifetime.
-  fn map_return_ref_with_err<B, F>(
-    self,
-    f: F,
-  ) -> MapReturnRefWithErrOp<Self, RxFnWrapper<F>>
-  where
-    Self: Sized,
-    F: for<'r> Fn(&'r T) -> Result<&'r B, Self::Err>,
-  {
-    MapReturnRefWithErrOp {
-      source: self,
-      func: RxFnWrapper::new(f),
-    }
-  }
-}
-
 impl<'a, O> Map<O::Item> for O where O: RawSubscribable {}
-
-impl<'a, O> MapWithErr<O::Item> for O
-where
-  O: RawSubscribable,
-{
-  type Err = O::Err;
-}
 
 pub struct MapOp<S, M> {
   source: S,
@@ -94,9 +57,7 @@ where
 
   fn raw_subscribe(
     self,
-    subscribe: impl RxFn(
-        RxValue<&'_ Self::Item, &'_ Self::Err>,
-      ) -> RxReturn<Self::Err>
+    subscribe: impl RxFn(RxValue<&'_ Self::Item, &'_ Self::Err>)
       + Send
       + Sync
       + 'static,
@@ -134,75 +95,6 @@ where
   }
 }
 
-pub struct MapWithErrOp<S, M> {
-  source: S,
-  func: M,
-}
-
-macro_rules! map_subscribe_with_err {
-  ($subscribe:ident, $map:ident) => {
-    RxFnWrapper::new(move |v: RxValue<&'_ _, &'_ _>| match v {
-      RxValue::Next(nv) => match $map.call((nv,)) {
-        Ok(ref mv) => $subscribe.call((RxValue::Next(mv),)),
-        Err(e) => RxReturn::Err(e),
-      },
-      RxValue::Err(err) => $subscribe.call((RxValue::Err(err),)),
-      RxValue::Complete => $subscribe.call((RxValue::Complete,)),
-    })
-  };
-}
-impl<'a, S, B, M> RawSubscribable for MapWithErrOp<S, M>
-where
-  M: RxFn(&S::Item) -> Result<B, S::Err> + Send + Sync + 'static,
-  S: RawSubscribable,
-{
-  type Item = B;
-  type Err = S::Err;
-
-  fn raw_subscribe(
-    self,
-    subscribe: impl RxFn(
-        RxValue<&'_ Self::Item, &'_ Self::Err>,
-      ) -> RxReturn<Self::Err>
-      + Send
-      + Sync
-      + 'static,
-  ) -> Box<dyn Subscription + Send + Sync> {
-    let map = self.func;
-    self
-      .source
-      .raw_subscribe(map_subscribe_with_err!(subscribe, map))
-  }
-}
-
-impl<S, B, M> Multicast for MapWithErrOp<S, M>
-where
-  S: Multicast,
-  M: RxFn(&S::Item) -> Result<B, S::Err> + Send + Sync + 'static,
-{
-  type Output = MapWithErrOp<S::Output, Arc<M>>;
-  fn multicast(self) -> Self::Output {
-    MapWithErrOp {
-      source: self.source.multicast(),
-      func: Arc::new(self.func),
-    }
-  }
-}
-
-impl<S, B, M> Fork for MapWithErrOp<S, Arc<M>>
-where
-  S: Fork,
-  M: RxFn(&S::Item) -> Result<B, S::Err> + Send + Sync + 'static,
-{
-  type Output = MapWithErrOp<S::Output, Arc<M>>;
-  fn fork(&self) -> Self::Output {
-    MapWithErrOp {
-      source: self.source.fork(),
-      func: self.func.clone(),
-    }
-  }
-}
-
 pub struct MapReturnRefOp<S, M> {
   source: S,
   func: M,
@@ -218,9 +110,7 @@ where
 
   fn raw_subscribe(
     self,
-    subscribe: impl RxFn(
-        RxValue<&'_ Self::Item, &'_ Self::Err>,
-      ) -> RxReturn<Self::Err>
+    subscribe: impl RxFn(RxValue<&'_ Self::Item, &'_ Self::Err>)
       + Send
       + Sync
       + 'static,
@@ -258,69 +148,9 @@ where
   }
 }
 
-pub struct MapReturnRefWithErrOp<S, M> {
-  source: S,
-  func: M,
-}
-
-impl<S, B, M> RawSubscribable for MapReturnRefWithErrOp<S, M>
-where
-  M: for<'r> RxFn(&'r S::Item) -> Result<&'r B, S::Err> + Send + Sync + 'static,
-  S: RawSubscribable,
-{
-  type Item = B;
-  type Err = S::Err;
-
-  fn raw_subscribe(
-    self,
-    subscribe: impl RxFn(
-        RxValue<&'_ Self::Item, &'_ Self::Err>,
-      ) -> RxReturn<Self::Err>
-      + Send
-      + Sync
-      + 'static,
-  ) -> Box<dyn Subscription + Send + Sync> {
-    let map = self.func;
-    self
-      .source
-      .raw_subscribe(map_subscribe_with_err!(subscribe, map))
-  }
-}
-
-impl<S, B, M> Multicast for MapReturnRefWithErrOp<S, M>
-where
-  S: Multicast,
-  M: for<'r> RxFn(&'r S::Item) -> Result<&'r B, S::Err> + Send + Sync + 'static,
-{
-  type Output = MapReturnRefWithErrOp<S::Output, Arc<M>>;
-  fn multicast(self) -> Self::Output {
-    MapReturnRefWithErrOp {
-      source: self.source.multicast(),
-      func: Arc::new(self.func),
-    }
-  }
-}
-
-impl<S, B, M> Fork for MapReturnRefWithErrOp<S, Arc<M>>
-where
-  S: Fork,
-  M: for<'r> RxFn(&'r S::Item) -> Result<&'r B, S::Err> + Send + Sync + 'static,
-{
-  type Output = MapReturnRefWithErrOp<S::Output, Arc<M>>;
-  fn fork(&self) -> Self::Output {
-    MapReturnRefWithErrOp {
-      source: self.source.fork(),
-      func: self.func.clone(),
-    }
-  }
-}
-
 #[cfg(test)]
 mod test {
-  use crate::{
-    ops::{Map, MapWithErr},
-    prelude::*,
-  };
+  use crate::{ops::Map, prelude::*};
   use std::sync::{Arc, Mutex};
 
   #[test]
@@ -345,32 +175,6 @@ mod test {
   }
 
   #[test]
-  #[should_panic]
-  fn with_err() {
-    let subject = Subject::new();
-
-    subject
-      .clone()
-      .map_with_err(|_| Err("should panic "))
-      .subscribe_err(|_: &i32| {}, |err| panic!(*err));
-
-    subject.next(&1);
-  }
-
-  #[test]
-  #[should_panic]
-  fn map_return_ref_with_err() {
-    let subject = Subject::new();
-
-    subject
-      .clone()
-      .map_return_ref_with_err(|_| Err("should panic "))
-      .subscribe_err(|_: &i32| {}, |err| panic!(*err));
-
-    subject.next(&1);
-  }
-
-  #[test]
   fn fork() {
     // type to type can fork
     let m = observable::from_range(0..100).map(|v| *v);
@@ -386,22 +190,6 @@ mod test {
     m.multicast()
       .fork()
       .map_return_ref(|v| v)
-      .multicast()
-      .fork()
-      .subscribe(|_| {});
-    // type to type with error can fork
-    let m = observable::from_range(0..100).map_with_err(|v| Ok(*v));
-    m.multicast()
-      .fork()
-      .map_with_err(|v| Ok(*v))
-      .multicast()
-      .fork()
-      .subscribe(|_| {});
-    // ref to ref with error can fork
-    let m = observable::from_range(0..100).map_return_ref_with_err(|v| Ok(v));
-    m.multicast()
-      .fork()
-      .map_return_ref_with_err(|v| Ok(v))
       .multicast()
       .fork()
       .subscribe(|_| {});

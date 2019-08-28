@@ -1,5 +1,6 @@
 use crate::prelude::*;
 use crate::scheduler::Scheduler;
+use std::sync::mpsc::channel;
 
 /// Specify the Scheduler on which an Observable will operate
 ///
@@ -75,17 +76,22 @@ where
 
   fn raw_subscribe(
     self,
-    subscribe: impl RxFn(
-        RxValue<&'_ Self::Item, &'_ Self::Err>,
-      ) -> RxReturn<Self::Err>
+    subscribe: impl RxFn(RxValue<&'_ Self::Item, &'_ Self::Err>)
       + Send
       + Sync
       + 'static,
   ) -> Box<dyn Subscription + Send + Sync> {
+    let (sender, receiver) = channel();
     let source = self.source;
-    self
-      .scheduler
-      .schedule(move |_: Option<()>| source.raw_subscribe(subscribe), None)
+    self.scheduler.schedule(
+      move |_: Option<()>| {
+        sender
+          .send(source.raw_subscribe(subscribe))
+          .expect("send result from SubscribeOn failed.")
+      },
+      None,
+    );
+    receiver.recv().unwrap()
   }
 }
 

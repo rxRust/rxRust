@@ -38,18 +38,6 @@ where
   }
 }
 
-/// The Observer's return state, can intervention the source stream's data
-/// consume mechanism. `Continue` will do nothing, just let the source stream
-/// consume data in its way, `Err` means should early termination because an
-/// runtime error occur. `Complete` tell upstream I don't want to consume data
-/// more, and let's complete now.
-#[derive(PartialEq)]
-pub enum RxReturn<E> {
-  Continue,
-  Err(E),
-  Complete,
-}
-
 pub trait RawSubscribable {
   /// The type of the elements being emitted.
   type Item;
@@ -58,9 +46,7 @@ pub trait RawSubscribable {
 
   fn raw_subscribe(
     self,
-    subscribe: impl RxFn(
-        RxValue<&'_ Self::Item, &'_ Self::Err>,
-      ) -> RxReturn<Self::Err>
+    subscribe: impl RxFn(RxValue<&'_ Self::Item, &'_ Self::Err>)
       + Send
       + Sync
       + 'static,
@@ -126,8 +112,6 @@ impl<S: RawSubscribable> Subscribable for S {
         RxValue::Err(e) => error(e),
         RxValue::Complete => complete(),
       };
-
-      RxReturn::Continue
     }))
   }
 
@@ -142,8 +126,6 @@ impl<S: RawSubscribable> Subscribable for S {
         RxValue::Err(e) => error(e),
         _ => {}
       };
-
-      RxReturn::Continue
     }))
   }
 
@@ -158,8 +140,6 @@ impl<S: RawSubscribable> Subscribable for S {
         RxValue::Complete => complete(),
         _ => {}
       };
-
-      RxReturn::Continue
     }))
   }
 
@@ -171,8 +151,6 @@ impl<S: RawSubscribable> Subscribable for S {
       if let RxValue::Next(v) = v {
         next(v);
       }
-
-      RxReturn::Continue
     }))
   }
   #[inline(always)]

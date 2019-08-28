@@ -71,9 +71,7 @@ where
 
   fn raw_subscribe(
     self,
-    subscribe: impl RxFn(
-        RxValue<&'_ Self::Item, &'_ Self::Err>,
-      ) -> RxReturn<Self::Err>
+    subscribe: impl RxFn(RxValue<&'_ Self::Item, &'_ Self::Err>)
       + Send
       + Sync
       + 'static,

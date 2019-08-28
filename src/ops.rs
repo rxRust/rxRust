@@ -1,7 +1,7 @@
 pub mod map;
-pub use map::{Map, MapWithErr};
+pub use map::Map;
 pub mod filter;
-pub use filter::{Filter, FilterWithErr};
+pub use filter::Filter;
 pub mod merge;
 pub use merge::Merge;
 pub mod take;

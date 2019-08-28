@@ -35,13 +35,11 @@ impl<Sub> Subscriber<Sub> {
 
 impl<Item, Err, Sub> Observer<Item, Err> for Subscriber<Sub>
 where
-  Sub: RxFn(RxValue<&'_ Item, &'_ Err>) -> RxReturn<Err>,
+  Sub: RxFn(RxValue<&'_ Item, &'_ Err>),
 {
-  fn next(&self, v: &Item) -> RxReturn<Err> {
+  fn next(&self, v: &Item) {
     if !self.stopped.load(Ordering::Relaxed) {
       self.subscribe.call((RxValue::Next(v),))
-    } else {
-      RxReturn::Continue
     }
   }
 
@@ -87,7 +85,6 @@ mod test {
           RxValue::Complete => $complete.set($complete.get() + 1),
           RxValue::Err(_) => $err.set($err.get() + 1),
         };
-        RxReturn::Continue
       }))
     }};
   }
