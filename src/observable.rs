@@ -9,7 +9,7 @@ pub use from_future::{from_future, from_future_with_err};
 pub(crate) mod once;
 pub use once::{once, ObservableOnce};
 pub(crate) mod interval;
-pub use interval::interval;
+pub use interval::{interval, interval_at};
 
 /// A representation of any set of values over any amount of time. This is the
 /// most basic building block rxrust

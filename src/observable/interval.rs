@@ -3,13 +3,20 @@ use crate::prelude::*;
 use futures::prelude::*;
 use futures::{future::RemoteHandle, task::SpawnExt};
 use futures_timer::Interval;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-/// Creates an Observable that emit sequential numbers every specified
-/// interval of time.
+/// Creates an observable which will fire at `dur` time into the future,
+/// and will repeat every `dur` interval after.
 ///
 #[inline(always)]
 pub fn interval(dur: Duration) -> Interval { Interval::new(dur) }
+
+/// Creates a observable which will fire at the time specified by `at`,
+/// and then will repeat every `dur` interval after
+#[inline(always)]
+pub fn interval_at(at: Instant, dur: Duration) -> Interval {
+  Interval::new_at(at, dur)
+}
 
 impl RawSubscribable for Interval {
   type Item = ();
@@ -34,7 +41,7 @@ impl RawSubscribable for Interval {
   }
 }
 
-pub struct SpawnHandle<T>(Option<RemoteHandle<T>>);
+pub struct SpawnHandle<T>(pub(crate) Option<RemoteHandle<T>>);
 impl<T> Subscription for SpawnHandle<T> {
   fn unsubscribe(&mut self) { self.0.take(); }
 }

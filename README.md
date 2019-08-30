@@ -44,8 +44,6 @@ In this case, we can use `multicast` convert an unicast stream to a multicast st
 
 ## Scheduler
 
-For now, only a new thread scheduler has been implemented. 
-
 ```rust 
 use rxrust::prelude::*;
 use rxrust::{ops::{ ObserveOn, SubscribeOn, Map }, scheduler::Schedulers };

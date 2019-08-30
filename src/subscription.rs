@@ -1,3 +1,4 @@
+use std::ops::DerefMut;
 use std::sync::{Arc, Mutex};
 
 /// Subscription returns from `Observable.subscribe(Subscriber)` to allow
@@ -10,10 +11,7 @@ pub trait Subscription {
 
 impl Subscription for Box<dyn Subscription + Send + Sync> {
   #[inline(always)]
-  fn unsubscribe(&mut self) {
-    let s: &mut dyn Subscription = &mut *self;
-    s.unsubscribe()
-  }
+  fn unsubscribe(&mut self) { self.deref_mut().unsubscribe(); }
 }
 
 struct InnerProxy<T> {
