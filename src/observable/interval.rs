@@ -65,9 +65,9 @@ fn smoke() {
   use std::sync::{Arc, Mutex};
   let seconds = Arc::new(Mutex::new(0));
   let c_seconds = seconds.clone();
-  interval(Duration::from_millis(5)).subscribe(move |_| {
+  interval(Duration::from_millis(10)).subscribe(move |_| {
     *seconds.lock().unwrap() += 1;
   });
-  std::thread::sleep(Duration::from_millis(50));
-  assert_eq!(*c_seconds.lock().unwrap(), 10);
+  std::thread::sleep(Duration::from_millis(55));
+  assert_eq!(*c_seconds.lock().unwrap(), 5);
 }
