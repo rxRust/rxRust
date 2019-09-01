@@ -80,10 +80,10 @@ fn switch_thread() {
   .subscribe(move |_v| {
     observe_thread.lock().unwrap().push(thread::current().id());
   });
+  std::thread::sleep(std::time::Duration::from_millis(1));
 
   let current_id = thread::current().id();
   assert_eq!(*emit_thread.lock().unwrap(), current_id);
-
   let ot = oc.lock().unwrap();
   let ot1 = ot[0];
   let ot2 = ot[1];
