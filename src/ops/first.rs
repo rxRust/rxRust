@@ -52,9 +52,9 @@ where
   fn raw_subscribe(
     self,
     subscribe: impl RxFn(RxValue<&'_ Self::Item, &'_ Self::Err>)
-      + Send
-      + Sync
-      + 'static,
+    + Send
+    + Sync
+    + 'static,
   ) -> Box<dyn Subscription + Send + Sync> {
     let default = self.default;
     let passed = AtomicBool::new(self.passed);
