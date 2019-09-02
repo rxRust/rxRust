@@ -58,9 +58,9 @@ where
   fn raw_subscribe(
     self,
     subscribe: impl RxFn(RxValue<&'_ Self::Item, &'_ Self::Err>)
-      + Send
-      + Sync
-      + 'static,
+    + Send
+    + Sync
+    + 'static,
   ) -> Box<dyn Subscription + Send + Sync> {
     let map = self.func;
     self.source.raw_subscribe(map_subscribe!(subscribe, map))
@@ -111,9 +111,9 @@ where
   fn raw_subscribe(
     self,
     subscribe: impl RxFn(RxValue<&'_ Self::Item, &'_ Self::Err>)
-      + Send
-      + Sync
-      + 'static,
+    + Send
+    + Sync
+    + 'static,
   ) -> Box<dyn Subscription + Send + Sync> {
     let map = self.func;
     self.source.raw_subscribe(map_subscribe!(subscribe, map))

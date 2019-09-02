@@ -55,9 +55,9 @@ where
   fn raw_subscribe(
     self,
     subscribe: impl RxFn(RxValue<&'_ Self::Item, &'_ Self::Err>)
-      + Send
-      + Sync
-      + 'static,
+    + Send
+    + Sync
+    + 'static,
   ) -> Box<dyn Subscription + Send + Sync> {
     let hit = Mutex::new(0);
     let count = self.count;
