@@ -1,71 +1,56 @@
-use std::ops::DerefMut;
 use std::sync::{Arc, Mutex};
 
 /// Subscription returns from `Observable.subscribe(Subscriber)` to allow
 ///  unsubscribing.
 pub trait Subscription {
-  /// This allows deregistering an stream before it has finished receiving all
+  /// This allows deregistering an stream before it has finished receiving allo
   ///  events (i.e. before onCompleted is called).
   fn unsubscribe(&mut self);
 }
 
-impl Subscription for Box<dyn Subscription + Send + Sync> {
-  #[inline(always)]
-  fn unsubscribe(&mut self) { self.deref_mut().unsubscribe(); }
-}
-
-struct InnerProxy<T> {
+struct InnerProxy {
   stopped: bool,
-  subscription: Option<T>,
+  subscription: Vec<Box<dyn Subscription + Send + Sync>>,
 }
 
-pub struct SubscriptionProxy<T>(Arc<Mutex<InnerProxy<T>>>);
+pub struct SubscriptionProxy(Arc<Mutex<InnerProxy>>);
 
-impl<T> Clone for SubscriptionProxy<T> {
+impl Clone for SubscriptionProxy {
   fn clone(&self) -> Self { SubscriptionProxy(self.0.clone()) }
 }
 
-impl<T> Subscription for SubscriptionProxy<T>
-where
-  T: Subscription,
-{
+impl Subscription for SubscriptionProxy {
   fn unsubscribe(&mut self) { Self::unsubscribe(self) }
 }
 
-impl<T> Default for SubscriptionProxy<T>
-where
-  T: Subscription,
-{
+impl Default for SubscriptionProxy {
   fn default() -> Self { Self::new() }
 }
 
-impl<T> SubscriptionProxy<T>
-where
-  T: Subscription,
-{
+impl SubscriptionProxy {
   pub fn new() -> Self {
     SubscriptionProxy(Arc::new(Mutex::new(InnerProxy {
       stopped: false,
-      subscription: None,
+      subscription: vec![],
     })))
   }
 
-  pub fn proxy(&self, mut target: T) {
+  pub fn proxy(&self, mut target: Box<dyn Subscription + Send + Sync>) {
     let mut inner = self.0.lock().unwrap();
     if inner.stopped {
       target.unsubscribe();
     } else {
-      inner.subscription.replace(target);
+      inner.subscription.push(target);
     }
   }
 
   pub fn unsubscribe(&self) {
     let mut inner = self.0.lock().unwrap();
     if !inner.stopped {
-      if let Some(ref mut s) = inner.subscription {
-        s.unsubscribe();
-      }
+      inner.subscription.iter_mut().for_each(|s| s.unsubscribe());
       inner.stopped = true;
     }
   }
+
+  pub fn is_stopped(&self) -> bool { self.0.lock().unwrap().stopped }
 }

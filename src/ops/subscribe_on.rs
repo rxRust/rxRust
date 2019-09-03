@@ -1,6 +1,5 @@
 use crate::prelude::*;
 use crate::scheduler::Scheduler;
-use std::sync::mpsc::channel;
 
 /// Specify the Scheduler on which an Observable will operate
 ///
@@ -81,45 +80,63 @@ where
     + Sync
     + 'static,
   ) -> Box<dyn Subscription + Send + Sync> {
-    let (sender, receiver) = channel();
     let source = self.source;
-    self.scheduler.schedule(
-      move |_: Option<()>| {
-        sender
-          .send(source.raw_subscribe(subscribe))
-          .expect("send result from SubscribeOn failed.")
-      },
+    let s = self.scheduler.schedule(
+      move |proxy, _: Option<()>| proxy.proxy(source.raw_subscribe(subscribe)),
       None,
     );
-    receiver.recv().unwrap()
+    Box::new(s)
   }
 }
 
-#[test]
-fn new_thread() {
-  use crate::ops::{Merge, SubscribeOn};
+#[cfg(test)]
+mod test {
+  use crate::ops::{Delay, SubscribeOn};
   use crate::prelude::*;
   use crate::scheduler::Schedulers;
   use std::sync::{Arc, Mutex};
   use std::thread;
+  use std::time::Duration;
 
-  let res = Arc::new(Mutex::new(vec![]));
-  let c_res = res.clone();
-  let a = observable::from_range(1..5).subscribe_on(Schedulers::NewThread);
-  let b = observable::from_range(5..10);
-  let thread = Arc::new(Mutex::new(vec![]));
-  let c_thread = thread.clone();
-  a.merge(b).subscribe(move |v| {
-    res.lock().unwrap().push(*v);
-    let handle = thread::current();
-    thread.lock().unwrap().push(handle.id());
-  });
+  #[test]
+  fn new_thread() {
+    let res = Arc::new(Mutex::new(vec![]));
+    let c_res = res.clone();
+    let thread = Arc::new(Mutex::new(vec![]));
+    let c_thread = thread.clone();
+    observable::from_range(1..5)
+      .subscribe_on(Schedulers::NewThread)
+      .subscribe(move |v| {
+        res.lock().unwrap().push(*v);
+        let handle = thread::current();
+        thread.lock().unwrap().push(handle.id());
+      });
 
-  assert_eq!(*c_res.lock().unwrap(), (1..10).collect::<Vec<_>>());
-  let first = c_thread.lock().unwrap()[0];
-  let second = c_thread.lock().unwrap()[4];
-  assert_ne!(first, second);
-  let mut thread_list = vec![first; 4];
-  thread_list.append(&mut vec![second; 5]);
-  assert_eq!(*c_thread.lock().unwrap(), thread_list);
+    thread::sleep(std::time::Duration::from_millis(1));
+    assert_eq!(*c_res.lock().unwrap(), (1..5).collect::<Vec<_>>());
+    assert_ne!(c_thread.lock().unwrap()[0], thread::current().id());
+  }
+
+  #[test]
+  fn pool_unsubscribe() { unsubscribe_scheduler(Schedulers::ThreadPool) }
+
+  #[test]
+  fn new_thread_unsubscribe() { unsubscribe_scheduler(Schedulers::NewThread) }
+
+  #[test]
+  fn sync_unsubscribe() { unsubscribe_scheduler(Schedulers::Sync) }
+
+  fn unsubscribe_scheduler(scheduler: Schedulers) {
+    let emitted = Arc::new(Mutex::new(vec![]));
+    let c_emitted = emitted.clone();
+    observable::from_range(0..10)
+      .subscribe_on(scheduler)
+      .delay(Duration::from_millis(10))
+      .subscribe(move |v| {
+        emitted.lock().unwrap().push(*v);
+      })
+      .unsubscribe();
+    std::thread::sleep(Duration::from_millis(20));
+    assert_eq!(c_emitted.lock().unwrap().len(), 0);
+  }
 }

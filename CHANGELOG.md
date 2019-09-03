@@ -1,5 +1,9 @@
 ## [Unreleased](https://github.com/M-Adoo/rxRust/compare/v0.2.0...HEAD)
-todo
+
+### Bug Fixes
+
+- **observe_on**: unsubscribe should also cancel dispatched message.
+- **subscribe_on**: unsubscribe should also cancel task in scheduler queue.
 
 ## [0.2.0](https://github.com/M-Adoo/rxRust/releases/tag/v0.2.0)  (2019-09-02)
 
@@ -16,7 +20,7 @@ todo
 - **operator**: add `merge` operator
 - **operator**: add `observe_on` operator
 - **operator**: add `subscribe_on` operator
-- **operator**: add `take_on` operator
+- **operator**: add `take` operator
 - **Schedulers**: add `Schedulers::Sync` implementation
 - **Schedulers**: add `Schedulers::NewThread` implementation
 - **Schedulers**: add `Schedulers::ThreadPool` implementation
