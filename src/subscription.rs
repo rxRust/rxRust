@@ -3,9 +3,11 @@ use std::sync::{Arc, Mutex};
 /// Subscription returns from `Observable.subscribe(Subscriber)` to allow
 ///  unsubscribing.
 pub trait Subscription {
-  /// This allows deregistering an stream before it has finished receiving allo
-  ///  events (i.e. before onCompleted is called).
+  /// This allows deregistering an stream before it has finished receiving all
+  /// events (i.e. before onCompleted is called).
   fn unsubscribe(&mut self);
+
+  fn is_stopped(&self) -> bool;
 }
 
 struct InnerProxy {
@@ -21,6 +23,8 @@ impl Clone for SubscriptionProxy {
 
 impl Subscription for SubscriptionProxy {
   fn unsubscribe(&mut self) { Self::unsubscribe(self) }
+
+  fn is_stopped(&self) -> bool { self.0.lock().unwrap().stopped }
 }
 
 impl Default for SubscriptionProxy {
@@ -51,6 +55,4 @@ impl SubscriptionProxy {
       inner.stopped = true;
     }
   }
-
-  pub fn is_stopped(&self) -> bool { self.0.lock().unwrap().stopped }
 }
