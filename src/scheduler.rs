@@ -1,14 +1,12 @@
 use crate::prelude::*;
 mod thread_scheduler;
 use thread_scheduler::new_thread_schedule;
-mod thread_pool_scheduler;
-use thread_pool_scheduler::thread_pool_schedule;
-mod sync;
-use sync::sync_schedule;
+// mod thread_pool_scheduler;
+// use thread_pool_scheduler::thread_pool_schedule;
 
 /// A Scheduler is an object to order task and schedule their execution.
 pub trait Scheduler {
-  fn schedule<T: Send + Sync + 'static>(
+  fn schedule<T: Send + 'static>(
     &self,
     task: impl FnOnce(SubscriptionProxy, Option<T>) + Send + 'static,
     state: Option<T>,
@@ -16,8 +14,6 @@ pub trait Scheduler {
 }
 
 pub enum Schedulers {
-  /// Sync Scheduler execute task immediately in current thread.
-  Sync,
   /// NewThread Scheduler always creates a new thread for each unit of work.
   NewThread,
   /// ThreadPool dispatch task to the thread pool to execute task.
@@ -25,15 +21,14 @@ pub enum Schedulers {
 }
 
 impl Scheduler for Schedulers {
-  fn schedule<T: Send + Sync + 'static>(
+  fn schedule<T: Send + 'static>(
     &self,
     task: impl FnOnce(SubscriptionProxy, Option<T>) + Send + 'static,
     state: Option<T>,
   ) -> SubscriptionProxy {
     match self {
       Schedulers::NewThread => new_thread_schedule(task, state),
-      Schedulers::ThreadPool => thread_pool_schedule(task, state),
-      Schedulers::Sync => sync_schedule(task, state),
+      Schedulers::ThreadPool => unimplemented!(), // thread_pool_schedule(task, state),
     }
   }
 }

@@ -7,7 +7,7 @@ use std::sync::Arc;
 /// `ObserveOn` is an operator that accepts a scheduler as the parameter,
 /// which will be used to reschedule notifications emitted by the source
 /// Observable.
-pub trait ObserveOn {
+pub trait ObserveOn<Sub> {
   fn observe_on<SD>(self, scheduler: SD) -> ObserveOnOp<Self, SD>
   where
     Self: Sized,
@@ -24,45 +24,64 @@ pub struct ObserveOnOp<S, SD> {
   scheduler: SD,
 }
 
-impl<S> ObserveOn for S where S: RawSubscribable {}
-
-impl<S, SD> RawSubscribable for ObserveOnOp<S, SD>
+impl<S, Sub> ObserveOn<Sub> for S
 where
-  S: RawSubscribable,
-  S::Item: Clone + Send + Sync + 'static,
-  S::Err: Clone + Send + Sync + 'static,
-  SD: Scheduler + Send + Sync + 'static,
+  S: RawSubscribable<Sub>,
+  Sub: Subscribe,
 {
-  type Item = S::Item;
-  type Err = S::Err;
-  fn raw_subscribe(
-    self,
-    subscribe: impl RxFn(RxValue<&'_ Self::Item, &'_ Self::Err>)
-    + Send
-    + Sync
-    + 'static,
-  ) -> Box<dyn Subscription + Send + Sync> {
-    let scheduler = self.scheduler;
-    let subscribe = Arc::new(subscribe);
+}
+
+impl<S, Sub, SD> RawSubscribable<Sub> for ObserveOnOp<S, SD>
+where
+  Sub: Subscribe + Send + Sync + 'static,
+  S: RawSubscribable<ObserveOnSubscribe<Sub, SD>>,
+  Sub::Item: Clone + Send + Sync + 'static,
+  Sub::Err: Clone + Send + Sync + 'static,
+  SD: Scheduler + Send + Sync + 'static,
+  S::Unsub: Subscription + Send + Sync + 'static,
+{
+  type Unsub = SubscriptionProxy;
+  fn raw_subscribe(self, subscribe: Sub) -> Self::Unsub {
     let proxy = SubscriptionProxy::new();
-    let c_proxy = proxy.clone();
-    let subscription = self.source.raw_subscribe(RxFnWrapper::new(
-      move |v: RxValue<&'_ Self::Item, &'_ Self::Err>| {
-        let s = scheduler.schedule(
-          |proxy, value| {
-            if !proxy.is_stopped() {
-              if let Some((rv, subscribe)) = value {
-                subscribe.call((rv.as_ref(),));
-              }
-            }
-          },
-          Some((v.to_owned(), subscribe.clone())),
-        );
-        c_proxy.proxy(Box::new(s));
-      },
-    ));
+    let observe_subscribe = ObserveOnSubscribe {
+      subscribe: Arc::new(subscribe),
+      proxy: proxy.clone(),
+      scheduler: self.scheduler,
+    };
+    let subscription = self.source.raw_subscribe(observe_subscribe);
     proxy.proxy(subscription);
-    Box::new(proxy)
+    proxy
+  }
+}
+
+pub struct ObserveOnSubscribe<Sub, SD> {
+  subscribe: Arc<Sub>,
+  proxy: SubscriptionProxy,
+  scheduler: SD,
+}
+
+impl<Sub, SD> Subscribe for ObserveOnSubscribe<Sub, SD>
+where
+  Sub: Subscribe + Send + Sync + 'static,
+  Sub::Item: Clone + Send + 'static,
+  Sub::Err: Clone + Send + 'static,
+  SD: Scheduler,
+{
+  type Item = Sub::Item;
+  type Err = Sub::Err;
+
+  fn run(&self, v: RxValue<&'_ Self::Item, &'_ Self::Err>) {
+    let s = self.scheduler.schedule(
+      |proxy, value| {
+        if !proxy.is_stopped() {
+          if let Some((rv, subscribe)) = value {
+            subscribe.run(rv.as_ref());
+          }
+        }
+      },
+      Some((v.to_owned(), self.subscribe.clone())),
+    );
+    self.proxy.proxy(s);
   }
 }
 

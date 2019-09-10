@@ -1,20 +1,16 @@
 use crate::prelude::*;
-use std::marker::PhantomData;
 
-pub struct SubscribeErr<Item, Err, N, E> {
+pub struct SubscribeErr<N, E> {
   next: N,
   error: E,
-  _ph: PhantomData<(Item, Err)>,
 }
 
-impl<Item, Err, N, E> Subscribe for SubscribeErr<Item, Err, N, E>
+impl<Item, Err, N, E> Subscribe<Item, Err> for SubscribeErr<N, E>
 where
   N: Fn(&Item),
   E: Fn(&Err),
 {
-  type Item = Item;
-  type Err = Err;
-  fn run(&self, v: RxValue<&'_ Self::Item, &'_ Self::Err>) {
+  fn run(&self, v: RxValue<&'_ Item, &'_ Err>) {
     match v {
       RxValue::Next(v) => (self.next)(v),
       RxValue::Err(e) => (self.error)(e),
@@ -35,9 +31,9 @@ pub trait SubscribableErr<Item, Err, N, E> {
   fn subscribe_err(self, next: N, error: E) -> Self::Unsub;
 }
 
-impl<S, Item, Err, N, E> SubscribableErr<Item, Err, N, E> for S
+impl<Item, Err, S, N, E> SubscribableErr<Item, Err, N, E> for S
 where
-  S: RawSubscribable<SubscribeErr<Item, Err, N, E>>,
+  S: RawSubscribable<Item, Err, SubscribeErr<N, E>>,
   N: Fn(&Item),
   E: Fn(&Err),
 {
@@ -46,10 +42,6 @@ where
   where
     Self: Sized,
   {
-    self.raw_subscribe(SubscribeErr {
-      next,
-      error,
-      _ph: PhantomData,
-    })
+    self.raw_subscribe(SubscribeErr { next, error })
   }
 }

@@ -1,7 +1,7 @@
 use crate::prelude::*;
 use std::thread;
 
-pub(crate) fn new_thread_schedule<T: Send + Sync + 'static>(
+pub(crate) fn new_thread_schedule<T: Send + 'static>(
   task: impl FnOnce(SubscriptionProxy, Option<T>) + Send + 'static,
   state: Option<T>,
 ) -> SubscriptionProxy {

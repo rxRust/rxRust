@@ -1,22 +1,18 @@
 use crate::prelude::*;
-use std::marker::PhantomData;
 
-pub struct SubscribeAll<Item, Err, N, E, C> {
+pub struct SubscribeAll<N, E, C> {
   next: N,
   error: E,
   complete: C,
-  _ph: PhantomData<(Item, Err)>,
 }
 
-impl<Item, Err, N, E, C> Subscribe for SubscribeAll<Item, Err, N, E, C>
+impl<Item, Err, N, E, C> Subscribe<Item, Err> for SubscribeAll<N, E, C>
 where
   N: Fn(&Item),
   E: Fn(&Err),
   C: Fn(),
 {
-  type Item = Item;
-  type Err = Err;
-  fn run(&self, v: RxValue<&'_ Self::Item, &'_ Self::Err>) {
+  fn run(&self, v: RxValue<&'_ Item, &'_ Err>) {
     match v {
       RxValue::Next(v) => (self.next)(v),
       RxValue::Err(e) => (self.error)(e),
@@ -40,7 +36,7 @@ pub trait SubscribableAll<Item, Err, N, E, C> {
 
 impl<S, Item, Err, N, E, C> SubscribableAll<Item, Err, N, E, C> for S
 where
-  S: RawSubscribable<SubscribeAll<Item, Err, N, E, C>>,
+  S: RawSubscribable<Item, Err, SubscribeAll<N, E, C>>,
   N: Fn(&Item),
   E: Fn(&Err),
   C: Fn(),
@@ -54,7 +50,6 @@ where
       next,
       error,
       complete,
-      _ph: PhantomData,
     })
   }
 }
