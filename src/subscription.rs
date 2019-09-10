@@ -39,12 +39,15 @@ impl SubscriptionProxy {
     })))
   }
 
-  pub fn proxy(&self, mut target: Box<dyn Subscription + Send + Sync>) {
+  pub fn proxy<S>(&self, mut target: S)
+  where
+    S: Subscription + Send + Sync + 'static,
+  {
     let mut inner = self.0.lock().unwrap();
     if inner.stopped {
       target.unsubscribe();
     } else {
-      inner.subscription.push(target);
+      inner.subscription.push(Box::new(target));
     }
   }
 

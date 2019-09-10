@@ -46,7 +46,7 @@ use crate::scheduler::Scheduler;
 /// before, but the emissions from `a` are scheduled on a new thread because we
 /// are now using the `NewThread` Scheduler for that specific Observable.
 
-pub trait SubscribeOn {
+pub trait SubscribeOn<S> {
   fn subscribe_on<SD>(self, scheduler: SD) -> SubscribeOnOP<Self, SD>
   where
     Self: Sized,
@@ -63,29 +63,28 @@ pub struct SubscribeOnOP<S, SD> {
   scheduler: SD,
 }
 
-impl<S> SubscribeOn for S where S: RawSubscribable {}
-
-impl<S, SD> RawSubscribable for SubscribeOnOP<S, SD>
+impl<T, S> SubscribeOn<S> for T
 where
-  S: RawSubscribable + Send + Sync + 'static,
+  T: RawSubscribable<S>,
+  S: Subscribe,
+{
+}
+
+impl<S, Sub, SD> RawSubscribable<Sub> for SubscribeOnOP<S, SD>
+where
+  Sub: Subscribe + Send + 'static,
+  S: RawSubscribable<Sub> + Send + 'static,
+  S::Unsub: Subscription + Send + Sync,
   SD: Scheduler,
 {
-  type Item = S::Item;
-  type Err = S::Err;
+  type Unsub = SubscriptionProxy;
 
-  fn raw_subscribe(
-    self,
-    subscribe: impl RxFn(RxValue<&'_ Self::Item, &'_ Self::Err>)
-    + Send
-    + Sync
-    + 'static,
-  ) -> Box<dyn Subscription + Send + Sync> {
+  fn raw_subscribe(self, subscribe: Sub) -> Self::Unsub {
     let source = self.source;
-    let s = self.scheduler.schedule(
+    self.scheduler.schedule(
       move |proxy, _: Option<()>| proxy.proxy(source.raw_subscribe(subscribe)),
       None,
-    );
-    Box::new(s)
+    )
   }
 }
 

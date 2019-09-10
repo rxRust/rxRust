@@ -45,17 +45,38 @@ where
   }
 }
 
-pub trait Subscribe {
-  /// The type of the elements being emitted.
-  type Item;
-  // The type of the error may propagating.
-  type Err;
-  fn run(&self, v: RxValue<&'_ Self::Item, &'_ Self::Err>);
+/// `Item` the type of the elements being emitted.
+/// `Err`the type of the error may propagating.
+pub trait Subscribe<Item, Err> {
+  fn run(&self, v: RxValue<&'_ Item, &'_ Err>);
 }
 
-pub trait RawSubscribable<S>
+impl<Item, Err, T> Subscribe<Item, Err> for T
 where
-  S: Subscribe,
+  T: Fn(RxValue<&'_ Item, &'_ Err>),
+{
+  #[inline(always)]
+  fn run(&self, v: RxValue<&'_ Item, &'_ Err>) { self(v) }
+}
+
+pub trait IntoSharedSubscribe<Item, Err, Shared>
+where
+  Shared: Subscribe<Item, Err> + Sync + Send + 'static,
+{
+  fn to_shared(self) -> Shared;
+}
+
+impl<Item, Err, T> IntoSharedSubscribe<Item, Err, T> for T
+where
+  T: Subscribe<Item, Err> + Send + Sync + 'static,
+{
+  #[inline(always)]
+  fn to_shared(self) -> Self { self }
+}
+
+pub trait RawSubscribable<Item, Err, S>
+where
+  S: Subscribe<Item, Err>,
 {
   /// a type implemented [`Subscription`]
   type Unsub;
@@ -63,6 +84,24 @@ where
   fn raw_subscribe(self, subscribe: S) -> Self::Unsub;
 }
 
+pub trait IntoSharedSubscribable<
+  Item,
+  Err,
+  S: Subscribe<Item, Err>,
+  Shared: RawSubscribable<Item, Err, S> + Sync + Send + 'static,
+>
+{
+  fn to_shared(self) -> Shared;
+}
+
+impl<T, S, Item, Err> IntoSharedSubscribable<Item, Err, S, T> for T
+where
+  S: Subscribe<Item, Err>,
+  T: RawSubscribable<Item, Err, S> + Sync + Send + 'static,
+{
+  #[inline(always)]
+  fn to_shared(self) -> T { self }
+}
 // todo: define a safe RawSubscribable return a Box<Subscription> let
 // we can crate a object safety object ref.
 
@@ -85,7 +124,6 @@ where
 //   type Err = S::Err;
 
 //   }
-
 
 //   #[inline(always)]
 //   fn into_subject(self) -> Subject<Self::Item, Self::Err>

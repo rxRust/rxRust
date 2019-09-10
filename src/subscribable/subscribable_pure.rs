@@ -1,20 +1,15 @@
 use crate::prelude::*;
-use std::marker::PhantomData;
 
-pub struct SubscribePure<Item, Err, N> {
-  next: N,
-  _ph: PhantomData<(Item, Err)>,
-}
+#[repr(transparent)]
+pub struct SubscribePure<N>(N);
 
-impl<Item, Err, N> Subscribe for SubscribePure<Item, Err, N>
+impl<Item, Err, N> Subscribe<Item, Err> for SubscribePure<N>
 where
   N: Fn(&Item),
 {
-  type Item = Item;
-  type Err = Err;
-  fn run(&self, v: RxValue<&'_ Self::Item, &'_ Self::Err>) {
+  fn run(&self, v: RxValue<&'_ Item, &'_ Err>) {
     if let RxValue::Next(v) = v {
-      (self.next)(v);
+      (self.0)(v);
     }
   }
 }
@@ -27,9 +22,9 @@ pub trait SubscribablePure<Item, Err, N> {
   fn subscribe(self, next: N) -> Self::Unsub;
 }
 
-impl<S, Item, Err, N> SubscribablePure<Item, Err, N> for S
+impl<Item, Err, S, N> SubscribablePure<Item, Err, N> for S
 where
-  S: RawSubscribable<SubscribePure<Item, Err, N>>,
+  S: RawSubscribable<Item, Err, SubscribePure<N>>,
   N: Fn(&Item),
 {
   type Unsub = S::Unsub;
@@ -37,9 +32,6 @@ where
   where
     Self: Sized,
   {
-    self.raw_subscribe(SubscribePure {
-      next,
-      _ph: PhantomData,
-    })
+    self.raw_subscribe(SubscribePure(next))
   }
 }

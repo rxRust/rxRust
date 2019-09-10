@@ -1,20 +1,16 @@
 use crate::prelude::*;
-use std::marker::PhantomData;
 
-pub struct SubscribeComplete<Item, Err, N, C> {
+pub struct SubscribeComplete<N, C> {
   next: N,
   complete: C,
-  _ph: PhantomData<(Item, Err)>,
 }
 
-impl<Item, Err, N, C> Subscribe for SubscribeComplete<Item, Err, N, C>
+impl<Item, Err, N, C> Subscribe<Item, Err> for SubscribeComplete<N, C>
 where
   N: Fn(&Item),
   C: Fn(),
 {
-  type Item = Item;
-  type Err = Err;
-  fn run(&self, v: RxValue<&'_ Self::Item, &'_ Self::Err>) {
+  fn run(&self, v: RxValue<&'_ Item, &'_ Err>) {
     match v {
       RxValue::Next(v) => (self.next)(v),
       RxValue::Complete => (self.complete)(),
@@ -36,9 +32,9 @@ pub trait SubscribableComplete<Item, Err, N, C> {
   fn subscribe_complete(self, next: N, complete: C) -> Self::Unsub;
 }
 
-impl<S, Item, Err, N, C> SubscribableComplete<Item, Err, N, C> for S
+impl<Item, Err, S, N, C> SubscribableComplete<Item, Err, N, C> for S
 where
-  S: RawSubscribable<SubscribeComplete<Item, Err, N, C>>,
+  S: RawSubscribable<Item, Err, SubscribeComplete<N, C>>,
   N: Fn(&Item),
   C: Fn(),
 {
@@ -47,10 +43,6 @@ where
   where
     Self: Sized,
   {
-    self.raw_subscribe(SubscribeComplete {
-      next,
-      complete,
-      _ph: PhantomData,
-    })
+    self.raw_subscribe(SubscribeComplete { next, complete })
   }
 }

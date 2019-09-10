@@ -12,7 +12,7 @@
 // pub use fork::{Fork, Multicast};
 pub mod subscribe_on;
 pub use subscribe_on::SubscribeOn;
-// pub mod observe_on;
-// pub use observe_on::ObserveOn;
+pub mod observe_on;
+pub use observe_on::ObserveOn;
 // pub mod delay;
 // pub use delay::Delay;
