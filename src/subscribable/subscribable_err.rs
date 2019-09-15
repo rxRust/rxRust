@@ -1,5 +1,6 @@
 use crate::prelude::*;
 
+#[derive(Clone)]
 pub struct SubscribeErr<N, E> {
   next: N,
   error: E,

@@ -27,14 +27,28 @@
 ///  o.fork().subscribe_err(|_| {println!("consume in first")}, |_:&()|{});
 ///  o.fork().subscribe_err(|_| {println!("consume in second")}, |_:&()|{});
 /// ```
-use crate::subscribable::*;
 
-pub trait Multicast: RawSubscribable {
-  type Output: Fork<Item = Self::Item, Err = Self::Err>;
+pub trait Multicast {
+  type Output;
   fn multicast(self) -> Self::Output;
 }
 
-pub trait Fork: RawSubscribable {
-  type Output: RawSubscribable<Item = Self::Item, Err = Self::Err>;
+pub trait Fork {
+  type Output;
   fn fork(&self) -> Self::Output;
+}
+
+impl<T> Multicast for T {
+  type Output = T;
+  #[inline(always)]
+  fn multicast(self) -> Self::Output { self }
+}
+
+impl<T> Fork for T
+where
+  T: Clone,
+{
+  type Output = T;
+  #[inline(always)]
+  fn fork(&self) -> Self::Output { self.clone() }
 }

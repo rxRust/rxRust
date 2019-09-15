@@ -1,5 +1,6 @@
 use crate::prelude::*;
 
+#[derive(Clone)]
 pub struct SubscribeComplete<N, C> {
   next: N,
   complete: C,
