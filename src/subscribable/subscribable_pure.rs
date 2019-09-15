@@ -1,6 +1,7 @@
 use crate::prelude::*;
 
 #[repr(transparent)]
+#[derive(Clone)]
 pub struct SubscribePure<N>(N);
 
 impl<Item, Err, N> Subscribe<Item, Err> for SubscribePure<N>

@@ -51,57 +51,26 @@ pub trait Subscribe<Item, Err> {
   fn run(&self, v: RxValue<&'_ Item, &'_ Err>);
 }
 
-impl<Item, Err, T> Subscribe<Item, Err> for T
-where
-  T: Fn(RxValue<&'_ Item, &'_ Err>),
-{
-  #[inline(always)]
-  fn run(&self, v: RxValue<&'_ Item, &'_ Err>) { self(v) }
+pub trait IntoSharedSubscribe<Item, Err> {
+  type Shared: Subscribe<Item, Err> + Sync + Send + 'static;
+  fn to_shared(self) -> Self::Shared;
 }
 
-pub trait IntoSharedSubscribe<Item, Err, Shared>
-where
-  Shared: Subscribe<Item, Err> + Sync + Send + 'static,
-{
-  fn to_shared(self) -> Shared;
-}
-
-impl<Item, Err, T> IntoSharedSubscribe<Item, Err, T> for T
-where
-  T: Subscribe<Item, Err> + Send + Sync + 'static,
-{
-  #[inline(always)]
-  fn to_shared(self) -> Self { self }
-}
-
-pub trait RawSubscribable<Item, Err, S>
-where
-  S: Subscribe<Item, Err>,
-{
+pub trait RawSubscribable<Item, Err, Subscribe> {
   /// a type implemented [`Subscription`]
   type Unsub;
-
-  fn raw_subscribe(self, subscribe: S) -> Self::Unsub;
+  fn raw_subscribe(self, subscribe: Subscribe) -> Self::Unsub;
 }
 
-pub trait IntoSharedSubscribable<
-  Item,
-  Err,
-  S: Subscribe<Item, Err>,
-  Shared: RawSubscribable<Item, Err, S> + Sync + Send + 'static,
->
-{
-  fn to_shared(self) -> Shared;
-}
-
-impl<T, S, Item, Err> IntoSharedSubscribable<Item, Err, S, T> for T
+pub trait IntoSharedSubscribable<Item, Err, Subscribe>:
+  RawSubscribable<Item, Err, Subscribe>
 where
-  S: Subscribe<Item, Err>,
-  T: RawSubscribable<Item, Err, S> + Sync + Send + 'static,
+  Subscribe: IntoSharedSubscribe<Item, Err>,
 {
-  #[inline(always)]
-  fn to_shared(self) -> T { self }
+  type Shared: RawSubscribable<Item, Err, Subscribe> + Sync + Send + 'static;
+  fn to_shared(self) -> Self::Shared;
 }
+
 // todo: define a safe RawSubscribable return a Box<Subscription> let
 // we can crate a object safety object ref.
 

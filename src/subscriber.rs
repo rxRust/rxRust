@@ -6,6 +6,26 @@ use std::sync::{
   Arc,
 };
 
+#[repr(transparent)]
+pub struct SubscribeWrapper<F>(F);
+
+impl<Item, Err, F> Subscribe<Item, Err> for SubscribeWrapper<F>
+where
+  F: Fn(RxValue<&'_ Item, &'_ Err>),
+{
+  #[inline(always)]
+  fn run(&self, v: RxValue<&'_ Item, &'_ Err>) { (self.0)(v) }
+}
+
+impl<Item, Err, F> IntoSharedSubscribe<Item, Err> for SubscribeWrapper<F>
+where
+  F: Fn(RxValue<&'_ Item, &'_ Err>) + Send + Sync + 'static,
+{
+  type Shared = Self;
+  #[inline(always)]
+  fn to_shared(self) -> Self { self }
+}
+
 /// Implements the Observer trait and Subscription trait. While the Observer is
 /// the public API for consuming the values of an Observable, all Observers get
 /// converted to a Subscriber, in order to provide Subscription capabilities.
@@ -15,11 +35,20 @@ pub struct Subscriber<S, U> {
   subscribe: S,
 }
 
-impl<S> Subscriber<S, Rc<Cell<bool>>> {
-  pub fn new(subscribe: S) -> Self {
+impl<F> Subscriber<SubscribeWrapper<F>, Rc<Cell<bool>>> {
+  pub fn new(subscribe: F) -> Self {
     Subscriber {
       stopped: Rc::new(Cell::new(false)),
+      subscribe: SubscribeWrapper(subscribe),
+    }
+  }
+}
+
+impl<S> Subscriber<S, Rc<Cell<bool>>> {
+  pub fn from_subscribe(subscribe: S) -> Self {
+    Subscriber {
       subscribe,
+      stopped: Rc::new(Cell::new(false)),
     }
   }
 }
@@ -67,16 +96,30 @@ where
   fn run(&self, v: RxValue<&'_ Item, &'_ Err>) { self.subscribe.run(v); }
 }
 
-impl<Item, Err, S>
-  IntoSharedSubscribe<Item, Err, Subscriber<S, Arc<AtomicBool>>>
+impl<Item, Err, S> IntoSharedSubscribe<Item, Err>
   for Subscriber<S, Rc<Cell<bool>>>
 where
-  S: Subscribe<Item, Err> + Send + Sync + 'static,
+  S: IntoSharedSubscribe<Item, Err>,
 {
-  fn to_shared(self) -> Subscriber<S, Arc<AtomicBool>> {
+  type Shared = Subscriber<S::Shared, Arc<AtomicBool>>;
+  fn to_shared(self) -> Subscriber<S::Shared, Arc<AtomicBool>> {
     Subscriber {
       stopped: Arc::new(AtomicBool::new(self.stopped.get())),
-      subscribe: self.subscribe,
+      subscribe: self.subscribe.to_shared(),
+    }
+  }
+}
+
+impl<Item, Err, S> IntoSharedSubscribe<Item, Err>
+  for Subscriber<S, Arc<AtomicBool>>
+where
+  S: IntoSharedSubscribe<Item, Err>,
+{
+  type Shared = Subscriber<S::Shared, Arc<AtomicBool>>;
+  fn to_shared(self) -> Subscriber<S::Shared, Arc<AtomicBool>> {
+    Subscriber {
+      stopped: self.stopped,
+      subscribe: self.subscribe.to_shared(),
     }
   }
 }
