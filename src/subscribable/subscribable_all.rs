@@ -7,6 +7,17 @@ pub struct SubscribeAll<N, E, C> {
   complete: C,
 }
 
+impl<Item, Err, N, E, C> IntoSharedSubscribe<Item, Err>
+  for SubscribeAll<N, E, C>
+where
+  N: Fn(&Item) + Send + Sync + 'static,
+  E: Fn(&Err) + Send + Sync + 'static,
+  C: Fn() + Send + Sync + 'static,
+{
+  type Shared = Self;
+  fn to_shared(self) -> Self::Shared { self }
+}
+
 impl<Item, Err, N, E, C> Subscribe<Item, Err> for SubscribeAll<N, E, C>
 where
   N: Fn(&Item),
@@ -21,6 +32,7 @@ where
     };
   }
 }
+
 pub trait SubscribableAll<Item, Err, N, E, C> {
   /// a type implemented [`Subscription`]
   type Unsub;

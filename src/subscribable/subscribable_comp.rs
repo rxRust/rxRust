@@ -20,6 +20,15 @@ where
   }
 }
 
+impl<Item, Err, N, C> IntoSharedSubscribe<Item, Err> for SubscribeComplete<N, C>
+where
+  N: Fn(&Item) + Send + Sync + 'static,
+  C: Fn() + Send + Sync + 'static,
+{
+  type Shared = Self;
+  fn to_shared(self) -> Self::Shared { self }
+}
+
 pub trait SubscribableComplete<Item, Err, N, C> {
   /// a type implemented [`Subscription`]
   type Unsub;

@@ -62,12 +62,9 @@ pub trait RawSubscribable<Item, Err, Subscribe> {
   fn raw_subscribe(self, subscribe: Subscribe) -> Self::Unsub;
 }
 
-pub trait IntoSharedSubscribable<Item, Err, Subscribe>:
-  RawSubscribable<Item, Err, Subscribe>
-where
-  Subscribe: IntoSharedSubscribe<Item, Err>,
+pub trait IntoSharedSubscribable
 {
-  type Shared: RawSubscribable<Item, Err, Subscribe> + Sync + Send + 'static;
+  type Shared:Sync + Send + 'static;
   fn to_shared(self) -> Self::Shared;
 }
 
