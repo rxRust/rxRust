@@ -97,20 +97,13 @@ mod test {
 
   #[test]
   fn fork() {
-    use crate::ops::{Fork, Multicast};
+    use crate::ops::Fork;
 
     observable::from_iter!(vec![0; 100])
-      .multicast()
       .fork()
-      .multicast()
       .fork()
       .subscribe(|_| {});
 
-    observable::of!(0)
-      .multicast()
-      .fork()
-      .multicast()
-      .fork()
-      .subscribe(|_| {});
+    observable::of!(0).fork().fork().subscribe(|_| {});
   }
 }

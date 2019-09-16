@@ -69,7 +69,7 @@ where
 
 #[cfg(test)]
 mod test {
-  use crate::ops::{Fork, Multicast};
+  use crate::ops::Fork;
   use crate::prelude::*;
   use std::sync::{Arc, Mutex};
 
@@ -110,8 +110,7 @@ mod test {
       subscriber.next(&3);
       subscriber.next(&4);
       subscriber.error(&"");
-    })
-    .multicast();
+    });
     let sum1 = Arc::new(Mutex::new(0));
     let sum2 = Arc::new(Mutex::new(0));
     let c_sum1 = sum1.clone();
@@ -130,6 +129,6 @@ mod test {
       s.error(&"");
       s.complete();
     });
-    let _o = observable.multicast().fork().fork().fork();
+    let _o = observable.fork().fork().fork();
   }
 }
