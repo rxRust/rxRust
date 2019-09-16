@@ -1,5 +1,5 @@
 /// In `rxrust` almost all extensions consume the upstream. So as usual it's
-/// single-chain. Have to use `multicast` and `fork` to fork stream.
+/// single-chain. Have to use `fork` to fork stream.
 /// # Example
 /// ```rust ignore
 ///  # use rxrust::prelude::*;
@@ -18,30 +18,19 @@
 //   |  ^ value used here after move
 /// ```
 
-/// use `multicast` convert a single-chain stream to one-multi stream.  Then use
-/// `fork` to fork a new stream.
+/// Use `fork` to fork a new stream.
+///
 /// ```rust
 ///  # use rxrust::prelude::*;
 ///  # use rxrust::ops::Fork;
-///  let o = observable::from_range(0..10).multicast();
+///  let o = observable::from_iter!(0..10);
 ///  o.fork().subscribe_err(|_| {println!("consume in first")}, |_:&()|{});
 ///  o.fork().subscribe_err(|_| {println!("consume in second")}, |_:&()|{});
 /// ```
 
-pub trait Multicast {
-  type Output;
-  fn multicast(self) -> Self::Output;
-}
-
 pub trait Fork {
   type Output;
   fn fork(&self) -> Self::Output;
-}
-
-impl<T> Multicast for T {
-  type Output = T;
-  #[inline(always)]
-  fn multicast(self) -> Self::Output { self }
 }
 
 impl<T> Fork for T
