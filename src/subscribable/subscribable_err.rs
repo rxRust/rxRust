@@ -19,6 +19,16 @@ where
     };
   }
 }
+
+impl<Item, Err, N, E> IntoSharedSubscribe<Item, Err> for SubscribeErr<N, E>
+where
+  N: Fn(&Item) + Send + Sync + 'static,
+  E: Fn(&Err) + Send + Sync + 'static,
+{
+  type Shared = Self;
+  fn to_shared(self) -> Self::Shared { self }
+}
+
 pub trait SubscribableErr<Item, Err, N, E> {
   /// a type implemented [`Subscription`]
   type Unsub;

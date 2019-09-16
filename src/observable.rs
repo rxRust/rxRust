@@ -59,15 +59,9 @@ where
   }
 }
 
-impl<Item, Err, F, S> IntoSharedSubscribable<Item, Err, S> for Observable<F>
+impl<F> IntoSharedSubscribable for Observable<F>
 where
-  F: Fn(&mut dyn Observer<Item, Err>) + Send + Sync + 'static,
-  S: Subscribe<Item, Err>
-    + IntoSharedSubscribe<Item, Err>
-    + Send
-    + Sync
-    + 'static,
-  S::Shared: IntoSharedSubscribe<Item, Err>,
+  F: Send + Sync + 'static,
 {
   type Shared = SharedObservable<F>;
   fn to_shared(self) -> Self::Shared { SharedObservable(self.0) }
@@ -96,6 +90,7 @@ mod test {
       subscriber.next(&3);
       subscriber.error(&"never dispatch error");
     })
+    .to_shared()
     .subscribe_all(
       move |_| *next.lock().unwrap() += 1,
       move |_: &&str| *err.lock().unwrap() += 1,
