@@ -3,8 +3,8 @@ use std::cell::Cell;
 use std::rc::Rc;
 use std::sync::{atomic::AtomicBool, Arc};
 
-// mod from;
-// pub use from::*;
+mod from;
+pub use from::*;
 // pub(crate) mod from_future;
 // pub use from_future::{from_future, from_future_with_err};·
 // pub(crate) mod once;
@@ -30,7 +30,7 @@ impl<F> Observable<F> {
 impl<F, Item, Err, S> RawSubscribable<Item, Err, S> for Observable<F>
 where
   S: Subscribe<Item, Err>,
-  F: Fn(&mut dyn Observer<Item, Err>),
+  F: FnOnce(&mut dyn Observer<Item, Err>),
 {
   type Unsub = Rc<Cell<bool>>;
   fn raw_subscribe(self, subscribe: S) -> Self::Unsub {
@@ -47,7 +47,7 @@ pub struct SharedObservable<F>(F);
 impl<F, Item, Err, S> RawSubscribable<Item, Err, S> for SharedObservable<F>
 where
   S: Subscribe<Item, Err> + IntoSharedSubscribe<Item, Err>,
-  F: Fn(&mut dyn Observer<Item, Err>),
+  F: FnOnce(&mut dyn Observer<Item, Err>),
 {
   type Unsub = Arc<AtomicBool>;
   fn raw_subscribe(self, subscribe: S) -> Self::Unsub {

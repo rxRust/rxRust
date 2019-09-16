@@ -4,8 +4,8 @@
   step_trait,
   unboxed_closures,
   drain_filter,
-  specialization,
-  test
+  test,
+  decl_macro
 )]
 #![doc(include = "../README.md")]
 #[macro_use]
