@@ -24,7 +24,7 @@ pub mod prelude {
   // pub use crate::function::*;
   pub use crate::observable;
   pub use crate::observable::Observable;
-  // pub use crate::ops;
+  pub use crate::ops;
   // pub use crate::subject;
   // pub use crate::subject::Subject;
   // pub use crate::scheduler::*;
@@ -35,7 +35,7 @@ pub mod prelude {
   pub use crate::subscription;
   pub use crate::subscription::*;
   pub use crate::Observer;
-  // pub use ops::{Fork, Multicast};
+  pub use ops::Fork;
 }
 
 pub trait Observer<Item, Err> {
@@ -44,6 +44,4 @@ pub trait Observer<Item, Err> {
   fn complete(&mut self);
 
   fn error(&mut self, err: &Err);
-
-  fn is_stopped(&self) -> bool;
 }

@@ -6,9 +6,8 @@ use std::sync::{atomic::AtomicBool, Arc};
 mod from;
 pub use from::*;
 // pub(crate) mod from_future;
-// pub use from_future::{from_future, from_future_with_err};·
+// pub use from_future::{from_future, from_future_with_err};
 // pub(crate) mod once;
-// pub use once::{once, ObservableOnce};
 // pub(crate) mod interval;
 // pub use interval::{interval, interval_at};
 
@@ -16,7 +15,15 @@ pub use from::*;
 /// most basic building block rxrust
 ///
 #[derive(Clone)]
+#[repr(transparent)]
 pub struct Observable<F>(F);
+
+pub trait ObservableDispatch<Item, Err, S>
+where
+  S: Subscribe<Item, Err>,
+{
+  fn dispatch(self, s: S);
+}
 
 impl<F> Observable<F> {
   /// param `subscribe`: the function that is called when the Observable is
@@ -24,47 +31,206 @@ impl<F> Observable<F> {
   /// new values can be `next`ed, or an `error` method can be called to raise
   /// an error, or `complete` can be called to notify of a successful
   /// completion.
-  pub fn new(subscribe: F) -> Self { Self(subscribe) }
+  pub fn new<S, U>(subscribe: F) -> Self
+  where
+    F: FnOnce(Subscriber<S, U>),
+  {
+    Self(subscribe)
+  }
+}
+
+impl<F, S, Item, Err> ObservableDispatch<Item, Err, S> for Observable<F>
+where
+  F: FnOnce(S),
+  S: Subscribe<Item, Err>,
+{
+  #[inline(always)]
+  fn dispatch(self, s: S) { (self.0)(s); }
+}
+
+impl<F> Fork for Observable<F>
+where
+  F: Clone,
+{
+  type Output = ForkObservable<Observable<F>>;
+  #[inline(always)]
+  fn fork(&self) -> Self::Output { ForkObservable(self.clone()) }
 }
 
 impl<F, Item, Err, S> RawSubscribable<Item, Err, S> for Observable<F>
 where
   S: Subscribe<Item, Err>,
-  F: FnOnce(&mut dyn Observer<Item, Err>),
+  F: FnOnce(Subscriber<S, Rc<Cell<bool>>>),
 {
   type Unsub = Rc<Cell<bool>>;
   fn raw_subscribe(self, subscribe: S) -> Self::Unsub {
-    let mut subscriber = Subscriber::from_subscribe(subscribe);
-
+    let subscriber = Subscriber::from_subscribe(subscribe);
     let subscription = subscriber.clone_subscription();
-    (self.0)(&mut subscriber);
+    self.dispatch(subscriber);
     subscription
   }
 }
 
+#[derive(Clone)]
+#[repr(transparent)]
 pub struct SharedObservable<F>(F);
 
-impl<F, Item, Err, S> RawSubscribable<Item, Err, S> for SharedObservable<F>
+impl<F> Fork for SharedObservable<F>
+where
+  F: Clone,
+{
+  type Output = ForkObservable<SharedObservable<F>>;
+  #[inline(always)]
+  fn fork(&self) -> Self::Output { ForkObservable(self.clone()) }
+}
+
+impl<O, Item, Err, S> RawSubscribable<Item, Err, S> for SharedObservable<O>
 where
   S: Subscribe<Item, Err> + IntoSharedSubscribe<Item, Err>,
-  F: FnOnce(&mut dyn Observer<Item, Err>),
+  O: ObservableDispatch<Item, Err, Subscriber<S::Shared, Arc<AtomicBool>>>,
 {
   type Unsub = Arc<AtomicBool>;
   fn raw_subscribe(self, subscribe: S) -> Self::Unsub {
-    let mut subscriber = Subscriber::from_subscribe(subscribe).to_shared();
-
+    let subscriber = Subscriber::from_subscribe(subscribe).to_shared();
     let subscription = subscriber.clone_subscription();
-    (self.0)(&mut subscriber);
+    self.0.dispatch(subscriber);
     subscription
   }
+}
+
+impl<O, S, Item, Err> ObservableDispatch<Item, Err, S> for SharedObservable<O>
+where
+  O: ObservableDispatch<Item, Err, S::Shared>,
+  S: Subscribe<Item, Err> + IntoSharedSubscribe<Item, Err>,
+{
+  fn dispatch(self, s: S) { self.0.dispatch(s.to_shared()) }
 }
 
 impl<F> IntoSharedSubscribable for Observable<F>
 where
   F: Send + Sync + 'static,
 {
-  type Shared = SharedObservable<F>;
-  fn to_shared(self) -> Self::Shared { SharedObservable(self.0) }
+  type Shared = SharedObservable<Observable<F>>;
+  fn to_shared(self) -> Self::Shared { SharedObservable(self) }
+}
+
+#[derive(Clone)]
+#[repr(transparent)]
+pub struct ForkObservable<F>(F);
+
+impl<F> IntoSharedSubscribable for ForkObservable<F>
+where
+  F: Send + Sync + 'static,
+{
+  type Shared = SharedObservable<ForkObservable<F>>;
+  fn to_shared(self) -> Self::Shared { SharedObservable(self) }
+}
+
+impl<F> Fork for ForkObservable<F>
+where
+  F: Clone,
+{
+  type Output = ForkObservable<F>;
+  #[inline(always)]
+  fn fork(&self) -> Self::Output { self.clone() }
+}
+
+impl<O, Item, Err, S> ObservableDispatch<Item, Err, S>
+  for ForkObservable<ForkObservable<O>>
+where
+  ForkObservable<O>: ObservableDispatch<Item, Err, S>,
+  S: Subscribe<Item, Err>,
+{
+  #[inline(always)]
+  fn dispatch(self, s: S) { self.0.dispatch(s) }
+}
+
+impl<O, S, U, Item, Err> ObservableDispatch<Item, Err, Subscriber<S, U>>
+  for ForkObservable<SharedObservable<O>>
+where
+  SharedObservable<O>: ObservableDispatch<
+    Item,
+    Err,
+    Subscriber<Box<dyn Subscribe<Item, Err> + Send + Sync>, Arc<AtomicBool>>,
+  >,
+  S: Subscribe<Item, Err> + Send + Sync + 'static,
+  Subscriber<S, U>: Subscription,
+{
+  fn dispatch(self, s: Subscriber<S, U>) {
+    let stopped = Arc::new(AtomicBool::new(s.is_stopped()));
+    let subscribe: Box<dyn Subscribe<Item, Err> + Send + Sync> =
+      Box::new(s.subscribe);
+    self.0.dispatch(Subscriber { subscribe, stopped })
+  }
+}
+
+impl<'a, F, S, U, Item, Err> ObservableDispatch<Item, Err, Subscriber<S, U>>
+  for ForkObservable<Observable<F>>
+where
+  S: Subscribe<Item, Err> + 'a,
+  F: FnOnce(Subscriber<Box<dyn Subscribe<Item, Err> + 'a>, U>),
+{
+  fn dispatch(self, s: Subscriber<S, U>) {
+    let subscribe: Box<dyn Subscribe<Item, Err> + 'a> = Box::new(s.subscribe);
+    (self.0).dispatch(Subscriber {
+      subscribe,
+      stopped: s.stopped,
+    })
+  }
+}
+
+impl<'a, F, Item, Err, S> RawSubscribable<Item, Err, S>
+  for ForkObservable<Observable<F>>
+where
+  S: Subscribe<Item, Err> + 'a,
+  F: FnOnce(Subscriber<Box<dyn Subscribe<Item, Err> + 'a>, Rc<Cell<bool>>>),
+{
+  type Unsub = Rc<Cell<bool>>;
+  fn raw_subscribe(self, subscribe: S) -> Self::Unsub {
+    let subscribe: Box<dyn Subscribe<Item, Err> + 'a> = Box::new(subscribe);
+    let subscriber = Subscriber::from_subscribe(subscribe);
+
+    let subscription = subscriber.clone_subscription();
+    ((self.0).0)(subscriber);
+    subscription
+  }
+}
+
+impl<O, Item, Err, S> RawSubscribable<Item, Err, S>
+  for ForkObservable<SharedObservable<O>>
+where
+  Item: 'static,
+  Err: 'static,
+  S: Subscribe<Item, Err> + Send + Sync + 'static,
+  O: ObservableDispatch<
+    Item,
+    Err,
+    Subscriber<Box<dyn Subscribe<Item, Err> + Send + Sync>, Arc<AtomicBool>>,
+  >,
+{
+  type Unsub = Arc<AtomicBool>;
+  fn raw_subscribe(self, subscribe: S) -> Self::Unsub {
+    let subscribe: Box<dyn Subscribe<Item, Err> + Send + Sync> =
+      Box::new(subscribe);
+    let subscriber = Subscriber::from_subscribe(subscribe).to_shared();
+    let subscription = subscriber.clone_subscription();
+    self.0.dispatch(subscriber);
+    subscription
+  }
+}
+
+impl<O, Item, Err, S> RawSubscribable<Item, Err, S>
+  for ForkObservable<ForkObservable<O>>
+where
+  S: Subscribe<Item, Err>,
+  ForkObservable<O>: RawSubscribable<Item, Err, S>,
+{
+  type Unsub = <ForkObservable<O> as RawSubscribable<Item, Err, S>>::Unsub;
+
+  #[inline(always)]
+  fn raw_subscribe(self, subscribe: S) -> Self::Unsub {
+    self.0.raw_subscribe(subscribe)
+  }
 }
 
 #[cfg(test)]
@@ -82,7 +248,7 @@ mod test {
     let c_err = err.clone();
     let c_complete = complete.clone();
 
-    Observable::new(|subscriber: &mut dyn Observer<_, _>| {
+    Observable::new(|mut subscriber| {
       subscriber.next(&1);
       subscriber.next(&2);
       subscriber.next(&3);
@@ -101,15 +267,13 @@ mod test {
     assert_eq!(*c_complete.lock().unwrap(), 1);
     assert_eq!(*c_err.lock().unwrap(), 0);
   }
-
   #[test]
   fn support_fork() {
-    let o = Observable::new(|subscriber: &mut dyn Observer<_, _>| {
+    let o = Observable::new(|subscriber| {
       subscriber.next(&1);
       subscriber.next(&2);
       subscriber.next(&3);
       subscriber.next(&4);
-      subscriber.error(&"");
     });
     let sum1 = Arc::new(Mutex::new(0));
     let sum2 = Arc::new(Mutex::new(0));
@@ -123,12 +287,15 @@ mod test {
   }
 
   #[test]
-  fn observable_fork() {
-    let observable = Observable::new(|s: &mut dyn Observer<_, _>| {
-      s.next(&0);
-      s.error(&"");
-      s.complete();
-    });
-    let _o = observable.fork().fork().fork();
+  fn fork_and_share() {
+    let observable = observable::empty!();
+    // shared after fork
+    observable.fork().to_shared().subscribe(|_| {});
+    observable.fork().to_shared().subscribe(|_| {});
+
+    // shared before fork
+    let observable = observable::empty!().to_shared();
+    observable.fork().subscribe(|_| {});
+    observable.fork().subscribe(|_| {});
   }
 }

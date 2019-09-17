@@ -31,8 +31,8 @@ where
 /// converted to a Subscriber, in order to provide Subscription capabilities.
 ///
 pub struct Subscriber<S, U> {
-  stopped: U,
-  subscribe: S,
+  pub stopped: U,
+  pub subscribe: S,
 }
 
 impl<F> Subscriber<SubscribeWrapper<F>, Rc<Cell<bool>>> {
@@ -84,8 +84,6 @@ where
       self.subscribe.run(RxValue::Err(err));
     }
   }
-
-  fn is_stopped(&self) -> bool { self.stopped.is_stopped() }
 }
 
 impl<S, U, Item, Err> Subscribe<Item, Err> for Subscriber<S, U>
