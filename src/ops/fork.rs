@@ -32,12 +32,3 @@ pub trait Fork {
   type Output;
   fn fork(&self) -> Self::Output;
 }
-
-impl<T> Fork for T
-where
-  T: Clone,
-{
-  type Output = T;
-  #[inline(always)]
-  fn fork(&self) -> Self::Output { self.clone() }
-}

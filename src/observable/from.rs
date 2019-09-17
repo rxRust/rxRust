@@ -1,7 +1,9 @@
 use crate::prelude::*;
 
 pub macro from_iter($iter:expr) {
-  Observable::new(move |subscriber: &mut dyn Observer<_, ()>| {
+  Observable::new(move |mut subscriber| {
+    // only for infer type
+    let _: &Observer<_, ()> = &subscriber;
     $iter
       .into_iter()
       .take_while(|_| !subscriber.is_stopped())
@@ -15,15 +17,20 @@ pub macro from_iter($iter:expr) {
 }
 
 pub macro of($v: expr) {
-  Observable::new(move |subscriber: &mut dyn Observer<_, ()>| {
+  Observable::new(move |mut subscriber| {
+    // only for infer type
+    let _: &Observer<_, ()> = &subscriber;
+
     subscriber.next(&$v);
     subscriber.complete();
   })
 }
 
 pub macro empty() {
-  Observable::new(move |subscriber: &mut dyn Observer<(), ()>| {
-    subscriber.complete()
+  Observable::new(move |mut subscriber| {
+    // only for infer type
+    let _: &Observer<(), ()> = &subscriber;
+    subscriber.complete();
   })
 }
 

@@ -51,6 +51,30 @@ pub trait Subscribe<Item, Err> {
   fn run(&self, v: RxValue<&'_ Item, &'_ Err>);
 }
 
+impl<'a, Item, Err> Subscribe<Item, Err> for Box<dyn Subscribe<Item, Err> + 'a> {
+  #[inline(always)]
+  fn run(&self, v: RxValue<&'_ Item, &'_ Err>) {
+    (&**self).run(v)
+  }
+}
+
+impl< Item, Err> Subscribe<Item, Err> for Box<dyn Subscribe<Item, Err> + Send + Sync> {
+  #[inline(always)]
+  fn run(&self, v: RxValue<&'_ Item, &'_ Err>) {
+    (&**self).run(v)
+  }
+}
+
+
+impl< Item, Err> IntoSharedSubscribe<Item, Err> for Box<dyn Subscribe<Item, Err> + Send + Sync> where Item:'static, Err:'static{
+  type Shared = Self;
+  #[inline(always)]
+  fn to_shared(self) -> Self::Shared {
+    self 
+  }
+}
+
+
 pub trait IntoSharedSubscribe<Item, Err> {
   type Shared: Subscribe<Item, Err> + Sync + Send + 'static;
   fn to_shared(self) -> Self::Shared;

@@ -6,12 +6,12 @@ pub struct SubscribeComplete<N, C> {
   complete: C,
 }
 
-impl<Item, Err, N, C> Subscribe<Item, Err> for SubscribeComplete<N, C>
+impl<Item, N, C> Subscribe<Item, ()> for SubscribeComplete<N, C>
 where
   N: Fn(&Item),
   C: Fn(),
 {
-  fn run(&self, v: RxValue<&'_ Item, &'_ Err>) {
+  fn run(&self, v: RxValue<&'_ Item, &'_ ()>) {
     match v {
       RxValue::Next(v) => (self.next)(v),
       RxValue::Complete => (self.complete)(),
@@ -20,7 +20,7 @@ where
   }
 }
 
-impl<Item, Err, N, C> IntoSharedSubscribe<Item, Err> for SubscribeComplete<N, C>
+impl<Item, N, C> IntoSharedSubscribe<Item, ()> for SubscribeComplete<N, C>
 where
   N: Fn(&Item) + Send + Sync + 'static,
   C: Fn() + Send + Sync + 'static,
@@ -29,22 +29,18 @@ where
   fn to_shared(self) -> Self::Shared { self }
 }
 
-pub trait SubscribableComplete<Item, Err, N, C> {
+pub trait SubscribableComplete<Item, N, C> {
   /// a type implemented [`Subscription`]
   type Unsub;
 
   /// Invokes an execution of an Observable and registers Observer handlers for
   /// notifications it will emit.
-  ///
-  /// * `error`: A handler for a terminal event resulting from an error.
-  /// completion.
-  ///
   fn subscribe_complete(self, next: N, complete: C) -> Self::Unsub;
 }
 
-impl<Item, Err, S, N, C> SubscribableComplete<Item, Err, N, C> for S
+impl<Item, S, N, C> SubscribableComplete<Item, N, C> for S
 where
-  S: RawSubscribable<Item, Err, SubscribeComplete<N, C>>,
+  S: RawSubscribable<Item, (), SubscribeComplete<N, C>>,
   N: Fn(&Item),
   C: Fn(),
 {

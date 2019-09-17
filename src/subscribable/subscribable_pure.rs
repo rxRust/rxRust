@@ -4,18 +4,18 @@ use crate::prelude::*;
 #[derive(Clone)]
 pub struct SubscribePure<N>(N);
 
-impl<Item, Err, N> Subscribe<Item, Err> for SubscribePure<N>
+impl<Item, N> Subscribe<Item, ()> for SubscribePure<N>
 where
   N: Fn(&Item),
 {
-  fn run(&self, v: RxValue<&'_ Item, &'_ Err>) {
+  fn run(&self, v: RxValue<&'_ Item, &'_ ()>) {
     if let RxValue::Next(v) = v {
       (self.0)(v);
     }
   }
 }
 
-impl<Item, Err, N> IntoSharedSubscribe<Item, Err> for SubscribePure<N>
+impl<Item, N> IntoSharedSubscribe<Item, ()> for SubscribePure<N>
 where
   N: Fn(&Item) + Send + Sync + 'static,
 {
@@ -23,7 +23,7 @@ where
   fn to_shared(self) -> Self::Shared { self }
 }
 
-pub trait SubscribablePure<Item, Err, N> {
+pub trait SubscribablePure<Item, N> {
   /// a type implemented [`Subscription`]
   type Unsub;
 
@@ -32,9 +32,9 @@ pub trait SubscribablePure<Item, Err, N> {
   fn subscribe(self, next: N) -> Self::Unsub;
 }
 
-impl<Item, Err, S, N> SubscribablePure<Item, Err, N> for S
+impl<Item, S, N> SubscribablePure<Item, N> for S
 where
-  S: RawSubscribable<Item, Err, SubscribePure<N>>,
+  S: RawSubscribable<Item, (), SubscribePure<N>>,
   N: Fn(&Item),
 {
   type Unsub = S::Unsub;
