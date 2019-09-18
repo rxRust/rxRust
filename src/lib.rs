@@ -5,6 +5,7 @@
   unboxed_closures,
   drain_filter,
   test,
+  mem_take,
   decl_macro
 )]
 #![doc(include = "../README.md")]

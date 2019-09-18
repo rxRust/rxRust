@@ -1,12 +1,5 @@
 use crate::prelude::*;
-use std::cell::Cell;
-use std::rc::Rc;
-use std::sync::{
-  atomic::{AtomicBool, Ordering},
-  Arc,
-};
 
-#[repr(transparent)]
 pub struct SubscribeWrapper<F>(F);
 
 impl<Item, Err, F> Subscribe<Item, Err> for SubscribeWrapper<F>
@@ -35,20 +28,20 @@ pub struct Subscriber<S, U> {
   pub subscribe: S,
 }
 
-impl<F> Subscriber<SubscribeWrapper<F>, Rc<Cell<bool>>> {
+impl<F> Subscriber<SubscribeWrapper<F>, LocalSubscription> {
   pub fn new(subscribe: F) -> Self {
     Subscriber {
-      stopped: Rc::new(Cell::new(false)),
+      stopped: LocalSubscription::default(),
       subscribe: SubscribeWrapper(subscribe),
     }
   }
 }
 
-impl<S> Subscriber<S, Rc<Cell<bool>>> {
+impl<S> Subscriber<S, LocalSubscription> {
   pub fn from_subscribe(subscribe: S) -> Self {
     Subscriber {
       subscribe,
-      stopped: Rc::new(Cell::new(false)),
+      stopped: LocalSubscription::default(),
     }
   }
 }
@@ -63,23 +56,23 @@ where
 impl<Item, Err, S, U> Observer<Item, Err> for Subscriber<S, U>
 where
   S: Subscribe<Item, Err>,
-  U: Subscription,
+  U: SubscriptionLike,
 {
   fn next(&self, v: &Item) {
-    if !self.stopped.is_stopped() {
+    if !self.stopped.is_closed() {
       self.subscribe.run(RxValue::Next(v))
     }
   }
 
   fn complete(&mut self) {
-    if !self.stopped.is_stopped() {
+    if !self.stopped.is_closed() {
       self.subscribe.run(RxValue::Complete);
       self.stopped.unsubscribe()
     }
   }
 
   fn error(&mut self, err: &Err) {
-    if !self.stopped.is_stopped() {
+    if !self.stopped.is_closed() {
       self.stopped.unsubscribe();
       self.subscribe.run(RxValue::Err(err));
     }
@@ -95,26 +88,26 @@ where
 }
 
 impl<Item, Err, S> IntoSharedSubscribe<Item, Err>
-  for Subscriber<S, Rc<Cell<bool>>>
+  for Subscriber<S, LocalSubscription>
 where
   S: IntoSharedSubscribe<Item, Err>,
 {
-  type Shared = Subscriber<S::Shared, Arc<AtomicBool>>;
-  fn to_shared(self) -> Subscriber<S::Shared, Arc<AtomicBool>> {
+  type Shared = Subscriber<S::Shared, SharedSubscription>;
+  fn to_shared(self) -> Subscriber<S::Shared, SharedSubscription> {
     Subscriber {
-      stopped: Arc::new(AtomicBool::new(self.stopped.get())),
+      stopped: SharedSubscription::default(),
       subscribe: self.subscribe.to_shared(),
     }
   }
 }
 
 impl<Item, Err, S> IntoSharedSubscribe<Item, Err>
-  for Subscriber<S, Arc<AtomicBool>>
+  for Subscriber<S, SharedSubscription>
 where
   S: IntoSharedSubscribe<Item, Err>,
 {
-  type Shared = Subscriber<S::Shared, Arc<AtomicBool>>;
-  fn to_shared(self) -> Subscriber<S::Shared, Arc<AtomicBool>> {
+  type Shared = Subscriber<S::Shared, SharedSubscription>;
+  fn to_shared(self) -> Subscriber<S::Shared, SharedSubscription> {
     Subscriber {
       stopped: self.stopped,
       subscribe: self.subscribe.to_shared(),
@@ -122,31 +115,15 @@ where
   }
 }
 
-impl Subscription for Arc<AtomicBool> {
-  #[inline(always)]
-  fn unsubscribe(&mut self) { self.store(true, Ordering::Relaxed); }
-
-  #[inline(always)]
-  fn is_stopped(&self) -> bool { self.load(Ordering::Relaxed) }
-}
-
-impl Subscription for Rc<Cell<bool>> {
-  #[inline(always)]
-  fn unsubscribe(&mut self) { self.set(true) }
-
-  #[inline(always)]
-  fn is_stopped(&self) -> bool { self.get() }
-}
-
-impl<Sub, U> Subscription for Subscriber<Sub, U>
+impl<Sub, U> SubscriptionLike for Subscriber<Sub, U>
 where
-  U: Subscription,
+  U: SubscriptionLike,
 {
   #[inline(always)]
   fn unsubscribe(&mut self) { self.stopped.unsubscribe(); }
 
   #[inline(always)]
-  fn is_stopped(&self) -> bool { self.stopped.is_stopped() }
+  fn is_closed(&self) -> bool { self.stopped.is_closed() }
 }
 
 #[cfg(test)]

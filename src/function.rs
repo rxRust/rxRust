@@ -1,7 +1,6 @@
 use std::borrow::Borrow;
 use std::sync::Arc;
 
-#[repr(transparent)]
 pub struct RxFnWrapper<T>(T);
 
 impl<F> RxFnWrapper<F> {
