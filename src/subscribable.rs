@@ -94,33 +94,3 @@ pub trait IntoSharedSubscribable {
 
 // todo: define a safe RawSubscribable return a Box<Subscription> let
 // we can crate a object safety object ref.
-
-// pub trait Subscribable {
-//   type Item;
-//   type Err;
-
-//   /// Convert a Subscribable to Subject. This is different to [`Fork`]. `fork`
-//   /// only fork a new stream from the origin, it's a lazy operator, but
-//   /// `into_subject` will subscribe origin stream immediately and return an
-//   /// subject.
-//   // fn into_subject(self) -> Subject<Self::Item, Self::Err>
-//   // where
-//   //   Self::Item: 'static,
-//   //   Self::Err: 'static;
-// }
-
-// impl<S: RawSubscribable> Subscribable for S {
-//   type Item = S::Item;
-//   type Err = S::Err;
-
-//   }
-
-//   #[inline(always)]
-//   fn into_subject(self) -> Subject<Self::Item, Self::Err>
-//   where
-//     Self::Item: 'static,
-//     Self::Err: 'static,
-//   {
-//     Subject::from_subscribable(self)
-//   }
-// }

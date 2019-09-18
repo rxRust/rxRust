@@ -24,14 +24,14 @@ where
 /// converted to a Subscriber, in order to provide Subscription capabilities.
 ///
 pub struct Subscriber<S, U> {
-  pub stopped: U,
-  pub subscribe: S,
+  pub(crate) subscription: U,
+  pub(crate) subscribe: S,
 }
 
 impl<F> Subscriber<SubscribeWrapper<F>, LocalSubscription> {
   pub fn new(subscribe: F) -> Self {
     Subscriber {
-      stopped: LocalSubscription::default(),
+      subscription: LocalSubscription::default(),
       subscribe: SubscribeWrapper(subscribe),
     }
   }
@@ -41,16 +41,9 @@ impl<S> Subscriber<S, LocalSubscription> {
   pub fn from_subscribe(subscribe: S) -> Self {
     Subscriber {
       subscribe,
-      stopped: LocalSubscription::default(),
+      subscription: LocalSubscription::default(),
     }
   }
-}
-impl<S, U> Subscriber<S, U>
-where
-  U: Clone,
-{
-  #[inline(always)]
-  pub fn clone_subscription(&self) -> U { self.stopped.clone() }
 }
 
 impl<Item, Err, S, U> Observer<Item, Err> for Subscriber<S, U>
@@ -59,21 +52,21 @@ where
   U: SubscriptionLike,
 {
   fn next(&self, v: &Item) {
-    if !self.stopped.is_closed() {
+    if !self.subscription.is_closed() {
       self.subscribe.run(RxValue::Next(v))
     }
   }
 
   fn complete(&mut self) {
-    if !self.stopped.is_closed() {
+    if !self.subscription.is_closed() {
       self.subscribe.run(RxValue::Complete);
-      self.stopped.unsubscribe()
+      self.subscription.unsubscribe()
     }
   }
 
   fn error(&mut self, err: &Err) {
-    if !self.stopped.is_closed() {
-      self.stopped.unsubscribe();
+    if !self.subscription.is_closed() {
+      self.subscription.unsubscribe();
       self.subscribe.run(RxValue::Err(err));
     }
   }
@@ -95,7 +88,7 @@ where
   type Shared = Subscriber<S::Shared, SharedSubscription>;
   fn to_shared(self) -> Subscriber<S::Shared, SharedSubscription> {
     Subscriber {
-      stopped: SharedSubscription::default(),
+      subscription: SharedSubscription::default(),
       subscribe: self.subscribe.to_shared(),
     }
   }
@@ -109,7 +102,7 @@ where
   type Shared = Subscriber<S::Shared, SharedSubscription>;
   fn to_shared(self) -> Subscriber<S::Shared, SharedSubscription> {
     Subscriber {
-      stopped: self.stopped,
+      subscription: self.subscription,
       subscribe: self.subscribe.to_shared(),
     }
   }
@@ -120,10 +113,10 @@ where
   U: SubscriptionLike,
 {
   #[inline(always)]
-  fn unsubscribe(&mut self) { self.stopped.unsubscribe(); }
+  fn unsubscribe(&mut self) { self.subscription.unsubscribe(); }
 
   #[inline(always)]
-  fn is_closed(&self) -> bool { self.stopped.is_closed() }
+  fn is_closed(&self) -> bool { self.subscription.is_closed() }
 }
 
 #[cfg(test)]
