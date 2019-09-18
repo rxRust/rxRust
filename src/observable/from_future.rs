@@ -3,7 +3,7 @@ use futures::{executor::ThreadPool, future::FutureExt, task::SpawnExt};
 use std::sync::Mutex;
 
 lazy_static! {
-  pub(crate) static ref DEFAULT_RUNTIME: Mutex<ThreadPool> =
+  pub static ref DEFAULT_RUNTIME: Mutex<ThreadPool> =
     Mutex::new(ThreadPool::new().unwrap());
 }
 
@@ -17,7 +17,7 @@ lazy_static! {
 /// let res = Arc::new(Mutex::new(0));
 /// let c_res = res.clone();
 /// use futures::future;
-/// observable::from_future(future::ready(1))
+/// observable::from_future!(future::ready(1))
 ///   .subscribe(move |v| {
 ///     *res.lock().unwrap() = *v;
 ///   });

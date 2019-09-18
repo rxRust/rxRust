@@ -1,3 +1,4 @@
+use crate::prelude::*;
 use std::cell::RefCell;
 use std::mem::replace;
 use std::rc::Rc;
@@ -17,6 +18,14 @@ pub trait IntoSharedSubscription {
   fn to_shared(self) -> SharedSubscription;
 }
 
+pub trait LocalSubscriptionLike: SubscriptionLike {
+  fn add(&mut self, subscription: Box<dyn SubscriptionLike>);
+}
+
+pub trait SharedSubscriptionLike: SubscriptionLike {
+  fn add(&mut self, subscription: Box<dyn SubscriptionLike + Send + Sync>);
+}
+
 enum Teardown<T> {
   None,
   Once(T),
@@ -28,7 +37,7 @@ macro inner_add($inner: expr, $v: expr) {
     $v.unsubscribe();
   }
   let teardown = &mut $inner.teardown;
-  match $inner.teardown {
+  match teardown {
     Teardown::None => *teardown = Teardown::Once($v),
     Teardown::Once(_) => {
       let first = replace(teardown, Teardown::None);
@@ -70,8 +79,8 @@ impl<T> Default for Inner<T> {
 #[derive(Clone, Default)]
 pub struct LocalSubscription(Rc<RefCell<Inner<Box<dyn SubscriptionLike>>>>);
 
-impl LocalSubscription {
-  pub fn add(&mut self, mut subscription: Box<dyn SubscriptionLike>) {
+impl LocalSubscriptionLike for LocalSubscription {
+  fn add(&mut self, mut subscription: Box<dyn SubscriptionLike>) {
     inner_add!(self.0.borrow_mut(), subscription);
   }
 }
@@ -85,7 +94,8 @@ impl IntoSharedSubscription for LocalSubscription {
         teardown: Teardown::None,
       }))),
       _ => panic!(
-        "LocalSubscription already has some teardown work to do, can not covert to SharedSubscription "
+        "LocalSubscription already has some teardown work to do,
+         can not covert to SharedSubscription "
       ),
     }
   }
@@ -93,7 +103,8 @@ impl IntoSharedSubscription for LocalSubscription {
 
 impl SubscriptionLike for LocalSubscription {
   fn unsubscribe(&mut self) {
-    inner_unsubscribe!(self.0.borrow_mut());
+    let mut inner = self.0.borrow_mut();
+    inner_unsubscribe!(inner);
   }
 
   fn is_closed(&self) -> bool { self.0.borrow_mut().closed }
@@ -104,12 +115,10 @@ pub struct SharedSubscription(
   Arc<Mutex<Inner<Box<dyn SubscriptionLike + Send + Sync>>>>,
 );
 
-impl SharedSubscription {
-  pub fn add(
-    &mut self,
-    mut subscription: Box<dyn SubscriptionLike + Send + Sync>,
-  ) {
-    inner_add!(self.0.lock().unwrap(), subscription);
+impl SharedSubscriptionLike for SharedSubscription {
+  fn add(&mut self, mut subscription: Box<dyn SubscriptionLike + Send + Sync>) {
+    let inner = &mut *self.0.lock().unwrap();
+    inner_add!(inner, subscription);
   }
 }
 

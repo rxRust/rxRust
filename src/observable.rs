@@ -4,8 +4,8 @@ mod from;
 pub use from::*;
 pub(crate) mod from_future;
 pub use from_future::{from_future, from_future_with_err};
-// pub(crate) mod interval;
-// pub use interval::{interval, interval_at};
+pub(crate) mod interval;
+pub use interval::{interval, interval_at};
 
 /// A representation of any set of values over any amount of time. This is the
 /// most basic building block rxrust
@@ -58,7 +58,7 @@ where
   type Unsub = LocalSubscription;
   fn raw_subscribe(self, subscribe: S) -> Self::Unsub {
     let subscriber = Subscriber::from_subscribe(subscribe);
-    let subscription = subscriber.clone_subscription();
+    let subscription = subscriber.subscription.clone();
     self.dispatch(subscriber);
     subscription
   }
@@ -84,7 +84,7 @@ where
   type Unsub = SharedSubscription;
   fn raw_subscribe(self, subscribe: S) -> Self::Unsub {
     let subscriber = Subscriber::from_subscribe(subscribe).to_shared();
-    let subscription = subscriber.clone_subscription();
+    let subscription = subscriber.subscription.clone();
     self.0.dispatch(subscriber);
     subscription
   }
@@ -152,7 +152,7 @@ where
       Box::new(s.subscribe);
     self.0.dispatch(Subscriber {
       subscribe,
-      stopped: s.stopped.to_shared(),
+      subscription: s.subscription.to_shared(),
     })
   }
 }
@@ -167,7 +167,7 @@ where
     let subscribe: Box<dyn Subscribe<Item, Err> + 'a> = Box::new(s.subscribe);
     (self.0).dispatch(Subscriber {
       subscribe,
-      stopped: s.stopped,
+      subscription: s.subscription,
     })
   }
 }
@@ -183,7 +183,7 @@ where
     let subscribe: Box<dyn Subscribe<Item, Err> + 'a> = Box::new(subscribe);
     let subscriber = Subscriber::from_subscribe(subscribe);
 
-    let subscription = subscriber.clone_subscription();
+    let subscription = subscriber.subscription.clone();
     ((self.0).0)(subscriber);
     subscription
   }
@@ -206,7 +206,7 @@ where
     let subscribe: Box<dyn Subscribe<Item, Err> + Send + Sync> =
       Box::new(subscribe);
     let subscriber = Subscriber::from_subscribe(subscribe).to_shared();
-    let subscription = subscriber.clone_subscription();
+    let subscription = subscriber.subscription.clone();
     self.0.dispatch(subscriber);
     subscription
   }
