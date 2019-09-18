@@ -1,13 +1,9 @@
 use crate::prelude::*;
-use std::cell::Cell;
-use std::rc::Rc;
-use std::sync::{atomic::AtomicBool, Arc};
 
 mod from;
 pub use from::*;
-// pub(crate) mod from_future;
-// pub use from_future::{from_future, from_future_with_err};
-// pub(crate) mod once;
+pub(crate) mod from_future;
+pub use from_future::{from_future, from_future_with_err};
 // pub(crate) mod interval;
 // pub use interval::{interval, interval_at};
 
@@ -15,13 +11,10 @@ pub use from::*;
 /// most basic building block rxrust
 ///
 #[derive(Clone)]
-#[repr(transparent)]
+
 pub struct Observable<F>(F);
 
-pub trait ObservableDispatch<Item, Err, S>
-where
-  S: Subscribe<Item, Err>,
-{
+pub trait ObservableDispatch<Item, Err, S> {
   fn dispatch(self, s: S);
 }
 
@@ -60,9 +53,9 @@ where
 impl<F, Item, Err, S> RawSubscribable<Item, Err, S> for Observable<F>
 where
   S: Subscribe<Item, Err>,
-  F: FnOnce(Subscriber<S, Rc<Cell<bool>>>),
+  F: FnOnce(Subscriber<S, LocalSubscription>),
 {
-  type Unsub = Rc<Cell<bool>>;
+  type Unsub = LocalSubscription;
   fn raw_subscribe(self, subscribe: S) -> Self::Unsub {
     let subscriber = Subscriber::from_subscribe(subscribe);
     let subscription = subscriber.clone_subscription();
@@ -72,7 +65,6 @@ where
 }
 
 #[derive(Clone)]
-#[repr(transparent)]
 pub struct SharedObservable<F>(F);
 
 impl<F> Fork for SharedObservable<F>
@@ -87,9 +79,9 @@ where
 impl<O, Item, Err, S> RawSubscribable<Item, Err, S> for SharedObservable<O>
 where
   S: Subscribe<Item, Err> + IntoSharedSubscribe<Item, Err>,
-  O: ObservableDispatch<Item, Err, Subscriber<S::Shared, Arc<AtomicBool>>>,
+  O: ObservableDispatch<Item, Err, Subscriber<S::Shared, SharedSubscription>>,
 {
-  type Unsub = Arc<AtomicBool>;
+  type Unsub = SharedSubscription;
   fn raw_subscribe(self, subscribe: S) -> Self::Unsub {
     let subscriber = Subscriber::from_subscribe(subscribe).to_shared();
     let subscription = subscriber.clone_subscription();
@@ -101,7 +93,7 @@ where
 impl<O, S, Item, Err> ObservableDispatch<Item, Err, S> for SharedObservable<O>
 where
   O: ObservableDispatch<Item, Err, S::Shared>,
-  S: Subscribe<Item, Err> + IntoSharedSubscribe<Item, Err>,
+  S: IntoSharedSubscribe<Item, Err>,
 {
   fn dispatch(self, s: S) { self.0.dispatch(s.to_shared()) }
 }
@@ -115,7 +107,6 @@ where
 }
 
 #[derive(Clone)]
-#[repr(transparent)]
 pub struct ForkObservable<F>(F);
 
 impl<F> IntoSharedSubscribable for ForkObservable<F>
@@ -139,7 +130,6 @@ impl<O, Item, Err, S> ObservableDispatch<Item, Err, S>
   for ForkObservable<ForkObservable<O>>
 where
   ForkObservable<O>: ObservableDispatch<Item, Err, S>,
-  S: Subscribe<Item, Err>,
 {
   #[inline(always)]
   fn dispatch(self, s: S) { self.0.dispatch(s) }
@@ -151,16 +141,19 @@ where
   SharedObservable<O>: ObservableDispatch<
     Item,
     Err,
-    Subscriber<Box<dyn Subscribe<Item, Err> + Send + Sync>, Arc<AtomicBool>>,
+    Subscriber<Box<dyn Subscribe<Item, Err> + Send + Sync>, SharedSubscription>,
   >,
   S: Subscribe<Item, Err> + Send + Sync + 'static,
-  Subscriber<S, U>: Subscription,
+  Subscriber<S, U>: SubscriptionLike,
+  U: IntoSharedSubscription,
 {
   fn dispatch(self, s: Subscriber<S, U>) {
-    let stopped = Arc::new(AtomicBool::new(s.is_stopped()));
     let subscribe: Box<dyn Subscribe<Item, Err> + Send + Sync> =
       Box::new(s.subscribe);
-    self.0.dispatch(Subscriber { subscribe, stopped })
+    self.0.dispatch(Subscriber {
+      subscribe,
+      stopped: s.stopped.to_shared(),
+    })
   }
 }
 
@@ -183,9 +176,9 @@ impl<'a, F, Item, Err, S> RawSubscribable<Item, Err, S>
   for ForkObservable<Observable<F>>
 where
   S: Subscribe<Item, Err> + 'a,
-  F: FnOnce(Subscriber<Box<dyn Subscribe<Item, Err> + 'a>, Rc<Cell<bool>>>),
+  F: FnOnce(Subscriber<Box<dyn Subscribe<Item, Err> + 'a>, LocalSubscription>),
 {
-  type Unsub = Rc<Cell<bool>>;
+  type Unsub = LocalSubscription;
   fn raw_subscribe(self, subscribe: S) -> Self::Unsub {
     let subscribe: Box<dyn Subscribe<Item, Err> + 'a> = Box::new(subscribe);
     let subscriber = Subscriber::from_subscribe(subscribe);
@@ -205,10 +198,10 @@ where
   O: ObservableDispatch<
     Item,
     Err,
-    Subscriber<Box<dyn Subscribe<Item, Err> + Send + Sync>, Arc<AtomicBool>>,
+    Subscriber<Box<dyn Subscribe<Item, Err> + Send + Sync>, SharedSubscription>,
   >,
 {
-  type Unsub = Arc<AtomicBool>;
+  type Unsub = SharedSubscription;
   fn raw_subscribe(self, subscribe: S) -> Self::Unsub {
     let subscribe: Box<dyn Subscribe<Item, Err> + Send + Sync> =
       Box::new(subscribe);

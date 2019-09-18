@@ -28,24 +28,25 @@ lazy_static! {
 /// error by rxrust, you can use [`from_future_with_err`]
 ///
 pub macro from_future($f:expr) {
-  Observable::new(move |subscriber: &mut Observer<_, _>| {
+  Observable::new(move |mut subscriber| {
     let f = $f.map(move |v| {
-      if !subscriber.is_stopped() {
+      if !subscriber.is_closed() {
         subscriber.next(&v);
         subscriber.complete();
       }
     });
     DEFAULT_RUNTIME.lock().unwrap().spawn(f).unwrap();
   })
+  .to_shared()
 }
 
 /// Converts a `Future` to an observable sequence like [`from_future`].
 /// But only work for which `Future::Output` is `Result` type, and `Result::Ok`
 /// emit to next handle, and `Result::Err` as an error to handle.
 pub macro from_future_with_err($f:expr) {
-  Observable::new(move |subscriber: &mut Observer<_, _>| {
+  Observable::new(move |mut subscriber| {
     let f = $f.map(move |v| {
-      if !subscriber.is_stopped() {
+      if !subscriber.is_closed() {
         match v {
           Ok(ref item) => {
             subscriber.next(item);
@@ -57,20 +58,22 @@ pub macro from_future_with_err($f:expr) {
     });
     DEFAULT_RUNTIME.lock().unwrap().spawn(f).unwrap();
   })
+  .to_shared()
 }
 
 #[test]
 fn smoke() {
+  use futures::future;
   use std::sync::Arc;
   let res = Arc::new(Mutex::new(0));
   let c_res = res.clone();
-  use futures::future;
   from_future_with_err!(future::ok(1)).subscribe(move |v| {
     *res.lock().unwrap() = *v;
   });
   std::thread::sleep(std::time::Duration::from_millis(1));
   assert_eq!(*c_res.lock().unwrap(), 1);
   // from_future
+  let res = c_res.clone();
   from_future!(future::ready(2)).subscribe(move |v| {
     *res.lock().unwrap() = *v;
   });

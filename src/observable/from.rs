@@ -6,11 +6,11 @@ pub macro from_iter($iter:expr) {
     let _: &Observer<_, ()> = &subscriber;
     $iter
       .into_iter()
-      .take_while(|_| !subscriber.is_stopped())
+      .take_while(|_| !subscriber.is_closed())
       .for_each(|v| {
         subscriber.next(&v);
       });
-    if !subscriber.is_stopped() {
+    if !subscriber.is_closed() {
       subscriber.complete();
     }
   })

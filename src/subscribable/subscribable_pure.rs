@@ -1,6 +1,5 @@
 use crate::prelude::*;
 
-#[repr(transparent)]
 #[derive(Clone)]
 pub struct SubscribePure<N>(N);
 
