@@ -1,3 +1,4 @@
+use crate::prelude::*;
 use std::cell::RefCell;
 use std::mem::replace;
 use std::rc::Rc;
@@ -11,10 +12,6 @@ pub trait SubscriptionLike {
   fn unsubscribe(&mut self);
 
   fn is_closed(&self) -> bool;
-}
-
-pub trait IntoSharedSubscription {
-  fn to_shared(self) -> SharedSubscription;
 }
 
 pub trait LocalSubscriptionLike: SubscriptionLike {
@@ -84,7 +81,8 @@ impl LocalSubscriptionLike for LocalSubscription {
   }
 }
 
-impl IntoSharedSubscription for LocalSubscription {
+impl IntoShared for LocalSubscription {
+  type Shared = SharedSubscription;
   fn to_shared(self) -> SharedSubscription {
     let inner = self.0.borrow();
     match inner.teardown {
@@ -129,7 +127,8 @@ impl SubscriptionLike for SharedSubscription {
   fn is_closed(&self) -> bool { self.0.lock().unwrap().closed }
 }
 
-impl IntoSharedSubscription for SharedSubscription {
+impl IntoShared for SharedSubscription {
+  type Shared = SharedSubscription;
   #[inline(always)]
   fn to_shared(self) -> SharedSubscription { self }
 }

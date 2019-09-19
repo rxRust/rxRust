@@ -7,14 +7,22 @@ pub struct SubscribeAll<N, E, C> {
   complete: C,
 }
 
-impl<Item, Err, N, E, C> IntoSharedSubscribe<Item, Err>
-  for SubscribeAll<N, E, C>
+impl<N, E, C> SubscribeAll<N, E, C> {
+  pub fn new(next: N, error: E, complete: C) -> Self {
+    SubscribeAll {
+      next,
+      error,
+      complete,
+    }
+  }
+}
+
+impl<N, E, C> IntoShared for SubscribeAll<N, E, C>
 where
-  N: Fn(&Item) + Send + Sync + 'static,
-  E: Fn(&Err) + Send + Sync + 'static,
-  C: Fn() + Send + Sync + 'static,
+  Self: Send + Sync + 'static,
 {
   type Shared = Self;
+  #[inline(always)]
   fn to_shared(self) -> Self::Shared { self }
 }
 

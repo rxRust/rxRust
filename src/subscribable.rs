@@ -15,8 +15,8 @@ pub trait Subscribe<Item, Err> {
   fn on_complete(&self);
 }
 
-pub trait IntoSharedSubscribe<Item, Err> {
-  type Shared: Subscribe<Item, Err> + Sync + Send + 'static;
+pub trait IntoShared {
+  type Shared: Sync + Send + 'static;
   fn to_shared(self) -> Self::Shared;
 }
 
@@ -24,11 +24,6 @@ pub trait RawSubscribable<Item, Err, Subscribe> {
   /// a type implemented [`Subscription`]
   type Unsub;
   fn raw_subscribe(self, subscribe: Subscribe) -> Self::Unsub;
-}
-
-pub trait IntoSharedSubscribable {
-  type Shared: Sync + Send + 'static;
-  fn to_shared(self) -> Self::Shared;
 }
 
 impl<'a, Item, Err> Subscribe<Item, Err>
@@ -53,8 +48,7 @@ impl<Item, Err> Subscribe<Item, Err>
   fn on_complete(&self) { (&**self).on_complete(); }
 }
 
-impl<Item, Err> IntoSharedSubscribe<Item, Err>
-  for Box<dyn Subscribe<Item, Err> + Send + Sync>
+impl<Item, Err> IntoShared for Box<dyn Subscribe<Item, Err> + Send + Sync>
 where
   Item: 'static,
   Err: 'static,
