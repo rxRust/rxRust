@@ -19,12 +19,12 @@ where
   fn on_complete(&self) {}
 }
 
-impl<Item, Err, N, E> IntoSharedSubscribe<Item, Err> for SubscribeErr<N, E>
+impl<N, E> IntoShared for SubscribeErr<N, E>
 where
-  N: Fn(&Item) + Send + Sync + 'static,
-  E: Fn(&Err) + Send + Sync + 'static,
+  Self: Send + Sync + 'static,
 {
   type Shared = Self;
+  #[inline(always)]
   fn to_shared(self) -> Self::Shared { self }
 }
 

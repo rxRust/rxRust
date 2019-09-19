@@ -2,6 +2,7 @@
   external_doc,
   fn_traits,
   step_trait,
+  specialization,
   unboxed_closures,
   drain_filter,
   test,

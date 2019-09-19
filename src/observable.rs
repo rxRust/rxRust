@@ -77,7 +77,7 @@ where
 
 impl<O, Item, Err, S> RawSubscribable<Item, Err, S> for SharedObservable<O>
 where
-  S: Subscribe<Item, Err> + IntoSharedSubscribe<Item, Err>,
+  S: Subscribe<Item, Err> + IntoShared,
   O: ObservableDispatch<Item, Err, Subscriber<S::Shared, SharedSubscription>>,
 {
   type Unsub = SharedSubscription;
@@ -97,7 +97,7 @@ where
   fn dispatch(self, s: S) { self.0.dispatch(s) }
 }
 
-impl<F> IntoSharedSubscribable for Observable<F>
+impl<F> IntoShared for Observable<F>
 where
   F: Send + Sync + 'static,
 {
@@ -108,7 +108,7 @@ where
 #[derive(Clone)]
 pub struct ForkObservable<F>(F);
 
-impl<F> IntoSharedSubscribable for ForkObservable<F>
+impl<F> IntoShared for ForkObservable<F>
 where
   F: Send + Sync + 'static,
 {
@@ -140,11 +140,11 @@ where
   SharedObservable<O>: ObservableDispatch<
     Item,
     Err,
-    Subscriber<Box<dyn Subscribe<Item, Err> + Send + Sync>, SharedSubscription>,
+    Subscriber<Box<dyn Subscribe<Item, Err> + Send + Sync>, U::Shared>,
   >,
   S: Subscribe<Item, Err> + Send + Sync + 'static,
   Subscriber<S, U>: SubscriptionLike,
-  U: IntoSharedSubscription,
+  U: IntoShared,
 {
   fn dispatch(self, s: Subscriber<S, U>) {
     let subscribe: Box<dyn Subscribe<Item, Err> + Send + Sync> =
