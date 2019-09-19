@@ -5,14 +5,14 @@ pub struct SubscribePure<N>(N);
 
 impl<Item, N> Subscribe<Item, ()> for SubscribePure<N>
 where
-  N: Fn(&Item),
+  N: FnMut(&Item),
 {
   #[inline(always)]
-  fn on_next(&self, value: &Item) { (self.0)(value); }
+  fn on_next(&mut self, value: &Item) { (self.0)(value); }
   #[inline(always)]
-  fn on_error(&self, _err: &()) {}
+  fn on_error(&mut self, _err: &()) {}
   #[inline(always)]
-  fn on_complete(&self) {}
+  fn on_complete(&mut self) {}
 }
 
 impl<N> IntoShared for SubscribePure<N>
@@ -36,7 +36,7 @@ pub trait SubscribablePure<Item, N> {
 impl<Item, S, N> SubscribablePure<Item, N> for S
 where
   S: RawSubscribable<Item, (), SubscribePure<N>>,
-  N: Fn(&Item),
+  N: FnMut(&Item),
 {
   type Unsub = S::Unsub;
   fn subscribe(self, next: N) -> Self::Unsub

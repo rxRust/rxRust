@@ -10,9 +10,9 @@ pub use subscribable_comp::*;
 /// `Item` the type of the elements being emitted.
 /// `Err`the type of the error may propagating.
 pub trait Subscribe<Item, Err> {
-  fn on_next(&self, value: &Item);
-  fn on_error(&self, err: &Err);
-  fn on_complete(&self);
+  fn on_next(&mut self, value: &Item);
+  fn on_error(&mut self, err: &Err);
+  fn on_complete(&mut self);
 }
 
 pub trait IntoShared {
@@ -30,22 +30,22 @@ impl<'a, Item, Err> Subscribe<Item, Err>
   for Box<dyn Subscribe<Item, Err> + 'a>
 {
   #[inline(always)]
-  fn on_next(&self, value: &Item) { (&**self).on_next(value); }
+  fn on_next(&mut self, value: &Item) { (&mut **self).on_next(value); }
   #[inline(always)]
-  fn on_error(&self, err: &Err) { (&**self).on_error(err); }
+  fn on_error(&mut self, err: &Err) { (&mut **self).on_error(err); }
   #[inline(always)]
-  fn on_complete(&self) { (&**self).on_complete(); }
+  fn on_complete(&mut self) { (&mut **self).on_complete(); }
 }
 
 impl<Item, Err> Subscribe<Item, Err>
   for Box<dyn Subscribe<Item, Err> + Send + Sync>
 {
   #[inline(always)]
-  fn on_next(&self, value: &Item) { (&**self).on_next(value); }
+  fn on_next(&mut self, value: &Item) { (&mut **self).on_next(value); }
   #[inline(always)]
-  fn on_error(&self, err: &Err) { (&**self).on_error(err); }
+  fn on_error(&mut self, err: &Err) { (&mut **self).on_error(err); }
   #[inline(always)]
-  fn on_complete(&self) { (&**self).on_complete(); }
+  fn on_complete(&mut self) { (&mut **self).on_complete(); }
 }
 
 impl<Item, Err> IntoShared for Box<dyn Subscribe<Item, Err> + Send + Sync>
