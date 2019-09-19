@@ -46,7 +46,7 @@ use crate::scheduler::Scheduler;
 /// before, but the emissions from `a` are scheduled on a new thread because we
 /// are now using the `NewThread` Scheduler for that specific Observable.
 
-pub trait SubscribeOn<S> {
+pub trait SubscribeOn {
   fn subscribe_on<SD>(self, scheduler: SD) -> SubscribeOnOP<Self, SD>
   where
     Self: Sized,
@@ -63,26 +63,25 @@ pub struct SubscribeOnOP<S, SD> {
   scheduler: SD,
 }
 
-impl<T, S> SubscribeOn<S> for T
-where
-  T: RawSubscribable<S>,
-  S: Subscribe,
-{
-}
+impl<T> SubscribeOn for T {}
 
-impl<S, Sub, SD> RawSubscribable<Sub> for SubscribeOnOP<S, SD>
+impl<Item, Err, Sub, S, SD> RawSubscribable<Item, Err, Sub>
+  for SubscribeOnOP<S, SD>
 where
-  Sub: Subscribe + Send + 'static,
-  S: RawSubscribable<Sub> + Send + 'static,
-  S::Unsub: Subscription + Send + Sync,
+  Sub: Subscribe<Item, Err> + Send + 'static,
+  S: RawSubscribable<Item, Err, Sub, Unsub = SharedSubscription>
+    + Send
+    + 'static,
   SD: Scheduler,
 {
-  type Unsub = SubscriptionProxy;
+  type Unsub = SharedSubscription;
 
   fn raw_subscribe(self, subscribe: Sub) -> Self::Unsub {
     let source = self.source;
     self.scheduler.schedule(
-      move |proxy, _: Option<()>| proxy.proxy(source.raw_subscribe(subscribe)),
+      move |mut proxy, _: Option<()>| {
+        proxy.add(Box::new(source.raw_subscribe(subscribe)))
+      },
       None,
     )
   }
@@ -103,7 +102,7 @@ mod test {
     let c_res = res.clone();
     let thread = Arc::new(Mutex::new(vec![]));
     let c_thread = thread.clone();
-    observable::from_range(1..5)
+    observable::from_iter!(1..5)
       .subscribe_on(Schedulers::NewThread)
       .subscribe(move |v| {
         res.lock().unwrap().push(*v);
@@ -128,7 +127,7 @@ mod test {
   fn unsubscribe_scheduler(scheduler: Schedulers) {
     let emitted = Arc::new(Mutex::new(vec![]));
     let c_emitted = emitted.clone();
-    observable::from_range(0..10)
+    observable::from_iter!(0..10)
       .subscribe_on(scheduler)
       .delay(Duration::from_millis(10))
       .subscribe(move |v| {

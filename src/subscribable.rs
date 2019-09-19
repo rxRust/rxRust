@@ -7,73 +7,12 @@ pub use subscribable_pure::*;
 mod subscribable_comp;
 pub use subscribable_comp::*;
 
-pub enum RxValue<T, E> {
-  Next(T),
-  Err(E),
-  Complete,
-}
-
-impl<T, E> RxValue<T, E> {
-  pub fn as_ref(&self) -> RxValue<&T, &E> {
-    match self {
-      RxValue::Next(n) => RxValue::Next(&n),
-      RxValue::Err(e) => RxValue::Err(&e),
-      RxValue::Complete => RxValue::Complete,
-    }
-  }
-
-  pub fn as_mut(&mut self) -> RxValue<&T, &E> {
-    match self {
-      RxValue::Next(ref mut n) => RxValue::Next(n),
-      RxValue::Err(ref mut e) => RxValue::Err(e),
-      RxValue::Complete => RxValue::Complete,
-    }
-  }
-}
-
-impl<T, E> RxValue<&T, &E>
-where
-  T: Clone,
-  E: Clone,
-{
-  pub fn to_owned(&self) -> RxValue<T, E> {
-    match self {
-      RxValue::Next(n) => RxValue::Next((*n).clone()),
-      RxValue::Err(e) => RxValue::Err((*e).clone()),
-      RxValue::Complete => RxValue::Complete,
-    }
-  }
-}
-
 /// `Item` the type of the elements being emitted.
 /// `Err`the type of the error may propagating.
 pub trait Subscribe<Item, Err> {
-  fn run(&self, v: RxValue<&'_ Item, &'_ Err>);
-}
-
-impl<'a, Item, Err> Subscribe<Item, Err>
-  for Box<dyn Subscribe<Item, Err> + 'a>
-{
-  #[inline(always)]
-  fn run(&self, v: RxValue<&'_ Item, &'_ Err>) { (&**self).run(v) }
-}
-
-impl<Item, Err> Subscribe<Item, Err>
-  for Box<dyn Subscribe<Item, Err> + Send + Sync>
-{
-  #[inline(always)]
-  fn run(&self, v: RxValue<&'_ Item, &'_ Err>) { (&**self).run(v) }
-}
-
-impl<Item, Err> IntoSharedSubscribe<Item, Err>
-  for Box<dyn Subscribe<Item, Err> + Send + Sync>
-where
-  Item: 'static,
-  Err: 'static,
-{
-  type Shared = Self;
-  #[inline(always)]
-  fn to_shared(self) -> Self::Shared { self }
+  fn on_next(&self, value: &Item);
+  fn on_error(&self, err: &Err);
+  fn on_complete(&self);
 }
 
 pub trait IntoSharedSubscribe<Item, Err> {
@@ -90,6 +29,39 @@ pub trait RawSubscribable<Item, Err, Subscribe> {
 pub trait IntoSharedSubscribable {
   type Shared: Sync + Send + 'static;
   fn to_shared(self) -> Self::Shared;
+}
+
+impl<'a, Item, Err> Subscribe<Item, Err>
+  for Box<dyn Subscribe<Item, Err> + 'a>
+{
+  #[inline(always)]
+  fn on_next(&self, value: &Item) { (&**self).on_next(value); }
+  #[inline(always)]
+  fn on_error(&self, err: &Err) { (&**self).on_error(err); }
+  #[inline(always)]
+  fn on_complete(&self) { (&**self).on_complete(); }
+}
+
+impl<Item, Err> Subscribe<Item, Err>
+  for Box<dyn Subscribe<Item, Err> + Send + Sync>
+{
+  #[inline(always)]
+  fn on_next(&self, value: &Item) { (&**self).on_next(value); }
+  #[inline(always)]
+  fn on_error(&self, err: &Err) { (&**self).on_error(err); }
+  #[inline(always)]
+  fn on_complete(&self) { (&**self).on_complete(); }
+}
+
+impl<Item, Err> IntoSharedSubscribe<Item, Err>
+  for Box<dyn Subscribe<Item, Err> + Send + Sync>
+where
+  Item: 'static,
+  Err: 'static,
+{
+  type Shared = Self;
+  #[inline(always)]
+  fn to_shared(self) -> Self::Shared { self }
 }
 
 // todo: define a safe RawSubscribable return a Box<Subscription> let

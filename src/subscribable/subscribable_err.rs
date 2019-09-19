@@ -11,13 +11,12 @@ where
   N: Fn(&Item),
   E: Fn(&Err),
 {
-  fn run(&self, v: RxValue<&'_ Item, &'_ Err>) {
-    match v {
-      RxValue::Next(v) => (self.next)(v),
-      RxValue::Err(e) => (self.error)(e),
-      RxValue::Complete => {}
-    };
-  }
+  #[inline(always)]
+  fn on_next(&self, value: &Item) { (self.next)(value); }
+  #[inline(always)]
+  fn on_error(&self, err: &Err) { (self.error)(err); }
+  #[inline(always)]
+  fn on_complete(&self) {}
 }
 
 impl<Item, Err, N, E> IntoSharedSubscribe<Item, Err> for SubscribeErr<N, E>

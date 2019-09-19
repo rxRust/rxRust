@@ -4,11 +4,11 @@ use futures::prelude::*;
 use futures::task::SpawnExt;
 
 pub(crate) fn thread_pool_schedule<T: Send + Sync + 'static>(
-  task: impl FnOnce(SubscriptionProxy, Option<T>) + Send + 'static,
+  task: impl FnOnce(SharedSubscription, Option<T>) + Send + 'static,
   state: Option<T>,
-) -> SubscriptionProxy {
-  let proxy = SubscriptionProxy::new();
-  let c_proxy = proxy.clone();
+) -> SharedSubscription {
+  let mut subscription = SharedSubscription::default();
+  let c_proxy = subscription.clone();
   let f = future::lazy(move |_| task(c_proxy, state));
   let handle = DEFAULT_RUNTIME
     .lock()
@@ -16,6 +16,6 @@ pub(crate) fn thread_pool_schedule<T: Send + Sync + 'static>(
     .spawn_with_handle(f)
     .expect("spawn task to thread pool failed.");
 
-  proxy.proxy(Box::new(SpawnHandle(Some(handle))));
-  proxy
+  subscription.add(Box::new(SpawnHandle(Some(handle))));
+  subscription
 }
