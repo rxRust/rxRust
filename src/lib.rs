@@ -41,7 +41,7 @@ pub mod prelude {
 }
 
 pub trait Observer<Item, Err> {
-  fn next(&self, v: &Item);
+  fn next(&mut self, v: &Item);
 
   fn complete(&mut self);
 

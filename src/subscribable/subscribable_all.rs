@@ -28,16 +28,16 @@ where
 
 impl<Item, Err, N, E, C> Subscribe<Item, Err> for SubscribeAll<N, E, C>
 where
-  N: Fn(&Item),
-  E: Fn(&Err),
-  C: Fn(),
+  N: FnMut(&Item),
+  E: FnMut(&Err),
+  C: FnMut(),
 {
   #[inline(always)]
-  fn on_next(&self, value: &Item) { (self.next)(value); }
+  fn on_next(&mut self, value: &Item) { (self.next)(value); }
   #[inline(always)]
-  fn on_error(&self, err: &Err) { (self.error)(err); }
+  fn on_error(&mut self, err: &Err) { (self.error)(err); }
   #[inline(always)]
-  fn on_complete(&self) { (self.complete)(); }
+  fn on_complete(&mut self) { (self.complete)(); }
 }
 
 pub trait SubscribableAll<Item, Err, N, E, C> {
@@ -57,9 +57,9 @@ pub trait SubscribableAll<Item, Err, N, E, C> {
 impl<S, Item, Err, N, E, C> SubscribableAll<Item, Err, N, E, C> for S
 where
   S: RawSubscribable<Item, Err, SubscribeAll<N, E, C>>,
-  N: Fn(&Item),
-  E: Fn(&Err),
-  C: Fn(),
+  N: FnMut(&Item),
+  E: FnMut(&Err),
+  C: FnMut(),
 {
   type Unsub = S::Unsub;
   fn subscribe_all(self, next: N, error: E, complete: C) -> Self::Unsub

@@ -37,7 +37,7 @@ where
   S: Subscribe<Item, Err>,
   U: SubscriptionLike,
 {
-  fn next(&self, v: &Item) {
+  fn next(&mut self, v: &Item) {
     if !self.subscription.is_closed() {
       self.subscribe.on_next(v)
     }

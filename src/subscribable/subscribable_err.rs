@@ -12,11 +12,11 @@ where
   E: Fn(&Err),
 {
   #[inline(always)]
-  fn on_next(&self, value: &Item) { (self.next)(value); }
+  fn on_next(&mut self, value: &Item) { (self.next)(value); }
   #[inline(always)]
-  fn on_error(&self, err: &Err) { (self.error)(err); }
+  fn on_error(&mut self, err: &Err) { (self.error)(err); }
   #[inline(always)]
-  fn on_complete(&self) {}
+  fn on_complete(&mut self) {}
 }
 
 impl<N, E> IntoShared for SubscribeErr<N, E>

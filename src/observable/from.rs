@@ -4,12 +4,13 @@ pub macro from_iter($iter:expr) {
   Observable::new(move |mut subscriber| {
     // only for infer type
     let _: &Observer<_, ()> = &subscriber;
-    $iter
-      .into_iter()
-      .take_while(|_| !subscriber.is_closed())
-      .for_each(|v| {
+    for v in $iter.into_iter() {
+      if !subscriber.is_closed() {
         subscriber.next(&v);
-      });
+      } else {
+        break;
+      }
+    }
     if !subscriber.is_closed() {
       subscriber.complete();
     }
@@ -37,69 +38,48 @@ pub macro empty() {
 #[cfg(test)]
 mod test {
   use crate::prelude::*;
-  use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc, Mutex,
-  };
 
   #[test]
   fn from_range() {
-    let hit_count = Arc::new(Mutex::new(0));
-    let completed = Arc::new(AtomicBool::new(false));
-    let c_hit_count = hit_count.clone();
-    let c_completed = completed.clone();
-    observable::from_iter!(0..100).subscribe_complete(
-      move |_| *hit_count.lock().unwrap() += 1,
-      move || completed.store(true, Ordering::Relaxed),
-    );
+    let mut hit_count = 0;
+    let mut completed = false;
+    observable::from_iter!(0..100)
+      .subscribe_complete(|_| hit_count += 1, || completed = true);
 
-    assert_eq!(*c_hit_count.lock().unwrap(), 100);
-    assert_eq!(c_completed.load(Ordering::Relaxed), true);
+    assert_eq!(hit_count, 100);
+    assert_eq!(completed, true);
   }
 
   #[test]
   fn from_vec() {
-    let hit_count = Arc::new(Mutex::new(0));
-    let completed = Arc::new(AtomicBool::new(false));
-    let c_hit_count = hit_count.clone();
-    let c_completed = completed.clone();
-    observable::from_iter!(vec![0; 100]).subscribe_complete(
-      move |_| *hit_count.lock().unwrap() += 1,
-      move || completed.store(true, Ordering::Relaxed),
-    );
+    let mut hit_count = 0;
+    let mut completed = false;
+    observable::from_iter!(vec![0; 100])
+      .subscribe_complete(|_| hit_count += 1, || completed = true);
 
-    assert_eq!(*c_hit_count.lock().unwrap(), 100);
-    assert_eq!(c_completed.load(Ordering::Relaxed), true);
+    assert_eq!(hit_count, 100);
+    assert_eq!(completed, true);
   }
 
   #[test]
   fn of() {
-    let value = Arc::new(Mutex::new(0));
-    let completed = Arc::new(AtomicBool::new(false));
-    let c_value = value.clone();
-    let c_completed = completed.clone();
-    observable::of!(100).subscribe_complete(
-      move |v| *value.lock().unwrap() = *v,
-      move || completed.store(true, Ordering::Relaxed),
-    );
+    let mut value = 0;
+    let mut completed = false;
+    observable::of!(100)
+      .subscribe_complete(|v| value = *v, || completed = true);
 
-    assert_eq!(*c_value.lock().unwrap(), 100);
-    assert_eq!(c_completed.load(Ordering::Relaxed), true);
+    assert_eq!(value, 100);
+    assert_eq!(completed, true);
   }
 
   #[test]
   fn empty() {
-    let hits = Arc::new(Mutex::new(0));
-    let completed = Arc::new(AtomicBool::new(false));
-    let c_hits = hits.clone();
-    let c_completed = completed.clone();
-    observable::empty!().subscribe_complete(
-      move |_| *hits.lock().unwrap() += 1,
-      move || completed.store(true, Ordering::Relaxed),
-    );
+    let mut hits = 0;
+    let mut completed = false;
+    observable::empty!().subscribe_complete(|_| hits += 1, || completed = true);
 
-    assert_eq!(*c_hits.lock().unwrap(), 0);
-    assert_eq!(c_completed.load(Ordering::Relaxed), true);
+    assert_eq!(hits, 0);
+    assert_eq!(completed, true);
   }
 
   #[test]

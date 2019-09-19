@@ -261,7 +261,7 @@ mod test {
   }
   #[test]
   fn support_fork() {
-    let o = Observable::new(|subscriber| {
+    let o = Observable::new(|mut subscriber| {
       subscriber.next(&1);
       subscriber.next(&2);
       subscriber.next(&3);

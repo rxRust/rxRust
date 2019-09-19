@@ -8,15 +8,15 @@ pub struct SubscribeComplete<N, C> {
 
 impl<Item, N, C> Subscribe<Item, ()> for SubscribeComplete<N, C>
 where
-  N: Fn(&Item),
-  C: Fn(),
+  N: FnMut(&Item),
+  C: FnMut(),
 {
   #[inline(always)]
-  fn on_next(&self, value: &Item) { (self.next)(value); }
+  fn on_next(&mut self, value: &Item) { (self.next)(value); }
   #[inline(always)]
-  fn on_error(&self, _err: &()) {}
+  fn on_error(&mut self, _err: &()) {}
   #[inline(always)]
-  fn on_complete(&self) { (self.complete)(); }
+  fn on_complete(&mut self) { (self.complete)(); }
 }
 
 impl<N, C> IntoShared for SubscribeComplete<N, C>
@@ -40,8 +40,8 @@ pub trait SubscribableComplete<Item, N, C> {
 impl<Item, S, N, C> SubscribableComplete<Item, N, C> for S
 where
   S: RawSubscribable<Item, (), SubscribeComplete<N, C>>,
-  N: Fn(&Item),
-  C: Fn(),
+  N: FnMut(&Item),
+  C: FnMut(),
 {
   type Unsub = S::Unsub;
   fn subscribe_complete(self, next: N, complete: C) -> Self::Unsub
