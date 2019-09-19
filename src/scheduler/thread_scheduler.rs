@@ -2,14 +2,14 @@ use crate::prelude::*;
 use std::thread;
 
 pub(crate) fn new_thread_schedule<T: Send + 'static>(
-  task: impl FnOnce(SubscriptionProxy, Option<T>) + Send + 'static,
+  task: impl FnOnce(SharedSubscription, Option<T>) + Send + 'static,
   state: Option<T>,
-) -> SubscriptionProxy {
-  let proxy = SubscriptionProxy::new();
-  let c_proxy = proxy.clone();
+) -> SharedSubscription {
+  let subscription = SharedSubscription::default();
+  let c_proxy = subscription.clone();
   thread::spawn(move || {
-    if !proxy.is_stopped() {
-      task(proxy, state);
+    if !subscription.is_closed() {
+      task(subscription, state);
     }
   });
   c_proxy

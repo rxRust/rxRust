@@ -24,7 +24,8 @@ macro interval_observable($interval: expr) {
     let mut subscription = subscriber.subscription.clone();
     let mut number = 0;
     let f = $interval.for_each(move |_| {
-      subscriber.run(RxValue::Next(&()));
+      subscriber.next(&number);
+      number += 1;
       future::ready(())
     });
     let handle = DEFAULT_RUNTIME

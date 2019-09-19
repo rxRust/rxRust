@@ -1,16 +1,16 @@
 use crate::prelude::*;
 mod thread_scheduler;
 use thread_scheduler::new_thread_schedule;
-// mod thread_pool_scheduler;
-// use thread_pool_scheduler::thread_pool_schedule;
+mod thread_pool_scheduler;
+use thread_pool_scheduler::thread_pool_schedule;
 
 /// A Scheduler is an object to order task and schedule their execution.
 pub trait Scheduler {
-  fn schedule<T: Send + 'static>(
+  fn schedule<T: Send + Sync + 'static>(
     &self,
-    task: impl FnOnce(SubscriptionProxy, Option<T>) + Send + 'static,
+    task: impl FnOnce(SharedSubscription, Option<T>) + Send + 'static,
     state: Option<T>,
-  ) -> SubscriptionProxy;
+  ) -> SharedSubscription;
 }
 
 pub enum Schedulers {
@@ -21,14 +21,14 @@ pub enum Schedulers {
 }
 
 impl Scheduler for Schedulers {
-  fn schedule<T: Send + 'static>(
+  fn schedule<T: Send + Sync + 'static>(
     &self,
-    task: impl FnOnce(SubscriptionProxy, Option<T>) + Send + 'static,
+    task: impl FnOnce(SharedSubscription, Option<T>) + Send + 'static,
     state: Option<T>,
-  ) -> SubscriptionProxy {
+  ) -> SharedSubscription {
     match self {
       Schedulers::NewThread => new_thread_schedule(task, state),
-      Schedulers::ThreadPool => unimplemented!(), // thread_pool_schedule(task, state),
+      Schedulers::ThreadPool => thread_pool_schedule(task, state),
     }
   }
 }
@@ -56,7 +56,7 @@ mod test {
 
   fn sum_of_sqrt(scheduler: Schedulers) {
     let sum = Arc::new(Mutex::new(0.));
-    observable::from_range(0..200)
+    observable::from_iter!(0..200)
       .observe_on(scheduler)
       .subscribe(move |v| {
         *sum.lock().unwrap() =

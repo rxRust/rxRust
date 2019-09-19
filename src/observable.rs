@@ -35,7 +35,6 @@ impl<F> Observable<F> {
 impl<F, S, Item, Err> ObservableDispatch<Item, Err, S> for Observable<F>
 where
   F: FnOnce(S),
-  S: Subscribe<Item, Err>,
 {
   #[inline(always)]
   fn dispatch(self, s: S) { (self.0)(s); }
@@ -57,9 +56,9 @@ where
 {
   type Unsub = LocalSubscription;
   fn raw_subscribe(self, subscribe: S) -> Self::Unsub {
-    let subscriber = Subscriber::from_subscribe(subscribe);
+    let subscriber = Subscriber::new(subscribe);
     let subscription = subscriber.subscription.clone();
-    self.dispatch(subscriber);
+    (self.0)(subscriber);
     subscription
   }
 }
@@ -83,7 +82,7 @@ where
 {
   type Unsub = SharedSubscription;
   fn raw_subscribe(self, subscribe: S) -> Self::Unsub {
-    let subscriber = Subscriber::from_subscribe(subscribe).to_shared();
+    let subscriber = Subscriber::new(subscribe).to_shared();
     let subscription = subscriber.subscription.clone();
     self.0.dispatch(subscriber);
     subscription
@@ -92,10 +91,10 @@ where
 
 impl<O, S, Item, Err> ObservableDispatch<Item, Err, S> for SharedObservable<O>
 where
-  O: ObservableDispatch<Item, Err, S::Shared>,
-  S: IntoSharedSubscribe<Item, Err>,
+  O: ObservableDispatch<Item, Err, S>,
 {
-  fn dispatch(self, s: S) { self.0.dispatch(s.to_shared()) }
+  #[inline(always)]
+  fn dispatch(self, s: S) { self.0.dispatch(s) }
 }
 
 impl<F> IntoSharedSubscribable for Observable<F>
@@ -165,7 +164,7 @@ where
 {
   fn dispatch(self, s: Subscriber<S, U>) {
     let subscribe: Box<dyn Subscribe<Item, Err> + 'a> = Box::new(s.subscribe);
-    (self.0).dispatch(Subscriber {
+    (self.0).0(Subscriber {
       subscribe,
       subscription: s.subscription,
     })
@@ -181,7 +180,7 @@ where
   type Unsub = LocalSubscription;
   fn raw_subscribe(self, subscribe: S) -> Self::Unsub {
     let subscribe: Box<dyn Subscribe<Item, Err> + 'a> = Box::new(subscribe);
-    let subscriber = Subscriber::from_subscribe(subscribe);
+    let subscriber = Subscriber::new(subscribe);
 
     let subscription = subscriber.subscription.clone();
     ((self.0).0)(subscriber);
@@ -205,7 +204,7 @@ where
   fn raw_subscribe(self, subscribe: S) -> Self::Unsub {
     let subscribe: Box<dyn Subscribe<Item, Err> + Send + Sync> =
       Box::new(subscribe);
-    let subscriber = Subscriber::from_subscribe(subscribe).to_shared();
+    let subscriber = Subscriber::new(subscribe).to_shared();
     let subscription = subscriber.subscription.clone();
     self.0.dispatch(subscriber);
     subscription

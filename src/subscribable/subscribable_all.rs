@@ -24,13 +24,12 @@ where
   E: Fn(&Err),
   C: Fn(),
 {
-  fn run(&self, v: RxValue<&'_ Item, &'_ Err>) {
-    match v {
-      RxValue::Next(v) => (self.next)(v),
-      RxValue::Err(e) => (self.error)(e),
-      RxValue::Complete => (self.complete)(),
-    };
-  }
+  #[inline(always)]
+  fn on_next(&self, value: &Item) { (self.next)(value); }
+  #[inline(always)]
+  fn on_error(&self, err: &Err) { (self.error)(err); }
+  #[inline(always)]
+  fn on_complete(&self) { (self.complete)(); }
 }
 
 pub trait SubscribableAll<Item, Err, N, E, C> {

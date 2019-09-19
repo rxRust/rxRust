@@ -7,11 +7,12 @@ impl<Item, N> Subscribe<Item, ()> for SubscribePure<N>
 where
   N: Fn(&Item),
 {
-  fn run(&self, v: RxValue<&'_ Item, &'_ ()>) {
-    if let RxValue::Next(v) = v {
-      (self.0)(v);
-    }
-  }
+  #[inline(always)]
+  fn on_next(&self, value: &Item) { (self.0)(value); }
+  #[inline(always)]
+  fn on_error(&self, _err: &()) {}
+  #[inline(always)]
+  fn on_complete(&self) {}
 }
 
 impl<Item, N> IntoSharedSubscribe<Item, ()> for SubscribePure<N>
