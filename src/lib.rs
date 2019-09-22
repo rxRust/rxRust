@@ -16,7 +16,7 @@ extern crate lazy_static;
 // pub mod function;
 pub mod observable;
 pub mod ops;
-// pub mod scheduler;
+pub mod scheduler;
 // pub mod subject;
 pub mod subscribable;
 pub mod subscriber;
@@ -29,7 +29,7 @@ pub mod prelude {
   pub use crate::ops;
   // pub use crate::subject;
   // pub use crate::subject::Subject;
-  // pub use crate::scheduler::*;
+  pub use crate::scheduler::*;
   pub use crate::subscribable;
   pub use crate::subscribable::*;
   pub use crate::subscriber;

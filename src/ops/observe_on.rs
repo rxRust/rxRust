@@ -1,13 +1,13 @@
 use crate::prelude::*;
 use crate::scheduler::Scheduler;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 /// Re-emits all notifications from source Observable with specified scheduler.
 ///
 /// `ObserveOn` is an operator that accepts a scheduler as the parameter,
 /// which will be used to reschedule notifications emitted by the source
 /// Observable.
-pub trait ObserveOn<Sub> {
+pub trait ObserveOn {
   fn observe_on<SD>(self, scheduler: SD) -> ObserveOnOp<Self, SD>
   where
     Self: Sized,
@@ -24,64 +24,98 @@ pub struct ObserveOnOp<S, SD> {
   scheduler: SD,
 }
 
-impl<S, Sub> ObserveOn<Sub> for S
+impl<S> ObserveOn for S {}
+
+impl<S, SD> IntoShared for ObserveOnOp<S, SD>
 where
-  S: RawSubscribable<Sub>,
-  Sub: Subscribe,
+  S: Send + Sync + 'static,
+  SD: Send + Sync + 'static,
 {
+  type Shared = Self;
+  #[inline(always)]
+  fn to_shared(self) -> Self::Shared { self }
 }
 
-impl<S, Sub, SD> RawSubscribable<Sub> for ObserveOnOp<S, SD>
+impl<S, Item, Err, Sub, SD> RawSubscribable<Item, Err, Sub>
+  for ObserveOnOp<S, SD>
 where
-  Sub: Subscribe + Send + Sync + 'static,
-  S: RawSubscribable<ObserveOnSubscribe<Sub, SD>>,
-  Sub::Item: Clone + Send + Sync + 'static,
-  Sub::Err: Clone + Send + Sync + 'static,
-  SD: Scheduler + Send + Sync + 'static,
-  S::Unsub: Subscription + Send + Sync + 'static,
+  Sub: Subscribe<Item, Err> + IntoShared,
+  S: RawSubscribable<Item, Err, ObserveOnSubscribe<Sub::Shared, SD>>,
+  S::Unsub: IntoShared,
+  <S::Unsub as IntoShared>::Shared: SubscriptionLike,
 {
-  type Unsub = SubscriptionProxy;
+  type Unsub = SharedSubscription;
   fn raw_subscribe(self, subscribe: Sub) -> Self::Unsub {
-    let proxy = SubscriptionProxy::new();
+    let mut subscription = SharedSubscription::default();
     let observe_subscribe = ObserveOnSubscribe {
-      subscribe: Arc::new(subscribe),
-      proxy: proxy.clone(),
+      subscribe: Arc::new(Mutex::new(subscribe.to_shared())),
+      proxy: subscription.clone(),
       scheduler: self.scheduler,
     };
-    let subscription = self.source.raw_subscribe(observe_subscribe);
-    proxy.proxy(subscription);
-    proxy
+    let s = self.source.raw_subscribe(observe_subscribe);
+    subscription.add(Box::new(s.to_shared()));
+    subscription
   }
 }
 
 pub struct ObserveOnSubscribe<Sub, SD> {
-  subscribe: Arc<Sub>,
-  proxy: SubscriptionProxy,
+  subscribe: Arc<Mutex<Sub>>,
+  proxy: SharedSubscription,
   scheduler: SD,
 }
 
-impl<Sub, SD> Subscribe for ObserveOnSubscribe<Sub, SD>
+impl<Sub, SD> IntoShared for ObserveOnSubscribe<Sub, SD>
 where
-  Sub: Subscribe + Send + Sync + 'static,
-  Sub::Item: Clone + Send + 'static,
-  Sub::Err: Clone + Send + 'static,
+  Self: Send + Sync + 'static,
+{
+  type Shared = Self;
+  #[inline(always)]
+  fn to_shared(self) -> Self { self }
+}
+
+impl<Item, Err, Sub, SD> Subscribe<Item, Err> for ObserveOnSubscribe<Sub, SD>
+where
+  Sub: Subscribe<Item, Err> + Send + Sync + 'static,
+  Item: Clone + Send + Sync + 'static,
+  Err: Clone + Send + Sync + 'static,
   SD: Scheduler,
 {
-  type Item = Sub::Item;
-  type Err = Sub::Err;
-
-  fn run(&self, v: RxValue<&'_ Self::Item, &'_ Self::Err>) {
+  fn on_next(&mut self, value: &Item) {
     let s = self.scheduler.schedule(
-      |proxy, value| {
-        if !proxy.is_stopped() {
-          if let Some((rv, subscribe)) = value {
-            subscribe.run(rv.as_ref());
-          }
+      |subscription, state| {
+        if !subscription.is_closed() {
+          let (v, subscribe) = state;
+          subscribe.lock().unwrap().on_next(&v);
         }
       },
-      Some((v.to_owned(), self.subscribe.clone())),
+      (value.clone(), self.subscribe.clone()),
     );
-    self.proxy.proxy(s);
+    self.proxy.add(Box::new(s));
+  }
+  fn on_error(&mut self, err: &Err) {
+    let s = self.scheduler.schedule(
+      |mut subscription, state| {
+        if !subscription.is_closed() {
+          let (e, subscribe) = state;
+          subscribe.lock().unwrap().on_error(&e);
+          subscription.unsubscribe();
+        }
+      },
+      (err.clone(), self.subscribe.clone()),
+    );
+    self.proxy.add(Box::new(s));
+  }
+  fn on_complete(&mut self) {
+    let s = self.scheduler.schedule(
+      |mut subscription, subscribe| {
+        if !subscription.is_closed() {
+          subscribe.lock().unwrap().on_complete();
+          subscription.unsubscribe();
+        }
+      },
+      self.subscribe.clone(),
+    );
+    self.proxy.add(Box::new(s));
   }
 }
 
@@ -102,7 +136,7 @@ mod test {
     let emit_thread = Arc::new(Mutex::new(id));
     let observe_thread = Arc::new(Mutex::new(vec![]));
     let oc = observe_thread.clone();
-    Observable::<_, _, ()>::new(|s| {
+    Observable::new(|mut s| {
       s.next(&1);
       s.next(&1);
       *emit_thread.lock().unwrap() = thread::current().id();
@@ -129,13 +163,13 @@ mod test {
   #[test]
   fn new_thread_unsubscribe() { unsubscribe_scheduler(Schedulers::NewThread) }
 
-  #[test]
-  fn sync_unsubscribe() { unsubscribe_scheduler(Schedulers::Sync) }
+  // #[test]
+  // fn sync_unsubscribe() { unsubscribe_scheduler(Schedulers::Sync) }
 
   fn unsubscribe_scheduler(scheduler: Schedulers) {
     let emitted = Arc::new(Mutex::new(vec![]));
     let c_emitted = emitted.clone();
-    observable::from_range(0..10)
+    observable::from_iter!(0..10)
       .observe_on(scheduler)
       .delay(Duration::from_millis(10))
       .subscribe(move |v| {
