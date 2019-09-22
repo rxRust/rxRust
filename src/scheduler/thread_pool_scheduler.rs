@@ -4,8 +4,8 @@ use futures::prelude::*;
 use futures::task::SpawnExt;
 
 pub(crate) fn thread_pool_schedule<T: Send + Sync + 'static>(
-  task: impl FnOnce(SharedSubscription, Option<T>) + Send + 'static,
-  state: Option<T>,
+  task: impl FnOnce(SharedSubscription, T) + Send + 'static,
+  state: T,
 ) -> SharedSubscription {
   let mut subscription = SharedSubscription::default();
   let c_proxy = subscription.clone();

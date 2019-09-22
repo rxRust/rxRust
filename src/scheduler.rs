@@ -8,8 +8,8 @@ use thread_pool_scheduler::thread_pool_schedule;
 pub trait Scheduler {
   fn schedule<T: Send + Sync + 'static>(
     &self,
-    task: impl FnOnce(SharedSubscription, Option<T>) + Send + 'static,
-    state: Option<T>,
+    task: impl FnOnce(SharedSubscription, T) + Send + 'static,
+    state: T,
   ) -> SharedSubscription;
 }
 
@@ -23,8 +23,8 @@ pub enum Schedulers {
 impl Scheduler for Schedulers {
   fn schedule<T: Send + Sync + 'static>(
     &self,
-    task: impl FnOnce(SharedSubscription, Option<T>) + Send + 'static,
-    state: Option<T>,
+    task: impl FnOnce(SharedSubscription, T) + Send + 'static,
+    state: T,
   ) -> SharedSubscription {
     match self {
       Schedulers::NewThread => new_thread_schedule(task, state),
@@ -51,8 +51,8 @@ mod test {
     b.iter(|| sum_of_sqrt(Schedulers::NewThread))
   }
 
-  #[bench]
-  fn sync(b: &mut Bencher) { b.iter(|| sum_of_sqrt(Schedulers::Sync)) }
+  // #[bench]
+  // fn sync(b: &mut Bencher) { b.iter(|| sum_of_sqrt(Schedulers::Sync)) }
 
   fn sum_of_sqrt(scheduler: Schedulers) {
     let sum = Arc::new(Mutex::new(0.));
