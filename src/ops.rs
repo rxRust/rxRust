@@ -14,5 +14,5 @@ pub use fork::Fork;
 // pub use subscribe_on::SubscribeOn;
 // pub mod observe_on;
 // pub use observe_on::ObserveOn;
-// pub mod delay;
-// pub use delay::Delay;
+pub mod delay;
+pub use delay::Delay;
