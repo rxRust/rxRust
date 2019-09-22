@@ -5,6 +5,7 @@ pub use subscribable_err::*;
 mod subscribable_pure;
 pub use subscribable_pure::*;
 mod subscribable_comp;
+use crate::subscription::SubscriptionLike;
 pub use subscribable_comp::*;
 
 /// `Item` the type of the elements being emitted.
@@ -22,7 +23,7 @@ pub trait IntoShared {
 
 pub trait RawSubscribable<Item, Err, Subscribe> {
   /// a type implemented [`Subscription`]
-  type Unsub;
+  type Unsub: SubscriptionLike;
   fn raw_subscribe(self, subscribe: Subscribe) -> Self::Unsub;
 }
 

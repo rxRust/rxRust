@@ -26,39 +26,47 @@ pub trait Delay {
     }
   }
 }
-impl<S> Delay for S where S: RawSubscribable {}
+impl<S> Delay for S {}
 
 pub struct DelayOp<S> {
   source: S,
   delay: FDelay,
 }
 
-impl<S> RawSubscribable for DelayOp<S>
+impl<S> IntoShared for DelayOp<S> where S: Send + Sync + 'static{
+  type Shared = Self;
+  #[inline(always)]
+  fn to_shared(self) -> Self::Shared{
+    self
+  }
+}
+
+impl<Item, Err, Sub, S> RawSubscribable<Item, Err, Sub> for DelayOp<S>
 where
-  S: RawSubscribable + Send + 'static,
+  S:IntoShared,
+  S::Shared: RawSubscribable<Item, Err, Sub::Shared>,
+  Sub: IntoShared,
+  <S::Shared as RawSubscribable<Item, Err, Sub::Shared>>::Unsub: IntoShared,
+  <<S::Shared as RawSubscribable<Item, Err, Sub::Shared>>::Unsub as IntoShared>::Shared:
+    SubscriptionLike,
 {
-  type Item = S::Item;
-  type Err = S::Err;
-  fn raw_subscribe(
-    self,
-    subscribe: impl RxFn(RxValue<&'_ Self::Item, &'_ Self::Err>)
-    + Send
-    + Sync
-    + 'static,
-  ) -> Box<dyn Subscription + Send + Sync> {
-    let proxy = SubscriptionProxy::new();
-    let c_proxy = proxy.clone();
+  type Unsub = SharedSubscription;
+  fn raw_subscribe(self, subscribe: Sub) -> Self::Unsub {
+    let mut proxy = SharedSubscription::default();
+    let mut c_proxy = proxy.clone();
     let Self { delay, source } = self;
+    let source = source.to_shared();
+    let subscribe = subscribe.to_shared();
     let f = delay.inspect(move |_| {
-      proxy.proxy(source.raw_subscribe(subscribe));
+      proxy.add(Box::new(source.raw_subscribe(subscribe).to_shared()));
     });
     let handle = DEFAULT_RUNTIME
       .lock()
       .unwrap()
       .spawn_with_handle(f)
       .expect("spawn future for delay failed");
-    c_proxy.proxy(Box::new(SpawnHandle(Some(handle))));
-    Box::new(c_proxy)
+    c_proxy.add(Box::new(SpawnHandle(Some(handle))));
+    c_proxy
   }
 }
 
@@ -67,7 +75,7 @@ fn smoke() {
   use std::sync::{Arc, Mutex};
   let value = Arc::new(Mutex::new(0));
   let c_value = value.clone();
-  observable::of(1)
+  observable::of!(1)
     .delay(Duration::from_millis(50))
     .subscribe(move |v| {
       *value.lock().unwrap() = *v;
