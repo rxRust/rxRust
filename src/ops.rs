@@ -10,8 +10,8 @@
 // pub use first::{First, FirstOr};
 pub mod fork;
 pub use fork::Fork;
-// pub mod subscribe_on;
-// pub use subscribe_on::SubscribeOn;
+pub mod subscribe_on;
+pub use subscribe_on::SubscribeOn;
 pub mod observe_on;
 pub use observe_on::ObserveOn;
 pub mod delay;
