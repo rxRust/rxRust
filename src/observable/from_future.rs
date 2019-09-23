@@ -67,16 +67,18 @@ fn smoke() {
   use std::sync::Arc;
   let res = Arc::new(Mutex::new(0));
   let c_res = res.clone();
-  from_future_with_err!(future::ok(1)).subscribe(move |v| {
-    *res.lock().unwrap() = *v;
-  });
-  std::thread::sleep(std::time::Duration::from_millis(1));
-  assert_eq!(*c_res.lock().unwrap(), 1);
+  {
+    from_future_with_err!(future::ok(1)).subscribe(move |v| {
+      *res.lock().unwrap() = *v;
+    });
+    std::thread::sleep(std::time::Duration::from_millis(10));
+    assert_eq!(*c_res.lock().unwrap(), 1);
+  }
   // from_future
   let res = c_res.clone();
   from_future!(future::ready(2)).subscribe(move |v| {
     *res.lock().unwrap() = *v;
   });
-  std::thread::sleep(std::time::Duration::from_millis(1));
+  std::thread::sleep(std::time::Duration::from_millis(10));
   assert_eq!(*c_res.lock().unwrap(), 2);
 }

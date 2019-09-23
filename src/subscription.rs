@@ -15,11 +15,14 @@ pub trait SubscriptionLike {
 }
 
 pub trait LocalSubscriptionLike: SubscriptionLike {
-  fn add(&mut self, subscription: Box<dyn SubscriptionLike>);
+  fn add<S: SubscriptionLike + 'static>(&mut self, subscription: S);
 }
 
 pub trait SharedSubscriptionLike: SubscriptionLike {
-  fn add(&mut self, subscription: Box<dyn SubscriptionLike + Send + Sync>);
+  fn add<S: SubscriptionLike + Send + Sync + 'static>(
+    &mut self,
+    subscription: S,
+  );
 }
 
 enum Teardown<T> {
@@ -76,8 +79,9 @@ impl<T> Default for Inner<T> {
 pub struct LocalSubscription(Rc<RefCell<Inner<Box<dyn SubscriptionLike>>>>);
 
 impl LocalSubscriptionLike for LocalSubscription {
-  fn add(&mut self, mut subscription: Box<dyn SubscriptionLike>) {
-    inner_add!(self.0.borrow_mut(), subscription);
+  fn add<S: SubscriptionLike + 'static>(&mut self, subscription: S) {
+    let mut s = Box::new(subscription);
+    inner_add!(self.0.borrow_mut(), s);
   }
 }
 
@@ -113,9 +117,13 @@ pub struct SharedSubscription(
 );
 
 impl SharedSubscriptionLike for SharedSubscription {
-  fn add(&mut self, mut subscription: Box<dyn SubscriptionLike + Send + Sync>) {
+  fn add<S: SubscriptionLike + Send + Sync + 'static>(
+    &mut self,
+    subscription: S,
+  ) {
     let inner = &mut *self.0.lock().unwrap();
-    inner_add!(inner, subscription);
+    let mut s = Box::new(subscription);
+    inner_add!(inner, s);
   }
 }
 

@@ -53,7 +53,7 @@ where
       scheduler: self.scheduler,
     };
     let s = self.source.raw_subscribe(observe_subscribe);
-    subscription.add(Box::new(s.to_shared()));
+    subscription.add(s.to_shared());
     subscription
   }
 }
@@ -90,7 +90,7 @@ where
       },
       (value.clone(), self.subscribe.clone()),
     );
-    self.proxy.add(Box::new(s));
+    self.proxy.add(s);
   }
   fn on_error(&mut self, err: &Err) {
     let s = self.scheduler.schedule(
@@ -103,7 +103,7 @@ where
       },
       (err.clone(), self.subscribe.clone()),
     );
-    self.proxy.add(Box::new(s));
+    self.proxy.add(s);
   }
   fn on_complete(&mut self) {
     let s = self.scheduler.schedule(
@@ -115,7 +115,7 @@ where
       },
       self.subscribe.clone(),
     );
-    self.proxy.add(Box::new(s));
+    self.proxy.add(s);
   }
 }
 

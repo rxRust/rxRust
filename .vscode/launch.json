@@ -22,10 +22,10 @@
       },
       "args": [],
       "cwd": "${workspaceFolder}",
-      // "sourceMap": {
-      //   "/rustc/": "/Users/${env:USERNAME}/.rustup/toolchains/stable-x86_64-apple-darwin/lib/rustlib/src/rust/",
-      //   "${cwd}/deps/": "/Users/${env:USERNAME}/.cargo/.registry/src/*/",
-      // }
+      "sourceMap": {
+        "/rustc/": "/Users/${env:USERNAME}/.rustup/toolchains/stable-x86_64-apple-darwin/lib/rustlib/src/rust/",
+        "${cwd}/deps/": "/Users/${env:USERNAME}/.cargo/.registry/src/*/",
+      }
     }
   ]
 }

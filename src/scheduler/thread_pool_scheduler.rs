@@ -16,6 +16,6 @@ pub(crate) fn thread_pool_schedule<T: Send + Sync + 'static>(
     .spawn_with_handle(f)
     .expect("spawn task to thread pool failed.");
 
-  subscription.add(Box::new(SpawnHandle(Some(handle))));
+  subscription.add(SpawnHandle(Some(handle)));
   subscription
 }
