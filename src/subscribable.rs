@@ -24,7 +24,7 @@ pub trait IntoShared {
 
 pub trait RawSubscribable<Item, Err, Subscribe> {
   /// a type implemented [`Subscription`]
-  type Unsub: SubscriptionLike;
+  type Unsub: SubscriptionLike + 'static;
   fn raw_subscribe(self, subscribe: Subscribe) -> Self::Unsub;
 }
 

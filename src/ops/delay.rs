@@ -58,14 +58,14 @@ where
     let source = source.to_shared();
     let subscribe = subscribe.to_shared();
     let f = delay.inspect(move |_| {
-      proxy.add(Box::new(source.raw_subscribe(subscribe).to_shared()));
+      proxy.add(source.raw_subscribe(subscribe).to_shared());
     });
     let handle = DEFAULT_RUNTIME
       .lock()
       .unwrap()
       .spawn_with_handle(f)
       .expect("spawn future for delay failed");
-    c_proxy.add(Box::new(SpawnHandle(Some(handle))));
+    c_proxy.add(SpawnHandle(Some(handle)));
     c_proxy
   }
 }

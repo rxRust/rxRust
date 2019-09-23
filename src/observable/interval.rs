@@ -33,10 +33,8 @@ macro interval_observable($interval: expr) {
       .unwrap()
       .spawn_with_handle(f)
       .expect("spawn future for interval failed");
-    let teardown: Box<SubscriptionLike + Send + Sync> =
-      Box::new(SpawnHandle(Some(handle)));
 
-    subscription.add(teardown);
+    subscription.add(SpawnHandle(Some(handle)));
   })
   .to_shared()
 }

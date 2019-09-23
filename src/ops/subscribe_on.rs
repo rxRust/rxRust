@@ -15,8 +15,8 @@ use crate::scheduler::Scheduler;
 /// use rxrust::prelude::*;
 /// use rxrust::ops::{ Merge };
 ///
-/// let a = observable::from_range(1..5);
-/// let b = observable::from_range(5..10);
+/// let a = observable::from_iter!(1..5);
+/// let b = observable::from_iter!(5..10);
 /// a.merge(b).subscribe(|v| print!("{} ", *v));
 /// ```
 ///
@@ -32,8 +32,8 @@ use crate::scheduler::Scheduler;
 /// use rxrust::ops::{ Merge, SubscribeOn };
 /// use std::thread;
 ///
-/// let a = observable::from_range(1..5).subscribe_on(Schedulers::NewThread);
-/// let b = observable::from_range(5..10);
+/// let a = observable::from_iter!(1..5).subscribe_on(Schedulers::NewThread);
+/// let b = observable::from_iter!(5..10);
 /// a.merge(b).subscribe(|v|{
 ///   let handle = thread::current();
 ///   print!("{}({:?}) ", *v, handle.id())
@@ -90,10 +90,8 @@ where
     let source = self.source.to_shared();
     let subscribe = subscribe.to_shared();
     self.scheduler.schedule(
-      move |mut proxy, _: Option<()>| {
-        proxy.add(Box::new(source.raw_subscribe(subscribe)))
-      },
-      None,
+      move |mut proxy, _| proxy.add(source.raw_subscribe(subscribe)),
+      (),
     )
   }
 }

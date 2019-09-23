@@ -1,5 +1,4 @@
 use crate::prelude::*;
-use std::sync::Mutex;
 /// Emits only the first `count` values emitted by the source Observable.
 ///
 /// `take` returns an Observable that emits only the first `count` values
@@ -15,7 +14,7 @@ use std::sync::Mutex;
 ///   ops::{Take}, prelude::*,
 /// };
 ///
-/// observable::from_range(0..10).take(5).subscribe(|v| println!("{}", v));
+/// observable::from_iter!(0..10).take(5).subscribe(|v| println!("{}", v));
 ///
 
 /// // print logs:
@@ -38,62 +37,85 @@ pub trait Take {
   }
 }
 
-impl<'a, O> Take for O where O: RawSubscribable {}
+impl<O> Take for O {}
 
 pub struct TakeOp<S> {
   source: S,
   count: u32,
 }
 
-impl<S> RawSubscribable for TakeOp<S>
+impl<S> IntoShared for TakeOp<S>
 where
-  S: RawSubscribable,
+  S: IntoShared,
 {
-  type Item = S::Item;
-  type Err = S::Err;
-
-  fn raw_subscribe(
-    self,
-    subscribe: impl RxFn(RxValue<&'_ Self::Item, &'_ Self::Err>)
-    + Send
-    + Sync
-    + 'static,
-  ) -> Box<dyn Subscription + Send + Sync> {
-    let hit = Mutex::new(0);
-    let count = self.count;
-    let proxy = SubscriptionProxy::new();
-    let c_proxy = proxy.clone();
-    let sub = self.source.raw_subscribe(RxFnWrapper::new(
-      move |v: RxValue<&'_ _, &'_ _>| match v {
-        RxValue::Next(nv) => {
-          let mut hit = hit.lock().unwrap();
-          if *hit < count {
-            *hit += 1;
-            subscribe.call((RxValue::Next(nv),));
-            if *hit == count {
-              proxy.unsubscribe();
-            }
-          }
-        }
-        vv => subscribe.call((vv,)),
-      },
-    ));
-    c_proxy.proxy(sub);
-    Box::new(c_proxy)
-  }
-}
-
-impl<S> Multicast for TakeOp<S>
-where
-  S: Multicast,
-{
-  type Output = TakeOp<S::Output>;
-  fn multicast(self) -> Self::Output {
+  type Shared = TakeOp<S::Shared>;
+  fn to_shared(self) -> Self::Shared {
     TakeOp {
-      source: self.source.multicast(),
+      source: self.source.to_shared(),
       count: self.count,
     }
   }
+}
+
+impl<Item, Err, Sub, S> RawSubscribable<Item, Err, Sub> for TakeOp<S>
+where
+  S: RawSubscribable<Item, Err, TakeSubscribe<Sub, LocalSubscription>>,
+{
+  type Unsub = LocalSubscription;
+  fn raw_subscribe(self, subscribe: Sub) -> Self::Unsub {
+    let mut subscription = LocalSubscription::default();
+    let sub = self.source.raw_subscribe(TakeSubscribe {
+      subscribe,
+      subscription: subscription.clone(),
+      count: self.count,
+      hits: 0,
+    });
+    subscription.add(sub);
+    subscription
+  }
+}
+
+pub struct TakeSubscribe<S, ST> {
+  subscribe: S,
+  subscription: ST,
+  count: u32,
+  hits: u32,
+}
+
+impl<S, ST> IntoShared for TakeSubscribe<S, ST>
+where
+  S: IntoShared,
+  ST: IntoShared,
+{
+  type Shared = TakeSubscribe<S::Shared, ST::Shared>;
+  fn to_shared(self) -> Self::Shared {
+    TakeSubscribe {
+      subscribe: self.subscribe.to_shared(),
+      subscription: self.subscription.to_shared(),
+      count: self.count,
+      hits: self.hits,
+    }
+  }
+}
+
+impl<S, ST, Item, Err> Subscribe<Item, Err> for TakeSubscribe<S, ST>
+where
+  S: Subscribe<Item, Err>,
+  ST: SubscriptionLike,
+{
+  fn on_next(&mut self, value: &Item) {
+    if self.hits < self.count {
+      self.hits += 1;
+      self.subscribe.on_next(value);
+      if self.hits == self.count {
+        self.subscription.unsubscribe();
+      }
+    }
+  }
+  #[inline(always)]
+  fn on_error(&mut self, err: &Err) { self.subscribe.on_error(err); }
+  #[inline(always)]
+  fn on_complete(&mut self) { self.subscribe.on_complete(); }
 }
 
 impl<S> Fork for TakeOp<S>
@@ -113,44 +135,40 @@ where
 mod test {
   use super::Take;
   use crate::prelude::*;
-  use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc, Mutex,
-  };
 
   #[test]
   fn base_function() {
-    let completed = Arc::new(AtomicBool::new(false));
-    let next_count = Arc::new(Mutex::new(0));
-    let c_completed = completed.clone();
-    let c_next_count = next_count.clone();
+    let mut completed = false;
+    let mut next_count = 0;
 
-    observable::from_range(0..100).take(5).subscribe_complete(
-      move |_| *next_count.lock().unwrap() += 1,
-      move || completed.store(true, Ordering::Relaxed),
-    );
+    observable::from_iter!(0..100)
+      .take(5)
+      .subscribe_complete(|_| next_count += 1, || completed = true);
 
-    assert_eq!(*c_next_count.lock().unwrap(), 5);
-    assert_eq!(c_completed.load(Ordering::Relaxed), true);
+    assert_eq!(next_count, 5);
+    assert_eq!(completed, true);
   }
 
   #[test]
   fn take_support_fork() {
-    let nc1 = Arc::new(Mutex::new(0));
-    let nc2 = Arc::new(Mutex::new(0));
-    let c_nc1 = nc1.clone();
-    let c_nc2 = nc2.clone();
-    let take5 = observable::from_range(0..100).take(5).multicast();
+    let mut nc1 = 0;
+    let mut nc2 = 0;
+    let take5 = observable::from_iter!(0..100).take(5);
     let f1 = take5.fork();
     let f2 = take5.fork();
-    f1.take(5)
-      .fork()
-      .subscribe(move |_| *nc1.lock().unwrap() += 1);
-    f2.take(5)
-      .fork()
-      .subscribe(move |_| *nc2.lock().unwrap() += 1);
+    f1.take(5).fork().subscribe(|_| nc1 += 1);
+    f2.take(5).fork().subscribe(|_| nc2 += 1);
 
-    assert_eq!(*c_nc1.lock().unwrap(), 5);
-    assert_eq!(*c_nc2.lock().unwrap(), 5);
+    assert_eq!(nc1, 5);
+    assert_eq!(nc2, 5);
+  }
+
+  #[test]
+  fn into_shared() {
+    observable::from_iter!(0..100)
+      .take(5)
+      .take(5)
+      .to_shared()
+      .subscribe(|_| {});
   }
 }
