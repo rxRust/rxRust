@@ -2,11 +2,6 @@ use crate::{
   ops::{take::TakeOp, Take},
   prelude::*,
 };
-use std::borrow::Borrow;
-use std::sync::{
-  atomic::{AtomicBool, Ordering},
-  Arc,
-};
 
 /// emit only the first item emitted by an Observable
 pub trait First {
@@ -18,90 +13,102 @@ pub trait First {
   }
 }
 
-impl<'a, O> First for O where O: RawSubscribable {}
+impl<O> First for O {}
 
 /// emit only the first item (or a default item) emitted by an Observable
-pub trait FirstOr {
-  fn first_or(self, default: Self::Item) -> FirstOrOp<TakeOp<Self>, Self::Item>
+pub trait FirstOr<Item> {
+  fn first_or(self, default: Item) -> FirstOrOp<TakeOp<Self>, Item>
   where
-    Self: RawSubscribable + Sized,
+    Self: Sized,
   {
     FirstOrOp {
       source: self.first(),
       default,
-      passed: false,
     }
   }
 }
 
-impl<O> FirstOr for O where O: RawSubscribable {}
+impl<Item, O> FirstOr<Item> for O {}
 
 pub struct FirstOrOp<S, V> {
   source: S,
   default: V,
-  passed: bool,
 }
 
-impl<S, T> RawSubscribable for FirstOrOp<S, T>
+impl<Item, Err, Sub, S, T> RawSubscribable<Item, Err, Sub> for FirstOrOp<S, T>
 where
-  T: Borrow<S::Item> + Send + Sync + 'static,
-  S: RawSubscribable,
+  S: RawSubscribable<Item, Err, FirstOrSubscribe<Sub, T>>,
 {
-  type Item = S::Item;
-  type Err = S::Err;
-  fn raw_subscribe(
-    self,
-    subscribe: impl RxFn(RxValue<&'_ Self::Item, &'_ Self::Err>)
-    + Send
-    + Sync
-    + 'static,
-  ) -> Box<dyn Subscription + Send + Sync> {
-    let default = self.default;
-    let passed = AtomicBool::new(self.passed);
-    self.source.raw_subscribe(RxFnWrapper::new(
-      move |v: RxValue<&'_ _, &'_ _>| match v {
-        RxValue::Next(nv) => {
-          passed.store(true, Ordering::Relaxed);
-          subscribe.call((RxValue::Next(nv),))
-        }
-        err @ RxValue::Err(_) => subscribe.call((err,)),
-        RxValue::Complete => {
-          if !passed.load(Ordering::Relaxed) {
-            subscribe.call((RxValue::Next(default.borrow()),));
-          }
-          subscribe.call((RxValue::Complete,))
-        }
-      },
-    ))
+  type Unsub = S::Unsub;
+  fn raw_subscribe(self, subscribe: Sub) -> Self::Unsub {
+    self.source.raw_subscribe(FirstOrSubscribe {
+      subscribe,
+      default: Some(self.default),
+    })
   }
 }
 
-impl<S, T> Multicast for FirstOrOp<S, T>
+impl<S, V> IntoShared for FirstOrOp<S, V>
 where
-  T: Send + Sync + 'static,
-  S: Multicast<Item = T>,
+  S: IntoShared,
+  V: Send + Sync + 'static,
 {
-  type Output = FirstOrOp<S::Output, Arc<T>>;
-  fn multicast(self) -> Self::Output {
+  type Shared = FirstOrOp<S::Shared, V>;
+  fn to_shared(self) -> Self::Shared {
     FirstOrOp {
-      source: self.source.multicast(),
-      default: Arc::new(self.default),
-      passed: self.passed,
+      source: self.source.to_shared(),
+      default: self.default,
     }
   }
 }
 
-impl<S, T> Fork for FirstOrOp<S, Arc<T>>
+pub struct FirstOrSubscribe<S, T> {
+  default: Option<T>,
+  subscribe: S,
+}
+
+impl<Item, Err, S> Subscribe<Item, Err> for FirstOrSubscribe<S, Item>
 where
-  T: Send + Sync + 'static,
-  S: Fork<Item = T>,
+  S: Subscribe<Item, Err>,
 {
-  type Output = FirstOrOp<S::Output, Arc<T>>;
+  fn on_next(&mut self, value: &Item) {
+    self.subscribe.on_next(value);
+    self.default = None;
+  }
+  #[inline(always)]
+  fn on_error(&mut self, err: &Err) { self.subscribe.on_error(err); }
+  fn on_complete(&mut self) {
+    if let Some(v) = Option::take(&mut self.default) {
+      self.subscribe.on_next(&v)
+    }
+    self.subscribe.on_complete();
+  }
+}
+
+impl<S, V> IntoShared for FirstOrSubscribe<S, V>
+where
+  S: IntoShared,
+  V: Send + Sync + 'static,
+{
+  type Shared = FirstOrSubscribe<S::Shared, V>;
+  fn to_shared(self) -> Self::Shared {
+    FirstOrSubscribe {
+      subscribe: self.subscribe.to_shared(),
+      default: self.default,
+    }
+  }
+}
+
+impl<S, T> Fork for FirstOrOp<S, T>
+where
+  S: Fork,
+  T: Clone,
+{
+  type Output = FirstOrOp<S::Output, T>;
   fn fork(&self) -> Self::Output {
     FirstOrOp {
       source: self.source.fork(),
       default: self.default.clone(),
-      passed: self.passed,
     }
   }
 }
@@ -110,91 +117,88 @@ where
 mod test {
   use super::{First, FirstOr};
   use crate::prelude::*;
-  use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc, Mutex,
-  };
 
   #[test]
   fn first() {
-    let completed = Arc::new(AtomicBool::new(false));
-    let next_count = Arc::new(Mutex::new(0));
-    let c_next_count = next_count.clone();
-    let c_completed = completed.clone();
+    let mut completed = 0;
+    let mut next_count = 0;
 
-    observable::from_range(0..2).first().subscribe_complete(
-      move |_| *next_count.lock().unwrap() += 1,
-      move || completed.store(true, Ordering::Relaxed),
-    );
+    observable::from_iter!(0..2)
+      .first()
+      .subscribe_complete(|_| next_count += 1, || completed += 1);
 
-    assert_eq!(c_completed.load(Ordering::Relaxed), true);
-    assert_eq!(*c_next_count.lock().unwrap(), 1);
+    assert_eq!(completed, 1);
+    assert_eq!(next_count, 1);
   }
 
   #[test]
   fn first_or() {
-    let completed = Arc::new(AtomicBool::new(false));
-    let next_count = Arc::new(Mutex::new(0));
-    let c_completed = completed.clone();
-    let c_next_count = next_count.clone();
+    let mut completed = false;
+    let mut next_count = 0;
 
-    observable::from_range(0..2)
+    observable::from_iter!(0..2)
       .first_or(100)
-      .subscribe_complete(
-        move |_| *next_count.lock().unwrap() += 1,
-        move || completed.store(true, Ordering::Relaxed),
-      );
+      .subscribe_complete(|_| next_count += 1, || completed = true);
 
-    assert_eq!(*c_next_count.lock().unwrap(), 1);
-    assert_eq!(c_completed.load(Ordering::Relaxed), true);
+    assert_eq!(next_count, 1);
+    assert_eq!(completed, true);
 
-    c_completed.store(false, Ordering::Relaxed);
-    let completed = c_completed.clone();
-    let v = Arc::new(Mutex::new(0));
-    let c_v = v.clone();
-    observable::empty().first_or(100).subscribe_complete(
-      move |value| *v.lock().unwrap() = *value,
-      move || completed.store(true, Ordering::Relaxed),
-    );
+    completed = false;
+    let mut v = 0;
+    observable::empty!()
+      .first_or(100)
+      .subscribe_complete(|value| v = *value, || completed = true);
 
-    assert_eq!(c_completed.load(Ordering::Relaxed), true);
-    assert_eq!(*c_v.lock().unwrap(), 100);
+    assert_eq!(completed, true);
+    assert_eq!(v, 100);
   }
 
   #[test]
   fn first_support_fork() {
-    use crate::ops::{First, Fork};
-    let value = Arc::new(Mutex::new(0));
-    let c_value = value.clone();
-    let o = observable::from_range(1..100).first().multicast();
+    let mut value = 0;
+    let mut value2 = 0;
+    let o = observable::from_iter!(1..100).first();
     let o1 = o.fork().first();
     let o2 = o.fork().first();
-    o1.subscribe(move |v| *value.lock().unwrap() = *v);
-    assert_eq!(*c_value.lock().unwrap(), 1);
-
-    *c_value.lock().unwrap() = 0;
-    let value = c_value.clone();
-    o2.subscribe(move |v| *value.lock().unwrap() = *v);
-    assert_eq!(*c_value.lock().unwrap(), 1);
+    o1.subscribe(|v| value = *v);
+    o2.subscribe(|v| value2 = *v);
+    assert_eq!(value, 1);
+    assert_eq!(value2, 1);
   }
   #[test]
   fn first_or_support_fork() {
-    let default = Arc::new(Mutex::new(0));
-    let c_default = default.clone();
+    let mut default = 0;
+    let mut default2 = 0;
     let o = Observable::new(|mut subscriber| {
       subscriber.complete();
-      subscriber.error(&"");
     })
-    .first_or(100)
-    .multicast();
+    .first_or(100);
     let o1 = o.fork().first_or(0);
     let o2 = o.fork().first_or(0);
-    o1.subscribe(move |v| *default.lock().unwrap() = *v);
-    assert_eq!(*c_default.lock().unwrap(), 100);
+    o1.subscribe(|v| default = *v);
+    o2.subscribe(|v| default2 = *v);
+    assert_eq!(default, 100);
+    assert_eq!(default, 100);
+  }
 
-    *c_default.lock().unwrap() = 0;
-    let default = c_default.clone();
-    o2.subscribe(move |v| *default.lock().unwrap() = *v);
-    assert_eq!(*c_default.lock().unwrap(), 100);
+  #[test]
+  fn fork_and_shared() {
+    observable::of!(0)
+      .first_or(0)
+      .fork()
+      .fork()
+      .to_shared()
+      .fork()
+      .to_shared()
+      .subscribe(|_| {});
+
+    observable::of!(0)
+      .first()
+      .fork()
+      .fork()
+      .to_shared()
+      .fork()
+      .to_shared()
+      .subscribe(|_| {});
   }
 }

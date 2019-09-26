@@ -108,6 +108,7 @@ where
       self.hits += 1;
       self.subscribe.on_next(value);
       if self.hits == self.count {
+        self.on_complete();
         self.subscription.unsubscribe();
       }
     }
