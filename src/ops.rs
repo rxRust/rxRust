@@ -6,8 +6,8 @@
 // pub use merge::Merge;
 pub mod take;
 pub use take::Take;
-// pub mod first;
-// pub use first::{First, FirstOr};
+pub mod first;
+pub use first::{First, FirstOr};
 pub mod fork;
 pub use fork::Fork;
 pub mod subscribe_on;

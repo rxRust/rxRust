@@ -33,12 +33,13 @@ pub struct DelayOp<S> {
   delay: FDelay,
 }
 
-impl<S> IntoShared for DelayOp<S> where S: Send + Sync + 'static{
+impl<S> IntoShared for DelayOp<S>
+where
+  S: Send + Sync + 'static,
+{
   type Shared = Self;
   #[inline(always)]
-  fn to_shared(self) -> Self::Shared{
-    self
-  }
+  fn to_shared(self) -> Self::Shared { self }
 }
 
 impl<Item, Err, Sub, S> RawSubscribable<Item, Err, Sub> for DelayOp<S>

@@ -28,9 +28,9 @@ pub macro of($v: expr) {
 }
 
 pub macro empty() {
-  Observable::new(move |mut subscriber| {
+  Observable::new(move |mut subscriber: Subscriber<_, _>| {
     // only for infer type
-    let _: &Observer<(), ()> = &subscriber;
+    let _: &Observer<_, ()> = &subscriber;
     subscriber.complete();
   })
 }
@@ -76,7 +76,8 @@ mod test {
   fn empty() {
     let mut hits = 0;
     let mut completed = false;
-    observable::empty!().subscribe_complete(|_| hits += 1, || completed = true);
+    observable::empty!()
+      .subscribe_complete(|_: &()| hits += 1, || completed = true);
 
     assert_eq!(hits, 0);
     assert_eq!(completed, true);
