@@ -36,25 +36,29 @@ where
   fn to_shared(self) -> Self::Shared { self }
 }
 
-impl<S, Item, Err, Sub, SD> RawSubscribable<Item, Err, Sub>
+impl<S, Item, Err, Sub, U, SD> RawSubscribable<Item, Err, Subscriber<Sub, U>>
   for ObserveOnOp<S, SD>
 where
   Sub: Subscribe<Item, Err> + IntoShared,
-  S: RawSubscribable<Item, Err, ObserveOnSubscribe<Sub::Shared, SD>>,
-  S::Unsub: IntoShared,
-  <S::Unsub as IntoShared>::Shared: SubscriptionLike,
+  S: RawSubscribable<
+    Item,
+    Err,
+    Subscriber<ObserveOnSubscribe<Sub::Shared, SD>, SharedSubscription>,
+  >,
+  U: IntoShared<Shared = SharedSubscription>,
 {
-  type Unsub = SharedSubscription;
-  fn raw_subscribe(self, subscribe: Sub) -> Self::Unsub {
-    let mut subscription = SharedSubscription::default();
+  type Unsub = S::Unsub;
+  fn raw_subscribe(self, subscriber: Subscriber<Sub, U>) -> Self::Unsub {
+    let subscription = subscriber.subscription.to_shared();
     let observe_subscribe = ObserveOnSubscribe {
-      subscribe: Arc::new(Mutex::new(subscribe.to_shared())),
+      subscribe: Arc::new(Mutex::new(subscriber.subscribe.to_shared())),
       proxy: subscription.clone(),
       scheduler: self.scheduler,
     };
-    let s = self.source.raw_subscribe(observe_subscribe);
-    subscription.add(s.to_shared());
-    subscription
+    self.source.raw_subscribe(Subscriber {
+      subscribe: observe_subscribe,
+      subscription: subscription.clone(),
+    })
   }
 }
 

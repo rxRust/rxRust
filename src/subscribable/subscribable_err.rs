@@ -43,7 +43,11 @@ pub trait SubscribableErr<Item, Err, N, E> {
 
 impl<Item, Err, S, N, E> SubscribableErr<Item, Err, N, E> for S
 where
-  S: RawSubscribable<Item, Err, SubscribeErr<N, E>>,
+  S: RawSubscribable<
+    Item,
+    Err,
+    Subscriber<SubscribeErr<N, E>, LocalSubscription>,
+  >,
   N: Fn(&Item),
   E: Fn(&Err),
 {
@@ -52,6 +56,6 @@ where
   where
     Self: Sized,
   {
-    self.raw_subscribe(SubscribeErr { next, error })
+    self.raw_subscribe(Subscriber::new(SubscribeErr { next, error }))
   }
 }

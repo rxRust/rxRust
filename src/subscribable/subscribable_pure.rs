@@ -35,7 +35,7 @@ pub trait SubscribablePure<Item, N> {
 
 impl<Item, S, N> SubscribablePure<Item, N> for S
 where
-  S: RawSubscribable<Item, (), SubscribePure<N>>,
+  S: RawSubscribable<Item, (), Subscriber<SubscribePure<N>, LocalSubscription>>,
   N: FnMut(&Item),
 {
   type Unsub = S::Unsub;
@@ -43,6 +43,6 @@ where
   where
     Self: Sized,
   {
-    self.raw_subscribe(SubscribePure(next))
+    self.raw_subscribe(Subscriber::new(SubscribePure(next)))
   }
 }

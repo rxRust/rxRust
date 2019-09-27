@@ -78,7 +78,6 @@ impl<Item, Err, Sub, S, SD> RawSubscribable<Item, Err, Sub>
   for SubscribeOnOP<S, SD>
 where
   Sub: IntoShared,
-  Sub::Shared: Subscribe<Item, Err>,
   S: IntoShared,
   S::Shared:
     RawSubscribable<Item, Err, Sub::Shared, Unsub = SharedSubscription>,
@@ -86,11 +85,13 @@ where
 {
   type Unsub = SharedSubscription;
 
-  fn raw_subscribe(self, subscribe: Sub) -> Self::Unsub {
+  fn raw_subscribe(self, subscriber: Sub) -> Self::Unsub {
     let source = self.source.to_shared();
-    let subscribe = subscribe.to_shared();
+    let subscriber = subscriber.to_shared();
     self.scheduler.schedule(
-      move |mut proxy, _| proxy.add(source.raw_subscribe(subscribe)),
+      move |mut subscription, _| {
+        subscription.add(source.raw_subscribe(subscriber))
+      },
       (),
     )
   }

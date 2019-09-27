@@ -39,7 +39,11 @@ pub trait SubscribableComplete<Item, N, C> {
 
 impl<Item, S, N, C> SubscribableComplete<Item, N, C> for S
 where
-  S: RawSubscribable<Item, (), SubscribeComplete<N, C>>,
+  S: RawSubscribable<
+    Item,
+    (),
+    Subscriber<SubscribeComplete<N, C>, LocalSubscription>,
+  >,
   N: FnMut(&Item),
   C: FnMut(),
 {
@@ -48,6 +52,6 @@ where
   where
     Self: Sized,
   {
-    self.raw_subscribe(SubscribeComplete { next, complete })
+    self.raw_subscribe(Subscriber::new(SubscribeComplete { next, complete }))
   }
 }

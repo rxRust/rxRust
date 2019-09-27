@@ -57,21 +57,24 @@ where
   }
 }
 
-impl<Item, Err, Sub, S> RawSubscribable<Item, Err, Sub> for TakeOp<S>
+impl<Item, Err, Sub, U, S> RawSubscribable<Item, Err, Subscriber<Sub, U>>
+  for TakeOp<S>
 where
-  S: RawSubscribable<Item, Err, TakeSubscribe<Sub, LocalSubscription>>,
+  S: RawSubscribable<Item, Err, Subscriber<TakeSubscribe<Sub, U>, U>>,
+  U: SubscriptionLike + Clone + 'static,
 {
-  type Unsub = LocalSubscription;
-  fn raw_subscribe(self, subscribe: Sub) -> Self::Unsub {
-    let mut subscription = LocalSubscription::default();
-    let sub = self.source.raw_subscribe(TakeSubscribe {
-      subscribe,
-      subscription: subscription.clone(),
-      count: self.count,
-      hits: 0,
-    });
-    subscription.add(sub);
-    subscription
+  type Unsub = S::Unsub;
+  fn raw_subscribe(self, subscriber: Subscriber<Sub, U>) -> Self::Unsub {
+    let subscriber = Subscriber {
+      subscribe: TakeSubscribe {
+        subscribe: subscriber.subscribe,
+        subscription: subscriber.subscription.clone(),
+        count: self.count,
+        hits: 0,
+      },
+      subscription: subscriber.subscription,
+    };
+    self.source.raw_subscribe(subscriber)
   }
 }
 

@@ -56,7 +56,11 @@ pub trait SubscribableAll<Item, Err, N, E, C> {
 
 impl<S, Item, Err, N, E, C> SubscribableAll<Item, Err, N, E, C> for S
 where
-  S: RawSubscribable<Item, Err, SubscribeAll<N, E, C>>,
+  S: RawSubscribable<
+    Item,
+    Err,
+    Subscriber<SubscribeAll<N, E, C>, LocalSubscription>,
+  >,
   N: FnMut(&Item),
   E: FnMut(&Err),
   C: FnMut(),
@@ -66,10 +70,11 @@ where
   where
     Self: Sized,
   {
-    self.raw_subscribe(SubscribeAll {
+    let subscriber = Subscriber::new(SubscribeAll {
       next,
       error,
       complete,
-    })
+    });
+    self.raw_subscribe(subscriber)
   }
 }
