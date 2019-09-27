@@ -129,7 +129,8 @@ impl SharedSubscriptionLike for SharedSubscription {
 
 impl SubscriptionLike for SharedSubscription {
   fn unsubscribe(&mut self) {
-    inner_unsubscribe!(self.0.lock().unwrap());
+    let mut unsub = self.0.lock().unwrap();
+    inner_unsubscribe!(unsub);
   }
 
   fn is_closed(&self) -> bool { self.0.lock().unwrap().closed }

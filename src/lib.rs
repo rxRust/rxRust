@@ -22,7 +22,6 @@ pub mod subscriber;
 pub mod subscription;
 
 pub mod prelude {
-  // pub use crate::function::*;
   pub use crate::observable;
   pub use crate::observable::Observable;
   pub use crate::ops;
