@@ -4,6 +4,7 @@ use crate::prelude::*;
 /// the public API for consuming the values of an Observable, all Observers get
 /// converted to a Subscriber, in order to provide Subscription capabilities.
 ///
+#[derive(Clone)]
 pub struct Subscriber<S, U> {
   pub(crate) subscription: U,
   pub(crate) subscribe: S,

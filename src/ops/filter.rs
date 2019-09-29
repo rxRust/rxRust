@@ -1,100 +1,120 @@
 use crate::prelude::*;
-use std::sync::Arc;
 
 /// Emit only those items from an Observable that pass a predicate test
 /// # Example
 ///
 /// ```
 /// use rxrust::{ops::Filter, prelude::*};
-/// use std::sync::{Arc, Mutex};
 ///
-/// let coll = Arc::new(Mutex::new(vec![]));
+/// let mut coll = vec![];
 /// let coll_clone = coll.clone();
 ///
-/// observable::from_range(0..10)
+/// observable::from_iter!(0..10)
 ///   .filter(|v| *v % 2 == 0)
-///   .subscribe(move |v| {
-///      coll_clone.lock().unwrap().push(*v);
-///   });
+///   .subscribe(move |v| { coll.push(*v); });
 
 /// // only even numbers received.
-/// assert_eq!(*coll.lock().unwrap(), vec![0, 2, 4, 6, 8]);
+/// assert_eq!(coll, vec![0, 2, 4, 6, 8]);
 /// ```
 
 pub trait Filter<T> {
-  fn filter<N>(self, filter: N) -> FilterOp<Self, RxFnWrapper<N>>
+  fn filter<F>(self, filter: F) -> FilterOp<Self, F>
   where
     Self: Sized,
-    N: Fn(&T) -> bool,
+    F: Fn(&T) -> bool,
   {
     FilterOp {
       source: self,
-      filter: RxFnWrapper::new(filter),
+      filter,
     }
   }
 }
 
-impl<'a, T, O> Filter<T> for O where O: RawSubscribable<Item = T> {}
+impl<'a, T, O> Filter<T> for O {}
 
-pub struct FilterOp<S, N> {
+pub struct FilterOp<S, F> {
   source: S,
-  filter: N,
+  filter: F,
 }
 
-impl<S, F> RawSubscribable for FilterOp<S, F>
+impl<Item, Err, Sub, U, S, F> RawSubscribable<Item, Err, Subscriber<Sub, U>>
+  for FilterOp<S, F>
 where
-  S: RawSubscribable,
-  F: RxFn(&S::Item) -> bool + Send + Sync + 'static,
+  S: RawSubscribable<Item, Err, Subscriber<FilterSubscribe<Sub, F>, U>>,
 {
-  type Err = S::Err;
-  type Item = S::Item;
+  type Unsub = S::Unsub;
 
-  fn raw_subscribe(
-    self,
-    subscribe: impl RxFn(RxValue<&'_ Self::Item, &'_ Self::Err>)
-    + Send
-    + Sync
-    + 'static,
-  ) -> Box<dyn Subscription + Send + Sync> {
+  fn raw_subscribe(self, subscriber: Subscriber<Sub, U>) -> Self::Unsub {
     let filter = self.filter;
-    self.source.raw_subscribe(RxFnWrapper::new(
-      move |v: RxValue<&'_ _, &'_ _>| match v {
-        RxValue::Next(ne) => {
-          if filter.call((ne,)) {
-            subscribe.call((RxValue::Next(ne),))
-          } else {
-          }
-        }
-        vv => subscribe.call((vv,)),
+    self.source.raw_subscribe(Subscriber {
+      subscribe: FilterSubscribe {
+        filter,
+        subscribe: subscriber.subscribe,
       },
-    ))
+      subscription: subscriber.subscription,
+    })
   }
 }
 
-impl<S, F> Multicast for FilterOp<S, F>
+pub struct FilterSubscribe<S, F> {
+  subscribe: S,
+  filter: F,
+}
+
+impl<Item, Err, S, F> Subscribe<Item, Err> for FilterSubscribe<S, F>
 where
-  S: Multicast,
-  F: RxFn(&S::Item) -> bool + Send + Sync + 'static,
+  S: Subscribe<Item, Err>,
+  F: FnMut(&Item) -> bool,
 {
-  type Output = FilterOp<S::Output, Arc<F>>;
-  fn multicast(self) -> Self::Output {
-    FilterOp {
-      source: self.source.multicast(),
-      filter: Arc::new(self.filter),
+  fn on_next(&mut self, value: &Item) {
+    if (self.filter)(value) {
+      self.subscribe.on_next(value)
     }
   }
+  #[inline(always)]
+  fn on_error(&mut self, err: &Err) { self.subscribe.on_error(err); }
+  #[inline(always)]
+  fn on_complete(&mut self) { self.subscribe.on_complete(); }
 }
 
-impl<S, F> Fork for FilterOp<S, Arc<F>>
+impl<S, F> Fork for FilterOp<S, F>
 where
   S: Fork,
-  F: RxFn(&S::Item) -> bool + Send + Sync + 'static,
+  F: Clone,
 {
-  type Output = FilterOp<S::Output, Arc<F>>;
+  type Output = FilterOp<S::Output, F>;
   fn fork(&self) -> Self::Output {
     FilterOp {
       source: self.source.fork(),
       filter: self.filter.clone(),
+    }
+  }
+}
+
+impl<S, F> IntoShared for FilterOp<S, F>
+where
+  S: IntoShared,
+  F: Send + Sync + 'static,
+{
+  type Shared = FilterOp<S::Shared, F>;
+  fn to_shared(self) -> Self::Shared {
+    FilterOp {
+      source: self.source.to_shared(),
+      filter: self.filter,
+    }
+  }
+}
+
+impl<S, F> IntoShared for FilterSubscribe<S, F>
+where
+  S: IntoShared,
+  F: Send + Sync + 'static,
+{
+  type Shared = FilterSubscribe<S::Shared, F>;
+  fn to_shared(self) -> Self::Shared {
+    FilterSubscribe {
+      subscribe: self.subscribe.to_shared(),
+      filter: self.filter,
     }
   }
 }
@@ -104,27 +124,14 @@ mod test {
   use crate::{ops::Filter, prelude::*};
 
   #[test]
-  #[should_panic]
-  fn pass_error() {
-    let mut subject = Subject::new();
-
-    subject
-      .clone()
-      .filter(|_: &&i32| true)
-      .subscribe_err(|_| {}, |err| panic!(*err));
-
-    subject.error(&"");
-  }
-
-  #[test]
-  fn test_fork() {
-    observable::from_range(0..10)
+  fn fork_and_shared() {
+    observable::from_iter!(0..10)
       .filter(|v| v % 2 == 0)
-      .multicast()
       .fork()
+      .to_shared()
       .filter(|_| true)
-      .multicast()
       .fork()
+      .to_shared()
       .subscribe(|_| {});
   }
 }

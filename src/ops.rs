@@ -1,7 +1,7 @@
-// pub mod map;
-// pub use map::Map;
-// pub mod filter;
-// pub use filter::Filter;
+pub mod map;
+pub use map::Map;
+pub mod filter;
+pub use filter::Filter;
 // pub mod merge;
 // pub use merge::Merge;
 pub mod take;
