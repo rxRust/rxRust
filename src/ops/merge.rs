@@ -1,8 +1,7 @@
 use crate::prelude::*;
-use std::sync::{
-  atomic::{AtomicBool, Ordering},
-  Arc,
-};
+use std::cell::RefCell;
+use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
 /// combine two Observables into one by merging their emissions
 ///
@@ -34,102 +33,95 @@ pub trait Merge {
   }
 }
 
-impl<O> Merge for O where O: RawSubscribable {}
+impl<O> Merge for O {}
 
 pub struct MergeOp<S1, S2> {
   source1: S1,
   source2: S2,
 }
 
-impl<S1, S2> RawSubscribable for MergeOp<S1, S2>
+macro merge_subscribe($op:ident, $subscriber:ident, $unsub_type: ty) {{
+  let mut subscription = $subscriber.subscription;
+  let merge_subscribe = Subscriber {
+    subscribe: MergeSubscribe::<_, $unsub_type>::new(
+      $subscriber.subscribe,
+      subscription.clone(),
+    ),
+    subscription: subscription.clone(),
+  };
+  subscription.add($op.source1.raw_subscribe(merge_subscribe.clone()));
+  subscription.add($op.source2.raw_subscribe(merge_subscribe.clone()));
+  subscription
+}}
+
+impl<S1, S2, Item, Err, Sub>
+  RawSubscribable<Item, Err, Subscriber<Sub, LocalSubscription>>
+  for MergeOp<S1, S2>
 where
-  S1: RawSubscribable,
-  S2: RawSubscribable<Item = S1::Item, Err = S1::Err>,
+  S1: RawSubscribable<
+    Item,
+    Err,
+    Subscriber<
+      MergeSubscribe<Rc<RefCell<Sub>>, LocalSubscription>,
+      LocalSubscription,
+    >,
+  >,
+  S2: RawSubscribable<
+    Item,
+    Err,
+    Subscriber<
+      MergeSubscribe<Rc<RefCell<Sub>>, LocalSubscription>,
+      LocalSubscription,
+    >,
+  >,
 {
-  type Err = S1::Err;
-  type Item = S1::Item;
+  type Unsub = LocalSubscription;
 
   fn raw_subscribe(
     self,
-    subscribe: impl RxFn(RxValue<&'_ Self::Item, &'_ Self::Err>)
-    + Send
-    + Sync
-    + 'static,
-  ) -> Box<dyn Subscription + Send + Sync> {
-    let stopped = AtomicBool::new(false);
-    let completed = AtomicBool::new(false);
-
-    let merge_subscribe =
-      move |v: RxValue<&'_ Self::Item, &'_ Self::Err>| match v {
-        nv @ RxValue::Next(_) => subscribe.call((nv,)),
-        ev @ RxValue::Err(_) => {
-          if !stopped.load(Ordering::Relaxed) {
-            stopped.store(true, Ordering::Relaxed);
-            subscribe.call((ev,))
-          }
-        }
-        RxValue::Complete => {
-          if !stopped.load(Ordering::Relaxed)
-            && completed.load(Ordering::Relaxed)
-          {
-            stopped.store(true, Ordering::Relaxed);
-            subscribe.call((RxValue::Complete,));
-          } else {
-            completed.store(true, Ordering::Relaxed);
-          }
-        }
-      };
-
-    let merge_subscribe = Arc::new(RxFnWrapper::new(merge_subscribe));
-
-    let unsub1 = self.source1.raw_subscribe(merge_subscribe.clone());
-    let unsub2 = self.source2.raw_subscribe(merge_subscribe);
-    Box::new(MergeSubscription::new(unsub1, unsub2))
+    subscriber: Subscriber<Sub, LocalSubscription>,
+  ) -> Self::Unsub {
+    merge_subscribe!(self, subscriber, LocalSubscription)
   }
 }
 
-pub struct MergeSubscription {
-  subscription1: Box<dyn Subscription + Send + Sync>,
-  subscription2: Box<dyn Subscription + Send + Sync>,
-}
-
-impl MergeSubscription {
-  fn new(
-    s1: Box<dyn Subscription + Send + Sync>,
-    s2: Box<dyn Subscription + Send + Sync>,
-  ) -> Self {
-    MergeSubscription {
-      subscription1: s1,
-      subscription2: s2,
-    }
-  }
-}
-
-impl<'a> Subscription for MergeSubscription {
-  fn unsubscribe(&mut self) {
-    self.subscription1.unsubscribe();
-    self.subscription2.unsubscribe();
-  }
-}
-
-impl<S1, S2> Multicast for MergeOp<S1, S2>
+impl<S1, S2, Item, Err, Sub>
+  RawSubscribable<Item, Err, Subscriber<Sub, SharedSubscription>>
+  for MergeOp<S1, S2>
 where
-  S1: Multicast,
-  S2: Multicast<Item = S1::Item, Err = S1::Err>,
+  S1: RawSubscribable<
+    Item,
+    Err,
+    Subscriber<
+      MergeSubscribe<Arc<Mutex<Sub>>, SharedSubscription>,
+      SharedSubscription,
+    >,
+    Unsub = SharedSubscription,
+  >,
+  S2: RawSubscribable<
+    Item,
+    Err,
+    Subscriber<
+      MergeSubscribe<Arc<Mutex<Sub>>, SharedSubscription>,
+      SharedSubscription,
+    >,
+    Unsub = SharedSubscription,
+  >,
 {
-  type Output = MergeOp<S1::Output, S2::Output>;
-  fn multicast(self) -> Self::Output {
-    MergeOp {
-      source1: self.source1.multicast(),
-      source2: self.source2.multicast(),
-    }
+  type Unsub = SharedSubscription;
+
+  fn raw_subscribe(
+    self,
+    subscriber: Subscriber<Sub, SharedSubscription>,
+  ) -> Self::Unsub {
+    merge_subscribe!(self, subscriber, SharedSubscription)
   }
 }
 
 impl<S1, S2> Fork for MergeOp<S1, S2>
 where
   S1: Fork,
-  S2: Fork<Item = S1::Item, Err = S1::Err>,
+  S2: Fork,
 {
   type Output = MergeOp<S1::Output, S2::Output>;
   fn fork(&self) -> Self::Output {
@@ -140,10 +132,83 @@ where
   }
 }
 
+#[derive(Clone)]
+pub struct MergeSubscribe<Sub, Unsub> {
+  subscribe: Sub,
+  subscription: Unsub,
+  completed_one: bool,
+}
+
+impl<Sub> MergeSubscribe<Rc<RefCell<Sub>>, LocalSubscription> {
+  fn new(subscribe: Sub, subscription: LocalSubscription) -> Self {
+    MergeSubscribe {
+      subscribe: Rc::new(RefCell::new(subscribe)),
+      subscription,
+      completed_one: false,
+    }
+  }
+}
+
+impl<Sub> MergeSubscribe<Arc<Mutex<Sub>>, SharedSubscription> {
+  fn new(subscribe: Sub, subscription: SharedSubscription) -> Self {
+    MergeSubscribe {
+      subscribe: Arc::new(Mutex::new(subscribe)),
+      subscription,
+      completed_one: false,
+    }
+  }
+}
+
+impl<Item, Err, Sub, Unsub> Subscribe<Item, Err> for MergeSubscribe<Sub, Unsub>
+where
+  Sub: Subscribe<Item, Err>,
+  Unsub: SubscriptionLike,
+{
+  #[inline(always)]
+  fn on_next(&mut self, value: &Item) { self.subscribe.on_next(value); }
+
+  fn on_error(&mut self, err: &Err) {
+    self.subscribe.on_error(err);
+    self.subscription.unsubscribe();
+  }
+
+  fn on_complete(&mut self) {
+    if self.completed_one {
+      self.subscribe.on_complete();
+      self.subscription.unsubscribe();
+    } else {
+      self.completed_one = true;
+    }
+  }
+}
+
+impl<Sub, Unsub> IntoShared for MergeSubscribe<Sub, Unsub>
+where
+  Self: Sync + Send + 'static,
+{
+  type Shared = Self;
+  #[inline(always)]
+  fn to_shared(self) -> Self { self }
+}
+
+impl<S1, S2> IntoShared for MergeOp<S1, S2>
+where
+  S1: IntoShared,
+  S2: IntoShared,
+{
+  type Shared = MergeOp<S1::Shared, S2::Shared>;
+  fn to_shared(self) -> Self::Shared {
+    MergeOp {
+      source1: self.source1.to_shared(),
+      source2: self.source2.to_shared(),
+    }
+  }
+}
+
 #[cfg(test)]
 mod test {
   use crate::{
-    ops::{Filter, Fork, Merge, Multicast},
+    ops::{Filter, Fork, Merge},
     prelude::*,
   };
   use std::sync::{
