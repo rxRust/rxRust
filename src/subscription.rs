@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use std::any::Any;
 use std::cell::RefCell;
 use std::mem::replace;
 use std::rc::Rc;
@@ -12,17 +13,6 @@ pub trait SubscriptionLike {
   fn unsubscribe(&mut self);
 
   fn is_closed(&self) -> bool;
-}
-
-pub trait LocalSubscriptionLike: SubscriptionLike {
-  fn add<S: SubscriptionLike + 'static>(&mut self, subscription: S);
-}
-
-pub trait SharedSubscriptionLike: SubscriptionLike {
-  fn add<S: SubscriptionLike + Send + Sync + 'static>(
-    &mut self,
-    subscription: S,
-  );
 }
 
 enum Teardown<T> {
@@ -78,8 +68,14 @@ impl<T> Default for Inner<T> {
 #[derive(Clone, Default)]
 pub struct LocalSubscription(Rc<RefCell<Inner<Box<dyn SubscriptionLike>>>>);
 
-impl LocalSubscriptionLike for LocalSubscription {
-  fn add<S: SubscriptionLike + 'static>(&mut self, subscription: S) {
+impl LocalSubscription {
+  pub fn add<S: SubscriptionLike + Any + 'static>(&mut self, subscription: S) {
+    let of_any = &subscription as &dyn Any;
+    if let Some(local) = of_any.downcast_ref::<LocalSubscription>() {
+      if Rc::ptr_eq(&self.0, &local.0) {
+        return;
+      }
+    }
     let mut s = Box::new(subscription);
     inner_add!(self.0.borrow_mut(), s);
   }
@@ -116,11 +112,18 @@ pub struct SharedSubscription(
   Arc<Mutex<Inner<Box<dyn SubscriptionLike + Send + Sync>>>>,
 );
 
-impl SharedSubscriptionLike for SharedSubscription {
-  fn add<S: SubscriptionLike + Send + Sync + 'static>(
+impl SharedSubscription {
+  pub fn add<S: SubscriptionLike + Any + Send + Sync + 'static>(
     &mut self,
     subscription: S,
   ) {
+    let of_any = &subscription as &dyn Any;
+    if let Some(local) = of_any.downcast_ref::<SharedSubscription>() {
+      if Arc::ptr_eq(&self.0, &local.0) {
+        return;
+      }
+    }
+
     let inner = &mut *self.0.lock().unwrap();
     let mut s = Box::new(subscription);
     inner_add!(inner, s);
@@ -140,4 +143,11 @@ impl IntoShared for SharedSubscription {
   type Shared = SharedSubscription;
   #[inline(always)]
   fn to_shared(self) -> SharedSubscription { self }
+}
+
+pub trait Publisher<Item, Err>: Observer<Item, Err> + SubscriptionLike {}
+
+impl<Item, Err, T> Publisher<Item, Err> for T where
+  T: Observer<Item, Err> + SubscriptionLike
+{
 }

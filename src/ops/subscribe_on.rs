@@ -34,7 +34,7 @@ use crate::scheduler::Scheduler;
 ///
 /// let a = observable::from_iter!(1..5).subscribe_on(Schedulers::NewThread);
 /// let b = observable::from_iter!(5..10);
-/// a.merge(b).subscribe(|v|{
+/// a.merge(b).to_shared().subscribe(|v|{
 ///   let handle = thread::current();
 ///   print!("{}({:?}) ", *v, handle.id())
 /// });
@@ -74,18 +74,16 @@ where
 
 impl<T> SubscribeOn for T {}
 
-impl<Item, Err, Sub, S, SD> RawSubscribable<Item, Err, Sub>
-  for SubscribeOnOP<S, SD>
+impl<Item, Err, O, S, SD> RawSubscribable<Item, Err, O> for SubscribeOnOP<S, SD>
 where
-  Sub: IntoShared,
+  O: IntoShared,
   S: IntoShared,
-  S::Shared:
-    RawSubscribable<Item, Err, Sub::Shared, Unsub = SharedSubscription>,
+  S::Shared: RawSubscribable<Item, Err, O::Shared, Unsub = SharedSubscription>,
   SD: Scheduler,
 {
   type Unsub = SharedSubscription;
 
-  fn raw_subscribe(self, subscriber: Sub) -> Self::Unsub {
+  fn raw_subscribe(self, subscriber: O) -> Self::Unsub {
     let source = self.source.to_shared();
     let subscriber = subscriber.to_shared();
     self.scheduler.schedule(

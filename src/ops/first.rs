@@ -35,16 +35,16 @@ pub struct FirstOrOp<S, V> {
   default: V,
 }
 
-impl<Item, Err, Sub, U, S, T> RawSubscribable<Item, Err, Subscriber<Sub, U>>
+impl<Item, Err, O, U, S, T> RawSubscribable<Item, Err, Subscriber<O, U>>
   for FirstOrOp<S, T>
 where
-  S: RawSubscribable<Item, Err, Subscriber<FirstOrSubscribe<Sub, T>, U>>,
+  S: RawSubscribable<Item, Err, Subscriber<FirstOrSubscribe<O, T>, U>>,
 {
   type Unsub = S::Unsub;
-  fn raw_subscribe(self, subscriber: Subscriber<Sub, U>) -> Self::Unsub {
+  fn raw_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub {
     let subscriber = Subscriber {
-      subscribe: FirstOrSubscribe {
-        subscribe: subscriber.subscribe,
+      observer: FirstOrSubscribe {
+        observer: subscriber.observer,
         default: Some(self.default),
       },
       subscription: subscriber.subscription,
@@ -69,24 +69,24 @@ where
 
 pub struct FirstOrSubscribe<S, T> {
   default: Option<T>,
-  subscribe: S,
+  observer: S,
 }
 
-impl<Item, Err, S> Subscribe<Item, Err> for FirstOrSubscribe<S, Item>
+impl<Item, Err, S> Observer<Item, Err> for FirstOrSubscribe<S, Item>
 where
-  S: Subscribe<Item, Err>,
+  S: Observer<Item, Err>,
 {
-  fn on_next(&mut self, value: &Item) {
-    self.subscribe.on_next(value);
+  fn next(&mut self, value: &Item) {
+    self.observer.next(value);
     self.default = None;
   }
   #[inline(always)]
-  fn on_error(&mut self, err: &Err) { self.subscribe.on_error(err); }
-  fn on_complete(&mut self) {
+  fn error(&mut self, err: &Err) { self.observer.error(err); }
+  fn complete(&mut self) {
     if let Some(v) = Option::take(&mut self.default) {
-      self.subscribe.on_next(&v)
+      self.observer.next(&v)
     }
-    self.subscribe.on_complete();
+    self.observer.complete();
   }
 }
 
@@ -98,7 +98,7 @@ where
   type Shared = FirstOrSubscribe<S::Shared, V>;
   fn to_shared(self) -> Self::Shared {
     FirstOrSubscribe {
-      subscribe: self.subscribe.to_shared(),
+      observer: self.observer.to_shared(),
       default: self.default,
     }
   }

@@ -5,16 +5,25 @@ use crate::prelude::*;
 /// converted to a Subscriber, in order to provide Subscription capabilities.
 ///
 #[derive(Clone)]
-pub struct Subscriber<S, U> {
+pub struct Subscriber<O, U> {
   pub(crate) subscription: U,
-  pub(crate) subscribe: S,
+  pub(crate) observer: O,
 }
 
-impl<S> Subscriber<S, LocalSubscription> {
-  pub fn new(subscribe: S) -> Self {
+impl<O> Subscriber<O, LocalSubscription> {
+  pub fn local(observer: O) -> Self {
     Subscriber {
-      subscribe,
+      observer,
       subscription: LocalSubscription::default(),
+    }
+  }
+}
+
+impl<O> Subscriber<O, SharedSubscription> {
+  pub fn shared(observer: O) -> Self {
+    Subscriber {
+      observer,
+      subscription: SharedSubscription::default(),
     }
   }
 }
@@ -28,38 +37,38 @@ where
   fn to_shared(self) -> Self::Shared {
     Subscriber {
       subscription: self.subscription.to_shared(),
-      subscribe: self.subscribe.to_shared(),
+      observer: self.observer.to_shared(),
     }
   }
 }
 
 impl<Item, Err, S, U> Observer<Item, Err> for Subscriber<S, U>
 where
-  S: Subscribe<Item, Err>,
+  S: Observer<Item, Err>,
   U: SubscriptionLike,
 {
   fn next(&mut self, v: &Item) {
     if !self.subscription.is_closed() {
-      self.subscribe.on_next(v)
+      self.observer.next(v)
     }
   }
 
   fn complete(&mut self) {
     if !self.subscription.is_closed() {
-      self.subscribe.on_complete();
+      self.observer.complete();
       self.subscription.unsubscribe()
     }
   }
 
   fn error(&mut self, err: &Err) {
     if !self.subscription.is_closed() {
-      self.subscribe.on_error(err);
+      self.observer.error(err);
       self.subscription.unsubscribe();
     }
   }
 }
 
-impl<Sub, U> SubscriptionLike for Subscriber<Sub, U>
+impl<O, U> SubscriptionLike for Subscriber<O, U>
 where
   U: SubscriptionLike,
 {
@@ -116,7 +125,7 @@ mod test {
       next.clone(),
       err.clone(),
       complete.clone(),
-      Subscriber::new(SubscribeAll::new(
+      Subscriber::local(SubscribeAll::new(
         move |_: &_| *next.lock().unwrap() += 1,
         move |_: &_| *err.lock().unwrap() += 1,
         move || *complete.lock().unwrap() += 1,
@@ -166,7 +175,7 @@ mod test {
       next.clone(),
       err.clone(),
       complete.clone(),
-      Subscriber::new(SubscribeAll::new(
+      Subscriber::local(SubscribeAll::new(
         move |_: &_| next.set(next.get() + 1),
         move |_: &_| err.set(err.get() + 1),
         move || complete.set(complete.get() + 1),

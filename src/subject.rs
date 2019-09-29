@@ -1,163 +1,188 @@
 use crate::prelude::*;
-use std::sync::{
-  atomic::{AtomicBool, Ordering},
-  Arc, Mutex,
-};
+use std::cell::RefCell;
+use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
-#[derive(Default)]
-pub struct Subject<Item, Err> {
-  cbs: Arc<Mutex<Vec<RefPublisher<Item, Err>>>>,
-  stopped: Arc<AtomicBool>,
+#[derive(Default, Clone)]
+pub struct Subject<O, S> {
+  observers: O,
+  subscription: S,
 }
 
-type RefPublisher<Item, Err> =
-  Arc<Mutex<Box<dyn Observer<Item, Err> + Send + Sync>>>;
+#[derive(Clone)]
+pub struct LocalPublishers<'a, Item, Err>(
+  Rc<RefCell<Vec<Box<dyn Publisher<Item, Err> + 'a>>>>,
+);
 
-impl<'a, T, E> Clone for Subject<T, E> {
-  fn clone(&self) -> Self {
+#[derive(Clone)]
+pub struct SharedPublishers<Item, Err>(
+  Arc<Mutex<Vec<Box<dyn Publisher<Item, Err> + Send + Sync>>>>,
+);
+
+impl<'a, Item, Err> Subject<LocalPublishers<'a, Item, Err>, LocalSubscription> {
+  pub fn local() -> Self {
     Subject {
-      cbs: self.cbs.clone(),
-      stopped: self.stopped.clone(),
+      observers: LocalPublishers(Rc::new(RefCell::new(vec![]))),
+      subscription: LocalSubscription::default(),
     }
   }
 }
 
-impl<Item, Err> RawSubscribable for Subject<Item, Err> {
-  type Item = Item;
-  type Err = Err;
+impl<Item, Err> Subject<SharedPublishers<Item, Err>, SharedSubscription> {
+  pub fn shared() -> Self {
+    Subject {
+      observers: SharedPublishers(Arc::new(Mutex::new(vec![]))),
+      subscription: SharedSubscription::default(),
+    }
+  }
+}
+impl<Item, Err> IntoShared
+  for Subject<SharedPublishers<Item, Err>, SharedSubscription>
+where
+  Item: 'static,
+  Err: 'static,
+{
+  type Shared = Self;
+  #[inline(always)]
+  fn to_shared(self) -> Self::Shared { self }
+}
 
+impl<'a, Item, Err, O>
+  RawSubscribable<Item, Err, Subscriber<O, LocalSubscription>>
+  for Subject<LocalPublishers<'a, Item, Err>, LocalSubscription>
+where
+  O: Observer<Item, Err> + 'a,
+{
+  type Unsub = LocalSubscription;
   fn raw_subscribe(
-    self,
-    subscribe: impl RxFn(RxValue<&'_ Self::Item, &'_ Self::Err>)
-    + Send
-    + Sync
-    + 'static,
-  ) -> Box<dyn Subscription + Send + Sync> {
-    let subscriber = Subscriber::new(subscribe);
-    let subscription = subscriber.clone_subscription();
-
-    let subscriber: Box<dyn Observer<Item, Err> + Send + Sync> =
-      Box::new(subscriber);
-    let subscriber = Arc::new(Mutex::new(subscriber));
-    self.cbs.lock().unwrap().push(subscriber.clone());
-
-    Box::new(subscription)
+    mut self,
+    subscriber: Subscriber<O, LocalSubscription>,
+  ) -> Self::Unsub {
+    let subscription = subscriber.subscription.clone();
+    self.subscription.add(subscription.clone());
+    self.observers.0.borrow_mut().push(Box::new(subscriber));
+    subscription
   }
 }
 
-impl<Item, Err> Fork for Subject<Item, Err> {
+impl<Item, Err, O, S> RawSubscribable<Item, Err, Subscriber<O, S>>
+  for Subject<SharedPublishers<Item, Err>, SharedSubscription>
+where
+  S: IntoShared<Shared = SharedSubscription> + Clone,
+  O: IntoShared,
+  O::Shared: Observer<Item, Err>,
+{
+  type Unsub = SharedSubscription;
+  fn raw_subscribe(mut self, subscriber: Subscriber<O, S>) -> Self::Unsub {
+    let subscriber = subscriber.to_shared();
+    let subscription = subscriber.subscription.clone();
+    self.subscription.add(subscription.clone());
+    self.observers.0.lock().unwrap().push(Box::new(subscriber));
+    subscription
+  }
+}
+
+impl<O, S> Fork for Subject<O, S>
+where
+  Self: Clone,
+{
   type Output = Self;
   fn fork(&self) -> Self::Output { self.clone() }
 }
 
-impl<Item, Err> Multicast for Subject<Item, Err> {
-  type Output = Self;
-  #[inline(always)]
-  fn multicast(self) -> Self::Output { self }
-}
-
-impl<'a, Item: 'a, Err: 'a> Subject<Item, Err> {
-  pub fn new() -> Self {
-    Subject {
-      cbs: Arc::new(Mutex::new(vec![])),
-      stopped: Arc::new(AtomicBool::new(false)),
+impl<'a, Item, Err, S> Observer<Item, Err>
+  for Subject<LocalPublishers<'a, Item, Err>, S>
+where
+  S: SubscriptionLike,
+{
+  fn next(&mut self, value: &Item) {
+    if !self.subscription.is_closed() {
+      let mut publishers = self.observers.0.borrow_mut();
+      publishers.drain_filter(|subscriber| {
+        subscriber.next(&value);
+        subscriber.is_closed()
+      });
+    }
+  }
+  fn error(&mut self, err: &Err) {
+    if !self.subscription.is_closed() {
+      let mut publishers = self.observers.0.borrow_mut();
+      publishers.iter_mut().for_each(|subscriber| {
+        subscriber.error(err);
+      });
+      publishers.clear();
+      self.subscription.unsubscribe();
+    };
+  }
+  fn complete(&mut self) {
+    if !self.subscription.is_closed() {
+      let mut publishers = self.observers.0.borrow_mut();
+      publishers.iter_mut().for_each(|subscriber| {
+        subscriber.complete();
+      });
+      publishers.clear();
+      self.subscription.unsubscribe();
     }
   }
 }
 
-// completed return or unsubscribe called.
-impl<Item, Err> Observer<Item, Err> for Subject<Item, Err> {
-  fn next(&self, v: &Item) {
-    if self.stopped.load(Ordering::Relaxed) {};
-    let mut publishers = self.cbs.lock().unwrap();
-    publishers.drain_filter(|subscriber| {
-      let subscriber = subscriber.lock().unwrap();
-      subscriber.next(&v);
-      subscriber.is_stopped()
-    });
+impl<Item, Err, S> Observer<Item, Err>
+  for Subject<SharedPublishers<Item, Err>, S>
+where
+  S: SubscriptionLike,
+{
+  fn next(&mut self, value: &Item) {
+    if !self.subscription.is_closed() {
+      let mut publishers = self.observers.0.lock().unwrap();
+      publishers.drain_filter(|subscriber| {
+        subscriber.next(&value);
+        subscriber.is_closed()
+      });
+    }
   }
-
-  #[inline(always)]
-  fn complete(&mut self) { Subject::complete(self) }
-
-  #[inline(always)]
-  fn error(&mut self, err: &Err) { Subject::error(self, err) }
-
-  fn is_stopped(&self) -> bool { self.stopped.load(Ordering::Relaxed) }
-}
-
-impl<Item, Err> Subject<Item, Err> {
-  pub fn from_subscribable(
-    o: impl RawSubscribable<Item = Item, Err = Err>,
-  ) -> Self
-  where
-    Item: 'static,
-    Err: 'static,
-  {
-    let subject = Subject::new();
-    let r_subject = subject.fork();
-    o.raw_subscribe(RxFnWrapper::new(move |v: RxValue<&'_ _, &'_ _>| {
-      match v {
-        RxValue::Next(value) => {
-          subject.next(value);
-        }
-        RxValue::Err(err) => subject.error(err),
-        RxValue::Complete => subject.complete(),
-      };
-    }));
-    r_subject
-  }
-
-  fn complete(&self) {
-    if self.stopped.load(Ordering::Relaxed) {
-      return;
+  fn error(&mut self, err: &Err) {
+    if !self.subscription.is_closed() {
+      let mut publishers = self.observers.0.lock().unwrap();
+      publishers.iter_mut().for_each(|subscriber| {
+        subscriber.error(err);
+      });
+      publishers.clear();
+      self.subscription.unsubscribe();
     };
-    let mut publishers = self.cbs.lock().unwrap();
-    publishers.iter().for_each(|subscriber| {
-      subscriber.lock().unwrap().complete();
-    });
-    publishers.clear();
-
-    self.stopped.store(true, Ordering::Relaxed);
   }
-
-  fn error(&self, err: &Err) {
-    if self.stopped.load(Ordering::Relaxed) {
-      return;
-    };
-    let mut publishers = self.cbs.lock().unwrap();
-    publishers.iter().for_each(|subscriber| {
-      subscriber.lock().unwrap().error(err);
-    });
-    publishers.clear();
-    self.stopped.store(true, Ordering::Relaxed);
+  fn complete(&mut self) {
+    if !self.subscription.is_closed() {
+      let mut publishers = self.observers.0.lock().unwrap();
+      publishers.iter_mut().for_each(|subscriber| {
+        subscriber.complete();
+      });
+      publishers.clear();
+      self.subscription.unsubscribe();
+    }
   }
 }
 
 #[cfg(test)]
 mod test {
-
   use crate::prelude::*;
-  use std::sync::{Arc, Mutex};
 
   #[test]
   fn base_data_flow() {
-    let i = Arc::new(Mutex::new(0));
-    let c_i = i.clone();
-    let broadcast = Subject::<i32, ()>::new();
-    broadcast
-      .clone()
-      .subscribe(move |v: &i32| *i.lock().unwrap() = *v * 2);
-    broadcast.next(&1);
-    assert_eq!(*c_i.lock().unwrap(), 2);
+    let mut i = 0;
+    {
+      let mut broadcast = Subject::local();
+      broadcast.fork().subscribe(|v: &i32| i = *v * 2);
+      broadcast.next(&1);
+    }
+    assert_eq!(i, 2);
   }
 
   #[test]
   #[should_panic]
   fn error() {
-    let broadcast = Subject::new();
+    let mut broadcast = Subject::local();
     broadcast
-      .clone()
+      .fork()
       .subscribe_err(|_: &i32| {}, |e: &_| panic!(*e));
     broadcast.next(&1);
 
@@ -166,29 +191,25 @@ mod test {
 
   #[test]
   fn unsubscribe() {
-    let i = Arc::new(Mutex::new(0));
-    let c_i = i.clone();
-    let subject = Subject::<_, ()>::new();
+    let mut i = 0;
+
+    {
+      let mut subject = Subject::local();
+      subject.fork().subscribe(|v| i = *v).unsubscribe();
+      subject.next(&100);
+    }
+
+    assert_eq!(i, 0);
+  }
+
+  #[test]
+  fn fork_and_shared() {
+    let subject = Subject::shared();
     subject
-      .clone()
-      .subscribe(move |v| *i.lock().unwrap() = *v)
-      .unsubscribe();
-    subject.next(&100);
-    assert_eq!(*c_i.lock().unwrap(), 0);
-  }
-
-  #[test]
-  fn fork() {
-    let subject = Subject::<(), ()>::new();
-    subject.fork().fork().fork().fork();
-  }
-
-  #[test]
-  #[should_panic]
-  fn from_subscribable() {
-    let o = Subject::new();
-    Subject::<(), ()>::from_subscribable(o.clone())
-      .subscribe(|_| panic!("hit next"));
-    o.next(&());
+      .fork()
+      .to_shared()
+      .fork()
+      .to_shared()
+      .subscribe(|_: &()| {});
   }
 }

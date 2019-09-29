@@ -26,18 +26,18 @@ where
   fn to_shared(self) -> Self::Shared { self }
 }
 
-impl<Item, Err, N, E, C> Subscribe<Item, Err> for SubscribeAll<N, E, C>
+impl<Item, Err, N, E, C> Observer<Item, Err> for SubscribeAll<N, E, C>
 where
   N: FnMut(&Item),
   E: FnMut(&Err),
   C: FnMut(),
 {
   #[inline(always)]
-  fn on_next(&mut self, value: &Item) { (self.next)(value); }
+  fn next(&mut self, value: &Item) { (self.next)(value); }
   #[inline(always)]
-  fn on_error(&mut self, err: &Err) { (self.error)(err); }
+  fn error(&mut self, err: &Err) { (self.error)(err); }
   #[inline(always)]
-  fn on_complete(&mut self) { (self.complete)(); }
+  fn complete(&mut self) { (self.complete)(); }
 }
 
 pub trait SubscribableAll<Item, Err, N, E, C> {
@@ -70,7 +70,7 @@ where
   where
     Self: Sized,
   {
-    let subscriber = Subscriber::new(SubscribeAll {
+    let subscriber = Subscriber::local(SubscribeAll {
       next,
       error,
       complete,

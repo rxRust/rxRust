@@ -11,7 +11,7 @@ use crate::prelude::*;
 ///
 /// observable::from_iter!(0..10)
 ///   .filter(|v| *v % 2 == 0)
-///   .subscribe(move |v| { coll.push(*v); });
+///   .subscribe(|v| { coll.push(*v); });
 
 /// // only even numbers received.
 /// assert_eq!(coll, vec![0, 2, 4, 6, 8]);
@@ -37,19 +37,19 @@ pub struct FilterOp<S, F> {
   filter: F,
 }
 
-impl<Item, Err, Sub, U, S, F> RawSubscribable<Item, Err, Subscriber<Sub, U>>
+impl<Item, Err, O, U, S, F> RawSubscribable<Item, Err, Subscriber<O, U>>
   for FilterOp<S, F>
 where
-  S: RawSubscribable<Item, Err, Subscriber<FilterSubscribe<Sub, F>, U>>,
+  S: RawSubscribable<Item, Err, Subscriber<FilterSubscribe<O, F>, U>>,
 {
   type Unsub = S::Unsub;
 
-  fn raw_subscribe(self, subscriber: Subscriber<Sub, U>) -> Self::Unsub {
+  fn raw_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub {
     let filter = self.filter;
     self.source.raw_subscribe(Subscriber {
-      subscribe: FilterSubscribe {
+      observer: FilterSubscribe {
         filter,
-        subscribe: subscriber.subscribe,
+        observer: subscriber.observer,
       },
       subscription: subscriber.subscription,
     })
@@ -57,24 +57,24 @@ where
 }
 
 pub struct FilterSubscribe<S, F> {
-  subscribe: S,
+  observer: S,
   filter: F,
 }
 
-impl<Item, Err, S, F> Subscribe<Item, Err> for FilterSubscribe<S, F>
+impl<Item, Err, S, F> Observer<Item, Err> for FilterSubscribe<S, F>
 where
-  S: Subscribe<Item, Err>,
+  S: Observer<Item, Err>,
   F: FnMut(&Item) -> bool,
 {
-  fn on_next(&mut self, value: &Item) {
+  fn next(&mut self, value: &Item) {
     if (self.filter)(value) {
-      self.subscribe.on_next(value)
+      self.observer.next(value)
     }
   }
   #[inline(always)]
-  fn on_error(&mut self, err: &Err) { self.subscribe.on_error(err); }
+  fn error(&mut self, err: &Err) { self.observer.error(err); }
   #[inline(always)]
-  fn on_complete(&mut self) { self.subscribe.on_complete(); }
+  fn complete(&mut self) { self.observer.complete(); }
 }
 
 impl<S, F> Fork for FilterOp<S, F>
@@ -113,7 +113,7 @@ where
   type Shared = FilterSubscribe<S::Shared, F>;
   fn to_shared(self) -> Self::Shared {
     FilterSubscribe {
-      subscribe: self.subscribe.to_shared(),
+      observer: self.observer.to_shared(),
       filter: self.filter,
     }
   }

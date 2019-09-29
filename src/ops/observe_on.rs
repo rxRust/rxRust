@@ -36,39 +36,39 @@ where
   fn to_shared(self) -> Self::Shared { self }
 }
 
-impl<S, Item, Err, Sub, U, SD> RawSubscribable<Item, Err, Subscriber<Sub, U>>
+impl<S, Item, Err, O, U, SD> RawSubscribable<Item, Err, Subscriber<O, U>>
   for ObserveOnOp<S, SD>
 where
-  Sub: Subscribe<Item, Err> + IntoShared,
+  O: Observer<Item, Err> + IntoShared,
   S: RawSubscribable<
     Item,
     Err,
-    Subscriber<ObserveOnSubscribe<Sub::Shared, SD>, SharedSubscription>,
+    Subscriber<ObserveOnSubscribe<O::Shared, SD>, SharedSubscription>,
   >,
   U: IntoShared<Shared = SharedSubscription>,
 {
   type Unsub = S::Unsub;
-  fn raw_subscribe(self, subscriber: Subscriber<Sub, U>) -> Self::Unsub {
+  fn raw_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub {
     let subscription = subscriber.subscription.to_shared();
     let observe_subscribe = ObserveOnSubscribe {
-      subscribe: Arc::new(Mutex::new(subscriber.subscribe.to_shared())),
+      observer: Arc::new(Mutex::new(subscriber.observer.to_shared())),
       proxy: subscription.clone(),
       scheduler: self.scheduler,
     };
     self.source.raw_subscribe(Subscriber {
-      subscribe: observe_subscribe,
+      observer: observe_subscribe,
       subscription: subscription.clone(),
     })
   }
 }
 
-pub struct ObserveOnSubscribe<Sub, SD> {
-  subscribe: Arc<Mutex<Sub>>,
+pub struct ObserveOnSubscribe<O, SD> {
+  observer: Arc<Mutex<O>>,
   proxy: SharedSubscription,
   scheduler: SD,
 }
 
-impl<Sub, SD> IntoShared for ObserveOnSubscribe<Sub, SD>
+impl<O, SD> IntoShared for ObserveOnSubscribe<O, SD>
 where
   Self: Send + Sync + 'static,
 {
@@ -77,47 +77,47 @@ where
   fn to_shared(self) -> Self { self }
 }
 
-impl<Item, Err, Sub, SD> Subscribe<Item, Err> for ObserveOnSubscribe<Sub, SD>
+impl<Item, Err, O, SD> Observer<Item, Err> for ObserveOnSubscribe<O, SD>
 where
-  Sub: Subscribe<Item, Err> + Send + Sync + 'static,
+  O: Observer<Item, Err> + Send + Sync + 'static,
   Item: Clone + Send + Sync + 'static,
   Err: Clone + Send + Sync + 'static,
   SD: Scheduler,
 {
-  fn on_next(&mut self, value: &Item) {
+  fn next(&mut self, value: &Item) {
     let s = self.scheduler.schedule(
       |subscription, state| {
         if !subscription.is_closed() {
-          let (v, subscribe) = state;
-          subscribe.lock().unwrap().on_next(&v);
+          let (v, observer) = state;
+          observer.lock().unwrap().next(&v);
         }
       },
-      (value.clone(), self.subscribe.clone()),
+      (value.clone(), self.observer.clone()),
     );
     self.proxy.add(s);
   }
-  fn on_error(&mut self, err: &Err) {
+  fn error(&mut self, err: &Err) {
     let s = self.scheduler.schedule(
       |mut subscription, state| {
         if !subscription.is_closed() {
-          let (e, subscribe) = state;
-          subscribe.lock().unwrap().on_error(&e);
+          let (e, observer) = state;
+          observer.lock().unwrap().error(&e);
           subscription.unsubscribe();
         }
       },
-      (err.clone(), self.subscribe.clone()),
+      (err.clone(), self.observer.clone()),
     );
     self.proxy.add(s);
   }
-  fn on_complete(&mut self) {
+  fn complete(&mut self) {
     let s = self.scheduler.schedule(
-      |mut subscription, subscribe| {
+      |mut subscription, observer| {
         if !subscription.is_closed() {
-          subscribe.lock().unwrap().on_complete();
+          observer.lock().unwrap().complete();
           subscription.unsubscribe();
         }
       },
-      self.subscribe.clone(),
+      self.observer.clone(),
     );
     self.proxy.add(s);
   }
