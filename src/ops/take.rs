@@ -57,17 +57,17 @@ where
   }
 }
 
-impl<Item, Err, Sub, U, S> RawSubscribable<Item, Err, Subscriber<Sub, U>>
+impl<Item, Err, O, U, S> RawSubscribable<Item, Err, Subscriber<O, U>>
   for TakeOp<S>
 where
-  S: RawSubscribable<Item, Err, Subscriber<TakeSubscribe<Sub, U>, U>>,
+  S: RawSubscribable<Item, Err, Subscriber<TakeSubscribe<O, U>, U>>,
   U: SubscriptionLike + Clone + 'static,
 {
   type Unsub = S::Unsub;
-  fn raw_subscribe(self, subscriber: Subscriber<Sub, U>) -> Self::Unsub {
+  fn raw_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub {
     let subscriber = Subscriber {
-      subscribe: TakeSubscribe {
-        subscribe: subscriber.subscribe,
+      observer: TakeSubscribe {
+        observer: subscriber.observer,
         subscription: subscriber.subscription.clone(),
         count: self.count,
         hits: 0,
@@ -78,9 +78,9 @@ where
   }
 }
 
-pub struct TakeSubscribe<S, ST> {
-  subscribe: S,
-  subscription: ST,
+pub struct TakeSubscribe<O, S> {
+  observer: O,
+  subscription: S,
   count: u32,
   hits: u32,
 }
@@ -93,7 +93,7 @@ where
   type Shared = TakeSubscribe<S::Shared, ST::Shared>;
   fn to_shared(self) -> Self::Shared {
     TakeSubscribe {
-      subscribe: self.subscribe.to_shared(),
+      observer: self.observer.to_shared(),
       subscription: self.subscription.to_shared(),
       count: self.count,
       hits: self.hits,
@@ -101,25 +101,25 @@ where
   }
 }
 
-impl<S, ST, Item, Err> Subscribe<Item, Err> for TakeSubscribe<S, ST>
+impl<S, ST, Item, Err> Observer<Item, Err> for TakeSubscribe<S, ST>
 where
-  S: Subscribe<Item, Err>,
+  S: Observer<Item, Err>,
   ST: SubscriptionLike,
 {
-  fn on_next(&mut self, value: &Item) {
+  fn next(&mut self, value: &Item) {
     if self.hits < self.count {
       self.hits += 1;
-      self.subscribe.on_next(value);
+      self.observer.next(value);
       if self.hits == self.count {
-        self.on_complete();
+        self.complete();
         self.subscription.unsubscribe();
       }
     }
   }
   #[inline(always)]
-  fn on_error(&mut self, err: &Err) { self.subscribe.on_error(err); }
+  fn error(&mut self, err: &Err) { self.observer.error(err); }
   #[inline(always)]
-  fn on_complete(&mut self) { self.subscribe.on_complete(); }
+  fn complete(&mut self) { self.observer.complete(); }
 }
 
 impl<S> Fork for TakeOp<S>

@@ -36,18 +36,18 @@ pub struct MapOp<S, M> {
   func: M,
 }
 
-impl<Item, Err, Sub, U, S, B, M> RawSubscribable<Item, Err, Subscriber<Sub, U>>
+impl<Item, Err, O, U, S, B, M> RawSubscribable<Item, Err, Subscriber<O, U>>
   for MapOp<S, M>
 where
-  S: RawSubscribable<B, Err, Subscriber<MapSubscribe<Sub, M>, U>>,
+  S: RawSubscribable<B, Err, Subscriber<MapSubscribe<O, M>, U>>,
   M: FnMut(&Item) -> B,
 {
   type Unsub = S::Unsub;
-  fn raw_subscribe(self, subscriber: Subscriber<Sub, U>) -> Self::Unsub {
+  fn raw_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub {
     let map = self.func;
     self.source.raw_subscribe(Subscriber {
-      subscribe: MapSubscribe {
-        subscribe: subscriber.subscribe,
+      observer: MapSubscribe {
+        observer: subscriber.observer,
         map,
       },
       subscription: subscriber.subscription,
@@ -56,24 +56,22 @@ where
 }
 
 pub struct MapSubscribe<S, M> {
-  subscribe: S,
+  observer: S,
   map: M,
 }
 
-impl<Item, Err, S, M, B> Subscribe<Item, Err> for MapSubscribe<S, M>
+impl<Item, Err, S, M, B> Observer<Item, Err> for MapSubscribe<S, M>
 where
-  S: Subscribe<B, Err>,
+  S: Observer<B, Err>,
   M: FnMut(&Item) -> B,
 {
-  fn on_next(&mut self, value: &Item) {
-    self.subscribe.on_next(&(self.map)(value))
-  }
+  fn next(&mut self, value: &Item) { self.observer.next(&(self.map)(value)) }
 
   #[inline(always)]
-  fn on_error(&mut self, err: &Err) { self.subscribe.on_error(err); }
+  fn error(&mut self, err: &Err) { self.observer.error(err); }
 
   #[inline(always)]
-  fn on_complete(&mut self) { self.subscribe.on_complete(); }
+  fn complete(&mut self) { self.observer.complete(); }
 }
 
 impl<S, M> Fork for MapOp<S, M>
@@ -98,7 +96,7 @@ where
   type Shared = MapSubscribe<S::Shared, M>;
   fn to_shared(self) -> Self::Shared {
     MapSubscribe {
-      subscribe: self.subscribe.to_shared(),
+      observer: self.observer.to_shared(),
       map: self.map,
     }
   }
@@ -123,18 +121,18 @@ pub struct MapReturnRefOp<S, M> {
   func: M,
 }
 
-impl<Item, Err, Sub, U, S, B, M> RawSubscribable<Item, Err, Subscriber<Sub, U>>
+impl<Item, Err, O, U, S, B, M> RawSubscribable<Item, Err, Subscriber<O, U>>
   for MapReturnRefOp<S, M>
 where
-  S: RawSubscribable<B, Err, Subscriber<MapReturnRefSubscribe<Sub, M>, U>>,
+  S: RawSubscribable<B, Err, Subscriber<MapReturnRefSubscribe<O, M>, U>>,
   M: for<'r> FnMut(&'r Item) -> &'r B,
 {
   type Unsub = S::Unsub;
-  fn raw_subscribe(self, subscriber: Subscriber<Sub, U>) -> Self::Unsub {
+  fn raw_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub {
     let map = self.func;
     self.source.raw_subscribe(Subscriber {
-      subscribe: MapReturnRefSubscribe {
-        subscribe: subscriber.subscribe,
+      observer: MapReturnRefSubscribe {
+        observer: subscriber.observer,
         map,
       },
       subscription: subscriber.subscription,
@@ -142,25 +140,23 @@ where
   }
 }
 
-pub struct MapReturnRefSubscribe<S, M> {
-  subscribe: S,
+pub struct MapReturnRefSubscribe<O, M> {
+  observer: O,
   map: M,
 }
 
-impl<Item, Err, S, M, B> Subscribe<Item, Err> for MapReturnRefSubscribe<S, M>
+impl<Item, Err, O, M, B> Observer<Item, Err> for MapReturnRefSubscribe<O, M>
 where
-  S: Subscribe<B, Err>,
+  O: Observer<B, Err>,
   M: for<'r> FnMut(&'r Item) -> &'r B,
 {
-  fn on_next(&mut self, value: &Item) {
-    self.subscribe.on_next(&(self.map)(value))
-  }
+  fn next(&mut self, value: &Item) { self.observer.next(&(self.map)(value)) }
 
   #[inline(always)]
-  fn on_error(&mut self, err: &Err) { self.subscribe.on_error(err); }
+  fn error(&mut self, err: &Err) { self.observer.error(err); }
 
   #[inline(always)]
-  fn on_complete(&mut self) { self.subscribe.on_complete(); }
+  fn complete(&mut self) { self.observer.complete(); }
 }
 
 impl<S, M> Fork for MapReturnRefOp<S, M>
@@ -177,15 +173,15 @@ where
   }
 }
 
-impl<S, M> IntoShared for MapReturnRefSubscribe<S, M>
+impl<O, M> IntoShared for MapReturnRefSubscribe<O, M>
 where
-  S: IntoShared,
+  O: IntoShared,
   M: Send + Sync + 'static,
 {
-  type Shared = MapReturnRefSubscribe<S::Shared, M>;
+  type Shared = MapReturnRefSubscribe<O::Shared, M>;
   fn to_shared(self) -> Self::Shared {
     MapReturnRefSubscribe {
-      subscribe: self.subscribe.to_shared(),
+      observer: self.observer.to_shared(),
       map: self.map,
     }
   }

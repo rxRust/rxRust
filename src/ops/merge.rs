@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 ///
 /// ```
 /// # use rxrust::{ ops::{Filter, Merge}, prelude::*};
-/// let numbers = Subject::<i32, ()>::new();
+/// let numbers = Subject::local();
 /// // crate a even stream by filter
 /// let even = numbers.fork().filter(|v| *v % 2 == 0);
 /// // crate an odd stream by filter
@@ -19,7 +19,7 @@ use std::sync::{Arc, Mutex};
 /// let merged = even.merge(odd);
 ///
 /// // attach observers
-/// merged.subscribe(|v| println!("{} ", v));
+/// merged.subscribe(|v: &i32| println!("{} ", v));
 /// ```
 pub trait Merge {
   fn merge<S>(self, o: S) -> MergeOp<Self, S>
@@ -40,81 +40,76 @@ pub struct MergeOp<S1, S2> {
   source2: S2,
 }
 
-macro merge_subscribe($op:ident, $subscriber:ident, $unsub_type: ty) {{
-  let mut subscription = $subscriber.subscription;
-  let merge_subscribe = Subscriber {
-    subscribe: MergeSubscribe::<_, $unsub_type>::new(
-      $subscriber.subscribe,
-      subscription.clone(),
-    ),
-    subscription: subscription.clone(),
-  };
-  subscription.add($op.source1.raw_subscribe(merge_subscribe.clone()));
-  subscription.add($op.source2.raw_subscribe(merge_subscribe.clone()));
+pub struct SharedMergeOp<S1,S2>(MergeOp<S1, S2>);
+
+type LocalMergeSubscriber<O> =
+  Subscriber<LocalMergeObserver<O>, LocalSubscription>;
+
+type SharedMergeSubscriber<O> =
+  Subscriber<SharedMergeObserver<O>, SharedSubscription>;
+
+macro merge_subscribe($op:ident, $subscriber:ident, $unsub_type: ty, $observer_creator: ident) {{
+  let mut subscription = <$unsub_type>::default();
+  let downstream = $subscriber.subscription;
+  subscription.add(downstream.clone());
+  let merge_observer =
+    $observer_creator($subscriber.observer, subscription.clone());
+  subscription.add($op.source1.raw_subscribe(Subscriber {
+    observer: merge_observer.clone(),
+    subscription: <$unsub_type>::default(),
+  }));
+  subscription.add($op.source2.raw_subscribe(Subscriber {
+    observer: merge_observer,
+    subscription: <$unsub_type>::default(),
+  }));
   subscription
 }}
 
-impl<S1, S2, Item, Err, Sub>
-  RawSubscribable<Item, Err, Subscriber<Sub, LocalSubscription>>
+impl<S1, S2, Item, Err, O>
+  RawSubscribable<Item, Err, Subscriber<O, LocalSubscription>>
   for MergeOp<S1, S2>
 where
-  S1: RawSubscribable<
-    Item,
-    Err,
-    Subscriber<
-      MergeSubscribe<Rc<RefCell<Sub>>, LocalSubscription>,
-      LocalSubscription,
-    >,
-  >,
-  S2: RawSubscribable<
-    Item,
-    Err,
-    Subscriber<
-      MergeSubscribe<Rc<RefCell<Sub>>, LocalSubscription>,
-      LocalSubscription,
-    >,
-  >,
+  S1: RawSubscribable<Item, Err, LocalMergeSubscriber<O>>,
+  S2: RawSubscribable<Item, Err, LocalMergeSubscriber<O>>,
 {
   type Unsub = LocalSubscription;
 
   fn raw_subscribe(
     self,
-    subscriber: Subscriber<Sub, LocalSubscription>,
+    subscriber: Subscriber<O, LocalSubscription>,
   ) -> Self::Unsub {
-    merge_subscribe!(self, subscriber, LocalSubscription)
+    merge_subscribe!(self, subscriber, LocalSubscription, local_observer)
   }
 }
 
-impl<S1, S2, Item, Err, Sub>
-  RawSubscribable<Item, Err, Subscriber<Sub, SharedSubscription>>
-  for MergeOp<S1, S2>
+impl<S1, S2, Item, Err, O, U>
+  RawSubscribable<Item, Err, Subscriber<O,  U>>
+  for SharedMergeOp<S1, S2>
 where
   S1: RawSubscribable<
     Item,
     Err,
-    Subscriber<
-      MergeSubscribe<Arc<Mutex<Sub>>, SharedSubscription>,
-      SharedSubscription,
-    >,
+    SharedMergeSubscriber<O::Shared>,
     Unsub = SharedSubscription,
   >,
   S2: RawSubscribable<
     Item,
     Err,
-    Subscriber<
-      MergeSubscribe<Arc<Mutex<Sub>>, SharedSubscription>,
-      SharedSubscription,
-    >,
+    SharedMergeSubscriber<O::Shared>,
     Unsub = SharedSubscription,
   >,
+  O: IntoShared,
+  U: IntoShared<Shared= SharedSubscription>
 {
   type Unsub = SharedSubscription;
 
   fn raw_subscribe(
     self,
-    subscriber: Subscriber<Sub, SharedSubscription>,
+    subscriber: Subscriber<O, U>,
   ) -> Self::Unsub {
-    merge_subscribe!(self, subscriber, SharedSubscription)
+    let subscriber = subscriber.to_shared();
+    let merge = self.0;
+    merge_subscribe!(merge, subscriber, SharedSubscription, shared_observer)
   }
 }
 
@@ -133,48 +128,53 @@ where
 }
 
 #[derive(Clone)]
-pub struct MergeSubscribe<Sub, Unsub> {
-  subscribe: Sub,
+pub struct MergeObserver<O, Unsub> {
+  observer: O,
   subscription: Unsub,
   completed_one: bool,
 }
 
-impl<Sub> MergeSubscribe<Rc<RefCell<Sub>>, LocalSubscription> {
-  fn new(subscribe: Sub, subscription: LocalSubscription) -> Self {
-    MergeSubscribe {
-      subscribe: Rc::new(RefCell::new(subscribe)),
-      subscription,
-      completed_one: false,
-    }
-  }
+type LocalMergeObserver<O> = Rc<RefCell<MergeObserver<O, LocalSubscription>>>;
+type SharedMergeObserver<O> = Arc<Mutex<MergeObserver<O, SharedSubscription>>>;
+
+fn local_observer<O>(
+  observer: O,
+  subscription: LocalSubscription,
+) -> LocalMergeObserver<O> {
+  Rc::new(RefCell::new(MergeObserver {
+    observer: observer,
+    subscription,
+    completed_one: false,
+  }))
 }
 
-impl<Sub> MergeSubscribe<Arc<Mutex<Sub>>, SharedSubscription> {
-  fn new(subscribe: Sub, subscription: SharedSubscription) -> Self {
-    MergeSubscribe {
-      subscribe: Arc::new(Mutex::new(subscribe)),
-      subscription,
-      completed_one: false,
-    }
-  }
+fn shared_observer<O>(
+  observer: O,
+  subscription: SharedSubscription,
+) -> SharedMergeObserver<O> {
+  Arc::new(Mutex::new(MergeObserver {
+    observer: observer,
+    subscription,
+    completed_one: false,
+  }))
 }
 
-impl<Item, Err, Sub, Unsub> Subscribe<Item, Err> for MergeSubscribe<Sub, Unsub>
+impl<Item, Err, O, Unsub> Observer<Item, Err> for MergeObserver<O, Unsub>
 where
-  Sub: Subscribe<Item, Err>,
+  O: Observer<Item, Err>,
   Unsub: SubscriptionLike,
 {
   #[inline(always)]
-  fn on_next(&mut self, value: &Item) { self.subscribe.on_next(value); }
+  fn next(&mut self, value: &Item) { self.observer.next(value); }
 
-  fn on_error(&mut self, err: &Err) {
-    self.subscribe.on_error(err);
+  fn error(&mut self, err: &Err) {
+    self.observer.error(err);
     self.subscription.unsubscribe();
   }
 
-  fn on_complete(&mut self) {
+  fn complete(&mut self) {
     if self.completed_one {
-      self.subscribe.on_complete();
+      self.observer.complete();
       self.subscription.unsubscribe();
     } else {
       self.completed_one = true;
@@ -182,13 +182,18 @@ where
   }
 }
 
-impl<Sub, Unsub> IntoShared for MergeSubscribe<Sub, Unsub>
+impl<O, U> IntoShared for MergeObserver<O, U>
 where
-  Self: Sync + Send + 'static,
+ O:IntoShared,
+ U: IntoShared
 {
-  type Shared = Self;
+  type Shared = MergeObserver<O::Shared, U::Shared>;
   #[inline(always)]
-  fn to_shared(self) -> Self { self }
+  fn to_shared(self) -> Self::Shared { MergeObserver {
+    observer: self.observer.to_shared(),
+    subscription: self.subscription.to_shared(),
+    completed_one: self.completed_one
+  } }
 }
 
 impl<S1, S2> IntoShared for MergeOp<S1, S2>
@@ -196,14 +201,26 @@ where
   S1: IntoShared,
   S2: IntoShared,
 {
-  type Shared = MergeOp<S1::Shared, S2::Shared>;
+  type Shared = SharedMergeOp<S1::Shared, S2::Shared>;
   fn to_shared(self) -> Self::Shared {
-    MergeOp {
+    SharedMergeOp(MergeOp {
       source1: self.source1.to_shared(),
       source2: self.source2.to_shared(),
-    }
+    })
   }
 }
+
+impl<S1, S2> IntoShared for SharedMergeOp<S1, S2>
+where
+Self: Send + Sync + 'static
+{
+  type Shared =Self;
+  #[inline(always)]
+  fn to_shared(self) -> Self::Shared {
+    self
+  }
+}
+
 
 #[cfg(test)]
 mod test {
@@ -219,43 +236,37 @@ mod test {
   #[test]
   fn odd_even_merge() {
     // three collection to store streams emissions
-    let odd_store = Arc::new(Mutex::new(vec![]));
-    let even_store = Arc::new(Mutex::new(vec![]));
-    let numbers_store = Arc::new(Mutex::new(vec![]));
+    let mut odd_store = vec![];
+    let mut even_store = vec![];
+    let mut numbers_store = vec![];
 
-    let c_odd_store = odd_store.clone();
-    let c_even_store = even_store.clone();
-    let c_numbers_store = numbers_store.clone();
+    {
+      let mut numbers = Subject::local();
+      // enabling multiple observers for even stream;
+      let even = numbers.fork().filter(|v| v % 2 == 0);
+      // enabling multiple observers for odd stream;
+      let odd = numbers.fork().filter(|v| *v % 2 != 0);
 
-    let numbers = Subject::<_, ()>::new();
-    // enabling multiple observers for even stream;
-    let even = numbers.fork().filter(|v| v % 2 == 0).multicast();
-    // enabling multiple observers for odd stream;
-    let odd = numbers.fork().filter(|v| *v % 2 != 0).multicast();
+      // merge odd and even stream again
+      let merged = even.fork().merge(odd.fork());
 
-    // merge odd and even stream again
-    let merged = even.fork().merge(odd.fork());
+      //  attach observers
+      merged.subscribe(|v| numbers_store.push(*v));
+      odd.subscribe(|v| odd_store.push(*v));
+      even.subscribe(|v| even_store.push(*v));
 
-    //  attach observers
-    merged.subscribe(move |v| numbers_store.lock().unwrap().push(*v));
-    odd.subscribe(move |v| odd_store.lock().unwrap().push(*v));
-    even.subscribe(move |v| even_store.lock().unwrap().push(*v));
-
-    (0..10).for_each(|v| {
-      numbers.next(&v);
-    });
-
-    assert_eq!(*c_even_store.lock().unwrap(), vec![0, 2, 4, 6, 8]);
-    assert_eq!(*c_odd_store.lock().unwrap(), vec![1, 3, 5, 7, 9]);
-    assert_eq!(
-      *c_numbers_store.lock().unwrap(),
-      (0..10).collect::<Vec<_>>()
-    );
+      (0..10).for_each(|v| {
+        numbers.next(&v);
+      });
+    }
+    assert_eq!(even_store, vec![0, 2, 4, 6, 8]);
+    assert_eq!(odd_store, vec![1, 3, 5, 7, 9]);
+    assert_eq!(numbers_store, (0..10).collect::<Vec<_>>());
   }
 
   #[test]
   fn merge_unsubscribe_work() {
-    let numbers = Subject::<_, ()>::new();
+    let mut numbers = Subject::local();
     // enabling multiple observers for even stream;
     let even = numbers.clone().filter(|v| *v % 2 == 0);
     // enabling multiple observers for odd stream;
@@ -273,8 +284,8 @@ mod test {
   fn completed_test() {
     let completed = Arc::new(AtomicBool::new(false));
     let c_clone = completed.clone();
-    let mut even = Subject::<_, ()>::new();
-    let mut odd = Subject::<_, ()>::new();
+    let mut even = Subject::local();
+    let mut odd = Subject::local();
 
     even.clone().merge(odd.clone()).subscribe_complete(
       |_: &()| {},
@@ -296,8 +307,8 @@ mod test {
     let cc = completed.clone();
     let error = Arc::new(Mutex::new(0));
     let ec = error.clone();
-    let mut even = Subject::new();
-    let mut odd = Subject::new();
+    let mut even = Subject::local();
+    let mut odd = Subject::local();
 
     even.clone().merge(odd.clone()).subscribe_all(
       |_: &()| {},
@@ -321,10 +332,20 @@ mod test {
       s.next(&1);
       s.next(&2);
       s.error(&());
-    })
-    .multicast();
+    });
 
     let m = o.fork().merge(o.fork());
-    m.fork().merge(m.fork());
+    m.fork().merge(m.fork()).subscribe(|_| {});
+  }
+
+  #[test]
+  fn merge_local_and_shared() {
+    let mut res = vec![];
+    let shared = observable::of!(1);
+    let local = observable::of!(2);
+
+    shared.merge(local).to_shared().subscribe(move |v| {
+      res.push(*v);
+    });
   }
 }

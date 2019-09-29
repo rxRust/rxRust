@@ -52,14 +52,14 @@ where
     SubscriptionLike,
 {
   type Unsub = SharedSubscription;
-  fn raw_subscribe(self, subscribe: Sub) -> Self::Unsub {
+  fn raw_subscribe(self, subscriber: Sub) -> Self::Unsub {
     let mut proxy = SharedSubscription::default();
     let mut c_proxy = proxy.clone();
     let Self { delay, source } = self;
     let source = source.to_shared();
-    let subscribe = subscribe.to_shared();
+    let subscriber = subscriber.to_shared();
     let f = delay.inspect(move |_| {
-      proxy.add(source.raw_subscribe(subscribe).to_shared());
+      proxy.add(source.raw_subscribe(subscriber).to_shared());
     });
     let handle = DEFAULT_RUNTIME
       .lock()

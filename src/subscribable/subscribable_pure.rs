@@ -3,16 +3,16 @@ use crate::prelude::*;
 #[derive(Clone)]
 pub struct SubscribePure<N>(N);
 
-impl<Item, N> Subscribe<Item, ()> for SubscribePure<N>
+impl<Item, N> Observer<Item, ()> for SubscribePure<N>
 where
   N: FnMut(&Item),
 {
   #[inline(always)]
-  fn on_next(&mut self, value: &Item) { (self.0)(value); }
+  fn next(&mut self, value: &Item) { (self.0)(value); }
   #[inline(always)]
-  fn on_error(&mut self, _err: &()) {}
+  fn error(&mut self, _err: &()) {}
   #[inline(always)]
-  fn on_complete(&mut self) {}
+  fn complete(&mut self) {}
 }
 
 impl<N> IntoShared for SubscribePure<N>
@@ -43,6 +43,6 @@ where
   where
     Self: Sized,
   {
-    self.raw_subscribe(Subscriber::new(SubscribePure(next)))
+    self.raw_subscribe(Subscriber::local(SubscribePure(next)))
   }
 }

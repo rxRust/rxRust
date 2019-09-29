@@ -6,17 +6,17 @@ pub struct SubscribeErr<N, E> {
   error: E,
 }
 
-impl<Item, Err, N, E> Subscribe<Item, Err> for SubscribeErr<N, E>
+impl<Item, Err, N, E> Observer<Item, Err> for SubscribeErr<N, E>
 where
   N: Fn(&Item),
   E: Fn(&Err),
 {
   #[inline(always)]
-  fn on_next(&mut self, value: &Item) { (self.next)(value); }
+  fn next(&mut self, value: &Item) { (self.next)(value); }
   #[inline(always)]
-  fn on_error(&mut self, err: &Err) { (self.error)(err); }
+  fn error(&mut self, err: &Err) { (self.error)(err); }
   #[inline(always)]
-  fn on_complete(&mut self) {}
+  fn complete(&mut self) {}
 }
 
 impl<N, E> IntoShared for SubscribeErr<N, E>
@@ -56,6 +56,6 @@ where
   where
     Self: Sized,
   {
-    self.raw_subscribe(Subscriber::new(SubscribeErr { next, error }))
+    self.raw_subscribe(Subscriber::local(SubscribeErr { next, error }))
   }
 }

@@ -6,17 +6,17 @@ pub struct SubscribeComplete<N, C> {
   complete: C,
 }
 
-impl<Item, N, C> Subscribe<Item, ()> for SubscribeComplete<N, C>
+impl<Item, N, C> Observer<Item, ()> for SubscribeComplete<N, C>
 where
   N: FnMut(&Item),
   C: FnMut(),
 {
   #[inline(always)]
-  fn on_next(&mut self, value: &Item) { (self.next)(value); }
+  fn next(&mut self, value: &Item) { (self.next)(value); }
   #[inline(always)]
-  fn on_error(&mut self, _err: &()) {}
+  fn error(&mut self, _err: &()) {}
   #[inline(always)]
-  fn on_complete(&mut self) { (self.complete)(); }
+  fn complete(&mut self) { (self.complete)(); }
 }
 
 impl<N, C> IntoShared for SubscribeComplete<N, C>
@@ -52,6 +52,6 @@ where
   where
     Self: Sized,
   {
-    self.raw_subscribe(Subscriber::new(SubscribeComplete { next, complete }))
+    self.raw_subscribe(Subscriber::local(SubscribeComplete { next, complete }))
   }
 }
