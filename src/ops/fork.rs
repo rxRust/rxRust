@@ -8,7 +8,7 @@
 ///  o.subscribe_err(|_| {println!("consume in second")}, |_:&()|{});
 /// ```
 /// it will compile failed, complains like this:
-/// ```
+/// ```shell
 // 5 |  let o = observable::from_iter!(0..10);
 //   |      - move occurs because `o` has type `rxrust::observable::Observable`,
 //   |        which does not implement the `Copy` trait
