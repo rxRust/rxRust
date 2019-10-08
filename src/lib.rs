@@ -1,3 +1,7 @@
+//! Reactive extensions library for Rust: a library for [Reactive Programming](http://reactivex.io/) using Observables, to make it easier to compose asynchronous or callback-based code. 
+//! There are two core abstractions that are unique to RxRust:
+//! * **[IntoShared](prelude::IntoShared):** By default, RxRust always provides a single thread version to get the best performance, but a thread-safe implementation also exists. The trait `IntoShared` will convert a local-thread struct to thread-safe version. So we can call `to_shared` method to ensure operators or subscription can shared between threads.
+//! * **[Fork](prelude::IntoShared):** In Rxrust all operators consume the upstream except `Fork`, so operators always combine a single-chain and can only subscribe once. We use `Fork` to fork the stream.
 #![feature(
   external_doc,
   fn_traits,
@@ -9,7 +13,7 @@
   mem_take,
   decl_macro
 )]
-#![doc(include = "../README.md")]
+#[doc(include = "../README.md")]
 #[macro_use]
 extern crate lazy_static;
 

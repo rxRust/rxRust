@@ -1,6 +1,13 @@
-# rxrust: Reactive Extensions for Rust
+# RxRust: a zero cost Rust implementation of Reactive Extensions
+[Documents](https://docs.rs/rxrust)
 
-rxrust ia a Rust implementation of Reactive Extensions. Which is almost zero cost abstraction except the Subject have to box the first closure of a stream. [Documents](https://docs.rs/rxrust)
+## Usage
+Add this to your Cargo.toml:
+
+```
+[dependencies]
+rxrust = "0.3.0"
+```
 
 ## Example 
 

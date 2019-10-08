@@ -25,7 +25,7 @@ lazy_static! {
 /// assert_eq!(*c_res.lock().unwrap(), 1);
 /// ```
 /// If your `Future` poll an `Result` type value, and you want dispatch the
-/// error by rxrust, you can use [`from_future_with_err`]
+/// error by rxrust, you can use [`from_future_with_err!`]
 ///
 pub macro from_future($f:expr) {
   Observable::new(move |mut subscriber| {
