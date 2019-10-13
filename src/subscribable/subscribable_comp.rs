@@ -19,6 +19,13 @@ where
   fn complete(&mut self) { (self.complete)(); }
 }
 
+impl<N, C> SubscribeComplete<N, C> {
+  #[inline(always)]
+  pub fn new(next: N, complete: C) -> Self {
+    SubscribeComplete { next, complete }
+  }
+}
+
 impl<N, C> IntoShared for SubscribeComplete<N, C>
 where
   Self: Send + Sync + 'static,

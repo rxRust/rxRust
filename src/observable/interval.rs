@@ -1,3 +1,4 @@
+#![allow(unused_imports)]
 use crate::observable::from_future::DEFAULT_RUNTIME;
 use crate::prelude::*;
 use futures::prelude::*;
@@ -19,6 +20,7 @@ pub macro interval_at($at: expr, $dur: expr) {
   interval_observable!(Interval::new_at(at, dur))
 }
 
+#[allow(unused_macros)]
 macro interval_observable($interval: expr) {
   Observable::new(|mut subscriber: Subscriber<_, SharedSubscription>| {
     let mut subscription = subscriber.subscription.clone();

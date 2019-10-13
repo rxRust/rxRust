@@ -8,8 +8,8 @@ pub struct SubscribeErr<N, E> {
 
 impl<Item, Err, N, E> Observer<Item, Err> for SubscribeErr<N, E>
 where
-  N: Fn(&Item),
-  E: Fn(&Err),
+  N: FnMut(&Item),
+  E: FnMut(&Err),
 {
   #[inline(always)]
   fn next(&mut self, value: &Item) { (self.next)(value); }
@@ -17,6 +17,11 @@ where
   fn error(&mut self, err: &Err) { (self.error)(err); }
   #[inline(always)]
   fn complete(&mut self) {}
+}
+
+impl<N, E> SubscribeErr<N, E> {
+  #[inline(always)]
+  pub fn new(next: N, error: E) -> Self { SubscribeErr { next, error } }
 }
 
 impl<N, E> IntoShared for SubscribeErr<N, E>
@@ -48,8 +53,8 @@ where
     Err,
     Subscriber<SubscribeErr<N, E>, LocalSubscription>,
   >,
-  N: Fn(&Item),
-  E: Fn(&Err),
+  N: FnMut(&Item),
+  E: FnMut(&Err),
 {
   type Unsub = S::Unsub;
   fn subscribe_err(self, next: N, error: E) -> Self::Unsub

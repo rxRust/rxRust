@@ -9,15 +9,15 @@ pub struct Subject<O, S> {
   subscription: S,
 }
 
+type LocalPublishersRef<'a, Item, Err> =
+  Rc<RefCell<Vec<Box<dyn Publisher<Item, Err> + 'a>>>>;
 #[derive(Clone)]
-pub struct LocalPublishers<'a, Item, Err>(
-  Rc<RefCell<Vec<Box<dyn Publisher<Item, Err> + 'a>>>>,
-);
+pub struct LocalPublishers<'a, Item, Err>(LocalPublishersRef<'a, Item, Err>);
 
+type SharedPublishersRef<Item, Err> =
+  Arc<Mutex<Vec<Box<dyn Publisher<Item, Err> + Send + Sync>>>>;
 #[derive(Clone)]
-pub struct SharedPublishers<Item, Err>(
-  Arc<Mutex<Vec<Box<dyn Publisher<Item, Err> + Send + Sync>>>>,
-);
+pub struct SharedPublishers<Item, Err>(SharedPublishersRef<Item, Err>);
 
 impl<'a, Item, Err> Subject<LocalPublishers<'a, Item, Err>, LocalSubscription> {
   pub fn local() -> Self {

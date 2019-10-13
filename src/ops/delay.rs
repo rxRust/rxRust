@@ -48,7 +48,8 @@ where
   S::Shared: RawSubscribable<Item, Err, Sub::Shared>,
   Sub: IntoShared,
   <S::Shared as RawSubscribable<Item, Err, Sub::Shared>>::Unsub: IntoShared,
-  <<S::Shared as RawSubscribable<Item, Err, Sub::Shared>>::Unsub as IntoShared>::Shared:
+  <<S::Shared as RawSubscribable<Item, Err, Sub::Shared>>::Unsub as IntoShared>
+  ::Shared:
     SubscriptionLike,
 {
   type Unsub = SharedSubscription;
