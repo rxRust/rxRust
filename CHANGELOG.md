@@ -1,4 +1,42 @@
-## [Unreleased](https://github.com/M-Adoo/rxRust/compare/v0.2.0...HEAD)
+## [Unreleased](https://github.com/M-Adoo/rxRust/compare/v0.3.0...HEAD)
+
+## [0.3.0](https://github.com/M-Adoo/rxRust/releases/tag/v0.3.0)  (2019-10-12)
+
+### Code Refactoring
+
+In `v0.2` we implemented all operators and observable thread safe， so we can pass task across threads by schedulers. In this way, all user provide closure must satisfied `Send + Sync + 'static`, even never use scheduler and multi-thread.
+
+For now, we removed the bounds `Sync`, `Send` and `'static`, and add a new trait `IntoShared`. We always implemented operator for local thread, and implement `IntoShared` for it to convert it to a thread-safe operator.
+By default, RxRust always use single thread version to get the best performance, and use `IntoShared` to convert a local object to a thread-safe object if we need pass this object in threads.
+
+**Before**:
+```rust
+let res = Arc::new(Mutex(0));
+let c_res = res.clone();
+observable::of(100).subscribe(|v| { *res.lock().unwrap() = *v });
+
+assert_eq!(*res.lock().unwrap(), 100);
+```·
+
+**After**:
+```rust
+let mut res = 0;
+observable::of(100).subscribe(|v| { res = *v });
+
+assert_eq!(res, 100);
+```
+
+### Breadk Change
+
+- removed `RxFn` amd `RxValue`
+- **operators**: removed  `Multicast`
+- **observable**: removed `ObservableOnce`
+- **observable**: `observable::from_vec` and `observable::from_range` functions merge to `observable::from_iter!` macro.
+- **observable**: `observable::empty` function  to `observable::empty!` macro.
+- **observable**: `observable::of` function to `observable::of!` macro.
+- **observable**: `observable::from_future` function to `observable::from_future!` macro
+- **observable**: `observable::from_future_with_err` function to `observable::from_future_with_err!` macro
+- **observable**: `observable::interval` function to `observable::interval!` macro
 
 ### Bug Fixes
 
