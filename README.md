@@ -1,12 +1,14 @@
 # RxRust: a zero cost Rust implementation of Reactive Extensions
 [Documents](https://docs.rs/rxrust)
 
+![](https://github.com/M-Adoo/rxRust/workflows/test/badge.svg)
+
 ## Usage
 Add this to your Cargo.toml:
 
-```
+```ignore
 [dependencies]
-rxrust = "0.3.0"
+rxrust = "0.3.0";
 ```
 
 ## Example 
@@ -78,4 +80,4 @@ observable::from_future!(future::ready(1))
 std::thread::sleep(std::time::Duration::new(1, 0));
 ```
 
-A `from_future_with_err` macro also provided to propagating error from `Future`.
+A `from_future_with_err！` macro also provided to propagating error from `Future`.
