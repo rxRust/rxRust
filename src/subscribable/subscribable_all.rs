@@ -8,6 +8,7 @@ pub struct SubscribeAll<N, E, C> {
 }
 
 impl<N, E, C> SubscribeAll<N, E, C> {
+  #[inline(always)]
   pub fn new(next: N, error: E, complete: C) -> Self {
     SubscribeAll {
       next,

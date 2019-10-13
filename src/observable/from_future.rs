@@ -1,3 +1,4 @@
+#![allow(unused_imports)]
 use crate::prelude::*;
 use futures::{executor::ThreadPool, future::FutureExt, task::SpawnExt};
 use std::sync::Mutex;

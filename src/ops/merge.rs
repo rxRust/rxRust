@@ -40,7 +40,7 @@ pub struct MergeOp<S1, S2> {
   source2: S2,
 }
 
-pub struct SharedMergeOp<S1,S2>(MergeOp<S1, S2>);
+pub struct SharedMergeOp<S1, S2>(MergeOp<S1, S2>);
 
 type LocalMergeSubscriber<O> =
   Subscriber<LocalMergeObserver<O>, LocalSubscription>;
@@ -48,7 +48,9 @@ type LocalMergeSubscriber<O> =
 type SharedMergeSubscriber<O> =
   Subscriber<SharedMergeObserver<O>, SharedSubscription>;
 
-macro merge_subscribe($op:ident, $subscriber:ident, $unsub_type: ty, $observer_creator: ident) {{
+macro merge_subscribe(
+  $op:ident, $subscriber:ident,
+  $unsub_type: ty, $observer_creator: ident) {{
   let mut subscription = <$unsub_type>::default();
   let downstream = $subscriber.subscription;
   subscription.add(downstream.clone());
@@ -82,8 +84,7 @@ where
   }
 }
 
-impl<S1, S2, Item, Err, O, U>
-  RawSubscribable<Item, Err, Subscriber<O,  U>>
+impl<S1, S2, Item, Err, O, U> RawSubscribable<Item, Err, Subscriber<O, U>>
   for SharedMergeOp<S1, S2>
 where
   S1: RawSubscribable<
@@ -99,14 +100,11 @@ where
     Unsub = SharedSubscription,
   >,
   O: IntoShared,
-  U: IntoShared<Shared= SharedSubscription>
+  U: IntoShared<Shared = SharedSubscription>,
 {
   type Unsub = SharedSubscription;
 
-  fn raw_subscribe(
-    self,
-    subscriber: Subscriber<O, U>,
-  ) -> Self::Unsub {
+  fn raw_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub {
     let subscriber = subscriber.to_shared();
     let merge = self.0;
     merge_subscribe!(merge, subscriber, SharedSubscription, shared_observer)
@@ -142,7 +140,7 @@ fn local_observer<O>(
   subscription: LocalSubscription,
 ) -> LocalMergeObserver<O> {
   Rc::new(RefCell::new(MergeObserver {
-    observer: observer,
+    observer,
     subscription,
     completed_one: false,
   }))
@@ -153,7 +151,7 @@ fn shared_observer<O>(
   subscription: SharedSubscription,
 ) -> SharedMergeObserver<O> {
   Arc::new(Mutex::new(MergeObserver {
-    observer: observer,
+    observer,
     subscription,
     completed_one: false,
   }))
@@ -184,16 +182,18 @@ where
 
 impl<O, U> IntoShared for MergeObserver<O, U>
 where
- O:IntoShared,
- U: IntoShared
+  O: IntoShared,
+  U: IntoShared,
 {
   type Shared = MergeObserver<O::Shared, U::Shared>;
   #[inline(always)]
-  fn to_shared(self) -> Self::Shared { MergeObserver {
-    observer: self.observer.to_shared(),
-    subscription: self.subscription.to_shared(),
-    completed_one: self.completed_one
-  } }
+  fn to_shared(self) -> Self::Shared {
+    MergeObserver {
+      observer: self.observer.to_shared(),
+      subscription: self.subscription.to_shared(),
+      completed_one: self.completed_one,
+    }
+  }
 }
 
 impl<S1, S2> IntoShared for MergeOp<S1, S2>
@@ -212,15 +212,12 @@ where
 
 impl<S1, S2> IntoShared for SharedMergeOp<S1, S2>
 where
-Self: Send + Sync + 'static
+  Self: Send + Sync + 'static,
 {
-  type Shared =Self;
+  type Shared = Self;
   #[inline(always)]
-  fn to_shared(self) -> Self::Shared {
-    self
-  }
+  fn to_shared(self) -> Self::Shared { self }
 }
-
 
 #[cfg(test)]
 mod test {

@@ -1,3 +1,4 @@
+#![allow(unused_imports)]
 use crate::prelude::*;
 
 pub macro from_iter($iter:expr) {

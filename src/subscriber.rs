@@ -82,8 +82,6 @@ where
 #[cfg(test)]
 mod test {
   use crate::prelude::*;
-  use std::cell::Cell;
-  use std::rc::Rc;
   use std::sync::{Arc, Mutex};
 
   #[test]
@@ -111,12 +109,9 @@ mod test {
     assert_eq!(*error.lock().unwrap(), 1);
   }
 
-  fn shared_subscriber_creator() -> (
-    Arc<Mutex<i32>>,
-    Arc<Mutex<i32>>,
-    Arc<Mutex<i32>>,
-    impl Observer<i32, ()>,
-  ) {
+  type SubscriberInfo<O> =
+    (Arc<Mutex<i32>>, Arc<Mutex<i32>>, Arc<Mutex<i32>>, O);
+  fn shared_subscriber_creator() -> SubscriberInfo<impl Observer<i32, ()>> {
     let next = Arc::new(Mutex::new(0));
     let err = Arc::new(Mutex::new(0));
     let complete = Arc::new(Mutex::new(0));
@@ -125,7 +120,7 @@ mod test {
       next.clone(),
       err.clone(),
       complete.clone(),
-      Subscriber::local(SubscribeAll::new(
+      Subscriber::shared(SubscribeAll::new(
         move |_: &_| *next.lock().unwrap() += 1,
         move |_: &_| *err.lock().unwrap() += 1,
         move || *complete.lock().unwrap() += 1,
@@ -136,20 +131,32 @@ mod test {
 
   #[test]
   fn next_and_complete() {
-    let (next, _, complete, mut subscriber) = subscriber_creator();
+    let mut next = 0;
+    let mut complete = 0;
+
+    let mut subscriber = Subscriber::local(SubscribeComplete::new(
+      |_: &_| next += 1,
+      || complete += 1,
+    ));
 
     subscriber.next(&1);
     subscriber.next(&2);
     subscriber.complete();
     subscriber.next(&3);
     subscriber.next(&4);
-    assert_eq!(next.get(), 2);
-    assert_eq!(complete.get(), 1);
+    assert_eq!(next, 2);
+    assert_eq!(complete, 1);
   }
 
   #[test]
   fn next_and_error() {
-    let (next, error, _, mut subscriber) = subscriber_creator();
+    let mut next = 0;
+    let mut err = 0;
+
+    let mut subscriber = Subscriber::local(SubscribeErr::new(
+      |_: &_| next += 1,
+      |_: &()| err += 1,
+    ));
 
     subscriber.next(&1);
     subscriber.next(&2);
@@ -157,29 +164,7 @@ mod test {
     subscriber.next(&3);
     subscriber.next(&4);
 
-    assert_eq!(next.get(), 2);
-    assert_eq!(error.get(), 1);
-  }
-
-  fn subscriber_creator() -> (
-    Rc<Cell<i32>>,
-    Rc<Cell<i32>>,
-    Rc<Cell<i32>>,
-    impl Observer<i32, ()>,
-  ) {
-    let next = Rc::new(Cell::new(0));
-    let err = Rc::new(Cell::new(0));
-    let complete = Rc::new(Cell::new(0));
-
-    (
-      next.clone(),
-      err.clone(),
-      complete.clone(),
-      Subscriber::local(SubscribeAll::new(
-        move |_: &_| next.set(next.get() + 1),
-        move |_: &_| err.set(err.get() + 1),
-        move || complete.set(complete.get() + 1),
-      )),
-    )
+    assert_eq!(next, 2);
+    assert_eq!(err, 1);
   }
 }
