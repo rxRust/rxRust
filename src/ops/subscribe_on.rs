@@ -90,6 +90,7 @@ where
       move |mut subscription, _| {
         subscription.add(source.raw_subscribe(subscriber))
       },
+      None,
       (),
     )
   }

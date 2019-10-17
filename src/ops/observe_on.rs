@@ -92,6 +92,7 @@ where
           observer.lock().unwrap().next(&v);
         }
       },
+      None,
       (value.clone(), self.observer.clone()),
     );
     self.proxy.add(s);
@@ -105,6 +106,7 @@ where
           subscription.unsubscribe();
         }
       },
+      None,
       (err.clone(), self.observer.clone()),
     );
     self.proxy.add(s);
@@ -117,6 +119,7 @@ where
           subscription.unsubscribe();
         }
       },
+      None,
       self.observer.clone(),
     );
     self.proxy.add(s);

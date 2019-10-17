@@ -1,7 +1,4 @@
-use crate::observable::{from_future::DEFAULT_RUNTIME, interval::SpawnHandle};
 use crate::prelude::*;
-use futures::{future::FutureExt, task::SpawnExt};
-use futures_timer::Delay as FDelay;
 use std::time::{Duration, Instant};
 
 /// Delays the emission of items from the source Observable by a given timeout
@@ -13,7 +10,7 @@ pub trait Delay {
   {
     DelayOp {
       source: self,
-      delay: FDelay::new(dur),
+      delay: dur,
     }
   }
   fn delay_at(self, at: Instant) -> DelayOp<Self>
@@ -22,7 +19,7 @@ pub trait Delay {
   {
     DelayOp {
       source: self,
-      delay: FDelay::new_at(at),
+      delay: at.elapsed(),
     }
   }
 }
@@ -30,7 +27,7 @@ impl<S> Delay for S {}
 
 pub struct DelayOp<S> {
   source: S,
-  delay: FDelay,
+  delay: Duration,
 }
 
 impl<S> IntoShared for DelayOp<S>
@@ -54,21 +51,15 @@ where
 {
   type Unsub = SharedSubscription;
   fn raw_subscribe(self, subscriber: Sub) -> Self::Unsub {
-    let mut proxy = SharedSubscription::default();
-    let mut c_proxy = proxy.clone();
     let Self { delay, source } = self;
     let source = source.to_shared();
     let subscriber = subscriber.to_shared();
-    let f = delay.inspect(move |_| {
-      proxy.add(source.raw_subscribe(subscriber).to_shared());
-    });
-    let handle = DEFAULT_RUNTIME
-      .lock()
-      .unwrap()
-      .spawn_with_handle(f)
-      .expect("spawn future for delay failed");
-    c_proxy.add(SpawnHandle(Some(handle)));
-    c_proxy
+
+     Schedulers::ThreadPool.schedule(move |mut subscription, _| {
+        subscription.add(source.raw_subscribe(subscriber).to_shared());
+      },
+      Some(delay),
+      ())
   }
 }
 
