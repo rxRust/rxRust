@@ -2,13 +2,19 @@ use crate::prelude::*;
 mod thread_scheduler;
 use thread_scheduler::new_thread_schedule;
 mod thread_pool_scheduler;
+use crate::observable::{from_future::DEFAULT_RUNTIME, interval::SpawnHandle};
+use futures::prelude::*;
+use futures::task::SpawnExt;
+use futures_timer::Delay;
+use std::time::Duration;
 use thread_pool_scheduler::thread_pool_schedule;
 
 /// A Scheduler is an object to order task and schedule their execution.
 pub trait Scheduler {
-  fn schedule<T: Send + Sync + 'static>(
+  fn schedule<T: Send + 'static>(
     &self,
     task: impl FnOnce(SharedSubscription, T) + Send + 'static,
+    delay: Option<Duration>,
     state: T,
   ) -> SharedSubscription;
 }
@@ -21,16 +27,32 @@ pub enum Schedulers {
 }
 
 impl Scheduler for Schedulers {
-  fn schedule<T: Send + Sync + 'static>(
+  fn schedule<T: Send + 'static>(
     &self,
     task: impl FnOnce(SharedSubscription, T) + Send + 'static,
+    delay: Option<Duration>,
     state: T,
   ) -> SharedSubscription {
     match self {
-      Schedulers::NewThread => new_thread_schedule(task, state),
-      Schedulers::ThreadPool => thread_pool_schedule(task, state),
+      Schedulers::NewThread => new_thread_schedule(task, delay, state),
+      Schedulers::ThreadPool => thread_pool_schedule(task, delay, state),
     }
   }
+}
+
+pub fn delay_task(
+  delay: Duration,
+  task: impl FnOnce() + Send + 'static,
+) -> impl SubscriptionLike + Send {
+  let f = Delay::new(delay).inspect(|_| {
+    task();
+  });
+  let handle = DEFAULT_RUNTIME
+    .lock()
+    .unwrap()
+    .spawn_with_handle(f)
+    .expect("spawn task to thread pool failed.");
+  SpawnHandle(Some(handle))
 }
 
 #[cfg(test)]

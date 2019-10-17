@@ -1,21 +1,16 @@
-use crate::observable::{from_future::DEFAULT_RUNTIME, interval::SpawnHandle};
 use crate::prelude::*;
-use futures::prelude::*;
-use futures::task::SpawnExt;
+use std::time::Duration;
 
 pub(crate) fn thread_pool_schedule<T: Send + Sync + 'static>(
   task: impl FnOnce(SharedSubscription, T) + Send + 'static,
+  delay: Option<Duration>,
   state: T,
 ) -> SharedSubscription {
   let mut subscription = SharedSubscription::default();
-  let c_proxy = subscription.clone();
-  let f = future::lazy(move |_| task(c_proxy, state));
-  let handle = DEFAULT_RUNTIME
-    .lock()
-    .unwrap()
-    .spawn_with_handle(f)
-    .expect("spawn task to thread pool failed.");
+  let c_subscription = subscription.clone();
+  let delay = delay.unwrap_or_default();
 
-  subscription.add(SpawnHandle(Some(handle)));
+  let s = delay_task(delay, move || task(c_subscription, state));
+  subscription.add(s);
   subscription
 }

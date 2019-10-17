@@ -40,14 +40,14 @@ pub struct FilterOp<S, F> {
 impl<Item, Err, O, U, S, F> RawSubscribable<Item, Err, Subscriber<O, U>>
   for FilterOp<S, F>
 where
-  S: RawSubscribable<Item, Err, Subscriber<FilterSubscribe<O, F>, U>>,
+  S: RawSubscribable<Item, Err, Subscriber<FilterObserver<O, F>, U>>,
 {
   type Unsub = S::Unsub;
 
   fn raw_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub {
     let filter = self.filter;
     self.source.raw_subscribe(Subscriber {
-      observer: FilterSubscribe {
+      observer: FilterObserver {
         filter,
         observer: subscriber.observer,
       },
@@ -56,12 +56,12 @@ where
   }
 }
 
-pub struct FilterSubscribe<S, F> {
+pub struct FilterObserver<S, F> {
   observer: S,
   filter: F,
 }
 
-impl<Item, Err, S, F> Observer<Item, Err> for FilterSubscribe<S, F>
+impl<Item, Err, S, F> Observer<Item, Err> for FilterObserver<S, F>
 where
   S: Observer<Item, Err>,
   F: FnMut(&Item) -> bool,
@@ -105,14 +105,14 @@ where
   }
 }
 
-impl<S, F> IntoShared for FilterSubscribe<S, F>
+impl<S, F> IntoShared for FilterObserver<S, F>
 where
   S: IntoShared,
   F: Send + Sync + 'static,
 {
-  type Shared = FilterSubscribe<S::Shared, F>;
+  type Shared = FilterObserver<S::Shared, F>;
   fn to_shared(self) -> Self::Shared {
-    FilterSubscribe {
+    FilterObserver {
       observer: self.observer.to_shared(),
       filter: self.filter,
     }

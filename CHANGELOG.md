@@ -1,5 +1,29 @@
 ## [Unreleased](https://github.com/M-Adoo/rxRust/compare/v0.3.0...HEAD)
 
+### Breaking Changes
+
+**Scheduler**: add a `delay` param for `schedule` method, from 
+```
+pub trait Scheduler {
+  fn schedule<T: Send + Sync + 'static>(
+    &self,
+    task: impl FnOnce(SharedSubscription, T) + Send + 'static,
+    state: T,
+  ) -> SharedSubscription;
+}
+```
+to
+```
+pub trait Scheduler {
+  fn schedule<T: Send + 'static>(
+    &self,
+    task: impl FnOnce(SharedSubscription, T) + Send + 'static,
+    delay: Option<Duration>,
+    state: T,
+  ) -> SharedSubscription;
+}
+```
+
 ## [0.3.0](https://github.com/M-Adoo/rxRust/releases/tag/v0.3.0)  (2019-10-12)
 
 ### Code Refactoring
@@ -11,14 +35,15 @@ By default, RxRust always use single thread version to get the best performance,
 
 **Before**:
 ```rust
-let res = Arc::new(Mutex(0));
+let res = Arc::new(Mutex(0));w
 let c_res = res.clone();
 observable::of(100).subscribe(|v| { *res.lock().unwrap() = *v });
 
 assert_eq!(*res.lock().unwrap(), 100);
-```·
+```
 
 **After**:
+
 ```rust
 let mut res = 0;
 observable::of(100).subscribe(|v| { res = *v });
@@ -26,9 +51,9 @@ observable::of(100).subscribe(|v| { res = *v });
 assert_eq!(res, 100);
 ```
 
-### Breadk Change
+### Breaking Changes
 
-- removed `RxFn` amd `RxValue`
+- removed `RxFn` and `RxValue`
 - **operators**: removed  `Multicast`
 - **observable**: removed `ObservableOnce`
 - **observable**: `observable::from_vec` and `observable::from_range` functions merge to `observable::from_iter!` macro.
