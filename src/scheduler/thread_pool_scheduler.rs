@@ -1,7 +1,7 @@
 use crate::prelude::*;
 use std::time::Duration;
 
-pub(crate) fn thread_pool_schedule<T: Send + Sync + 'static>(
+pub(crate) fn thread_pool_schedule<T: Send + 'static>(
   task: impl FnOnce(SharedSubscription, T) + Send + 'static,
   delay: Option<Duration>,
   state: T,

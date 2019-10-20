@@ -43,7 +43,7 @@ impl Scheduler for Schedulers {
 pub fn delay_task(
   delay: Duration,
   task: impl FnOnce() + Send + 'static,
-) -> impl SubscriptionLike + Send {
+) -> SpawnHandle<Result<(), std::io::Error>> {
   let f = Delay::new(delay).inspect(|_| {
     task();
   });
