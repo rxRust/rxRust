@@ -1,5 +1,5 @@
 use crate::{
-  ops::{take::TakeOp, Take},
+  ops::{take::TakeOp, SharedOp, Take},
   prelude::*,
 };
 
@@ -58,12 +58,12 @@ where
   S: IntoShared,
   V: Send + Sync + 'static,
 {
-  type Shared = FirstOrOp<S::Shared, V>;
+  type Shared = SharedOp<FirstOrOp<S::Shared, V>>;
   fn to_shared(self) -> Self::Shared {
-    FirstOrOp {
+    SharedOp(FirstOrOp {
       source: self.source.to_shared(),
       default: self.default,
-    }
+    })
   }
 }
 
