@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use ops::SharedOp;
 
 /// Emit only those items from an Observable that pass a predicate test
 /// # Example
@@ -96,12 +97,12 @@ where
   S: IntoShared,
   F: Send + Sync + 'static,
 {
-  type Shared = FilterOp<S::Shared, F>;
+  type Shared = SharedOp<FilterOp<S::Shared, F>>;
   fn to_shared(self) -> Self::Shared {
-    FilterOp {
+    SharedOp(FilterOp {
       source: self.source.to_shared(),
       filter: self.filter,
-    }
+    })
   }
 }
 

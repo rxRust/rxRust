@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use ops::SharedOp;
 
 /// Creates a new stream which calls a closure on each element and uses
 /// its return as the value.
@@ -107,12 +108,12 @@ where
   S: IntoShared,
   M: Send + Sync + 'static,
 {
-  type Shared = MapOp<S::Shared, M>;
+  type Shared = SharedOp<MapOp<S::Shared, M>>;
   fn to_shared(self) -> Self::Shared {
-    MapOp {
+    SharedOp(MapOp {
       source: self.source.to_shared(),
       func: self.func,
-    }
+    })
   }
 }
 
@@ -192,12 +193,12 @@ where
   S: IntoShared,
   M: Send + Sync + 'static,
 {
-  type Shared = MapReturnRefOp<S::Shared, M>;
+  type Shared = SharedOp<MapReturnRefOp<S::Shared, M>>;
   fn to_shared(self) -> Self::Shared {
-    MapReturnRefOp {
+    SharedOp(MapReturnRefOp {
       source: self.source.to_shared(),
       func: self.func,
-    }
+    })
   }
 }
 

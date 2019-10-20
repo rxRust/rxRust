@@ -1,3 +1,4 @@
+use crate::ops::SharedOp;
 use crate::prelude::*;
 /// Emits only the first `count` values emitted by the source Observable.
 ///
@@ -48,25 +49,25 @@ impl<S> IntoShared for TakeOp<S>
 where
   S: IntoShared,
 {
-  type Shared = TakeOp<S::Shared>;
+  type Shared = SharedOp<TakeOp<S::Shared>>;
   fn to_shared(self) -> Self::Shared {
-    TakeOp {
+    SharedOp(TakeOp {
       source: self.source.to_shared(),
       count: self.count,
-    }
+    })
   }
 }
 
 impl<Item, Err, O, U, S> RawSubscribable<Item, Err, Subscriber<O, U>>
   for TakeOp<S>
 where
-  S: RawSubscribable<Item, Err, Subscriber<TakeSubscribe<O, U>, U>>,
+  S: RawSubscribable<Item, Err, Subscriber<TakeObserver<O, U>, U>>,
   U: SubscriptionLike + Clone + 'static,
 {
   type Unsub = S::Unsub;
   fn raw_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub {
     let subscriber = Subscriber {
-      observer: TakeSubscribe {
+      observer: TakeObserver {
         observer: subscriber.observer,
         subscription: subscriber.subscription.clone(),
         count: self.count,
@@ -78,21 +79,21 @@ where
   }
 }
 
-pub struct TakeSubscribe<O, S> {
+pub struct TakeObserver<O, S> {
   observer: O,
   subscription: S,
   count: u32,
   hits: u32,
 }
 
-impl<S, ST> IntoShared for TakeSubscribe<S, ST>
+impl<S, ST> IntoShared for TakeObserver<S, ST>
 where
   S: IntoShared,
   ST: IntoShared,
 {
-  type Shared = TakeSubscribe<S::Shared, ST::Shared>;
+  type Shared = TakeObserver<S::Shared, ST::Shared>;
   fn to_shared(self) -> Self::Shared {
-    TakeSubscribe {
+    TakeObserver {
       observer: self.observer.to_shared(),
       subscription: self.subscription.to_shared(),
       count: self.count,
@@ -101,7 +102,7 @@ where
   }
 }
 
-impl<S, ST, Item, Err> Observer<Item, Err> for TakeSubscribe<S, ST>
+impl<S, ST, Item, Err> Observer<Item, Err> for TakeObserver<S, ST>
 where
   S: Observer<Item, Err>,
   ST: SubscriptionLike,
