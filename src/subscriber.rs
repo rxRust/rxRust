@@ -77,6 +77,9 @@ where
 
   #[inline(always)]
   fn is_closed(&self) -> bool { self.subscription.is_closed() }
+
+  #[inline(always)]
+  fn inner_addr(&self) -> *const () { self.subscription.inner_addr() }
 }
 
 #[cfg(test)]

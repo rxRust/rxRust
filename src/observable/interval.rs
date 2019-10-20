@@ -47,6 +47,17 @@ impl<T> SubscriptionLike for SpawnHandle<T> {
   fn unsubscribe(&mut self) { self.0.take(); }
   #[inline(always)]
   fn is_closed(&self) -> bool { self.0.is_none() }
+  #[inline(always)]
+  fn inner_addr(&self) -> *const () { ((&self.0) as *const _) as *const () }
+}
+
+impl<T> IntoShared for SpawnHandle<T>
+where
+  T: Send + Sync + 'static,
+{
+  type Shared = Self;
+  #[inline(always)]
+  fn to_shared(self) -> Self::Shared { self }
 }
 
 impl<T> Drop for SpawnHandle<T> {

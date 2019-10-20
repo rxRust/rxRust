@@ -20,6 +20,7 @@
   unboxed_closures,
   drain_filter,
   test,
+  raw,
   decl_macro
 )]
 #[doc(include = "../README.md")]

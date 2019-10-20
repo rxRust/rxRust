@@ -57,7 +57,7 @@ where
     };
     self.source.raw_subscribe(Subscriber {
       observer: observe_subscribe,
-      subscription: subscription.clone(),
+      subscription,
     })
   }
 }
