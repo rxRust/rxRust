@@ -22,7 +22,7 @@ pub macro interval_at($at: expr, $dur: expr) {
 
 #[allow(unused_macros)]
 macro interval_observable($interval: expr) {
-  Observable::new(|mut subscriber: Subscriber<_, SharedSubscription>| {
+  Observable::new(move |mut subscriber: Subscriber<_, SharedSubscription>| {
     let mut subscription = subscriber.subscription.clone();
     let mut number = 0;
     let f = $interval.for_each(move |_| {
@@ -36,12 +36,18 @@ macro interval_observable($interval: expr) {
       .spawn_with_handle(f)
       .expect("spawn future for interval failed");
 
-    subscription.add(SpawnHandle(Some(handle)));
+    subscription.add(SpawnHandle::new(handle));
   })
   .to_shared()
 }
 
-pub struct SpawnHandle<T>(pub(crate) Option<RemoteHandle<T>>);
+pub struct SpawnHandle<T>(Option<RemoteHandle<T>>);
+
+impl<T> SpawnHandle<T> {
+  #[inline(always)]
+  pub fn new(handle: RemoteHandle<T>) -> Self { SpawnHandle(Some(handle)) }
+}
+
 impl<T> SubscriptionLike for SpawnHandle<T> {
   #[inline(always)]
   fn unsubscribe(&mut self) { self.0.take(); }

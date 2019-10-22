@@ -1,5 +1,9 @@
 ## [Unreleased](https://github.com/M-Adoo/rxRust/compare/v0.3.0...HEAD)
 
+### Features
+- **operator**: add `throttle_time` operator
+
+
 ### Breaking Changes
 
 **Scheduler**: add a `delay` param for `schedule` method, from 

@@ -16,8 +16,8 @@ pub mod observe_on;
 pub use observe_on::ObserveOn;
 pub mod delay;
 pub use delay::Delay;
-// pub mod throttle_time;
-// pub use throttle_time::ThrottleTime;
+pub mod throttle_time;
+pub use throttle_time::{ThrottleEdge, ThrottleTime};
 
 use crate::prelude::*;
 pub struct SharedOp<T>(T);
