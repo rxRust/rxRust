@@ -52,7 +52,7 @@ pub fn delay_task(
     .unwrap()
     .spawn_with_handle(f)
     .expect("spawn task to thread pool failed.");
-  SpawnHandle(Some(handle))
+  SpawnHandle::new(handle)
 }
 
 #[cfg(test)]
