@@ -2,7 +2,7 @@
 
 ### Features
 - **operator**: add `throttle_time` operator
-
+- **Subject**: support `Fork` even if `Item` and `Err` not support `Clone`.
 
 ### Breaking Changes
 
