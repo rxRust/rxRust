@@ -55,6 +55,41 @@ where
   fn to_shared(self) -> Self::Shared { self }
 }
 
+impl<'a, Item, Err, U> IntoShared for Subject<LocalPublishers<'a, Item, Err>, U>
+where
+  U: IntoShared,
+  Item: 'static,
+  Err: 'static,
+{
+  type Shared = Subject<SharedPublishers<Item, Err>, U::Shared>;
+  fn to_shared(self) -> Self::Shared {
+    let Self {
+      observers,
+      subscription,
+    } = self;
+    let observers = Rc::try_unwrap(observers.0)
+      .ok()
+      .expect(
+        "Cannot convert a `LocalSubscription` to `SharedSubscription` \
+         when it referenced by other.",
+      )
+      .into_inner();
+    let observers = if observers.is_empty() {
+      SharedPublishers(Arc::new(Mutex::new(vec![])))
+    } else {
+      panic!(
+        "Cannot convert a `LocalSubscription` to `SharedSubscription` \
+         when it subscribed."
+      )
+    };
+    let subscription = subscription.to_shared();
+    Subject {
+      observers,
+      subscription,
+    }
+  }
+}
+
 impl<'a, Item, Err, O>
   RawSubscribable<Item, Err, Subscriber<O, LocalSubscription>>
   for Subject<LocalPublishers<'a, Item, Err>, LocalSubscription>
@@ -219,5 +254,24 @@ mod test {
       .fork()
       .to_shared()
       .subscribe(|_: &()| {});
+  }
+
+  #[test]
+  fn empty_local_subject_can_convert_to_shared() {
+    use crate::{ops::ObserveOn, scheduler::Schedulers};
+    use std::sync::{Arc, Mutex};
+    let value = Arc::new(Mutex::new(0));
+    let c_v = value.clone();
+    let mut subject = Subject::local().to_shared();
+    subject.fork().observe_on(Schedulers::NewThread).subscribe(
+      move |v: &i32| {
+        *value.lock().unwrap() = *v;
+      },
+    );
+
+    subject.next(&100);
+    std::thread::sleep(std::time::Duration::from_micros(1));
+
+    assert_eq!(*c_v.lock().unwrap(), 100);
   }
 }
