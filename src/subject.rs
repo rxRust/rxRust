@@ -11,13 +11,21 @@ pub struct Subject<O, S> {
 
 type LocalPublishersRef<'a, Item, Err> =
   Rc<RefCell<Vec<Box<dyn Publisher<Item, Err> + 'a>>>>;
-#[derive(Clone)]
+
 pub struct LocalPublishers<'a, Item, Err>(LocalPublishersRef<'a, Item, Err>);
+
+impl<'a, Item, Err> Clone for LocalPublishers<'a, Item, Err> {
+  fn clone(&self) -> Self { LocalPublishers(self.0.clone()) }
+}
 
 type SharedPublishersRef<Item, Err> =
   Arc<Mutex<Vec<Box<dyn Publisher<Item, Err> + Send + Sync>>>>;
-#[derive(Clone)]
+
 pub struct SharedPublishers<Item, Err>(SharedPublishersRef<Item, Err>);
+
+impl<Item, Err> Clone for SharedPublishers<Item, Err> {
+  fn clone(&self) -> Self { SharedPublishers(self.0.clone()) }
+}
 
 impl<'a, Item, Err> Subject<LocalPublishers<'a, Item, Err>, LocalSubscription> {
   pub fn local() -> Self {
