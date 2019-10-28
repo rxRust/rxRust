@@ -6,8 +6,8 @@ use crate::prelude::*;
 ///
 #[derive(Clone)]
 pub struct Subscriber<O, U> {
-  pub(crate) subscription: U,
   pub(crate) observer: O,
+  pub(crate) subscription: U,
 }
 
 impl<O> Subscriber<O, LocalSubscription> {
