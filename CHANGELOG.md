@@ -1,6 +1,7 @@
 ## [Unreleased](https://github.com/M-Adoo/rxRust/compare/v0.3.0...HEAD)
 
 ### Features
+- **observable**: add `ConnectableObservable` to support multicast.
 - **operator**: add `throttle_time` operator
 - **Subject**: support `Fork` even if `Item` and `Err` not support `Clone`.
 

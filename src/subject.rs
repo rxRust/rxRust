@@ -5,8 +5,8 @@ use std::sync::{Arc, Mutex};
 
 #[derive(Default, Clone)]
 pub struct Subject<O, S> {
-  observers: O,
-  subscription: S,
+  pub(crate) observers: O,
+  pub(crate) subscription: S,
 }
 
 type LocalPublishersRef<'a, Item, Err> =
