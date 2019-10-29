@@ -3,6 +3,7 @@
 ### Features
 - **observable**: add `ConnectableObservable` to support multicast.
 - **operator**: add `throttle_time` operator
+- **operator**: add `publish` operator
 - **Subject**: support `Fork` even if `Item` and `Err` not support `Clone`.
 
 ### Breaking Changes
