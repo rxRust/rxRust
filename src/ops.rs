@@ -18,6 +18,8 @@ pub mod delay;
 pub use delay::Delay;
 pub mod throttle_time;
 pub use throttle_time::{ThrottleEdge, ThrottleTime};
+pub mod publish;
+pub use publish::Publish;
 
 use crate::prelude::*;
 pub struct SharedOp<T>(T);
