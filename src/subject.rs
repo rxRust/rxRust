@@ -14,6 +14,9 @@ type LocalPublishersRef<'a, Item, Err> =
 
 pub struct LocalPublishers<'a, Item, Err>(LocalPublishersRef<'a, Item, Err>);
 
+pub type LocalSubject<'a, Item, Err> =
+  Subject<LocalPublishers<'a, Item, Err>, LocalSubscription>;
+
 impl<'a, Item, Err> Clone for LocalPublishers<'a, Item, Err> {
   fn clone(&self) -> Self { LocalPublishers(self.0.clone()) }
 }
@@ -21,13 +24,16 @@ impl<'a, Item, Err> Clone for LocalPublishers<'a, Item, Err> {
 type SharedPublishersRef<Item, Err> =
   Arc<Mutex<Vec<Box<dyn Publisher<Item, Err> + Send + Sync>>>>;
 
+type SharedSubject<Item, Err> =
+  Subject<SharedPublishers<Item, Err>, SharedSubscription>;
+
 pub struct SharedPublishers<Item, Err>(SharedPublishersRef<Item, Err>);
 
 impl<Item, Err> Clone for SharedPublishers<Item, Err> {
   fn clone(&self) -> Self { SharedPublishers(self.0.clone()) }
 }
 
-impl<'a, Item, Err> Subject<LocalPublishers<'a, Item, Err>, LocalSubscription> {
+impl<'a, Item, Err> LocalSubject<'a, Item, Err> {
   pub fn local() -> Self {
     Subject {
       observers: LocalPublishers(Rc::new(RefCell::new(vec![]))),
@@ -36,7 +42,7 @@ impl<'a, Item, Err> Subject<LocalPublishers<'a, Item, Err>, LocalSubscription> {
   }
 }
 
-impl<Item, Err> Subject<SharedPublishers<Item, Err>, SharedSubscription> {
+impl<Item, Err> SharedSubject<Item, Err> {
   pub fn shared() -> Self {
     Subject {
       observers: SharedPublishers(Arc::new(Mutex::new(vec![]))),
@@ -44,8 +50,7 @@ impl<Item, Err> Subject<SharedPublishers<Item, Err>, SharedSubscription> {
     }
   }
 }
-impl<Item, Err> IntoShared
-  for Subject<SharedPublishers<Item, Err>, SharedSubscription>
+impl<Item, Err> IntoShared for SharedSubject<Item, Err>
 where
   Item: 'static,
   Err: 'static,
@@ -92,7 +97,7 @@ where
 
 impl<'a, Item, Err, O>
   RawSubscribable<Item, Err, Subscriber<O, LocalSubscription>>
-  for Subject<LocalPublishers<'a, Item, Err>, LocalSubscription>
+  for LocalSubject<'a, Item, Err>
 where
   O: Observer<Item, Err> + 'a,
 {
@@ -109,7 +114,7 @@ where
 }
 
 impl<Item, Err, O, S> RawSubscribable<Item, Err, Subscriber<O, S>>
-  for Subject<SharedPublishers<Item, Err>, SharedSubscription>
+  for SharedSubject<Item, Err>
 where
   S: IntoShared<Shared = SharedSubscription> + Clone,
   O: IntoShared,
