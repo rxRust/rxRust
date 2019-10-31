@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use crate::util;
 use std::cell::RefCell;
 use std::mem::replace;
 use std::mem::transmute;
@@ -35,13 +36,11 @@ impl LocalSubscription {
 impl IntoShared for LocalSubscription {
   type Shared = SharedSubscription;
   fn to_shared(self) -> SharedSubscription {
-    let inner = Rc::try_unwrap(self.0)
-      .ok()
-      .expect(
-        "Cannot convert a `LocalSubscription` to `SharedSubscription` \
-         when it referenced by other.",
-      )
-      .into_inner();
+    let inner = util::unwrap_rc_ref_cell(
+      self.0,
+      "Cannot convert a `LocalSubscription` to `SharedSubscription` \
+       when it referenced by other.",
+    );
 
     match inner.teardown {
       Teardown::None => {}

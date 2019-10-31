@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use crate::util;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
@@ -24,7 +25,7 @@ impl<'a, Item, Err> Clone for LocalPublishers<'a, Item, Err> {
 type SharedPublishersRef<Item, Err> =
   Arc<Mutex<Vec<Box<dyn Publisher<Item, Err> + Send + Sync>>>>;
 
-type SharedSubject<Item, Err> =
+pub type SharedSubject<Item, Err> =
   Subject<SharedPublishers<Item, Err>, SharedSubscription>;
 
 pub struct SharedPublishers<Item, Err>(SharedPublishersRef<Item, Err>);
@@ -72,13 +73,11 @@ where
       observers,
       subscription,
     } = self;
-    let observers = Rc::try_unwrap(observers.0)
-      .ok()
-      .expect(
-        "Cannot convert a `LocalSubscription` to `SharedSubscription` \
-         when it referenced by other.",
-      )
-      .into_inner();
+    let observers = util::unwrap_rc_ref_cell(
+      observers.0,
+      "Cannot convert a `LocalSubscription` to `SharedSubscription` \
+       when it referenced by other.",
+    );
     let observers = if observers.is_empty() {
       SharedPublishers(Arc::new(Mutex::new(vec![])))
     } else {
