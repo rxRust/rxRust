@@ -1,64 +1,70 @@
 use crate::prelude::*;
+use crate::subject::{LocalSubject, SharedSubject};
 
-pub struct ConnectableObservable<O, S> {
+pub struct LocalConnectableObservable<'a, O, Item, Err> {
   source: O,
-  subject: S,
+  subject: LocalSubject<'a, Item, Err>,
 }
 
-impl<Item, Err, Sub, O, SO, U> RawSubscribable<Item, Err, Sub>
-  for ConnectableObservable<O, Subject<SO, U>>
+pub struct SharedConnectableObservable<O, Item, Err> {
+  source: O,
+  subject: SharedSubject<Item, Err>,
+}
+
+pub trait Connect {
+  type Unsub;
+  fn connect(self) -> Self::Unsub;
+}
+
+impl<'a, O, Item, Err, SO, SU> RawSubscribable<Item, Err, Subscriber<SO, SU>>
+  for LocalConnectableObservable<'a, O, Item, Err>
 where
-  Subject<SO, U>: RawSubscribable<Item, Err, Sub>,
+  SO: Observer<Item, Err> + 'a,
+  SU: SubscriptionLike + Clone + 'static,
 {
-  type Unsub = <Subject<SO, U> as RawSubscribable<Item, Err, Sub>>::Unsub;
+  type Unsub = SU;
 
   #[inline(always)]
-  fn raw_subscribe(self, subscriber: Sub) -> Self::Unsub {
+  fn raw_subscribe(self, subscriber: Subscriber<SO, SU>) -> Self::Unsub {
     self.subject.raw_subscribe(subscriber)
   }
 }
 
-impl<'a, Item, Err, O>
-  ConnectableObservable<
-    O,
-    Subject<subject::LocalPublishers<'a, Item, Err>, LocalSubscription>,
-  >
+impl<Item, Err, SO, O, U> RawSubscribable<Item, Err, Subscriber<SO, U>>
+  for SharedConnectableObservable<O, Item, Err>
+where
+  SO: IntoShared,
+  SO::Shared: Observer<Item, Err>,
+  U: IntoShared,
+  U::Shared: SubscriptionLike + Clone + 'static,
 {
+  type Unsub = U::Shared;
+
+  #[inline(always)]
+  fn raw_subscribe(self, subscriber: Subscriber<SO, U>) -> Self::Unsub {
+    self.subject.raw_subscribe(subscriber)
+  }
+}
+
+impl<'a, Item, Err, O> LocalConnectableObservable<'a, O, Item, Err> {
   pub fn local(observable: O) -> Self {
-    ConnectableObservable {
+    Self {
       source: observable,
       subject: Subject::local(),
     }
   }
 }
 
-impl<O, Item, Err>
-  ConnectableObservable<
-    O,
-    Subject<subject::SharedPublishers<Item, Err>, SharedSubscription>,
-  >
+impl<'a, O, Item, Err> Connect for LocalConnectableObservable<'a, O, Item, Err>
 where
-  O: IntoShared,
+  O: RawSubscribable<
+    Item,
+    Err,
+    Subscriber<LocalSubject<'a, Item, Err>, LocalSubscription>,
+  >,
 {
-  pub fn shared(
-    observable: O,
-  ) -> ConnectableObservable<
-    O::Shared,
-    Subject<subject::SharedPublishers<Item, Err>, SharedSubscription>,
-  > {
-    ConnectableObservable {
-      source: observable.to_shared(),
-      subject: Subject::shared(),
-    }
-  }
-}
-
-impl<O, SO, U> ConnectableObservable<O, Subject<SO, U>> {
-  pub fn connect<Item, Err>(self) -> O::Unsub
-  where
-    O: RawSubscribable<Item, Err, Subscriber<Subject<SO, U>, U>>,
-    Subject<SO, U>: Fork<Output = Subject<SO, U>>,
-  {
+  type Unsub = O::Unsub;
+  fn connect(self) -> Self::Unsub {
     self.source.raw_subscribe(Subscriber {
       observer: self.subject.fork(),
       subscription: self.subject.subscription,
@@ -66,33 +72,80 @@ impl<O, SO, U> ConnectableObservable<O, Subject<SO, U>> {
   }
 }
 
-impl<O, S> IntoShared for ConnectableObservable<O, S>
+impl<O, Item, Err> SharedConnectableObservable<O, Item, Err>
 where
   O: IntoShared,
-  S: IntoShared,
 {
-  type Shared = ConnectableObservable<O::Shared, S::Shared>;
+  pub fn shared(
+    observable: O,
+  ) -> SharedConnectableObservable<O::Shared, Item, Err> {
+    SharedConnectableObservable {
+      source: observable.to_shared(),
+      subject: Subject::shared(),
+    }
+  }
+}
+
+impl<O, Item, Err> Connect for SharedConnectableObservable<O, Item, Err>
+where
+  O: RawSubscribable<
+    Item,
+    Err,
+    Subscriber<SharedSubject<Item, Err>, SharedSubscription>,
+  >,
+{
+  type Unsub = O::Unsub;
+  fn connect(self) -> Self::Unsub {
+    self.source.raw_subscribe(Subscriber {
+      observer: self.subject.fork(),
+      subscription: self.subject.subscription,
+    })
+  }
+}
+
+impl<'a, Item, Err, O> IntoShared
+  for LocalConnectableObservable<'a, O, Item, Err>
+where
+  O: IntoShared,
+  Item: 'static,
+  Err: 'static,
+{
+  type Shared = SharedConnectableObservable<O::Shared, Item, Err>;
   fn to_shared(self) -> Self::Shared {
-    ConnectableObservable {
+    SharedConnectableObservable {
       source: self.source.to_shared(),
       subject: self.subject.to_shared(),
     }
   }
 }
 
-impl<O, S> Fork for ConnectableObservable<O, S>
+impl<Item, Err, O> IntoShared for SharedConnectableObservable<O, Item, Err>
 where
-  O: Fork,
-  S: Fork,
+  O: IntoShared,
+  Item: 'static,
+  Err: 'static,
 {
-  type Output = ConnectableObservable<O::Output, S::Output>;
-  fn fork(&self) -> Self::Output {
-    ConnectableObservable {
-      source: self.source.fork(),
-      subject: self.subject.fork(),
+  type Shared = SharedConnectableObservable<O::Shared, Item, Err>;
+  fn to_shared(self) -> Self::Shared {
+    SharedConnectableObservable {
+      source: self.source.to_shared(),
+      subject: self.subject,
     }
   }
 }
+
+impl<O, Item, Err> Fork for SharedConnectableObservable<O, Item, Err> {
+  type Output = SharedSubject<Item, Err>;
+  #[inline(always)]
+  fn fork(&self) -> Self::Output { self.subject.fork() }
+}
+
+impl<'a, O, Item, Err> Fork for LocalConnectableObservable<'a, O, Item, Err> {
+  type Output = LocalSubject<'a, Item, Err>;
+  #[inline(always)]
+  fn fork(&self) -> Self::Output { self.subject.fork() }
+}
+
 #[cfg(test)]
 mod test {
   use super::*;
@@ -100,7 +153,7 @@ mod test {
   #[test]
   fn smoke() {
     let o = observable::of!(100);
-    let connected = ConnectableObservable::local(o);
+    let connected = LocalConnectableObservable::local(o);
     let mut first = 0;
     let mut second = 0;
     connected.fork().subscribe(|v| first = *v);
@@ -114,10 +167,7 @@ mod test {
   #[test]
   fn fork_and_shared() {
     let o = observable::of!(100);
-    let connected = ConnectableObservable::local(o)
-      .to_shared()
-      .fork()
-      .to_shared();
+    let connected = LocalConnectableObservable::local(o).to_shared();
     connected.fork().subscribe(|_| {});
     connected.fork().subscribe(|_| {});
 

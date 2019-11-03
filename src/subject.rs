@@ -61,13 +61,12 @@ where
   fn to_shared(self) -> Self::Shared { self }
 }
 
-impl<'a, Item, Err, U> IntoShared for Subject<LocalPublishers<'a, Item, Err>, U>
+impl<'a, Item, Err> IntoShared for LocalSubject<'a, Item, Err>
 where
-  U: IntoShared,
   Item: 'static,
   Err: 'static,
 {
-  type Shared = Subject<SharedPublishers<Item, Err>, U::Shared>;
+  type Shared = Subject<SharedPublishers<Item, Err>, SharedSubscription>;
   fn to_shared(self) -> Self::Shared {
     let Self {
       observers,
@@ -94,17 +93,14 @@ where
   }
 }
 
-impl<'a, Item, Err, O>
-  RawSubscribable<Item, Err, Subscriber<O, LocalSubscription>>
+impl<'a, Item, Err, O, U> RawSubscribable<Item, Err, Subscriber<O, U>>
   for LocalSubject<'a, Item, Err>
 where
   O: Observer<Item, Err> + 'a,
+  U: SubscriptionLike + Clone + 'static,
 {
-  type Unsub = LocalSubscription;
-  fn raw_subscribe(
-    mut self,
-    subscriber: Subscriber<O, LocalSubscription>,
-  ) -> Self::Unsub {
+  type Unsub = U;
+  fn raw_subscribe(mut self, subscriber: Subscriber<O, U>) -> Self::Unsub {
     let subscription = subscriber.subscription.clone();
     self.subscription.add(subscription.clone());
     self.observers.0.borrow_mut().push(Box::new(subscriber));
@@ -115,11 +111,12 @@ where
 impl<Item, Err, O, S> RawSubscribable<Item, Err, Subscriber<O, S>>
   for SharedSubject<Item, Err>
 where
-  S: IntoShared<Shared = SharedSubscription> + Clone,
+  S: IntoShared,
   O: IntoShared,
   O::Shared: Observer<Item, Err>,
+  S::Shared: SubscriptionLike + Clone + 'static,
 {
-  type Unsub = SharedSubscription;
+  type Unsub = S::Shared;
   fn raw_subscribe(mut self, subscriber: Subscriber<O, S>) -> Self::Unsub {
     let subscriber = subscriber.to_shared();
     let subscription = subscriber.subscription.clone();

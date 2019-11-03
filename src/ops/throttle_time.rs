@@ -190,6 +190,7 @@ fn smoke() {
     let x = x.clone();
     interval
       .fork()
+      .to_shared()
       .throttle_time(Duration::from_millis(19), edge)
       .subscribe(move |v| x.lock().unwrap().push(*v))
   };

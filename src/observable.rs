@@ -45,7 +45,6 @@ where
 impl<F, Item, Err, S, U> RawSubscribable<Item, Err, Subscriber<S, U>>
   for Observable<F>
 where
-  S: Observer<Item, Err>,
   F: FnOnce(Subscriber<S, U>),
   U: SubscriptionLike + Clone + 'static,
 {

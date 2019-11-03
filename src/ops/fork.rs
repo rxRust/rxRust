@@ -27,6 +27,7 @@
 ///  o.fork().subscribe_err(|_| {println!("consume in first")}, |_:&()|{});
 ///  o.fork().subscribe_err(|_| {println!("consume in second")}, |_:&()|{});
 /// ```
+/// Note `Fork` will not change a cold stream to hot stream.
 
 pub trait Fork {
   type Output;

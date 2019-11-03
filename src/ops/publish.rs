@@ -4,21 +4,16 @@
 /// applied to it. In this way you can wait for all intended observers to
 /// subscribe to the Observable before the Observable begins emitting items.
 ///
-use crate::observable::connectable_observable::ConnectableObservable;
+use crate::observable::connectable_observable::LocalConnectableObservable;
 pub use crate::prelude::*;
-use subject::LocalPublishers;
 
 pub trait Publish<'a, Item, Err>
 where
   Self: Sized,
 {
-  fn publish(
-    self,
-  ) -> ConnectableObservable<
-    Self,
-    Subject<LocalPublishers<'a, Item, Err>, LocalSubscription>,
-  > {
-    ConnectableObservable::local(self)
+  #[inline(always)]
+  fn publish(self) -> LocalConnectableObservable<'a, Self, Item, Err> {
+    LocalConnectableObservable::local(self)
   }
 }
 
@@ -26,6 +21,7 @@ impl<'a, Item, Err, T> Publish<'a, Item, Err> for T {}
 
 #[test]
 fn smoke() {
+  use crate::observable::Connect;
   let p = observable::of!(100).publish();
   let mut first = 0;
   let mut second = 0;
