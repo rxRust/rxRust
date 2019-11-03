@@ -20,7 +20,7 @@ pub mod throttle_time;
 pub use throttle_time::{ThrottleEdge, ThrottleTime};
 pub mod publish;
 pub use publish::Publish;
-// pub mod ref_count;
+pub mod ref_count;
 
 use crate::prelude::*;
 pub struct SharedOp<T>(pub(crate) T);

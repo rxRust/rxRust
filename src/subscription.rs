@@ -31,6 +31,8 @@ impl LocalSubscription {
   pub fn remove(&mut self, subscription: &dyn SubscriptionLike) {
     self.0.borrow_mut().remove(subscription);
   }
+
+  pub fn teardown_size(&self) -> usize { self.0.borrow().teardown.size() }
 }
 
 impl IntoShared for LocalSubscription {
@@ -87,6 +89,10 @@ impl SharedSubscription {
   pub fn remove(&mut self, subscription: &dyn SubscriptionLike) {
     self.0.lock().unwrap().remove(subscription);
   }
+
+  pub fn teardown_size(&self) -> usize {
+    self.0.lock().unwrap().teardown.size()
+  }
 }
 
 impl SubscriptionLike for SharedSubscription {
@@ -121,6 +127,16 @@ enum Teardown<T> {
   None,
   Once(T),
   Multi(Vec<T>),
+}
+
+impl<T> Teardown<T> {
+  fn size(&self) -> usize {
+    match self {
+      Teardown::None => 0,
+      Teardown::Once(_) => 1,
+      Teardown::Multi(ref vec) => vec.len(),
+    }
+  }
 }
 
 struct Inner<T> {
