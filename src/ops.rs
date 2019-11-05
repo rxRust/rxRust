@@ -20,9 +20,10 @@ pub mod throttle_time;
 pub use throttle_time::{ThrottleEdge, ThrottleTime};
 pub mod publish;
 pub use publish::Publish;
+// pub mod ref_count;
 
 use crate::prelude::*;
-pub struct SharedOp<T>(T);
+pub struct SharedOp<T>(pub(crate) T);
 
 impl<Item, Err, S, OP> RawSubscribable<Item, Err, S> for SharedOp<OP>
 where
@@ -45,9 +46,9 @@ where
 
 impl<S> IntoShared for SharedOp<S>
 where
-  S: Send + Sync + 'static,
+  S: IntoShared + Send + Sync + 'static,
 {
-  type Shared = Self;
+  type Shared = SharedOp<S::Shared>;
   #[inline(always)]
-  fn to_shared(self) -> Self { self }
+  fn to_shared(self) -> Self::Shared { SharedOp(self.0.to_shared()) }
 }
