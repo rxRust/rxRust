@@ -1,16 +1,16 @@
 /// Make a ConnectableObservable behave like a ordinary observable and automates
 /// the way you can connect to it.
-/// 
+///
 /// Internally it counts the subscriptions to the observable and subscribes
-/// (only once) to the source if the number of subscriptions is larger than 0. 
+/// (only once) to the source if the number of subscriptions is larger than 0.
 /// If the number of subscriptions is smaller than 1, it unsubscribes from the
 /// source. This way you can make sure that everything before the published
 /// refCount has only a single subscription independently of the number of
 /// subscribers to the target observable.
-/// 
+///
 /// Note that using the share operator is exactly the same as using the publish
-/// operator (making the observable hot) and the refCount operator in a sequence.
-
+/// operator (making the observable hot) and the refCount operator in a
+/// sequence.
 use crate::observable::{
   Connect, LocalConnectableObservable, SharedConnectableObservable,
 };
@@ -34,12 +34,16 @@ where
   connection: Option<U>,
 }
 
+type LocalRefConnectable<'a, O, Item, Err, U> =
+  Rc<RefCell<Inner<LocalConnectableObservable<'a, O, Item, Err>, U>>>;
 pub struct LocalRefCount<'a, O, Item, Err, U>(
-  Rc<RefCell<Inner<LocalConnectableObservable<'a, O, Item, Err>, U>>>,
+  LocalRefConnectable<'a, O, Item, Err, U>,
 );
 
+type SharedRefConnectable<O, Item, Err, U> =
+  Arc<Mutex<Inner<SharedConnectableObservable<O, Item, Err>, U>>>;
 pub struct SharedRefCount<O, Item, Err, U>(
-  Arc<Mutex<Inner<SharedConnectableObservable<O, Item, Err>, U>>>,
+  SharedRefConnectable<O, Item, Err, U>,
 );
 
 pub(crate) fn local<'a, O, Item, Err>(
