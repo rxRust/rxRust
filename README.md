@@ -32,7 +32,7 @@ even.merge(odd).subscribe(|v| print!("{} ", v, ));
 
 ## Fork Stream
 
-In `rxrust` almost all extensions consume the upstream. So in general it is unicast. So when you try to subscribe a stream twice, the compiler will complain. 
+In `rxrust` almost all extensions consume the upstream. So when you try to subscribe a stream twice, the compiler will complain. 
 
 ```rust ignore
  # use rxrust::prelude::*;
@@ -41,7 +41,7 @@ In `rxrust` almost all extensions consume the upstream. So in general it is unic
  o.subscribe(|_| {println!("consume in second")});
 ```
 
-In this case, we can use `multicast` convert an unicast stream to a multicast stream. A multicast stream is a stream that implements `Fork` trait, let you can fork stream from it. Subject is an multicast stream default, so you can direct fork it. 
+In this case, we can use `Fork` to fork a stream. In general, `Fork` has same mean with `Clone`, this will not change a cold stream to hot stream. If you want convert a stream from  unicast to multicast, from **cold** to **hot** use `Publish` and `RefCount`.
 
 ```rust
  # use rxrust::prelude::*;
@@ -81,3 +81,14 @@ std::thread::sleep(std::time::Duration::new(1, 0));
 ```
 
 A `from_future_with_err！` macro also provided to propagating error from `Future`.
+
+## All contributions are welcome
+
+We are looking for contributors! Feel free to open issues for asking questions, suggesting features or other things!
+
+Help and contributions can be any of the following:
+
+- use the project and report issues to the project issues page
+- documentation and README enhancement (VERY important)
+- continuous improvement in a ci Pipeline
+- implement any unimplemented operator, remember to create a pull request before you start your code, so other people know you are work on it.
