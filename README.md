@@ -66,13 +66,13 @@ observable::from_iter(0..10)
 
 ## Converts from a Future
 
-just use `observable::from_future!` to convert a `Future` to an observable sequence.
+just use `observable::from_future` to convert a `Future` to an observable sequence.
 
 ```rust
 use rxrust::prelude::*;
 use futures::future;
 
-observable::from_future!(future::ready(1))
+observable::from_future(future::ready(1))
   .subscribe(move |v| println!("subscribed with {}", v));
 
 // because all future in rxrust are execute async, so we wait a second to see
