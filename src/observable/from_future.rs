@@ -1,6 +1,8 @@
 #![allow(unused_imports)]
 use crate::prelude::*;
-use futures::{executor::ThreadPool, future::FutureExt, task::SpawnExt};
+use futures::{
+  executor::ThreadPool, future::Future, future::FutureExt, task::SpawnExt,
+};
 use std::sync::Mutex;
 
 lazy_static! {
@@ -18,7 +20,7 @@ lazy_static! {
 /// let res = Arc::new(Mutex::new(0));
 /// let c_res = res.clone();
 /// use futures::future;
-/// observable::from_future!(future::ready(1))
+/// observable::from_future(future::ready(1))
 ///   .subscribe(move |v| {
 ///     *res.lock().unwrap() = *v;
 ///   });
@@ -28,15 +30,22 @@ lazy_static! {
 /// If your `Future` poll an `Result` type value, and you want dispatch the
 /// error by rxrust, you can use [`from_future_with_err!`]
 ///
-pub macro from_future($f:expr) {
+pub fn from_future<O, U, F>(
+  f: F,
+) -> ops::SharedOp<Observable<impl FnOnce(Subscriber<O, U>) + Clone>>
+where
+  O: Observer<<F as Future>::Output, ()> + Send + 'static,
+  U: SubscriptionLike + Send + 'static,
+  F: Future + Send + Clone + Sync + 'static,
+{
   Observable::new(move |mut subscriber| {
-    let f = $f.map(move |v| {
+    let fmapped = f.map(move |v| {
       if !subscriber.is_closed() {
         subscriber.next(&v);
         subscriber.complete();
       }
     });
-    DEFAULT_RUNTIME.lock().unwrap().spawn(f).unwrap();
+    DEFAULT_RUNTIME.lock().unwrap().spawn(fmapped).unwrap();
   })
   .to_shared()
 }
@@ -77,7 +86,7 @@ fn smoke() {
   }
   // from_future
   let res = c_res.clone();
-  from_future!(future::ready(2)).subscribe(move |v| {
+  from_future(future::ready(2)).subscribe(move |v| {
     *res.lock().unwrap() = *v;
   });
   std::thread::sleep(std::time::Duration::from_millis(10));
