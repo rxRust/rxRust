@@ -28,7 +28,7 @@ lazy_static! {
 /// assert_eq!(*c_res.lock().unwrap(), 1);
 /// ```
 /// If your `Future` poll an `Result` type value, and you want dispatch the
-/// error by rxrust, you can use [`from_future_with_err!`]
+/// error by rxrust, you can use [`from_future_with_err`]
 ///
 pub fn from_future<O, U, F>(
   f: F,
@@ -53,11 +53,19 @@ where
 /// Converts a `Future` to an observable sequence like [`from_future`].
 /// But only work for which `Future::Output` is `Result` type, and `Result::Ok`
 /// emit to next handle, and `Result::Err` as an error to handle.
-pub macro from_future_with_err($f:expr) {
+pub fn from_future_with_err<O, U, F, Item, Error>(
+  f: F,
+) -> ops::SharedOp<Observable<impl FnOnce(Subscriber<O, U>) + Clone>>
+where
+  O: Observer<Item, Error> + Send + 'static,
+  U: SubscriptionLike + Send + 'static,
+  F: Future + Send + Clone + Sync + 'static,
+  <F as Future>::Output: Into<Result<Item, Error>>,
+{
   Observable::new(move |mut subscriber| {
-    let f = $f.map(move |v| {
+    let fmapped = f.map(move |v| {
       if !subscriber.is_closed() {
-        match v {
+        match v.into() {
           Ok(ref item) => {
             subscriber.next(item);
             subscriber.complete();
@@ -66,7 +74,7 @@ pub macro from_future_with_err($f:expr) {
         };
       }
     });
-    DEFAULT_RUNTIME.lock().unwrap().spawn(f).unwrap();
+    DEFAULT_RUNTIME.lock().unwrap().spawn(fmapped).unwrap();
   })
   .to_shared()
 }
@@ -78,7 +86,7 @@ fn smoke() {
   let res = Arc::new(Mutex::new(0));
   let c_res = res.clone();
   {
-    from_future_with_err!(future::ok(1)).subscribe(move |v| {
+    from_future_with_err(future::ok(1)).subscribe(move |v| {
       *res.lock().unwrap() = *v;
     });
     std::thread::sleep(std::time::Duration::from_millis(10));

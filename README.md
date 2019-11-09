@@ -80,7 +80,7 @@ observable::from_future(future::ready(1))
 std::thread::sleep(std::time::Duration::new(1, 0));
 ```
 
-A `from_future_with_err！` macro also provided to propagating error from `Future`.
+A `from_future_with_err` function also provided to propagating error from `Future`.
 
 ## All contributions are welcome
 
