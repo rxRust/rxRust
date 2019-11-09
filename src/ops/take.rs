@@ -15,7 +15,7 @@ use crate::prelude::*;
 ///   ops::{Take}, prelude::*,
 /// };
 ///
-/// observable::from_iter!(0..10).take(5).subscribe(|v| println!("{}", v));
+/// observable::from_iter(0..10).take(5).subscribe(|v| println!("{}", v));
 ///
 
 /// // print logs:
@@ -146,7 +146,7 @@ mod test {
     let mut completed = false;
     let mut next_count = 0;
 
-    observable::from_iter!(0..100)
+    observable::from_iter(0..100)
       .take(5)
       .subscribe_complete(|_| next_count += 1, || completed = true);
 
@@ -158,19 +158,21 @@ mod test {
   fn take_support_fork() {
     let mut nc1 = 0;
     let mut nc2 = 0;
-    let take5 = observable::from_iter!(0..100).take(5);
-    let f1 = take5.fork();
-    let f2 = take5.fork();
-    f1.take(5).fork().subscribe(|_| nc1 += 1);
-    f2.take(5).fork().subscribe(|_| nc2 += 1);
+    {
+      let take5 = observable::from_iter(0..100).take(5);
+      let f1 = take5.fork();
+      let f2 = take5.fork();
 
+      f1.take(5).fork().subscribe(|_| nc1 += 1);
+      f2.take(5).fork().subscribe(|_| nc2 += 1);
+    }
     assert_eq!(nc1, 5);
     assert_eq!(nc2, 5);
   }
 
   #[test]
   fn into_shared() {
-    observable::from_iter!(0..100)
+    observable::from_iter(0..100)
       .take(5)
       .take(5)
       .to_shared()

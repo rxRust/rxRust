@@ -15,8 +15,8 @@ use crate::scheduler::Scheduler;
 /// use rxrust::prelude::*;
 /// use rxrust::ops::{ Merge };
 ///
-/// let a = observable::from_iter!(1..5);
-/// let b = observable::from_iter!(5..10);
+/// let a = observable::from_iter(1..5);
+/// let b = observable::from_iter(5..10);
 /// a.merge(b).subscribe(|v| print!("{} ", *v));
 /// ```
 ///
@@ -32,8 +32,8 @@ use crate::scheduler::Scheduler;
 /// use rxrust::ops::{ Merge, SubscribeOn };
 /// use std::thread;
 ///
-/// let a = observable::from_iter!(1..5).subscribe_on(Schedulers::NewThread);
-/// let b = observable::from_iter!(5..10);
+/// let a = observable::from_iter(1..5).subscribe_on(Schedulers::NewThread);
+/// let b = observable::from_iter(5..10);
 /// a.merge(b).to_shared().subscribe(|v|{
 ///   let handle = thread::current();
 ///   print!("{}({:?}) ", *v, handle.id())
@@ -111,7 +111,7 @@ mod test {
     let c_res = res.clone();
     let thread = Arc::new(Mutex::new(vec![]));
     let c_thread = thread.clone();
-    observable::from_iter!(1..5)
+    observable::from_iter(1..5)
       .subscribe_on(Schedulers::NewThread)
       .subscribe(move |v| {
         res.lock().unwrap().push(*v);
@@ -136,7 +136,7 @@ mod test {
   fn unsubscribe_scheduler(scheduler: Schedulers) {
     let emitted = Arc::new(Mutex::new(vec![]));
     let c_emitted = emitted.clone();
-    observable::from_iter!(0..10)
+    observable::from_iter(0..10)
       .subscribe_on(scheduler)
       .delay(Duration::from_millis(10))
       .subscribe(move |v| {

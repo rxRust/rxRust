@@ -18,7 +18,7 @@ use rxrust::{
   ops::{ Filter, Merge, Fork }, prelude::*, 
 };
 
-let mut numbers = observable::from_iter!(0..10);
+let mut numbers = observable::from_iter(0..10);
 // crate a even stream by filter
 let even = numbers.fork().filter(|v| *v % 2 == 0);
 // crate an odd stream by filter
@@ -36,7 +36,7 @@ In `rxrust` almost all extensions consume the upstream. So when you try to subsc
 
 ```rust ignore
  # use rxrust::prelude::*;
- let o = observable::from_iter!(0..10);
+ let o = observable::from_iter(0..10);
  o.subscribe(|_| {println!("consume in first")});
  o.subscribe(|_| {println!("consume in second")});
 ```
@@ -46,7 +46,7 @@ In this case, we can use `Fork` to fork a stream. In general, `Fork` has same me
 ```rust
  # use rxrust::prelude::*;
  # use rxrust::ops::Fork;
- let o = observable::from_iter!(0..10);
+ let o = observable::from_iter(0..10);
  o.fork().subscribe(|_| {println!("consume in first")});
  o.fork().subscribe(|_| {println!("consume in second")});
 ```
@@ -57,7 +57,7 @@ In this case, we can use `Fork` to fork a stream. In general, `Fork` has same me
 use rxrust::prelude::*;
 use rxrust::{ops::{ ObserveOn, SubscribeOn, Map }, scheduler::Schedulers };
 
-observable::from_iter!(0..10)
+observable::from_iter(0..10)
   .subscribe_on(Schedulers::NewThread)
   .map(|v| *v*2)
   .observe_on(Schedulers::NewThread)

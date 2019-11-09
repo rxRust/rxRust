@@ -10,7 +10,7 @@ use ops::SharedOp;
 /// let mut coll = vec![];
 /// let coll_clone = coll.clone();
 ///
-/// observable::from_iter!(0..10)
+/// observable::from_iter(0..10)
 ///   .filter(|v| *v % 2 == 0)
 ///   .subscribe(|v| { coll.push(*v); });
 
@@ -126,7 +126,7 @@ mod test {
 
   #[test]
   fn fork_and_shared() {
-    observable::from_iter!(0..10)
+    observable::from_iter(0..10)
       .filter(|v| v % 2 == 0)
       .fork()
       .to_shared()

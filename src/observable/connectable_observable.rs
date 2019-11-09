@@ -152,7 +152,7 @@ mod test {
 
   #[test]
   fn smoke() {
-    let o = observable::of!(100);
+    let o = observable::of(100);
     let connected = LocalConnectableObservable::local(o);
     let mut first = 0;
     let mut second = 0;
@@ -166,7 +166,7 @@ mod test {
 
   #[test]
   fn fork_and_shared() {
-    let o = observable::of!(100);
+    let o = observable::of(100);
     let connected = LocalConnectableObservable::local(o).to_shared();
     connected.fork().subscribe(|_| {});
     connected.fork().subscribe(|_| {});

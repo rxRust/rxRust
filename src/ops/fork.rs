@@ -3,13 +3,13 @@
 /// # Example
 /// ```rust ignore
 ///  # use rxrust::prelude::*;
-///  let o = observable::from_iter!(0..10);
+///  let o = observable::from_iter(0..10);
 ///  o.subscribe_err(|_| {println!("consume in first")}, |_:&()|{});
 ///  o.subscribe_err(|_| {println!("consume in second")}, |_:&()|{});
 /// ```
 /// it will compile failed, complains like this:
 /// ```shell
-// 5 |  let o = observable::from_iter!(0..10);
+// 5 |  let o = observable::from_iter(0..10);
 //   |      - move occurs because `o` has type `rxrust::observable::Observable`,
 //   |        which does not implement the `Copy` trait
 // 6 |  o.subscribe_err(|_| {println!("consume in first")}, |_:&()|{});
@@ -23,7 +23,7 @@
 /// ```rust
 ///  # use rxrust::prelude::*;
 ///  # use rxrust::ops::Fork;
-///  let o = observable::from_iter!(0..10);
+///  let o = observable::from_iter(0..10);
 ///  o.fork().subscribe_err(|_| {println!("consume in first")}, |_:&()|{});
 ///  o.fork().subscribe_err(|_| {println!("consume in second")}, |_:&()|{});
 /// ```

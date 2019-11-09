@@ -1,11 +1,16 @@
 #![allow(unused_imports)]
 use crate::prelude::*;
 
-pub macro from_iter($iter:expr) {
+pub fn from_iter<O, U, Iter>(
+  iter: Iter,
+) -> Observable<impl FnOnce(Subscriber<O, U>) + Clone>
+where
+  O: Observer<<Iter as IntoIterator>::Item, ()>,
+  U: SubscriptionLike,
+  Iter: IntoIterator + Clone,
+{
   Observable::new(move |mut subscriber| {
-    // only for infer type
-    let _: &Observer<_, ()> = &subscriber;
-    for v in $iter.into_iter() {
+    for v in iter.into_iter() {
       if !subscriber.is_closed() {
         subscriber.next(&v);
       } else {
@@ -18,20 +23,26 @@ pub macro from_iter($iter:expr) {
   })
 }
 
-pub macro of($v: expr) {
+pub fn of<O, U, Item>(
+  v: Item,
+) -> Observable<impl FnOnce(Subscriber<O, U>) + Clone>
+where
+  O: Observer<Item, ()>,
+  U: SubscriptionLike,
+  Item: Clone,
+{
   Observable::new(move |mut subscriber| {
-    // only for infer type
-    let _: &Observer<_, ()> = &subscriber;
-
-    subscriber.next(&$v);
+    subscriber.next(&v);
     subscriber.complete();
   })
 }
 
-pub macro empty() {
-  Observable::new(move |mut subscriber: Subscriber<_, _>| {
-    // only for infer type
-    let _: &Observer<_, ()> = &subscriber;
+pub fn empty<O, U, Item>() -> Observable<impl FnOnce(Subscriber<O, U>) + Clone>
+where
+  O: Observer<Item, ()>,
+  U: SubscriptionLike,
+{
+  Observable::new(move |mut subscriber: Subscriber<O, U>| {
     subscriber.complete();
   })
 }
@@ -44,7 +55,7 @@ mod test {
   fn from_range() {
     let mut hit_count = 0;
     let mut completed = false;
-    observable::from_iter!(0..100)
+    observable::from_iter(0..100)
       .subscribe_complete(|_| hit_count += 1, || completed = true);
 
     assert_eq!(hit_count, 100);
@@ -55,7 +66,7 @@ mod test {
   fn from_vec() {
     let mut hit_count = 0;
     let mut completed = false;
-    observable::from_iter!(vec![0; 100])
+    observable::from_iter(vec![0; 100])
       .subscribe_complete(|_| hit_count += 1, || completed = true);
 
     assert_eq!(hit_count, 100);
@@ -66,8 +77,7 @@ mod test {
   fn of() {
     let mut value = 0;
     let mut completed = false;
-    observable::of!(100)
-      .subscribe_complete(|v| value = *v, || completed = true);
+    observable::of(100).subscribe_complete(|v| value = *v, || completed = true);
 
     assert_eq!(value, 100);
     assert_eq!(completed, true);
@@ -77,7 +87,7 @@ mod test {
   fn empty() {
     let mut hits = 0;
     let mut completed = false;
-    observable::empty!()
+    observable::empty()
       .subscribe_complete(|_: &()| hits += 1, || completed = true);
 
     assert_eq!(hits, 0);
@@ -88,11 +98,11 @@ mod test {
   fn fork() {
     use crate::ops::Fork;
 
-    observable::from_iter!(vec![0; 100])
+    observable::from_iter(vec![0; 100])
       .fork()
       .fork()
       .subscribe(|_| {});
 
-    observable::of!(0).fork().fork().subscribe(|_| {});
+    observable::of(0).fork().fork().subscribe(|_| {});
   }
 }

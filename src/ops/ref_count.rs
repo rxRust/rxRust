@@ -255,7 +255,7 @@ fn smoke() {
   let mut accept1 = 0;
   let mut accept2 = 0;
   {
-    let ref_count = observable::of!(1).fork().publish().ref_count();
+    let ref_count = observable::of(1).fork().publish().ref_count();
     ref_count.fork().subscribe(|v| accept1 = *v);
     ref_count.fork().subscribe(|v| accept2 = *v);
   }
@@ -287,7 +287,7 @@ fn auto_unsubscribe() {
 #[test]
 fn fork_and_shared() {
   use crate::ops::Publish;
-  observable::of!(1).publish().ref_count().subscribe(|_| {});
+  observable::of(1).publish().ref_count().subscribe(|_| {});
 
   LocalSubject::<'_, (), ()>::local()
     .publish()
@@ -295,18 +295,18 @@ fn fork_and_shared() {
     .to_shared()
     .subscribe(|_| {});
 
-  observable::of!(1)
+  observable::of(1)
     .publish()
     .to_shared()
     .ref_count()
     .subscribe(|_| {});
 
-  observable::of!(1)
+  observable::of(1)
     .publish()
     .to_shared()
     .ref_count()
     .subscribe(|_| {});
-  observable::of!(1)
+  observable::of(1)
     .publish()
     .to_shared()
     .ref_count()
