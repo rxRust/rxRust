@@ -1,5 +1,9 @@
 ## [Unreleased](https://github.com/M-Adoo/rxRust/compare/v0.3.0...HEAD)
 
+### Breaking Changes
+- **observable**: macros `of!`, `empty!`, `from_iter!`, `from_future!` and
+  `from_future_with_errors!` replaced by functions.
+
 ## [0.4.0](https://github.com/M-Adoo/rxRust/releases/tag/v0.4.0)  (2019-11-07)
 
 ### Features

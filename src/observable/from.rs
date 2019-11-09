@@ -1,4 +1,3 @@
-#![allow(unused_imports)]
 use crate::prelude::*;
 
 pub fn from_iter<O, U, Iter>(
