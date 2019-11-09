@@ -4,6 +4,10 @@ use crate::prelude::*;
 ///
 /// Completes when all elements have been emitted. Never emits an error.
 ///
+/// # Arguments
+///
+/// * `iter` - An iterator to get all the values from.
+///
 /// # Examples
 ///
 /// A simple example for a range:
@@ -50,6 +54,10 @@ where
 ///
 /// Completes immediatelly after emitting the value given. Never emits an error.
 ///
+/// # Arguments
+///
+/// * `v` - A value to emitt.
+///
 /// # Examples
 ///
 /// ```
@@ -76,6 +84,10 @@ where
 /// Creates an observable that emits value or the error from a [`Result`] given.
 ///
 /// Completes immediatelly after.
+///
+/// # Arguments
+///
+/// * `r` - A [`Result`] argument to take a value, or an error to emitt from.
 ///
 /// # Examples
 ///
@@ -116,6 +128,10 @@ where
 /// Emits the value if is there, and completes immediatelly after. When the
 /// given option has not value, completes immediatelly. Never emitts an error.
 ///
+/// # Arguments
+///
+/// * `o` - An optional used to take a value to emitt from.
+///
 /// # Examples
 ///
 /// ```
@@ -144,7 +160,11 @@ where
 
 /// Creates an observable that emits the return value of a callable.
 ///
-/// Never emits an error
+/// Never emits an error.
+///
+/// # Arguments
+///
+/// * `f` - A function that will be called to obtain its return value to emitt.
 ///
 /// # Examples
 ///
@@ -156,7 +176,7 @@ where
 /// ```
 ///
 pub fn from_fn<O, U, Callable, Item>(
-  callable: Callable,
+  f: Callable,
 ) -> Observable<impl FnOnce(Subscriber<O, U>) + Clone>
 where
   Callable: FnOnce() -> Item,
@@ -166,7 +186,7 @@ where
 {
   // Because of Rust zero-cost abstraction we can compose from
   // what we already have without a fear of too much overhead added.
-  of(callable())
+  of(f())
 }
 
 #[cfg(test)]

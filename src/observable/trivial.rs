@@ -2,8 +2,13 @@
 use crate::prelude::*;
 
 /// Creates an observable that emitts no items, just terminates with an error.
+///
+/// # Arguments
+///
+/// * `e` - An error to emitt and terminate with
+///
 pub fn throw<O, U, Item, Err>(
-  v: Err,
+  e: Err,
 ) -> Observable<impl FnOnce(Subscriber<O, U>) + Clone>
 where
   O: Observer<Item, Err>,
@@ -12,7 +17,7 @@ where
   Item: Clone,
 {
   Observable::new(move |mut subscriber| {
-    subscriber.error(&v);
+    subscriber.error(&e);
   })
 }
 
