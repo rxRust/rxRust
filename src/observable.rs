@@ -1,5 +1,7 @@
 use crate::prelude::*;
 
+mod trivial;
+pub use trivial::*;
 mod from;
 pub use from::*;
 pub(crate) mod from_future;

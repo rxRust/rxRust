@@ -73,26 +73,11 @@ where
   })
 }
 
-/// Creates an observable that emits no items and terminates with an error.
-pub fn throw<O, U, Item, Err>(
-  v: Err,
-) -> Observable<impl FnOnce(Subscriber<O, U>) + Clone>
-where
-  O: Observer<Item, Err>,
-  U: SubscriptionLike,
-  Err: Clone,
-  Item: Clone,
-{
-  Observable::new(move |mut subscriber| {
-    subscriber.error(&v);
-  })
-}
-
-/// Creates an observable that emits result's value provided by [`Result`] or the error.
-/// 
+/// Creates an observable that emits value or the error from a [`Result`] given.
+///
 /// Completes immediatelly after.
-/// 
-/// # Examples 
+///
+/// # Examples
 ///
 /// ```
 /// use rxrust::prelude::*;
@@ -102,13 +87,13 @@ where
 /// ```
 ///
 /// ```
+/// use rxrust::prelude::*;
+///
 /// observable::of_result(Err("An error"))
-///   .subscribe(|v| {println!("{},", v)});
-/// 
-/// // result: nothing printed
+///   .subscribe_err(|v: &i32| {}, |e| {println!("Error:  {},", e)});
 /// ```
-/// 
-pub fn of_result<O, U, Item,Err>(
+///
+pub fn of_result<O, U, Item, Err>(
   r: Result<Item, Err>,
 ) -> Observable<impl FnOnce(Subscriber<O, U>) + Clone>
 where
@@ -118,8 +103,7 @@ where
   Err: Clone,
 {
   Observable::new(move |mut subscriber| {
-    match &r
-    {
+    match &r {
       Ok(v) => subscriber.next(v),
       Err(e) => subscriber.error(e),
     };
@@ -128,19 +112,19 @@ where
 }
 
 /// Creates an observable that potentially emits a single value from [`Option`].
-/// 
-/// Emits the value if is there, and completes immediatelly after. When given option
-/// has not value, completes immediatelly. Never emitts an error.
-/// 
-/// # Examples 
+///
+/// Emits the value if is there, and completes immediatelly after. When the
+/// given option has not value, completes immediatelly. Never emitts an error.
+///
+/// # Examples
 ///
 /// ```
 /// use rxrust::prelude::*;
 ///
-/// observable::of_result(Some(1234))
+/// observable::of_option(Some(1234))
 ///   .subscribe(|v| {println!("{},", v)});
 /// ```
-/// 
+///
 pub fn of_option<O, U, Item>(
   o: Option<Item>,
 ) -> Observable<impl FnOnce(Subscriber<O, U>) + Clone>
@@ -150,70 +134,29 @@ where
   Item: Clone,
 {
   Observable::new(move |mut subscriber| {
-    match &o
-    {
+    match &o {
       Some(v) => subscriber.next(v),
-      None => ()
+      None => (),
     };
     subscriber.complete();
   })
 }
 
-/// Creates an observable that produces no values.
+/// Creates an observable that emits the return value of a callable.
 ///
-/// Completes immediatelly. Never emits an error.
-///
-/// # Examples
-/// ```
-/// use rxrust::prelude::*;
-///
-/// observable::empty()
-///   .subscribe(|v| {println!("{},", v)});
-///
-/// // Result: no thing printed
-/// ```
-/// 
-pub fn empty<O, U, Item>() -> Observable<impl FnOnce(Subscriber<O, U>) + Clone>
-where
-  O: Observer<Item, ()>,
-  U: SubscriptionLike,
-{
-  Observable::new(move |mut subscriber: Subscriber<O, U>| {
-    subscriber.complete();
-  })
-}
-
-/// Creates an observable that never emitts any value and never completes.
-///
-/// Neither emitts an error.
-///
-pub fn never<O, U, Item>() -> Observable<impl FnOnce(Subscriber<O, U>) + Clone>
-where
-  O: Observer<Item, ()>,
-  U: SubscriptionLike,
-{
-  Observable::new(move |_subscriber: Subscriber<O, U>| {
-    loop {
-      // will not complete
-    }
-  })
-}
-
-/// Creates an observable that emits the return value of a function-like callable.
-/// 
 /// Never emits an error
-/// 
+///
 /// # Examples
-/// 
+///
 /// ```
 /// use rxrust::prelude::*;
 ///
-/// observable::start(|| {1234})
+/// observable::from_fn(|| {1234})
 ///   .subscribe(|v| {println!("{},", v)});
 /// ```
-/// 
-pub fn start<O, U, Callable, Item>(
-  func: Callable,
+///
+pub fn from_fn<O, U, Callable, Item>(
+  callable: Callable,
 ) -> Observable<impl FnOnce(Subscriber<O, U>) + Clone>
 where
   Callable: FnOnce() -> Item,
@@ -221,15 +164,82 @@ where
   U: SubscriptionLike,
   Item: Clone,
 {
-  // because of Rust zero-cost abstraction
-  // we can compose from what we have already
-  // without fearing of introducing unwanted overhead
-  of(func())
+  // Because of Rust zero-cost abstraction we can compose from
+  // what we already have without a fear of too much overhead added.
+  of(callable())
 }
 
 #[cfg(test)]
 mod test {
   use crate::prelude::*;
+
+  #[test]
+  fn from_fn() {
+    let mut value = 0;
+    let mut completed = false;
+    let callable = || 123;
+    observable::from_fn(callable).subscribe_complete(
+      |v| {
+        value = *v;
+      },
+      || completed = true,
+    );
+
+    assert_eq!(value, 123);
+    assert!(completed);
+  }
+
+  #[test]
+  fn of_option() {
+    let mut value1 = 0;
+    let mut completed1 = false;
+    observable::of_option(Some(123)).subscribe_complete(
+      |v| {
+        value1 = *v;
+      },
+      || completed1 = true,
+    );
+
+    assert_eq!(value1, 123);
+    assert!(completed1);
+
+    let mut value2 = 0;
+    let mut completed2 = false;
+    observable::of_option(None).subscribe_complete(
+      |v| {
+        value2 = *v;
+      },
+      || completed2 = true,
+    );
+
+    assert_eq!(value2, 0);
+    assert!(completed2);
+  }
+
+  #[test]
+  fn of_result() {
+    let mut value1 = 0;
+    let mut completed1 = false;
+    let r: Result<i32, &str> = Ok(123);
+    observable::of_result(r).subscribe_complete(
+      |v| {
+        value1 = *v;
+      },
+      || completed1 = true,
+    );
+
+    assert_eq!(value1, 123);
+    assert!(completed1);
+
+    let mut value2 = 0;
+    let mut error_reported = false;
+    let r: Result<i32, &str> = Err("error");
+    observable::of_result(r)
+      .subscribe_err(|_| value2 = 123, |_| error_reported = true);
+
+    assert_eq!(value2, 0);
+    assert!(error_reported);
+  }
 
   #[test]
   fn from_range() {
@@ -260,17 +270,6 @@ mod test {
     observable::of(100).subscribe_complete(|v| value = *v, || completed = true);
 
     assert_eq!(value, 100);
-    assert_eq!(completed, true);
-  }
-
-  #[test]
-  fn empty() {
-    let mut hits = 0;
-    let mut completed = false;
-    observable::empty()
-      .subscribe_complete(|_: &()| hits += 1, || completed = true);
-
-    assert_eq!(hits, 0);
     assert_eq!(completed, true);
   }
 

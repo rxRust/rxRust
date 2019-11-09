@@ -137,8 +137,9 @@ mod test {
     let mut next = 0;
     let mut complete = 0;
 
-    let mut subscriber = Subscriber::local(SubscribeComplete::new(
+    let mut subscriber = Subscriber::local(SubscribeAll::new(
       |_: &_| next += 1,
+      |_: &i32| {},
       || complete += 1,
     ));
 
