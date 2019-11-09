@@ -128,7 +128,7 @@ mod test {
     let mut completed = 0;
     let mut next_count = 0;
 
-    observable::from_iter!(0..2)
+    observable::from_iter(0..2)
       .first()
       .subscribe_complete(|_| next_count += 1, || completed += 1);
 
@@ -141,7 +141,7 @@ mod test {
     let mut completed = false;
     let mut next_count = 0;
 
-    observable::from_iter!(0..2)
+    observable::from_iter(0..2)
       .first_or(100)
       .subscribe_complete(|_| next_count += 1, || completed = true);
 
@@ -150,7 +150,7 @@ mod test {
 
     completed = false;
     let mut v = 0;
-    observable::empty!()
+    observable::empty()
       .first_or(100)
       .subscribe_complete(|value| v = *value, || completed = true);
 
@@ -162,11 +162,13 @@ mod test {
   fn first_support_fork() {
     let mut value = 0;
     let mut value2 = 0;
-    let o = observable::from_iter!(1..100).first();
-    let o1 = o.fork().first();
-    let o2 = o.fork().first();
-    o1.subscribe(|v| value = *v);
-    o2.subscribe(|v| value2 = *v);
+    {
+      let o = observable::from_iter(1..100).first();
+      let o1 = o.fork().first();
+      let o2 = o.fork().first();
+      o1.subscribe(|v| value = *v);
+      o2.subscribe(|v| value2 = *v);
+    }
     assert_eq!(value, 1);
     assert_eq!(value2, 1);
   }
@@ -188,7 +190,7 @@ mod test {
 
   #[test]
   fn fork_and_shared() {
-    observable::of!(0)
+    observable::of(0)
       .first_or(0)
       .fork()
       .fork()
@@ -197,7 +199,7 @@ mod test {
       .to_shared()
       .subscribe(|_| {});
 
-    observable::of!(0)
+    observable::of(0)
       .first()
       .fork()
       .fork()

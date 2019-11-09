@@ -211,13 +211,13 @@ mod test {
 
   #[test]
   fn fork_and_share() {
-    let observable = observable::empty!();
+    let observable = observable::empty();
     // shared after fork
     observable.fork().to_shared().subscribe(|_: &()| {});
     observable.fork().to_shared().subscribe(|_| {});
 
     // shared before fork
-    let observable = observable::empty!().to_shared();
+    let observable = observable::empty().to_shared();
     observable.fork().subscribe(|_: &()| {});
     observable.fork().subscribe(|_| {});
   }

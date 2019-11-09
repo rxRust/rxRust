@@ -78,7 +78,7 @@ mod test {
 
   fn sum_of_sqrt(scheduler: Schedulers) {
     let sum = Arc::new(Mutex::new(0.));
-    observable::from_iter!(0..10)
+    observable::from_iter(0..10)
       .observe_on(scheduler)
       .subscribe(move |v| {
         *sum.lock().unwrap() =

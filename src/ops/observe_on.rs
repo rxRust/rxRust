@@ -176,7 +176,7 @@ mod test {
   fn unsubscribe_scheduler(scheduler: Schedulers) {
     let emitted = Arc::new(Mutex::new(vec![]));
     let c_emitted = emitted.clone();
-    observable::from_iter!(0..10)
+    observable::from_iter(0..10)
       .observe_on(scheduler)
       .delay(Duration::from_millis(10))
       .subscribe(move |v| {

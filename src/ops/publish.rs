@@ -22,7 +22,7 @@ impl<'a, Item, Err, T> Publish<'a, Item, Err> for T {}
 #[test]
 fn smoke() {
   use crate::observable::Connect;
-  let p = observable::of!(100).publish();
+  let p = observable::of(100).publish();
   let mut first = 0;
   let mut second = 0;
   p.fork().subscribe(|v| first = *v);

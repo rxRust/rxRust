@@ -216,7 +216,7 @@ fn smoke() {
 
 #[test]
 fn fork_and_shared() {
-  observable::of!(0..10)
+  observable::of(0..10)
     .throttle_time(Duration::from_nanos(1), ThrottleEdge::Leading)
     .fork()
     .to_shared()

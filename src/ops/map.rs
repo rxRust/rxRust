@@ -209,7 +209,7 @@ mod test {
   #[test]
   fn primitive_type() {
     let mut i = 0;
-    observable::from_iter!(100..101)
+    observable::from_iter(100..101)
       .map(|v| v * 2)
       .subscribe(|v| i += *v);
     assert_eq!(i, 200);
@@ -219,7 +219,7 @@ mod test {
   fn reference_lifetime_should_work() {
     let mut i = 0;
 
-    observable::of!(100)
+    observable::of(100)
       .map_return_ref(|v| v)
       .subscribe(|v| i += *v);
     assert_eq!(i, 100);
@@ -228,7 +228,7 @@ mod test {
   #[test]
   fn fork_and_shared() {
     // type to type can fork
-    let m = observable::from_iter!(0..100).map(|v| *v);
+    let m = observable::from_iter(0..100).map(|v| *v);
     m.fork()
       .map(|v| *v)
       .fork()
@@ -238,7 +238,7 @@ mod test {
       .subscribe(|_| {});
 
     // ref to ref can fork
-    let m = observable::from_iter!(0..100).map_return_ref(|v| v);
+    let m = observable::from_iter(0..100).map_return_ref(|v| v);
     m.fork()
       .map_return_ref(|v| v)
       .fork()
