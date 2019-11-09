@@ -81,6 +81,41 @@ where
   })
 }
 
+/// Creates an observable producing same value repeated N times.
+///
+/// Completes immediatelly after emitting N values. Never emits an error.
+///
+/// # Arguments
+///
+/// * `v` - A value to emitt.
+/// * `n` - A number of time to repeat it.
+///
+/// # Examples
+///
+/// ```
+/// use rxrust::prelude::*;
+///
+/// observable::repeat(123, 3)
+///   .subscribe(|v| {println!("{},", v)});
+///
+/// // print log:
+/// // 123
+/// // 123
+/// // 123
+/// ```
+///
+pub fn repeat<O, U, Item>(
+  v: Item,
+  n: usize,
+) -> Observable<impl FnOnce(Subscriber<O, U>) + Clone>
+where
+  O: Observer<Item, ()>,
+  U: SubscriptionLike,
+  Item: Clone,
+{
+  from_iter(std::iter::repeat(v).take(n))
+}
+
 /// Creates an observable that emits value or the error from a [`Result`] given.
 ///
 /// Completes immediatelly after.
@@ -303,5 +338,35 @@ mod test {
       .subscribe(|_| {});
 
     observable::of(0).fork().fork().subscribe(|_| {});
+  }
+
+  #[test]
+  fn repeat_three_times() {
+    let mut hit_count = 0;
+    let mut completed = false;
+    observable::repeat(123, 5).subscribe_complete(
+      |v| {
+        hit_count += 1;
+        assert_eq!(123, *v);
+      },
+      || completed = true,
+    );
+    assert_eq!(5, hit_count);
+    assert!(completed);
+  }
+
+  #[test]
+  fn repeat_zero_times() {
+    let mut hit_count = 0;
+    let mut completed = false;
+    observable::repeat(123, 0).subscribe_complete(
+      |v| {
+        hit_count += 1;
+        assert_eq!(123, *v);
+      },
+      || completed = true,
+    );
+    assert_eq!(0, hit_count);
+    assert!(completed);
   }
 }
