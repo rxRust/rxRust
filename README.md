@@ -1,6 +1,7 @@
 # RxRust: a zero cost Rust implementation of Reactive Extensions
-[Documents](https://docs.rs/rxrust)
-
+[![](https://docs.rs/rxrust/badge.svg)](https://docs.rs/rxrust/)
+[![](https://img.shields.io/crates/v/rxrust.svg)](https://crates.io/crates/rxrust)
+[![](https://img.shields.io/crates/d/rxrust.svg)](https://crates.io/crates/rxrust)
 ![](https://github.com/M-Adoo/rxRust/workflows/test/badge.svg)
 
 ## Usage
