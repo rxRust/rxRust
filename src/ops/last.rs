@@ -78,12 +78,12 @@ pub struct LastOrOp<S, Item> {
 impl<Item, Err, O, U, S> RawSubscribable<Item, Err, Subscriber<O, U>>
   for LastOrOp<S, Item>
 where
-  S: RawSubscribable<Item, Err, Subscriber<LastOrSubscribe<O, Item>, U>>,
+  S: RawSubscribable<Item, Err, Subscriber<LastOrObserver<O, Item>, U>>,
 {
   type Unsub = S::Unsub;
   fn raw_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub {
     let subscriber = Subscriber {
-      observer: LastOrSubscribe {
+      observer: LastOrObserver {
         observer: subscriber.observer,
         default: self.default,
         last: self.last,
@@ -109,13 +109,13 @@ where
   }
 }
 
-pub struct LastOrSubscribe<S, T> {
+pub struct LastOrObserver<S, T> {
   default: Option<T>,
   observer: S,
   last: Option<T>,
 }
 
-impl<Item, Err, S> Observer<Item, Err> for LastOrSubscribe<S, Item>
+impl<Item, Err, S> Observer<Item, Err> for LastOrObserver<S, Item>
 where
   S: Observer<Item, Err>,
   Item: Clone,
@@ -134,14 +134,14 @@ where
   }
 }
 
-impl<S, V> IntoShared for LastOrSubscribe<S, V>
+impl<S, V> IntoShared for LastOrObserver<S, V>
 where
   S: IntoShared,
   V: Send + Sync + 'static,
 {
-  type Shared = LastOrSubscribe<S::Shared, V>;
+  type Shared = LastOrObserver<S::Shared, V>;
   fn to_shared(self) -> Self::Shared {
-    LastOrSubscribe {
+    LastOrObserver {
       observer: self.observer.to_shared(),
       default: self.default,
       last: self.last,
