@@ -1,5 +1,8 @@
 ## [Unreleased](https://github.com/M-Adoo/rxRust/compare/v0.3.0...HEAD)
 
+### Bug Fixes
+- **operator**: fix the compiler complain when `map` operator convert source type to a different one.
+
 ### Breaking Changes
 - **observable**: macros `of!`, `empty!`, `from_iter!`, `from_future!` and
   `from_future_with_errors!` replaced by functions.
