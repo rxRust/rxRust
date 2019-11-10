@@ -1,4 +1,3 @@
-#![allow(unused_imports)]
 use crate::prelude::*;
 
 /// Creates an observable that emitts no items, just terminates with an error.
