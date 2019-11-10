@@ -1,5 +1,6 @@
 use crate::prelude::*;
 use ops::SharedOp;
+use std::marker::PhantomData;
 
 /// The Scan operator applies a function to the first item emitted by the
 /// source observable and then emits the result of that function as its
@@ -8,7 +9,7 @@ use ops::SharedOp;
 /// in order to generate its second emission. It continues to feed back its
 /// own subsequent emissions along with the subsequent emissions from the
 /// source Observable in order to create the rest of its sequence.
-pub trait Scan<T> {
+pub trait Scan<OutputItem> {
   /// Applies a binary operator closure to each item emitted from source
   /// observable and emits successive values.
   ///
@@ -20,8 +21,9 @@ pub trait Scan<T> {
   ///
   /// # Arguments
   ///
-  /// * `initial` - An initial value to start the successive accumulations from.
-  /// * `f` - A closure acting as a binary operator.
+  /// * `initial_value` - An initial value to start the successive accumulations
+  ///   from.
+  /// * `binary_op` - A closure or function acting as a binary operator.
   ///
   /// # Examples
   ///
@@ -41,15 +43,20 @@ pub trait Scan<T> {
   /// // 105
   /// ```
   ///
-  fn scan_initial<B, F>(self, initial: B, f: F) -> ScanOp<Self, F, B>
+  fn scan_initial<InputItem, BinaryOp>(
+    self,
+    initial_value: OutputItem,
+    binary_op: BinaryOp,
+  ) -> ScanOp<Self, BinaryOp, OutputItem, InputItem>
   where
     Self: Sized,
-    F: Fn(&B, &T) -> B,
+    BinaryOp: Fn(&OutputItem, &InputItem) -> OutputItem,
   {
     ScanOp {
-      source: self,
-      func: f,
-      acc: initial,
+      source_observable: self,
+      binary_op,
+      initial_value,
+      _p: PhantomData,
     }
   }
 
@@ -58,114 +65,143 @@ pub trait Scan<T> {
   ///
   /// # Arguments
   ///
-  /// * `f` - A closure acting as a binary operator.
+  /// * `binary_op` - A closure or function acting as a binary operator.
   ///
-  fn scan<B, F>(self, f: F) -> ScanOp<Self, F, B>
+  fn scan<Input, BinaryOp>(
+    self,
+    binary_op: BinaryOp,
+  ) -> ScanOp<Self, BinaryOp, OutputItem, Input>
   where
     Self: Sized,
-    F: Fn(&B, &T) -> B,
-    B: Default,
+    BinaryOp: Fn(&OutputItem, &Input) -> OutputItem,
+    OutputItem: Default,
   {
-    self.scan_initial(B::default(), f)
+    self.scan_initial(OutputItem::default(), binary_op)
   }
 }
 
-impl<O, Item> Scan<Item> for O {}
+impl<O, Output> Scan<Output> for O {}
 
-pub struct ScanOp<S, F, B> {
-  source: S,
-  func: F,
-  acc: B,
+pub struct ScanOp<Source, BinaryOp, OutputItem, InputItem> {
+  source_observable: Source,
+  binary_op: BinaryOp,
+  initial_value: OutputItem,
+  _p: PhantomData<InputItem>,
 }
 
-impl<Item, Err, O, U, S, B, M> RawSubscribable<Item, Err, Subscriber<O, U>>
-  for ScanOp<S, M, B>
+pub struct ScanObserver<Observer, BinaryOp, OutputItem> {
+  target_observer: Observer,
+  binary_op: BinaryOp,
+  acc: OutputItem,
+}
+
+// We're making the `ScanOp` being an publisher - an object that
+// subscribers can subscribe to.
+// Doing so by implementing `RawSubscribable` trait for it.
+// Once instantiated, it will have a `raw_subscribe` method in it.
+// Note: we're accepting such subscribers that accept `Output` as their
+// `Item` type.
+impl<InputItem, Err, Observer, Subscription, Source, OutputItem, BinaryOp>
+  RawSubscribable<OutputItem, Err, Subscriber<Observer, Subscription>>
+  for ScanOp<Source, BinaryOp, OutputItem, InputItem>
 where
-  S: RawSubscribable<B, Err, Subscriber<ScanSubscribe<O, M, B>, U>>,
-  M: FnMut(&B, &Item) -> B,
+  Source: RawSubscribable<
+    OutputItem,
+    Err,
+    Subscriber<ScanObserver<Observer, BinaryOp, OutputItem>, Subscription>,
+  >,
+  BinaryOp: FnMut(&OutputItem, &InputItem) -> OutputItem,
 {
-  type Unsub = S::Unsub;
-  fn raw_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub {
-    let initial = self.acc;
-    self.source.raw_subscribe(Subscriber {
-      observer: ScanSubscribe {
-        observer: subscriber.observer,
-        func: self.func,
-        acc: initial,
+  type Unsub = Source::Unsub;
+  fn raw_subscribe(
+    self,
+    subscriber: Subscriber<Observer, Subscription>,
+  ) -> Self::Unsub {
+    self.source_observable.raw_subscribe(Subscriber {
+      observer: ScanObserver {
+        target_observer: subscriber.observer,
+        binary_op: self.binary_op,
+        acc: self.initial_value,
       },
       subscription: subscriber.subscription,
     })
   }
 }
 
-pub struct ScanSubscribe<S, M, B> {
-  observer: S,
-  func: M,
-  acc: B,
-}
-
-impl<Item, Err, S, M, B> Observer<Item, Err> for ScanSubscribe<S, M, B>
+// We're making `ScanObserver` being able to be subscribed to other observables
+// by implementing `Observer` trait. Thanks to this, it is able to observe
+// sources having `Item` type as its `InputItem` type.
+impl<InputItem, Err, Source, BinaryOp, OutputItem> Observer<InputItem, Err>
+  for ScanObserver<Source, BinaryOp, OutputItem>
 where
-  S: Observer<B, Err>,
-  M: FnMut(&B, &Item) -> B,
+  Source: Observer<OutputItem, Err>,
+  BinaryOp: FnMut(&OutputItem, &InputItem) -> OutputItem,
 {
-  fn next(&mut self, value: &Item) {
+  fn next(&mut self, value: &InputItem) {
     // accumulating each item with a current value
-    self.acc = (self.func)(&self.acc, value);
-    self.observer.next(&self.acc)
+    self.acc = (self.binary_op)(&self.acc, value);
+    self.target_observer.next(&self.acc)
   }
 
   #[inline(always)]
-  fn error(&mut self, err: &Err) { self.observer.error(err); }
+  fn error(&mut self, err: &Err) { self.target_observer.error(err); }
 
   #[inline(always)]
-  fn complete(&mut self) { self.observer.complete(); }
+  fn complete(&mut self) { self.target_observer.complete(); }
 }
 
-impl<S, M, B> Fork for ScanOp<S, M, B>
+impl<Source, BinaryOp, OutputItem, InputItem> Fork
+  for ScanOp<Source, BinaryOp, OutputItem, InputItem>
 where
-  S: Fork,
-  M: Clone,
-  B: Clone,
+  Source: Fork,
+  BinaryOp: Clone,
+  InputItem: Clone,
+  OutputItem: Clone,
 {
-  type Output = ScanOp<S::Output, M, B>;
+  type Output = ScanOp<Source::Output, BinaryOp, OutputItem, InputItem>;
   fn fork(&self) -> Self::Output {
     ScanOp {
-      source: self.source.fork(),
-      func: self.func.clone(),
-      acc: self.acc.clone(),
+      source_observable: self.source_observable.fork(),
+      binary_op: self.binary_op.clone(),
+      initial_value: self.initial_value.clone(),
+      _p: self._p,
     }
   }
 }
 
-impl<S, M, B> IntoShared for ScanSubscribe<S, M, B>
+impl<Source, BinaryOp, OutputItem> IntoShared
+  for ScanObserver<Source, BinaryOp, OutputItem>
 where
-  S: IntoShared,
-  M: Send + Sync + 'static,
-  B: Send + Sync + 'static,
+  Source: IntoShared,
+  BinaryOp: Send + Sync + 'static,
+  OutputItem: Send + Sync + 'static,
 {
-  type Shared = ScanSubscribe<S::Shared, M, B>;
+  type Shared = ScanObserver<Source::Shared, BinaryOp, OutputItem>;
   fn to_shared(self) -> Self::Shared {
-    ScanSubscribe {
-      observer: self.observer.to_shared(),
-      func: self.func,
+    ScanObserver {
+      target_observer: self.target_observer.to_shared(),
+      binary_op: self.binary_op,
       acc: self.acc,
     }
   }
 }
 
-impl<S, M, B> IntoShared for ScanOp<S, M, B>
+impl<Source, BinaryOp, OutputItem, InputItem> IntoShared
+  for ScanOp<Source, BinaryOp, OutputItem, InputItem>
 where
-  S: IntoShared,
-  M: Send + Sync + 'static,
-  B: Send + Sync + 'static,
+  Source: IntoShared,
+  BinaryOp: Send + Sync + 'static,
+  InputItem: Send + Sync + 'static,
+  OutputItem: Send + Sync + 'static,
 {
-  type Shared = SharedOp<ScanOp<S::Shared, M, B>>;
+  type Shared =
+    SharedOp<ScanOp<Source::Shared, BinaryOp, OutputItem, InputItem>>;
   fn to_shared(self) -> Self::Shared {
     SharedOp(ScanOp {
-      source: self.source.to_shared(),
-      func: self.func,
-      acc: self.acc,
+      source_observable: self.source_observable.to_shared(),
+      binary_op: self.binary_op,
+      initial_value: self.initial_value,
+      _p: self._p,
     })
   }
 }
@@ -180,6 +216,19 @@ mod test {
     // should work like accumulate from 100
     observable::from_iter(vec![1, 1, 1, 1, 1])
       .scan_initial(100, |acc, v| acc + v)
+      .subscribe(|v| emitted.push(*v));
+
+    assert_eq!(vec!(101, 102, 103, 104, 105), emitted);
+  }
+
+  #[test]
+  fn scan_initial_mixed_types() {
+    let mut emitted = Vec::<i32>::new();
+    // Should work like accumulate from 100,
+    // as we ignore the input characters and just
+    // increment the accumulated value given.
+    observable::from_iter(vec!['a', 'b', 'c', 'd', 'e'])
+      .scan_initial(100, |acc, _v| acc + 1)
       .subscribe(|v| emitted.push(*v));
 
     assert_eq!(vec!(101, 102, 103, 104, 105), emitted);
