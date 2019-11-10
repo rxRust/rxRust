@@ -1,3 +1,5 @@
+pub mod last;
+pub use last::Last;
 pub mod map;
 pub use map::Map;
 pub mod filter;

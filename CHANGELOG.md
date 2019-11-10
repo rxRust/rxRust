@@ -2,6 +2,7 @@
 
 ### Features
 - **operator**: add `scan` operator.
+- **operator**: add `last` and `last_or` operators.
 
 ### Bug Fixes
 - **operator**: fix the compiler complain when `map` operator convert source type to a different one.
