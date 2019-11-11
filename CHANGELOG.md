@@ -1,5 +1,8 @@
 ## [Unreleased](https://github.com/M-Adoo/rxRust/compare/v0.3.0...HEAD)
 
+### Features
+- **operator**: add `scan` operator.
+
 ### Bug Fixes
 - **operator**: fix the compiler complain when `map` operator convert source type to a different one.
 
