@@ -47,7 +47,7 @@ pub trait Scan<OutputItem> {
     self,
     initial_value: OutputItem,
     binary_op: BinaryOp,
-  ) -> ScanOp<Self, BinaryOp, OutputItem, InputItem>
+  ) -> ScanOp<Self, BinaryOp, InputItem, OutputItem>
   where
     Self: Sized,
     BinaryOp: Fn(&OutputItem, &InputItem) -> OutputItem,
@@ -61,28 +61,29 @@ pub trait Scan<OutputItem> {
   }
 
   /// Works like [`scan_initial`] but starts with a value defined by a
-  /// [`Default`] trait for the first argument `f` operator operates on.
+  /// [`Default`] trait for the first argument `binary_op` operator
+  /// operates on.
   ///
   /// # Arguments
   ///
   /// * `binary_op` - A closure or function acting as a binary operator.
   ///
-  fn scan<Input, BinaryOp>(
+  fn scan<InputItem, BinaryOp>(
     self,
     binary_op: BinaryOp,
-  ) -> ScanOp<Self, BinaryOp, OutputItem, Input>
+  ) -> ScanOp<Self, BinaryOp, InputItem, OutputItem>
   where
     Self: Sized,
-    BinaryOp: Fn(&OutputItem, &Input) -> OutputItem,
+    BinaryOp: Fn(&OutputItem, &InputItem) -> OutputItem,
     OutputItem: Default,
   {
     self.scan_initial(OutputItem::default(), binary_op)
   }
 }
 
-impl<O, Output> Scan<Output> for O {}
+impl<O, OutputItem> Scan<OutputItem> for O {}
 
-pub struct ScanOp<Source, BinaryOp, OutputItem, InputItem> {
+pub struct ScanOp<Source, BinaryOp, InputItem, OutputItem> {
   source_observable: Source,
   binary_op: BinaryOp,
   initial_value: OutputItem,
@@ -101,12 +102,12 @@ pub struct ScanObserver<Observer, BinaryOp, OutputItem> {
 // Once instantiated, it will have a `raw_subscribe` method in it.
 // Note: we're accepting such subscribers that accept `Output` as their
 // `Item` type.
-impl<InputItem, Err, Observer, Subscription, Source, OutputItem, BinaryOp>
+impl<OutputItem, Err, InputItem, Observer, Subscription, Source, BinaryOp>
   RawSubscribable<OutputItem, Err, Subscriber<Observer, Subscription>>
-  for ScanOp<Source, BinaryOp, OutputItem, InputItem>
+  for ScanOp<Source, BinaryOp, InputItem, OutputItem>
 where
   Source: RawSubscribable<
-    OutputItem,
+    InputItem,
     Err,
     Subscriber<ScanObserver<Observer, BinaryOp, OutputItem>, Subscription>,
   >,
@@ -150,15 +151,14 @@ where
   fn complete(&mut self) { self.target_observer.complete(); }
 }
 
-impl<Source, BinaryOp, OutputItem, InputItem> Fork
-  for ScanOp<Source, BinaryOp, OutputItem, InputItem>
+impl<Source, BinaryOp, InputItem, OutputItem> Fork
+  for ScanOp<Source, BinaryOp, InputItem, OutputItem>
 where
   Source: Fork,
   BinaryOp: Clone,
-  InputItem: Clone,
   OutputItem: Clone,
 {
-  type Output = ScanOp<Source::Output, BinaryOp, OutputItem, InputItem>;
+  type Output = ScanOp<Source::Output, BinaryOp, InputItem, OutputItem>;
   fn fork(&self) -> Self::Output {
     ScanOp {
       source_observable: self.source_observable.fork(),
@@ -186,8 +186,8 @@ where
   }
 }
 
-impl<Source, BinaryOp, OutputItem, InputItem> IntoShared
-  for ScanOp<Source, BinaryOp, OutputItem, InputItem>
+impl<Source, BinaryOp, InputItem, OutputItem> IntoShared
+  for ScanOp<Source, BinaryOp, InputItem, OutputItem>
 where
   Source: IntoShared,
   BinaryOp: Send + Sync + 'static,
@@ -195,7 +195,7 @@ where
   OutputItem: Send + Sync + 'static,
 {
   type Shared =
-    SharedOp<ScanOp<Source::Shared, BinaryOp, OutputItem, InputItem>>;
+    SharedOp<ScanOp<Source::Shared, BinaryOp, InputItem, OutputItem>>;
   fn to_shared(self) -> Self::Shared {
     SharedOp(ScanOp {
       source_observable: self.source_observable.to_shared(),
@@ -248,9 +248,9 @@ mod test {
   #[test]
   fn scan_fork_and_shared_mixed_types() {
     // type to type can fork
-    let m = observable::from_iter(vec!['a', 'b', 'c']).scan(|acc, v| 1);
+    let m = observable::from_iter(vec!['a', 'b', 'c']).scan(|_acc, _v| 1i32);
     m.fork()
-      .scan(|acc, v| *v as f32)
+      .scan(|_acc, v| *v as f32)
       .fork()
       .to_shared()
       .fork()
