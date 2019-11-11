@@ -246,6 +246,19 @@ mod test {
   }
 
   #[test]
+  fn scan_fork_and_shared_mixed_types() {
+    // type to type can fork
+    let m = observable::from_iter(vec!['a', 'b', 'c']).scan(|acc, v| 1);
+    m.fork()
+      .scan(|acc, v| *v as f32)
+      .fork()
+      .to_shared()
+      .fork()
+      .to_shared()
+      .subscribe(|_| {});
+  }
+
+  #[test]
   fn scan_fork_and_shared() {
     // type to type can fork
     let m = observable::from_iter(0..100).scan(|acc, v| acc + *v);
