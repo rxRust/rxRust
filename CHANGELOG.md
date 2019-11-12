@@ -2,7 +2,7 @@
 
 ### Features
 - **operator**: add `scan` operator.
-- **operator**: add trivial `throw`, `empty` and `never` operators.
+- **observable**: add trivial `throw`, `empty`, `never` and `repeat` observables.
 
 ### Bug Fixes
 - **operator**: fix the compiler complain when `map` operator convert source type to a different one.
