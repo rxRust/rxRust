@@ -17,6 +17,8 @@ jobs:
       run: |
         rustup component add clippy
         cargo clippy --all-targets --all-features -- -D warnings
+    - name: build
+      run: cargo build
     - name: test
       run: cargo test --all
     - name: bench
