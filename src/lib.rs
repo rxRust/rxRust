@@ -26,6 +26,9 @@
 #[macro_use]
 extern crate lazy_static;
 
+#[cfg(test)]
+extern crate float_cmp;
+
 pub mod observable;
 pub mod ops;
 pub mod scheduler;
