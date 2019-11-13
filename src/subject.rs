@@ -271,7 +271,7 @@ mod test {
     );
 
     subject.next(&100);
-    std::thread::sleep(std::time::Duration::from_micros(1));
+    std::thread::sleep(std::time::Duration::from_millis(1));
 
     assert_eq!(*c_v.lock().unwrap(), 100);
   }

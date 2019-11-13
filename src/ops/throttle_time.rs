@@ -185,19 +185,19 @@ fn smoke() {
   let x = Arc::new(Mutex::new(vec![]));
   let x_c = x.clone();
 
-  let interval = observable::interval!(Duration::from_millis(2));
+  let interval = observable::interval!(Duration::from_millis(5));
   let throttle_subscribe = |edge| {
     let x = x.clone();
     interval
       .fork()
       .to_shared()
-      .throttle_time(Duration::from_millis(19), edge)
+      .throttle_time(Duration::from_millis(48), edge)
       .subscribe(move |v| x.lock().unwrap().push(*v))
   };
 
   // tailing throttle
   let mut sub = throttle_subscribe(ThrottleEdge::Tailing);
-  std::thread::sleep(Duration::from_millis(205));
+  std::thread::sleep(Duration::from_millis(520));
   sub.unsubscribe();
   assert_eq!(
     x_c.lock().unwrap().clone(),
@@ -207,7 +207,7 @@ fn smoke() {
   // leading throttle
   x_c.lock().unwrap().clear();
   throttle_subscribe(ThrottleEdge::Leading);
-  std::thread::sleep(Duration::from_millis(205));
+  std::thread::sleep(Duration::from_millis(520));
   assert_eq!(
     x_c.lock().unwrap().clone(),
     vec![0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
