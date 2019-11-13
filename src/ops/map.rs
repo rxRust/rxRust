@@ -248,6 +248,16 @@ mod test {
       .to_shared()
       .subscribe(|_| {});
 
+    // type mapped to other type can fork
+    let m = observable::from_iter(vec!['a', 'b', 'c']).map(|_v| 1);
+    m.fork()
+      .map(|v| *v as f32)
+      .fork()
+      .to_shared()
+      .fork()
+      .to_shared()
+      .subscribe(|_| {});
+
     // ref to ref can fork
     let m = observable::from_iter(0..100).map_return_ref(|v| v);
     m.fork()
@@ -258,13 +268,13 @@ mod test {
       .to_shared()
       .subscribe(|_| {});
   }
-}
 
-#[test]
-fn map_types_mixed() {
-  let mut i = 0;
-  observable::from_iter(vec!['a', 'b', 'c'])
-    .map(|_v| 1)
-    .subscribe(|v| i += *v);
-  assert_eq!(i, 3);
+  #[test]
+  fn map_types_mixed() {
+    let mut i = 0;
+    observable::from_iter(vec!['a', 'b', 'c'])
+      .map(|_v| 1)
+      .subscribe(|v| i += *v);
+    assert_eq!(i, 3);
+  }
 }

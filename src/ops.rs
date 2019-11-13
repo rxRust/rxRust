@@ -1,5 +1,15 @@
 pub mod last;
 pub use last::Last;
+pub mod reduce;
+pub use reduce::Reduce;
+pub mod minmax;
+pub use minmax::MinMax;
+pub mod sum;
+pub use sum::Sum;
+pub mod count;
+pub use count::Count;
+pub mod average;
+pub use average::Average;
 pub mod map;
 pub use map::Map;
 pub mod filter;

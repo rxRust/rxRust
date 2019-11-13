@@ -4,6 +4,8 @@
 - **operator**: add `scan` operator.
 - **observable**: add trivial `throw`, `empty`, `never` and `repeat` observables.
 - **operator**: add `last` and `last_or` operators.
+- **operator**: add `reduce` and `reduce_initial` operators.
+- **operator**: add `sum`,`min`,`max`,`count` and `average` math/aggregate operators.
 
 ### Bug Fixes
 - **operator**: fix the compiler complain when `map` operator convert source type to a different one.

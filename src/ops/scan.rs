@@ -220,6 +220,16 @@ mod test {
 
     assert_eq!(vec!(101, 102, 103, 104, 105), emitted);
   }
+  #[test]
+  fn scan_initial_on_empty_observable() {
+    let mut emitted = Vec::<i32>::new();
+    // should work like accumulate from 100
+    observable::empty()
+      .scan_initial(100, |acc, v| acc + v)
+      .subscribe(|v| emitted.push(*v));
+
+    assert_eq!(Vec::<i32>::new(), emitted);
+  }
 
   #[test]
   fn scan_initial_mixed_types() {
