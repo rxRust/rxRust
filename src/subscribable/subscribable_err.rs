@@ -34,7 +34,7 @@ where
 }
 
 pub trait SubscribableErr<Item, Err, N, E> {
-  /// a type implemented [`Subscription`]
+  /// A type implementing [`SubscriptionLike`]
   type Unsub;
 
   /// Invokes an execution of an Observable and registers Observer handlers for

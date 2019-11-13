@@ -6,7 +6,7 @@ pub struct SubscribeComplete<N, C> {
   complete: C,
 }
 
-impl<Item, N, C> Observer<Item, ()> for SubscribeComplete<N, C>
+impl<Item, Err, N, C> Observer<Item, Err> for SubscribeComplete<N, C>
 where
   N: FnMut(&Item),
   C: FnMut(),
@@ -14,7 +14,7 @@ where
   #[inline(always)]
   fn next(&mut self, value: &Item) { (self.next)(value); }
   #[inline(always)]
-  fn error(&mut self, _err: &()) {}
+  fn error(&mut self, _err: &Err) {}
   #[inline(always)]
   fn complete(&mut self) { (self.complete)(); }
 }
@@ -36,7 +36,7 @@ where
 }
 
 pub trait SubscribableComplete<Item, N, C> {
-  /// a type implemented [`Subscription`]
+  /// A type implementing [`SubscriptionLike`]
   type Unsub;
 
   /// Invokes an execution of an Observable and registers Observer handlers for
