@@ -6,6 +6,7 @@
 - **operator**: add `last` and `last_or` operators.
 - **operator**: add `reduce` and `reduce_initial` operators.
 - **operator**: add `sum`,`min`,`max`,`count` and `average` math/aggregate operators.
+- **operator**: add `filter_map` and `filter_map_return_ref` observables.
 
 ### Bug Fixes
 - **operator**: fix the compiler complain when `map` operator convert source type to a different one.
