@@ -34,7 +34,9 @@ pub mod throttle_time;
 pub use throttle_time::{ThrottleEdge, ThrottleTime};
 pub mod publish;
 pub use publish::Publish;
+pub mod filter_map;
 pub mod ref_count;
+pub use filter_map::FilterMap;
 
 use crate::prelude::*;
 pub struct SharedOp<T>(pub(crate) T);

@@ -2,10 +2,9 @@ use crate::prelude::*;
 use ops::SharedOp;
 use std::marker::PhantomData;
 
-/// Creates a new stream which calls a closure on each element and uses
-/// its return as the value.
-///
 pub trait Map<T> {
+  /// Creates a new stream which calls a closure on each element and uses
+  /// its return as the value.
   fn map<B, F>(self, f: F) -> MapOp<Self, F, B>
   where
     Self: Sized,

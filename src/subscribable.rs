@@ -86,5 +86,3 @@ where
   #[inline(always)]
   fn to_shared(self) -> Self::Shared { self }
 }
-// todo: define a safe RawSubscribable return a Box<Subscription> let
-// we can crate a object safety object ref.
