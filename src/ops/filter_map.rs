@@ -2,7 +2,7 @@ use crate::ops::SharedOp;
 use crate::prelude::*;
 use std::marker::PhantomData;
 
-/// `FilterMap` operator applies Both `Filter` and `Map`.
+/// `FilterMap` operator applies both `Filter` and `Map`.
 pub trait FilterMap
 where
   Self: Sized,
