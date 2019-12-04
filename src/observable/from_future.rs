@@ -38,9 +38,9 @@ where
   F: Future + Send + Clone + Sync + 'static,
 {
   Observable::new(move |mut subscriber| {
-    let fmapped = f.map(move |v| {
+    let fmapped = f.map(move |mut v| {
       if !subscriber.is_closed() {
-        subscriber.next(&v);
+        subscriber.next(&mut v);
         subscriber.complete();
       }
     });
@@ -65,7 +65,7 @@ where
     let fmapped = f.map(move |v| {
       if !subscriber.is_closed() {
         match v.into() {
-          Ok(ref item) => {
+          Ok(ref mut item) => {
             subscriber.next(item);
             subscriber.complete();
           }

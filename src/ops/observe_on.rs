@@ -84,12 +84,12 @@ where
   Err: Clone + Send + Sync + 'static,
   SD: Scheduler,
 {
-  fn next(&mut self, value: &Item) {
+  fn next(&mut self, value: &mut Item) {
     let s = self.scheduler.schedule(
       |subscription, state| {
         if !subscription.is_closed() {
-          let (v, observer) = state;
-          observer.lock().unwrap().next(&v);
+          let (mut v, observer) = state;
+          observer.lock().unwrap().next(&mut v);
         }
       },
       None,
@@ -144,8 +144,8 @@ mod test {
     let observe_thread = Arc::new(Mutex::new(vec![]));
     let oc = observe_thread.clone();
     Observable::new(|mut s| {
-      s.next(&1);
-      s.next(&1);
+      s.next(&mut 1);
+      s.next(&mut 1);
       *emit_thread.lock().unwrap() = thread::current().id();
     })
     .observe_on(Schedulers::NewThread)

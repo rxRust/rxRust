@@ -274,10 +274,10 @@ fn auto_unsubscribe() {
     let ref_count = subject.fork().publish().ref_count();
     let mut s1 = ref_count.fork().subscribe(|v| accept1 = *v);
     let mut s2 = ref_count.fork().subscribe(|v| accept2 = *v);
-    subject.next(&1);
+    subject.next(&mut 1);
     s1.unsubscribe();
     s2.unsubscribe();
-    subject.next(&2);
+    subject.next(&mut 2);
   }
 
   assert_eq!(accept1, 1);

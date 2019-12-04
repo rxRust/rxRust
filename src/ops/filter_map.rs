@@ -28,7 +28,7 @@ where
   ///  # use rxrust::ops::FilterMap;
   ///  let mut res: Vec<i32> = vec![];
   ///   observable::from_iter(["1", "lol", "3", "NaN", "5"].iter())
-  ///   .filter_map(|s: &&&str| s.parse().ok())
+  ///   .filter_map(|s: &mut &&str| s.parse().ok())
   ///   .subscribe(|v| res.push(*v));
   ///
   /// assert_eq!(res, [1, 3, 5]);
@@ -39,7 +39,7 @@ where
     f: F,
   ) -> FilterMapOp<Self, F, SourceItem>
   where
-    F: FnMut(&SourceItem) -> Option<Item>,
+    F: FnMut(&mut SourceItem) -> Option<Item>,
   {
     FilterMapOp {
       source: self,
@@ -55,7 +55,7 @@ where
     f: F,
   ) -> FilterMapReturnRefOp<Self, F, SourceItem>
   where
-    F: FnMut(&SourceItem) -> Option<&Item>,
+    F: FnMut(&mut SourceItem) -> Option<&mut Item>,
   {
     FilterMapReturnRefOp {
       source: self,
@@ -77,7 +77,7 @@ impl<Item, Err, SourceItem, S, F, O, U>
   RawSubscribable<Item, Err, Subscriber<O, U>> for FilterMapOp<S, F, SourceItem>
 where
   S: RawSubscribable<SourceItem, Err, Subscriber<FilterMapObserver<O, F>, U>>,
-  F: FnMut(&SourceItem) -> Option<Item>,
+  F: FnMut(&mut SourceItem) -> Option<Item>,
 {
   type Unsub = S::Unsub;
   fn raw_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub {
@@ -144,11 +144,11 @@ impl<O, F, Item, Err, OutputItem> Observer<Item, Err>
   for FilterMapObserver<O, F>
 where
   O: Observer<OutputItem, Err>,
-  F: FnMut(&Item) -> Option<OutputItem>,
+  F: FnMut(&mut Item) -> Option<OutputItem>,
 {
-  fn next(&mut self, value: &Item) {
-    if let Some(v) = (self.f)(value) {
-      self.down_observer.next(&v)
+  fn next(&mut self, value: &mut Item) {
+    if let Some(mut v) = (self.f)(value) {
+      self.down_observer.next(&mut v)
     }
   }
   #[inline(always)]
@@ -190,7 +190,7 @@ where
     Err,
     Subscriber<FilterMapReturnRefObserver<O, F>, U>,
   >,
-  F: for<'r> FnMut(&'r SourceItem) -> Option<&'r Item>,
+  F: for<'r> FnMut(&'r mut SourceItem) -> Option<&'r mut Item>,
 {
   type Unsub = S::Unsub;
   fn raw_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub {
@@ -257,9 +257,9 @@ impl<O, F, Item, Err, OutputItem> Observer<Item, Err>
   for FilterMapReturnRefObserver<O, F>
 where
   O: Observer<OutputItem, Err>,
-  F: FnMut(&Item) -> Option<&OutputItem>,
+  F: FnMut(&mut Item) -> Option<&mut OutputItem>,
 {
-  fn next(&mut self, value: &Item) {
+  fn next(&mut self, value: &mut Item) {
     if let Some(v) = (self.f)(value) {
       self.down_observer.next(v)
     }

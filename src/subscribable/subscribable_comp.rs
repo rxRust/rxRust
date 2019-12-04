@@ -12,7 +12,7 @@ where
   C: FnMut(),
 {
   #[inline(always)]
-  fn next(&mut self, value: &Item) { (self.next)(value); }
+  fn next(&mut self, value: &mut Item) { (self.next)(value); }
   #[inline(always)]
   fn error(&mut self, _err: &Err) {}
   #[inline(always)]

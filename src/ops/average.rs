@@ -12,7 +12,7 @@ type Accum<Item> = (Item, usize);
 /// Computing an average by multiplying accumulated nominator by a reciprocal
 /// of accumulated denominator. In this way some generic types that support
 /// linear scaling over floats values could be averaged (e.g. vectors)
-fn average_floats<T>(acc: &Accum<T>) -> T
+fn average_floats<T>(acc: &mut Accum<T>) -> T
 where
   T: Default + Copy + Send + Mul<f64, Output = T>,
 {
@@ -40,7 +40,7 @@ pub type AverageOp<Source, Item> = MapOp<
     ScanOp<Source, fn(&Accum<Item>, &Item) -> Accum<Item>, Item, Accum<Item>>,
     Accum<Item>,
   >,
-  fn(&Accum<Item>) -> Item,
+  fn(&mut Accum<Item>) -> Item,
   Accum<Item>,
 >;
 
@@ -84,7 +84,7 @@ where
     let start = (Item::default(), 0);
 
     let acc = accumulate_item as fn(&Accum<Item>, &Item) -> Accum<Item>;
-    let avg = average_floats as fn(&Accum<Item>) -> Item;
+    let avg = average_floats as fn(&mut Accum<Item>) -> Item;
 
     self.scan_initial(start, acc).last().map(avg)
   }

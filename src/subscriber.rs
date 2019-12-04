@@ -47,7 +47,7 @@ where
   S: Observer<Item, Err>,
   U: SubscriptionLike,
 {
-  fn next(&mut self, v: &Item) {
+  fn next(&mut self, v: &mut Item) {
     if !self.subscription.is_closed() {
       self.observer.next(v)
     }
@@ -90,11 +90,11 @@ mod test {
   #[test]
   fn shared_next_complete() {
     let (next, _, complete, mut subscriber) = shared_subscriber_creator();
-    subscriber.next(&1);
-    subscriber.next(&2);
+    subscriber.next(&mut 1);
+    subscriber.next(&mut 2);
     subscriber.complete();
-    subscriber.next(&3);
-    subscriber.next(&4);
+    subscriber.next(&mut 3);
+    subscriber.next(&mut 4);
     assert_eq!(*next.lock().unwrap(), 2);
     assert_eq!(*complete.lock().unwrap(), 1);
   }
@@ -102,11 +102,11 @@ mod test {
   #[test]
   fn shared_err_complete() {
     let (next, error, _, mut subscriber) = shared_subscriber_creator();
-    subscriber.next(&1);
-    subscriber.next(&2);
+    subscriber.next(&mut 1);
+    subscriber.next(&mut 2);
     subscriber.error(&());
-    subscriber.next(&3);
-    subscriber.next(&4);
+    subscriber.next(&mut 3);
+    subscriber.next(&mut 4);
 
     assert_eq!(*next.lock().unwrap(), 2);
     assert_eq!(*error.lock().unwrap(), 1);
@@ -124,7 +124,7 @@ mod test {
       err.clone(),
       complete.clone(),
       Subscriber::shared(SubscribeAll::new(
-        move |_: &_| *next.lock().unwrap() += 1,
+        move |_: &mut _| *next.lock().unwrap() += 1,
         move |_: &_| *err.lock().unwrap() += 1,
         move || *complete.lock().unwrap() += 1,
       ))
@@ -138,16 +138,16 @@ mod test {
     let mut complete = 0;
 
     let mut subscriber = Subscriber::local(SubscribeAll::new(
-      |_: &_| next += 1,
+      |_: &mut _| next += 1,
       |_: &i32| {},
       || complete += 1,
     ));
 
-    subscriber.next(&1);
-    subscriber.next(&2);
+    subscriber.next(&mut 1);
+    subscriber.next(&mut 2);
     subscriber.complete();
-    subscriber.next(&3);
-    subscriber.next(&4);
+    subscriber.next(&mut 3);
+    subscriber.next(&mut 4);
     assert_eq!(next, 2);
     assert_eq!(complete, 1);
   }
@@ -158,15 +158,15 @@ mod test {
     let mut err = 0;
 
     let mut subscriber = Subscriber::local(SubscribeErr::new(
-      |_: &_| next += 1,
+      |_: &mut _| next += 1,
       |_: &()| err += 1,
     ));
 
-    subscriber.next(&1);
-    subscriber.next(&2);
+    subscriber.next(&mut 1);
+    subscriber.next(&mut 2);
     subscriber.error(&());
-    subscriber.next(&3);
-    subscriber.next(&4);
+    subscriber.next(&mut 3);
+    subscriber.next(&mut 4);
 
     assert_eq!(next, 2);
     assert_eq!(err, 1);

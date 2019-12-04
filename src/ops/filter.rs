@@ -67,7 +67,7 @@ where
   S: Observer<Item, Err>,
   F: FnMut(&Item) -> bool,
 {
-  fn next(&mut self, value: &Item) {
+  fn next(&mut self, value: &mut Item) {
     if (self.filter)(value) {
       self.observer.next(value)
     }

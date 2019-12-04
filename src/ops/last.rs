@@ -120,15 +120,15 @@ where
   S: Observer<Item, Err>,
   Item: Clone,
 {
-  fn next(&mut self, value: &Item) { self.last = Some(value.clone()); }
+  fn next(&mut self, value: &mut Item) { self.last = Some(value.clone()); }
 
   #[inline(always)]
   fn error(&mut self, err: &Err) { self.observer.error(err); }
 
   fn complete(&mut self) {
-    let default = self.default.as_ref();
-    if let Some(v) = self.last.as_ref().or(default) {
-      self.observer.next(&v)
+    let default = self.default.as_mut();
+    if let Some(v) = self.last.as_mut().or(default) {
+      self.observer.next(v)
     }
     self.observer.complete();
   }
@@ -227,7 +227,7 @@ mod test {
     let mut last_item = None;
 
     observable::empty().last().subscribe_all(
-      |v: &i32| last_item = Some(*v),
+      |v: &mut i32| last_item = Some(*v),
       |_| errors += 1,
       || completed += 1,
     );

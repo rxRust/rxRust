@@ -172,11 +172,11 @@ mod test {
     let c_complete = complete.clone();
 
     Observable::new(|mut subscriber| {
-      subscriber.next(&1);
-      subscriber.next(&2);
-      subscriber.next(&3);
+      subscriber.next(&mut 1);
+      subscriber.next(&mut 2);
+      subscriber.next(&mut 3);
       subscriber.complete();
-      subscriber.next(&3);
+      subscriber.next(&mut 3);
       subscriber.error(&"never dispatch error");
     })
     .to_shared()
@@ -193,17 +193,17 @@ mod test {
   #[test]
   fn support_fork() {
     let o = Observable::new(|mut subscriber| {
-      subscriber.next(&1);
-      subscriber.next(&2);
-      subscriber.next(&3);
-      subscriber.next(&4);
+      subscriber.next(&mut 1);
+      subscriber.next(&mut 2);
+      subscriber.next(&mut 3);
+      subscriber.next(&mut 4);
     });
     let sum1 = Arc::new(Mutex::new(0));
     let sum2 = Arc::new(Mutex::new(0));
     let c_sum1 = sum1.clone();
     let c_sum2 = sum2.clone();
-    o.fork().subscribe(move |v| *sum1.lock().unwrap() += v);
-    o.fork().subscribe(move |v| *sum2.lock().unwrap() += v);
+    o.fork().subscribe(move |v| *sum1.lock().unwrap() += *v);
+    o.fork().subscribe(move |v| *sum2.lock().unwrap() += *v);
 
     assert_eq!(*c_sum1.lock().unwrap(), 10);
     assert_eq!(*c_sum2.lock().unwrap(), 10);
@@ -213,12 +213,12 @@ mod test {
   fn fork_and_share() {
     let observable = observable::empty();
     // shared after fork
-    observable.fork().to_shared().subscribe(|_: &()| {});
+    observable.fork().to_shared().subscribe(|_: &mut ()| {});
     observable.fork().to_shared().subscribe(|_| {});
 
     // shared before fork
     let observable = observable::empty().to_shared();
-    observable.fork().subscribe(|_: &()| {});
+    observable.fork().subscribe(|_: &mut ()| {});
     observable.fork().subscribe(|_| {});
   }
 }

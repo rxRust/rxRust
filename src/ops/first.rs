@@ -76,15 +76,15 @@ impl<Item, Err, S> Observer<Item, Err> for FirstOrSubscribe<S, Item>
 where
   S: Observer<Item, Err>,
 {
-  fn next(&mut self, value: &Item) {
+  fn next(&mut self, value: &mut Item) {
     self.observer.next(value);
     self.default = None;
   }
   #[inline(always)]
   fn error(&mut self, err: &Err) { self.observer.error(err); }
   fn complete(&mut self) {
-    if let Some(v) = Option::take(&mut self.default) {
-      self.observer.next(&v)
+    if let Some(mut v) = Option::take(&mut self.default) {
+      self.observer.next(&mut v)
     }
     self.observer.complete();
   }

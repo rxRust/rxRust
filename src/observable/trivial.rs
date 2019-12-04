@@ -1,10 +1,10 @@
 use crate::prelude::*;
 
-/// Creates an observable that emitts no items, just terminates with an error.
+/// Creates an observable that emits no items, just terminates with an error.
 ///
 /// # Arguments
 ///
-/// * `e` - An error to emitt and terminate with
+/// * `e` - An error to emit and terminate with
 ///
 pub fn throw<O, U, Item, Err>(
   e: Err,
@@ -22,14 +22,14 @@ where
 
 /// Creates an observable that produces no values.
 ///
-/// Completes immediatelly. Never emits an error.
+/// Completes immediately. Never emits an error.
 ///
 /// # Examples
 /// ```
 /// use rxrust::prelude::*;
 ///
 /// observable::empty()
-///   .subscribe(|v: &i32| {println!("{},", v)});
+///   .subscribe(|v: &mut i32| {println!("{},", v)});
 ///
 /// // Result: no thing printed
 /// ```
@@ -72,7 +72,7 @@ mod test {
     let mut error_emitted = String::new();
     observable::throw(String::from("error")).subscribe_all(
       // helping with type inference
-      |_: &i32| value_emitted = true,
+      |_: &mut i32| value_emitted = true,
       |e: &String| error_emitted = e.to_string(),
       || completed = true,
     );

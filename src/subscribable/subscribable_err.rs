@@ -8,11 +8,11 @@ pub struct SubscribeErr<N, E> {
 
 impl<Item, Err, N, E> Observer<Item, Err> for SubscribeErr<N, E>
 where
-  N: FnMut(&Item),
+  N: FnMut(&mut Item),
   E: FnMut(&Err),
 {
   #[inline(always)]
-  fn next(&mut self, value: &Item) { (self.next)(value); }
+  fn next(&mut self, value: &mut Item) { (self.next)(value); }
   #[inline(always)]
   fn error(&mut self, err: &Err) { (self.error)(err); }
   #[inline(always)]
@@ -53,7 +53,7 @@ where
     Err,
     Subscriber<SubscribeErr<N, E>, LocalSubscription>,
   >,
-  N: FnMut(&Item),
+  N: FnMut(&mut Item),
   E: FnMut(&Err),
 {
   type Unsub = S::Unsub;

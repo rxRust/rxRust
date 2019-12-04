@@ -19,7 +19,7 @@ use std::sync::{Arc, Mutex};
 /// let merged = even.merge(odd);
 ///
 /// // attach observers
-/// merged.subscribe(|v: &i32| println!("{} ", v));
+/// merged.subscribe(|v: &mut i32| println!("{} ", v));
 /// ```
 pub trait Merge {
   fn merge<S>(self, o: S) -> MergeOp<Self, S>
@@ -163,7 +163,7 @@ where
   Unsub: SubscriptionLike,
 {
   #[inline(always)]
-  fn next(&mut self, value: &Item) { self.observer.next(value); }
+  fn next(&mut self, value: &mut Item) { self.observer.next(value); }
 
   fn error(&mut self, err: &Err) {
     self.observer.error(err);
@@ -252,8 +252,8 @@ mod test {
       odd.subscribe(|v| odd_store.push(*v));
       even.subscribe(|v| even_store.push(*v));
 
-      (0..10).for_each(|v| {
-        numbers.next(&v);
+      (0..10).for_each(|mut v| {
+        numbers.next(&mut v);
       });
     }
     assert_eq!(even_store, vec![0, 2, 4, 6, 8]);
@@ -274,7 +274,7 @@ mod test {
       .subscribe(|_| unreachable!("oh, unsubscribe not work."))
       .unsubscribe();
 
-    numbers.next(&1);
+    numbers.next(&mut 1);
   }
 
   #[test]
@@ -308,7 +308,7 @@ mod test {
     let mut odd = Subject::local();
 
     even.clone().merge(odd.clone()).subscribe_all(
-      |_: &()| {},
+      |_: &mut ()| {},
       move |_| *error.lock().unwrap() += 1,
       move || *completed.lock().unwrap() += 1,
     );
@@ -326,8 +326,8 @@ mod test {
   #[test]
   fn merge_fork() {
     let o = Observable::new(|mut s| {
-      s.next(&1);
-      s.next(&2);
+      s.next(&mut 1);
+      s.next(&mut 2);
       s.error(&());
     });
 

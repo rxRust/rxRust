@@ -16,7 +16,7 @@ pub type MinMaxOp<Source, Item> = MapOp<
     >,
     Option<Item>,
   >,
-  fn(&Option<Item>) -> Item,
+  fn(&mut Option<Item>) -> Item,
   Option<Item>,
 >;
 

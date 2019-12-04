@@ -107,7 +107,7 @@ where
   S: Observer<Item, Err>,
   ST: SubscriptionLike,
 {
-  fn next(&mut self, value: &Item) {
+  fn next(&mut self, value: &mut Item) {
     if self.hits < self.count {
       self.hits += 1;
       self.observer.next(value);

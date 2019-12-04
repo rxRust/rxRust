@@ -137,7 +137,7 @@ where
   O: Observer<Item, Err> + Send + 'static,
   Item: Clone + Send + 'static,
 {
-  fn next(&mut self, value: &Item) {
+  fn next(&mut self, value: &mut Item) {
     let mut inner = self.0.lock().unwrap();
     if inner.edge == ThrottleEdge::Tailing {
       inner.trailing_value = Some(value.clone());
@@ -148,8 +148,8 @@ where
       let subscription = Schedulers::ThreadPool.schedule(
         move |_, _| {
           let mut inner = c_inner.lock().unwrap();
-          if let Some(v) = inner.trailing_value.take() {
-            inner.observer.next(&v);
+          if let Some(mut v) = inner.trailing_value.take() {
+            inner.observer.next(&mut v);
           }
           if let Some(mut throttled) = inner.throttled.take() {
             throttled.unsubscribe();
@@ -173,8 +173,8 @@ where
   }
   fn complete(&mut self) {
     let mut inner = self.0.lock().unwrap();
-    if let Some(value) = inner.trailing_value.take() {
-      inner.observer.next(&value);
+    if let Some(mut value) = inner.trailing_value.take() {
+      inner.observer.next(&mut value);
     }
     inner.observer.complete();
   }

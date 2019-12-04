@@ -37,9 +37,9 @@ where
   Iter: IntoIterator + Clone,
 {
   Observable::new(move |mut subscriber| {
-    for v in iter.into_iter() {
+    for mut v in iter.into_iter() {
       if !subscriber.is_closed() {
-        subscriber.next(&v);
+        subscriber.next(&mut v);
       } else {
         break;
       }
@@ -68,7 +68,7 @@ where
 /// ```
 ///
 pub fn of<O, U, Item>(
-  v: Item,
+  mut v: Item,
 ) -> Observable<impl FnOnce(Subscriber<O, U>) + Clone>
 where
   O: Observer<Item, ()>,
@@ -76,7 +76,7 @@ where
   Item: Clone,
 {
   Observable::new(move |mut subscriber| {
-    subscriber.next(&v);
+    subscriber.next(&mut v);
     subscriber.complete();
   })
 }
@@ -137,11 +137,11 @@ where
 /// use rxrust::prelude::*;
 ///
 /// observable::of_result(Err("An error"))
-///   .subscribe_err(|v: &i32| {}, |e| {println!("Error:  {},", e)});
+///   .subscribe_err(|v: &mut i32| {}, |e| {println!("Error:  {},", e)});
 /// ```
 ///
 pub fn of_result<O, U, Item, Err>(
-  r: Result<Item, Err>,
+  mut r: Result<Item, Err>,
 ) -> Observable<impl FnOnce(Subscriber<O, U>) + Clone>
 where
   O: Observer<Item, Err>,
@@ -150,7 +150,7 @@ where
   Err: Clone,
 {
   Observable::new(move |mut subscriber| {
-    match &r {
+    match &mut r {
       Ok(v) => subscriber.next(v),
       Err(e) => subscriber.error(e),
     };
@@ -177,7 +177,7 @@ where
 /// ```
 ///
 pub fn of_option<O, U, Item>(
-  o: Option<Item>,
+  mut o: Option<Item>,
 ) -> Observable<impl FnOnce(Subscriber<O, U>) + Clone>
 where
   O: Observer<Item, ()>,
@@ -185,7 +185,7 @@ where
   Item: Clone,
 {
   Observable::new(move |mut subscriber| {
-    match &o {
+    match &mut o {
       Some(v) => subscriber.next(v),
       None => (),
     };

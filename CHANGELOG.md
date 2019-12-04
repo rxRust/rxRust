@@ -1,4 +1,10 @@
-## [Unreleased](https://github.com/M-Adoo/rxRust/compare/v0.3.0...HEAD)
+## [Unreleased](https://github.com/M-Adoo/rxRust/compare/v0.5.0...HEAD)
+
+### Breaking Changes
+
+- **observer**: `Observer::next` emit mut reference instead of reference. 
+
+## [0.5.0](https://github.com/M-Adoo/rxRust/releases/tag/v0.5.0)  (2019-11-07)
 
 ### Features
 - **operator**: add `scan` operator.

@@ -138,10 +138,10 @@ where
   Source: Observer<OutputItem, Err>,
   BinaryOp: FnMut(&OutputItem, &InputItem) -> OutputItem,
 {
-  fn next(&mut self, value: &InputItem) {
+  fn next(&mut self, value: &mut InputItem) {
     // accumulating each item with a current value
     self.acc = (self.binary_op)(&self.acc, value);
-    self.target_observer.next(&self.acc)
+    self.target_observer.next(&mut self.acc)
   }
 
   #[inline(always)]
