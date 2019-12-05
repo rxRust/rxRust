@@ -47,22 +47,6 @@ where
       _p: PhantomData,
     }
   }
-
-  /// A version of filter_map operator which return reference, and furthermore，
-  /// return type and input item has same lifetime.
-  fn filter_map_return_ref<F, SourceItem, Item>(
-    self,
-    f: F,
-  ) -> FilterMapReturnRefOp<Self, F, SourceItem>
-  where
-    F: FnMut(SourceItem) -> Option<Item>,
-  {
-    FilterMapReturnRefOp {
-      source: self,
-      f,
-      _p: PhantomData,
-    }
-  }
 }
 
 impl<T> FilterMap for T {}
@@ -171,119 +155,6 @@ where
   }
 }
 
-// -----------------------------------------------------------------------------
-//  return reference filter_map implement
-// -----------------------------------------------------------------------------
-
-pub struct FilterMapReturnRefOp<S, F, I> {
-  source: S,
-  f: F,
-  _p: PhantomData<I>,
-}
-
-impl<Item, Err, SourceItem, S, F, O, U>
-  RawSubscribable<Item, Err, Subscriber<O, U>>
-  for FilterMapReturnRefOp<S, F, SourceItem>
-where
-  S: RawSubscribable<
-    SourceItem,
-    Err,
-    Subscriber<FilterMapReturnRefObserver<O, F>, U>,
-  >,
-  F: FnMut(SourceItem) -> Option<Item>,
-{
-  type Unsub = S::Unsub;
-  fn raw_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub {
-    self.source.raw_subscribe(Subscriber {
-      observer: FilterMapReturnRefObserver {
-        down_observer: subscriber.observer,
-        f: self.f,
-      },
-      subscription: subscriber.subscription,
-    })
-  }
-}
-
-unsafe impl<S, F, I> Send for FilterMapReturnRefOp<S, F, I>
-where
-  S: Send,
-  F: Send,
-{
-}
-
-unsafe impl<S, F, I> Sync for FilterMapReturnRefOp<S, F, I>
-where
-  S: Sync,
-  F: Sync,
-{
-}
-
-impl<S, F, I> Fork for FilterMapReturnRefOp<S, F, I>
-where
-  S: Fork,
-  F: Clone,
-{
-  type Output = FilterMapReturnRefOp<S::Output, F, I>;
-  fn fork(&self) -> Self::Output {
-    FilterMapReturnRefOp {
-      source: self.source.fork(),
-      f: self.f.clone(),
-      _p: PhantomData,
-    }
-  }
-}
-impl<S, F, I> IntoShared for FilterMapReturnRefOp<S, F, I>
-where
-  S: IntoShared,
-  F: Send + Sync + 'static,
-  I: 'static,
-{
-  type Shared = SharedOp<FilterMapReturnRefOp<S::Shared, F, I>>;
-  fn to_shared(self) -> Self::Shared {
-    SharedOp(FilterMapReturnRefOp {
-      source: self.source.to_shared(),
-      f: self.f,
-      _p: PhantomData,
-    })
-  }
-}
-
-pub struct FilterMapReturnRefObserver<O, F> {
-  down_observer: O,
-  f: F,
-}
-
-impl<O, F, Item, Err, OutputItem> Observer<Item, Err>
-  for FilterMapReturnRefObserver<O, F>
-where
-  O: Observer<OutputItem, Err>,
-  F: FnMut(Item) -> Option<OutputItem>,
-{
-  fn next(&mut self, value: Item) {
-    if let Some(v) = (self.f)(value) {
-      self.down_observer.next(v)
-    }
-  }
-  #[inline(always)]
-  fn error(&mut self, err: Err) { self.down_observer.error(err) }
-  #[inline(always)]
-  fn complete(&mut self) { self.down_observer.complete() }
-}
-
-impl<O, F> IntoShared for FilterMapReturnRefObserver<O, F>
-where
-  O: IntoShared,
-  F: Send + Sync + 'static,
-{
-  type Shared = FilterMapReturnRefObserver<O::Shared, F>;
-  fn to_shared(self) -> Self::Shared {
-    FilterMapReturnRefObserver {
-      down_observer: self.down_observer.to_shared(),
-      f: self.f,
-    }
-  }
-}
-
 #[cfg(test)]
 mod test {
   use crate::{ops::FilterMap, prelude::*};
@@ -310,8 +181,8 @@ mod test {
 
   #[test]
   fn filter_map_return_ref() {
-    observable::of(1)
-      .filter_map_return_ref(|v| Some(v))
+    observable::of(&1)
+      .filter_map(Some)
       .fork()
       .to_shared()
       .fork()

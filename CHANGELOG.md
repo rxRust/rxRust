@@ -3,6 +3,8 @@
 ### Breaking Changes
 
 - **observer**: `Observer::next` emit items by value instead of reference.
+- **operator**: remove `map_return_ref` operator, now `map` cover its use scenes.
+- **operator**: remove `filter_map_return_ref`, now `filter_map` cover its use scenes.
 
 ## [0.5.0](https://github.com/M-Adoo/rxRust/releases/tag/v0.5.0)  (2019-11-19)
 
