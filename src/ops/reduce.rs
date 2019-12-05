@@ -44,7 +44,7 @@ pub trait Reduce<OutputItem> {
   ) -> ReduceOp<Self, BinaryOp, InputItem, OutputItem>
   where
     Self: Sized,
-    BinaryOp: Fn(&OutputItem, &InputItem) -> OutputItem,
+    BinaryOp: Fn(OutputItem, InputItem) -> OutputItem,
     OutputItem: Clone,
   {
     // realised as a composition of `scan`, and `last`
@@ -66,7 +66,7 @@ pub trait Reduce<OutputItem> {
   ) -> LastOrOp<ScanOp<Self, BinaryOp, InputItem, OutputItem>, OutputItem>
   where
     Self: Sized,
-    BinaryOp: Fn(&OutputItem, &InputItem) -> OutputItem,
+    BinaryOp: Fn(OutputItem, InputItem) -> OutputItem,
     OutputItem: Default + Clone,
   {
     self.reduce_initial(OutputItem::default(), binary_op)
@@ -84,7 +84,7 @@ mod test {
     let mut emitted = 0;
     observable::from_iter(vec![1, 1, 1, 1, 1])
       .reduce_initial(100, |acc, v| acc + v)
-      .subscribe(|v| emitted = *v);
+      .subscribe(|v| emitted = v);
 
     assert_eq!(105, emitted);
   }
@@ -93,8 +93,8 @@ mod test {
   fn reduce_initial_on_empty_observable() {
     let mut emitted = 0;
     observable::empty()
-      .reduce_initial(100, |acc, v| acc + v)
-      .subscribe(|v| emitted = *v);
+      .reduce_initial(100, |acc, v: i32| acc + v)
+      .subscribe(|v| emitted = v);
 
     // expected to emit the initial value
     assert_eq!(100, emitted);
@@ -104,7 +104,7 @@ mod test {
     let mut emitted = 0;
     observable::from_iter(vec![1, 1, 1, 1, 1])
       .reduce(|acc, v| acc + v)
-      .subscribe(|v| emitted = *v);
+      .subscribe(|v| emitted = v);
 
     assert_eq!(5, emitted);
   }
@@ -113,8 +113,8 @@ mod test {
   fn reduce_on_empty_observable() {
     let mut emitted = 0;
     observable::empty()
-      .reduce(|acc, v| acc + v)
-      .subscribe(|v| emitted = *v);
+      .reduce(|acc, v: i32| acc + v)
+      .subscribe(|v| emitted = v);
 
     assert_eq!(0, emitted);
   }
@@ -124,8 +124,8 @@ mod test {
     // we're using mixed numeric types here to perform transform
     let mut emitted = 0u32;
     observable::from_iter(vec![1i32, 2i32, 3i32, 4i32])
-      .reduce(|acc, v: &i32| acc + (*v as u32))
-      .subscribe(|v| emitted = *v);
+      .reduce(|acc, v: i32| acc + (v as u32))
+      .subscribe(|v| emitted = v);
 
     assert_eq!(10u32, emitted);
   }
@@ -133,8 +133,8 @@ mod test {
   fn reduce_for_counting_total_length() {
     let mut emitted = 0;
     observable::from_iter(vec![String::from("foo"), String::from("bar")])
-      .reduce(|acc, v: &String| acc + v.len())
-      .subscribe(|v| emitted = *v);
+      .reduce(|acc, v: String| acc + v.len())
+      .subscribe(|v| emitted = v);
 
     assert_eq!(6, emitted);
   }
@@ -142,9 +142,9 @@ mod test {
   #[test]
   fn reduce_fork_and_shared() {
     // type to type can fork
-    let m = observable::from_iter(0..100).reduce(|acc, v| acc + *v);
+    let m = observable::from_iter(0..100).reduce(|acc: i32, v| acc + v);
     m.fork()
-      .reduce(|acc, v| acc + *v)
+      .reduce(|acc: i32, v| acc + v)
       .fork()
       .to_shared()
       .fork()

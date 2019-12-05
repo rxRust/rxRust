@@ -47,7 +47,7 @@ where
   S: Observer<Item, Err>,
   U: SubscriptionLike,
 {
-  fn next(&mut self, v: &Item) {
+  fn next(&mut self, v: Item) {
     if !self.subscription.is_closed() {
       self.observer.next(v)
     }
@@ -60,7 +60,7 @@ where
     }
   }
 
-  fn error(&mut self, err: &Err) {
+  fn error(&mut self, err: Err) {
     if !self.subscription.is_closed() {
       self.observer.error(err);
       self.subscription.unsubscribe();
@@ -90,11 +90,11 @@ mod test {
   #[test]
   fn shared_next_complete() {
     let (next, _, complete, mut subscriber) = shared_subscriber_creator();
-    subscriber.next(&1);
-    subscriber.next(&2);
+    subscriber.next(1);
+    subscriber.next(2);
     subscriber.complete();
-    subscriber.next(&3);
-    subscriber.next(&4);
+    subscriber.next(3);
+    subscriber.next(4);
     assert_eq!(*next.lock().unwrap(), 2);
     assert_eq!(*complete.lock().unwrap(), 1);
   }
@@ -102,11 +102,11 @@ mod test {
   #[test]
   fn shared_err_complete() {
     let (next, error, _, mut subscriber) = shared_subscriber_creator();
-    subscriber.next(&1);
-    subscriber.next(&2);
-    subscriber.error(&());
-    subscriber.next(&3);
-    subscriber.next(&4);
+    subscriber.next(1);
+    subscriber.next(2);
+    subscriber.error(());
+    subscriber.next(3);
+    subscriber.next(4);
 
     assert_eq!(*next.lock().unwrap(), 2);
     assert_eq!(*error.lock().unwrap(), 1);
@@ -124,8 +124,8 @@ mod test {
       err.clone(),
       complete.clone(),
       Subscriber::shared(SubscribeAll::new(
-        move |_: &_| *next.lock().unwrap() += 1,
-        move |_: &_| *err.lock().unwrap() += 1,
+        move |_| *next.lock().unwrap() += 1,
+        move |_| *err.lock().unwrap() += 1,
         move || *complete.lock().unwrap() += 1,
       ))
       .to_shared(),

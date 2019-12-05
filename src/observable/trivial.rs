@@ -16,7 +16,7 @@ where
   Item: Clone,
 {
   Observable::new(move |mut subscriber| {
-    subscriber.error(&e);
+    subscriber.error(e);
   })
 }
 
@@ -72,8 +72,8 @@ mod test {
     let mut error_emitted = String::new();
     observable::throw(String::from("error")).subscribe_all(
       // helping with type inference
-      |_: &i32| value_emitted = true,
-      |e: &String| error_emitted = e.to_string(),
+      |_: i32| value_emitted = true,
+      |e: String| error_emitted = e,
       || completed = true,
     );
     assert!(!value_emitted);

@@ -39,7 +39,7 @@ where
   Observable::new(move |mut subscriber| {
     for v in iter.into_iter() {
       if !subscriber.is_closed() {
-        subscriber.next(&v);
+        subscriber.next(v);
       } else {
         break;
       }
@@ -76,7 +76,7 @@ where
   Item: Clone,
 {
   Observable::new(move |mut subscriber| {
-    subscriber.next(&v);
+    subscriber.next(v);
     subscriber.complete();
   })
 }
@@ -150,7 +150,7 @@ where
   Err: Clone,
 {
   Observable::new(move |mut subscriber| {
-    match &r {
+    match r {
       Ok(v) => subscriber.next(v),
       Err(e) => subscriber.error(e),
     };
@@ -185,10 +185,9 @@ where
   Item: Clone,
 {
   Observable::new(move |mut subscriber| {
-    match &o {
-      Some(v) => subscriber.next(v),
-      None => (),
-    };
+    if let Some(v) = o {
+      subscriber.next(v)
+    }
     subscriber.complete();
   })
 }
@@ -235,7 +234,7 @@ mod test {
     let callable = || 123;
     observable::from_fn(callable).subscribe_complete(
       |v| {
-        value = *v;
+        value = v;
       },
       || completed = true,
     );
@@ -250,7 +249,7 @@ mod test {
     let mut completed1 = false;
     observable::of_option(Some(123)).subscribe_complete(
       |v| {
-        value1 = *v;
+        value1 = v;
       },
       || completed1 = true,
     );
@@ -262,7 +261,7 @@ mod test {
     let mut completed2 = false;
     observable::of_option(None).subscribe_complete(
       |v| {
-        value2 = *v;
+        value2 = v;
       },
       || completed2 = true,
     );
@@ -278,7 +277,7 @@ mod test {
     let r: Result<i32, &str> = Ok(123);
     observable::of_result(r).subscribe_complete(
       |v| {
-        value1 = *v;
+        value1 = v;
       },
       || completed1 = true,
     );
@@ -322,7 +321,7 @@ mod test {
   fn of() {
     let mut value = 0;
     let mut completed = false;
-    observable::of(100).subscribe_complete(|v| value = *v, || completed = true);
+    observable::of(100).subscribe_complete(|v| value = v, || completed = true);
 
     assert_eq!(value, 100);
     assert_eq!(completed, true);
@@ -347,7 +346,7 @@ mod test {
     observable::repeat(123, 5).subscribe_complete(
       |v| {
         hit_count += 1;
-        assert_eq!(123, *v);
+        assert_eq!(123, v);
       },
       || completed = true,
     );
@@ -362,7 +361,7 @@ mod test {
     observable::repeat(123, 0).subscribe_complete(
       |v| {
         hit_count += 1;
-        assert_eq!(123, *v);
+        assert_eq!(123, v);
       },
       || completed = true,
     );

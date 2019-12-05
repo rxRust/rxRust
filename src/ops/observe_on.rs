@@ -84,30 +84,30 @@ where
   Err: Clone + Send + Sync + 'static,
   SD: Scheduler,
 {
-  fn next(&mut self, value: &Item) {
+  fn next(&mut self, value: Item) {
     let s = self.scheduler.schedule(
       |subscription, state| {
         if !subscription.is_closed() {
           let (v, observer) = state;
-          observer.lock().unwrap().next(&v);
+          observer.lock().unwrap().next(v);
         }
       },
       None,
-      (value.clone(), self.observer.clone()),
+      (value, self.observer.clone()),
     );
     self.proxy.add(s);
   }
-  fn error(&mut self, err: &Err) {
+  fn error(&mut self, err: Err) {
     let s = self.scheduler.schedule(
       |mut subscription, state| {
         if !subscription.is_closed() {
           let (e, observer) = state;
-          observer.lock().unwrap().error(&e);
+          observer.lock().unwrap().error(e);
           subscription.unsubscribe();
         }
       },
       None,
-      (err.clone(), self.observer.clone()),
+      (err, self.observer.clone()),
     );
     self.proxy.add(s);
   }
@@ -180,7 +180,7 @@ mod test {
       .observe_on(scheduler)
       .delay(Duration::from_millis(10))
       .subscribe(move |v| {
-        emitted.lock().unwrap().push(*v);
+        emitted.lock().unwrap().push(v);
       })
       .unsubscribe();
     std::thread::sleep(Duration::from_millis(20));

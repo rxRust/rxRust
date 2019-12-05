@@ -17,7 +17,7 @@ use crate::scheduler::Scheduler;
 ///
 /// let a = observable::from_iter(1..5);
 /// let b = observable::from_iter(5..10);
-/// a.merge(b).subscribe(|v| print!("{} ", *v));
+/// a.merge(b).subscribe(|v| print!("{} ", v));
 /// ```
 ///
 /// Both Observable `a` and `b` will emit their values directly and
@@ -36,7 +36,7 @@ use crate::scheduler::Scheduler;
 /// let b = observable::from_iter(5..10);
 /// a.merge(b).to_shared().subscribe(|v|{
 ///   let handle = thread::current();
-///   print!("{}({:?}) ", *v, handle.id())
+///   print!("{}({:?}) ", v, handle.id())
 /// });
 /// ```
 ///
@@ -114,7 +114,7 @@ mod test {
     observable::from_iter(1..5)
       .subscribe_on(Schedulers::NewThread)
       .subscribe(move |v| {
-        res.lock().unwrap().push(*v);
+        res.lock().unwrap().push(v);
         let handle = thread::current();
         thread.lock().unwrap().push(handle.id());
       });
@@ -140,7 +140,7 @@ mod test {
       .subscribe_on(scheduler)
       .delay(Duration::from_millis(10))
       .subscribe(move |v| {
-        emitted.lock().unwrap().push(*v);
+        emitted.lock().unwrap().push(v);
       })
       .unsubscribe();
     std::thread::sleep(Duration::from_millis(20));

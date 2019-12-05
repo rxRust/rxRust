@@ -8,7 +8,7 @@ pub trait Map<T> {
   fn map<B, F>(self, f: F) -> MapOp<Self, F, B>
   where
     Self: Sized,
-    F: Fn(&B) -> T,
+    F: Fn(B) -> T,
   {
     MapOp {
       source: self,
@@ -22,7 +22,7 @@ pub trait Map<T> {
   fn map_return_ref<B, F>(self, f: F) -> MapReturnRefOp<Self, F, B>
   where
     Self: Sized,
-    F: for<'r> Fn(&'r B) -> &'r T,
+    F: Fn(B) -> T,
   {
     MapReturnRefOp {
       source: self,
@@ -44,7 +44,7 @@ impl<Item, Err, B, O, U, S, M> RawSubscribable<Item, Err, Subscriber<O, U>>
   for MapOp<S, M, B>
 where
   S: RawSubscribable<B, Err, Subscriber<MapObserver<O, M>, U>>,
-  M: FnMut(&B) -> Item,
+  M: FnMut(B) -> Item,
 {
   type Unsub = S::Unsub;
   fn raw_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub {
@@ -67,12 +67,12 @@ pub struct MapObserver<S, M> {
 impl<Item, Err, S, M, B> Observer<Item, Err> for MapObserver<S, M>
 where
   S: Observer<B, Err>,
-  M: FnMut(&Item) -> B,
+  M: FnMut(Item) -> B,
 {
-  fn next(&mut self, value: &Item) { self.observer.next(&(self.map)(value)) }
+  fn next(&mut self, value: Item) { self.observer.next((self.map)(value)) }
 
   #[inline(always)]
-  fn error(&mut self, err: &Err) { self.observer.error(err); }
+  fn error(&mut self, err: Err) { self.observer.error(err); }
 
   #[inline(always)]
   fn complete(&mut self) { self.observer.complete(); }
@@ -133,7 +133,7 @@ impl<Item, Err, O, U, S, B, M> RawSubscribable<Item, Err, Subscriber<O, U>>
   for MapReturnRefOp<S, M, B>
 where
   S: RawSubscribable<B, Err, Subscriber<MapReturnRefObserver<O, M>, U>>,
-  M: for<'r> FnMut(&'r B) -> &'r Item,
+  M: FnMut(B) -> Item,
 {
   type Unsub = S::Unsub;
   fn raw_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub {
@@ -156,12 +156,12 @@ pub struct MapReturnRefObserver<O, M> {
 impl<Item, Err, O, M, B> Observer<Item, Err> for MapReturnRefObserver<O, M>
 where
   O: Observer<B, Err>,
-  M: for<'r> FnMut(&'r Item) -> &'r B,
+  M: FnMut(Item) -> B,
 {
-  fn next(&mut self, value: &Item) { self.observer.next(&(self.map)(value)) }
+  fn next(&mut self, value: Item) { self.observer.next((self.map)(value)) }
 
   #[inline(always)]
-  fn error(&mut self, err: &Err) { self.observer.error(err); }
+  fn error(&mut self, err: Err) { self.observer.error(err); }
 
   #[inline(always)]
   fn complete(&mut self) { self.observer.complete(); }
@@ -221,7 +221,7 @@ mod test {
     let mut i = 0;
     observable::from_iter(100..101)
       .map(|v| v * 2)
-      .subscribe(|v| i += *v);
+      .subscribe(|v| i += v);
     assert_eq!(i, 200);
   }
 
@@ -231,16 +231,16 @@ mod test {
 
     observable::of(100)
       .map_return_ref(|v| v)
-      .subscribe(|v| i += *v);
+      .subscribe(|v| i += v);
     assert_eq!(i, 100);
   }
 
   #[test]
   fn fork_and_shared() {
     // type to type can fork
-    let m = observable::from_iter(0..100).map(|v| *v);
+    let m = observable::from_iter(0..100).map(|v| v);
     m.fork()
-      .map(|v| *v)
+      .map(|v| v)
       .fork()
       .to_shared()
       .fork()
@@ -250,7 +250,7 @@ mod test {
     // type mapped to other type can fork
     let m = observable::from_iter(vec!['a', 'b', 'c']).map(|_v| 1);
     m.fork()
-      .map(|v| *v as f32)
+      .map(|v| v as f32)
       .fork()
       .to_shared()
       .fork()
@@ -273,7 +273,7 @@ mod test {
     let mut i = 0;
     observable::from_iter(vec!['a', 'b', 'c'])
       .map(|_v| 1)
-      .subscribe(|v| i += *v);
+      .subscribe(|v| i += v);
     assert_eq!(i, 3);
   }
 }

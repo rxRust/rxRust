@@ -29,14 +29,14 @@ where
 
 impl<Item, Err, N, E, C> Observer<Item, Err> for SubscribeAll<N, E, C>
 where
-  N: FnMut(&Item),
-  E: FnMut(&Err),
+  N: FnMut(Item),
+  E: FnMut(Err),
   C: FnMut(),
 {
   #[inline(always)]
-  fn next(&mut self, value: &Item) { (self.next)(value); }
+  fn next(&mut self, value: Item) { (self.next)(value); }
   #[inline(always)]
-  fn error(&mut self, err: &Err) { (self.error)(err); }
+  fn error(&mut self, err: Err) { (self.error)(err); }
   #[inline(always)]
   fn complete(&mut self) { (self.complete)(); }
 }
@@ -62,8 +62,8 @@ where
     Err,
     Subscriber<SubscribeAll<N, E, C>, LocalSubscription>,
   >,
-  N: FnMut(&Item),
-  E: FnMut(&Err),
+  N: FnMut(Item),
+  E: FnMut(Err),
   C: FnMut(),
 {
   type Unsub = S::Unsub;

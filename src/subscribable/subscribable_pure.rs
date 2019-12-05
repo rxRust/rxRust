@@ -5,12 +5,12 @@ pub struct SubscribePure<N>(N);
 
 impl<Item, N> Observer<Item, ()> for SubscribePure<N>
 where
-  N: FnMut(&Item),
+  N: FnMut(Item),
 {
   #[inline(always)]
-  fn next(&mut self, value: &Item) { (self.0)(value); }
+  fn next(&mut self, value: Item) { (self.0)(value); }
   #[inline(always)]
-  fn error(&mut self, _err: &()) {}
+  fn error(&mut self, _err: ()) {}
   #[inline(always)]
   fn complete(&mut self) {}
 }
@@ -36,7 +36,7 @@ pub trait SubscribablePure<Item, N> {
 impl<Item, S, N> SubscribablePure<Item, N> for S
 where
   S: RawSubscribable<Item, (), Subscriber<SubscribePure<N>, LocalSubscription>>,
-  N: FnMut(&Item),
+  N: FnMut(Item),
 {
   type Unsub = S::Unsub;
   fn subscribe(self, next: N) -> Self::Unsub

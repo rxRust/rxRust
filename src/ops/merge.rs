@@ -163,9 +163,9 @@ where
   Unsub: SubscriptionLike,
 {
   #[inline(always)]
-  fn next(&mut self, value: &Item) { self.observer.next(value); }
+  fn next(&mut self, value: Item) { self.observer.next(value); }
 
-  fn error(&mut self, err: &Err) {
+  fn error(&mut self, err: Err) {
     self.observer.error(err);
     self.subscription.unsubscribe();
   }
@@ -240,7 +240,7 @@ mod test {
     {
       let mut numbers = Subject::local();
       // enabling multiple observers for even stream;
-      let even = numbers.fork().filter(|v| v % 2 == 0);
+      let even = numbers.fork().filter(|v| *v % 2 == 0);
       // enabling multiple observers for odd stream;
       let odd = numbers.fork().filter(|v| *v % 2 != 0);
 
@@ -248,12 +248,12 @@ mod test {
       let merged = even.fork().merge(odd.fork());
 
       //  attach observers
-      merged.subscribe(|v| numbers_store.push(*v));
-      odd.subscribe(|v| odd_store.push(*v));
-      even.subscribe(|v| even_store.push(*v));
+      merged.subscribe(|v| numbers_store.push(v));
+      odd.subscribe(|v| odd_store.push(v));
+      even.subscribe(|v| even_store.push(v));
 
       (0..10).for_each(|v| {
-        numbers.next(&v);
+        numbers.next(v);
       });
     }
     assert_eq!(even_store, vec![0, 2, 4, 6, 8]);
@@ -308,13 +308,13 @@ mod test {
     let mut odd = Subject::local();
 
     even.clone().merge(odd.clone()).subscribe_all(
-      |_: &()| {},
+      |_: ()| {},
       move |_| *error.lock().unwrap() += 1,
       move || *completed.lock().unwrap() += 1,
     );
 
-    odd.error(&"");
-    even.clone().error(&"");
+    odd.error("");
+    even.clone().error("");
     even.complete();
 
     // if error occur,  stream terminated.
@@ -326,9 +326,9 @@ mod test {
   #[test]
   fn merge_fork() {
     let o = Observable::new(|mut s| {
-      s.next(&1);
-      s.next(&2);
-      s.error(&());
+      s.next(1);
+      s.next(2);
+      s.error(());
     });
 
     let m = o.fork().merge(o.fork());
@@ -342,7 +342,7 @@ mod test {
     let local = observable::of(2);
 
     shared.merge(local).to_shared().subscribe(move |v| {
-      res.push(*v);
+      res.push(v);
     });
   }
 }

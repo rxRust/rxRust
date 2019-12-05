@@ -8,31 +8,26 @@ use std::option::Option;
 /// Realised as chained composition of scan->last->map operators.
 pub type MinMaxOp<Source, Item> = MapOp<
   LastOrOp<
-    ScanOp<
-      Source,
-      fn(&Option<Item>, &Item) -> Option<Item>,
-      Item,
-      Option<Item>,
-    >,
+    ScanOp<Source, fn(Option<Item>, Item) -> Option<Item>, Item, Option<Item>>,
     Option<Item>,
   >,
-  fn(&Option<Item>) -> Item,
+  fn(Option<Item>) -> Item,
   Option<Item>,
 >;
 
-fn get_greater<Item>(i: &Option<Item>, v: &Item) -> Option<Item>
+fn get_greater<Item>(i: Option<Item>, v: Item) -> Option<Item>
 where
   Item: Copy + PartialOrd<Item>,
 {
   // using universal function call because of name collision with our `map`
   // being declared in the scope.
-  std::option::Option::map(*i, |vv| if vv < *v { *v } else { vv }).or(Some(*v))
+  std::option::Option::map(i, |vv| if vv < v { v } else { vv }).or(Some(v))
 }
-fn get_lesser<Item>(i: &Option<Item>, v: &Item) -> Option<Item>
+fn get_lesser<Item>(i: Option<Item>, v: Item) -> Option<Item>
 where
   Item: Copy + PartialOrd<Item>,
 {
-  std::option::Option::map(*i, |vv| if vv > *v { *v } else { vv }).or(Some(*v))
+  std::option::Option::map(i, |vv| if vv > v { v } else { vv }).or(Some(v))
 }
 
 /// Defines `min` and `max` operators for observables.
@@ -64,7 +59,7 @@ where
     Item: Copy + Send + PartialOrd<Item>,
   {
     let get_greater_func =
-      get_greater as fn(&Option<Item>, &Item) -> Option<Item>;
+      get_greater as fn(Option<Item>, Item) -> Option<Item>;
 
     self
       .scan_initial(None, get_greater_func)
@@ -97,8 +92,7 @@ where
     Self: Sized,
     Item: Copy + Send + PartialOrd<Item>,
   {
-    let get_lesser_func =
-      get_lesser as fn(&Option<Item>, &Item) -> Option<Item>;
+    let get_lesser_func = get_lesser as fn(Option<Item>, Item) -> Option<Item>;
 
     self
       .scan_initial(None, get_lesser_func)
@@ -131,7 +125,7 @@ mod test {
       .subscribe_all(
         |v| {
           num_emissions += 1;
-          emitted = *v
+          emitted = v
         },
         |_| num_errors += 1,
         || num_completions += 1,
@@ -153,7 +147,7 @@ mod test {
       .subscribe_all(
         |v| {
           num_emissions += 1;
-          emitted = *v
+          emitted = v
         },
         |_| num_errors += 1,
         || num_completions += 1,
@@ -170,7 +164,7 @@ mod test {
     let mut num_emissions = 0;
     observable::of(123.0).max().subscribe(|v| {
       num_emissions += 1;
-      emitted = *v
+      emitted = v
     });
     assert!(approx_eq!(f64, 123.0, emitted));
     assert_eq!(1, num_emissions);
@@ -179,7 +173,7 @@ mod test {
   #[test]
   fn max_on_empty_observable() {
     let mut emitted: Option<f64> = None;
-    observable::empty().max().subscribe(|v| emitted = Some(*v));
+    observable::empty().max().subscribe(|v| emitted = Some(v));
     assert_eq!(None, emitted);
   }
 
@@ -206,7 +200,7 @@ mod test {
       .subscribe_all(
         |v| {
           num_emissions += 1;
-          emitted = *v
+          emitted = v
         },
         |_| num_errors += 1,
         || num_completions += 1,
@@ -228,7 +222,7 @@ mod test {
       .subscribe_all(
         |v| {
           num_emissions += 1;
-          emitted = *v
+          emitted = v
         },
         |_| num_errors += 1,
         || num_completions += 1,
@@ -245,7 +239,7 @@ mod test {
     let mut num_emissions = 0;
     observable::of(123.0).min().subscribe(|v| {
       num_emissions += 1;
-      emitted = *v
+      emitted = v
     });
     assert!(approx_eq!(f64, 123.0, emitted));
     assert_eq!(1, num_emissions);
@@ -254,7 +248,7 @@ mod test {
   #[test]
   fn min_on_empty_observable() {
     let mut emitted: Option<f64> = None;
-    observable::empty().min().subscribe(|v| emitted = Some(*v));
+    observable::empty().min().subscribe(|v| emitted = Some(v));
     assert_eq!(None, emitted);
   }
 

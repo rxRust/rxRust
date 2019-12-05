@@ -76,15 +76,15 @@ impl<Item, Err, S> Observer<Item, Err> for FirstOrSubscribe<S, Item>
 where
   S: Observer<Item, Err>,
 {
-  fn next(&mut self, value: &Item) {
+  fn next(&mut self, value: Item) {
     self.observer.next(value);
     self.default = None;
   }
   #[inline(always)]
-  fn error(&mut self, err: &Err) { self.observer.error(err); }
+  fn error(&mut self, err: Err) { self.observer.error(err); }
   fn complete(&mut self) {
     if let Some(v) = Option::take(&mut self.default) {
-      self.observer.next(&v)
+      self.observer.next(v)
     }
     self.observer.complete();
   }
@@ -152,7 +152,7 @@ mod test {
     let mut v = 0;
     observable::empty()
       .first_or(100)
-      .subscribe_complete(|value| v = *value, || completed = true);
+      .subscribe_complete(|value| v = value, || completed = true);
 
     assert_eq!(completed, true);
     assert_eq!(v, 100);
@@ -166,8 +166,8 @@ mod test {
       let o = observable::from_iter(1..100).first();
       let o1 = o.fork().first();
       let o2 = o.fork().first();
-      o1.subscribe(|v| value = *v);
-      o2.subscribe(|v| value2 = *v);
+      o1.subscribe(|v| value = v);
+      o2.subscribe(|v| value2 = v);
     }
     assert_eq!(value, 1);
     assert_eq!(value2, 1);
@@ -182,8 +182,8 @@ mod test {
     .first_or(100);
     let o1 = o.fork().first_or(0);
     let o2 = o.fork().first_or(0);
-    o1.subscribe(|v| default = *v);
-    o2.subscribe(|v| default2 = *v);
+    o1.subscribe(|v| default = v);
+    o2.subscribe(|v| default2 = v);
     assert_eq!(default, 100);
     assert_eq!(default, 100);
   }
