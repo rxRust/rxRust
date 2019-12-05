@@ -3,7 +3,7 @@ use ops::reduce::{Reduce, ReduceOp};
 use std::ops::Add;
 
 pub type SumOp<Source, Item> =
-  ReduceOp<Source, fn(&Item, &Item) -> Item, Item, Item>;
+  ReduceOp<Source, fn(Item, Item) -> Item, Item, Item>;
 
 pub trait Sum<Item> {
   /// Calculates the sum of numbers emitted by an source observable and emits
@@ -31,7 +31,7 @@ pub trait Sum<Item> {
     Self: Sized,
     Item: Copy + Default + Add<Item, Output = Item>,
   {
-    self.reduce(|&acc, &v| acc + v)
+    self.reduce(|acc, v| acc + v)
   }
 }
 
@@ -46,21 +46,21 @@ mod test {
     let mut emitted = 0;
     observable::from_iter(vec![1, 1, 1, 1, 1])
       .sum()
-      .subscribe(|v| emitted = *v);
+      .subscribe(|v| emitted = v);
     assert_eq!(5, emitted);
   }
 
   #[test]
   fn sum_on_single_item() {
     let mut emitted = 0;
-    observable::of(123).sum().subscribe(|v| emitted = *v);
+    observable::of(123).sum().subscribe(|v| emitted = v);
     assert_eq!(123, emitted);
   }
 
   #[test]
   fn sum_on_empty_observable() {
     let mut emitted = 0;
-    observable::empty().sum().subscribe(|v| emitted = *v);
+    observable::empty().sum().subscribe(|v| emitted = v);
     assert_eq!(0, emitted);
   }
 
@@ -69,7 +69,7 @@ mod test {
     let mut emitted = 0;
     observable::from_iter(vec![1, -1, 1, -1, -1])
       .sum()
-      .subscribe(|v| emitted = *v);
+      .subscribe(|v| emitted = v);
     assert_eq!(-1, emitted);
   }
 

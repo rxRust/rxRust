@@ -21,7 +21,7 @@ lazy_static! {
 /// use futures::future;
 /// observable::from_future(future::ready(1))
 ///   .subscribe(move |v| {
-///     *res.lock().unwrap() = *v;
+///     *res.lock().unwrap() = v;
 ///   });
 /// std::thread::sleep(std::time::Duration::new(1, 0));
 /// assert_eq!(*c_res.lock().unwrap(), 1);
@@ -40,7 +40,7 @@ where
   Observable::new(move |mut subscriber| {
     let fmapped = f.map(move |v| {
       if !subscriber.is_closed() {
-        subscriber.next(&v);
+        subscriber.next(v);
         subscriber.complete();
       }
     });
@@ -65,11 +65,11 @@ where
     let fmapped = f.map(move |v| {
       if !subscriber.is_closed() {
         match v.into() {
-          Ok(ref item) => {
+          Ok(item) => {
             subscriber.next(item);
             subscriber.complete();
           }
-          Err(ref err) => subscriber.error(err),
+          Err(err) => subscriber.error(err),
         };
       }
     });
@@ -86,7 +86,7 @@ fn smoke() {
   let c_res = res.clone();
   {
     from_future_with_err(future::ok(1)).subscribe(move |v| {
-      *res.lock().unwrap() = *v;
+      *res.lock().unwrap() = v;
     });
     std::thread::sleep(std::time::Duration::from_millis(10));
     assert_eq!(*c_res.lock().unwrap(), 1);
@@ -94,7 +94,7 @@ fn smoke() {
   // from_future
   let res = c_res.clone();
   from_future(future::ready(2)).subscribe(move |v| {
-    *res.lock().unwrap() = *v;
+    *res.lock().unwrap() = v;
   });
   std::thread::sleep(std::time::Duration::from_millis(10));
   assert_eq!(*c_res.lock().unwrap(), 2);

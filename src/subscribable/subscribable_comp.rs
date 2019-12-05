@@ -8,13 +8,13 @@ pub struct SubscribeComplete<N, C> {
 
 impl<Item, Err, N, C> Observer<Item, Err> for SubscribeComplete<N, C>
 where
-  N: FnMut(&Item),
+  N: FnMut(Item),
   C: FnMut(),
 {
   #[inline(always)]
-  fn next(&mut self, value: &Item) { (self.next)(value); }
+  fn next(&mut self, value: Item) { (self.next)(value); }
   #[inline(always)]
-  fn error(&mut self, _err: &Err) {}
+  fn error(&mut self, _err: Err) {}
   #[inline(always)]
   fn complete(&mut self) { (self.complete)(); }
 }
@@ -51,7 +51,7 @@ where
     (),
     Subscriber<SubscribeComplete<N, C>, LocalSubscription>,
   >,
-  N: FnMut(&Item),
+  N: FnMut(Item),
   C: FnMut(),
 {
   type Unsub = S::Unsub;

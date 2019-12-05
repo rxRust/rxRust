@@ -256,8 +256,8 @@ fn smoke() {
   let mut accept2 = 0;
   {
     let ref_count = observable::of(1).fork().publish().ref_count();
-    ref_count.fork().subscribe(|v| accept1 = *v);
-    ref_count.fork().subscribe(|v| accept2 = *v);
+    ref_count.fork().subscribe(|v| accept1 = v);
+    ref_count.fork().subscribe(|v| accept2 = v);
   }
 
   assert_eq!(accept1, 1);
@@ -272,12 +272,12 @@ fn auto_unsubscribe() {
   {
     let mut subject = Subject::local();
     let ref_count = subject.fork().publish().ref_count();
-    let mut s1 = ref_count.fork().subscribe(|v| accept1 = *v);
-    let mut s2 = ref_count.fork().subscribe(|v| accept2 = *v);
-    subject.next(&1);
+    let mut s1 = ref_count.fork().subscribe(|v| accept1 = v);
+    let mut s2 = ref_count.fork().subscribe(|v| accept2 = v);
+    subject.next(1);
     s1.unsubscribe();
     s2.unsubscribe();
-    subject.next(&2);
+    subject.next(2);
   }
 
   assert_eq!(accept1, 1);

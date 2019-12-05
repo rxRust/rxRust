@@ -82,7 +82,7 @@ mod test {
       .observe_on(scheduler)
       .subscribe(move |v| {
         *sum.lock().unwrap() =
-          (0..1000).fold((*v as f32).sqrt(), |acc, _| acc.sqrt());
+          (0..1000).fold((v as f32).sqrt(), |acc, _| acc.sqrt());
       });
   }
 }

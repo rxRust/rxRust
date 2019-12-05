@@ -12,7 +12,7 @@ use ops::SharedOp;
 ///
 /// observable::from_iter(0..10)
 ///   .filter(|v| *v % 2 == 0)
-///   .subscribe(|v| { coll.push(*v); });
+///   .subscribe(|v| { coll.push(v); });
 
 /// // only even numbers received.
 /// assert_eq!(coll, vec![0, 2, 4, 6, 8]);
@@ -67,13 +67,13 @@ where
   S: Observer<Item, Err>,
   F: FnMut(&Item) -> bool,
 {
-  fn next(&mut self, value: &Item) {
-    if (self.filter)(value) {
+  fn next(&mut self, value: Item) {
+    if (self.filter)(&value) {
       self.observer.next(value)
     }
   }
   #[inline(always)]
-  fn error(&mut self, err: &Err) { self.observer.error(err); }
+  fn error(&mut self, err: Err) { self.observer.error(err); }
   #[inline(always)]
   fn complete(&mut self) { self.observer.complete(); }
 }

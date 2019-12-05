@@ -120,15 +120,14 @@ where
   S: Observer<Item, Err>,
   Item: Clone,
 {
-  fn next(&mut self, value: &Item) { self.last = Some(value.clone()); }
+  fn next(&mut self, value: Item) { self.last = Some(value); }
 
   #[inline(always)]
-  fn error(&mut self, err: &Err) { self.observer.error(err); }
+  fn error(&mut self, err: Err) { self.observer.error(err); }
 
   fn complete(&mut self) {
-    let default = self.default.as_ref();
-    if let Some(v) = self.last.as_ref().or(default) {
-      self.observer.next(&v)
+    if let Some(v) = self.last.take().or_else(|| self.default.take()) {
+      self.observer.next(v)
     }
     self.observer.complete();
   }
@@ -176,7 +175,7 @@ mod test {
     let mut last_item = None;
 
     observable::from_iter(0..100).last_or(200).subscribe_all(
-      |v| last_item = Some(*v),
+      |v| last_item = Some(v),
       |_| errors += 1,
       || completed += 1,
     );
@@ -193,7 +192,7 @@ mod test {
     let mut last_item = None;
 
     observable::empty().last_or(100).subscribe_all(
-      |v| last_item = Some(*v),
+      |v| last_item = Some(v),
       |_| errors += 1,
       || completed += 1,
     );
@@ -210,7 +209,7 @@ mod test {
     let mut last_item = None;
 
     observable::from_iter(0..2).last().subscribe_all(
-      |v| last_item = Some(*v),
+      |v| last_item = Some(v),
       |_| errors += 1,
       || completed += 1,
     );
@@ -227,7 +226,7 @@ mod test {
     let mut last_item = None;
 
     observable::empty().last().subscribe_all(
-      |v: &i32| last_item = Some(*v),
+      |v: i32| last_item = Some(v),
       |_| errors += 1,
       || completed += 1,
     );
@@ -245,8 +244,8 @@ mod test {
       let o = observable::from_iter(1..100).last();
       let o1 = o.fork().last();
       let o2 = o.fork().last();
-      o1.subscribe(|v| value = *v);
-      o2.subscribe(|v| value2 = *v);
+      o1.subscribe(|v| value = v);
+      o2.subscribe(|v| value2 = v);
     }
     assert_eq!(value, 99);
     assert_eq!(value2, 99);
@@ -262,8 +261,8 @@ mod test {
     .last_or(100);
     let o1 = o.fork().last_or(0);
     let o2 = o.fork().last_or(0);
-    o1.subscribe(|v| default = *v);
-    o2.subscribe(|v| default2 = *v);
+    o1.subscribe(|v| default = v);
+    o2.subscribe(|v| default2 = v);
     assert_eq!(default, 100);
     assert_eq!(default, 100);
   }

@@ -138,17 +138,19 @@ impl<'a, Item, Err, S> Observer<Item, Err>
   for Subject<LocalPublishers<'a, Item, Err>, S>
 where
   S: SubscriptionLike,
+  Item: Copy,
+  Err: Copy,
 {
-  fn next(&mut self, value: &Item) {
+  fn next(&mut self, value: Item) {
     if !self.subscription.is_closed() {
       let mut publishers = self.observers.0.borrow_mut();
       publishers.drain_filter(|subscriber| {
-        subscriber.next(&value);
+        subscriber.next(value);
         subscriber.is_closed()
       });
     }
   }
-  fn error(&mut self, err: &Err) {
+  fn error(&mut self, err: Err) {
     if !self.subscription.is_closed() {
       let mut publishers = self.observers.0.borrow_mut();
       publishers.iter_mut().for_each(|subscriber| {
@@ -174,17 +176,19 @@ impl<Item, Err, S> Observer<Item, Err>
   for Subject<SharedPublishers<Item, Err>, S>
 where
   S: SubscriptionLike,
+  Item: Copy,
+  Err: Copy,
 {
-  fn next(&mut self, value: &Item) {
+  fn next(&mut self, value: Item) {
     if !self.subscription.is_closed() {
       let mut publishers = self.observers.0.lock().unwrap();
       publishers.drain_filter(|subscriber| {
-        subscriber.next(&value);
+        subscriber.next(value);
         subscriber.is_closed()
       });
     }
   }
-  fn error(&mut self, err: &Err) {
+  fn error(&mut self, err: Err) {
     if !self.subscription.is_closed() {
       let mut publishers = self.observers.0.lock().unwrap();
       publishers.iter_mut().for_each(|subscriber| {
@@ -215,8 +219,8 @@ mod test {
     let mut i = 0;
     {
       let mut broadcast = Subject::local();
-      broadcast.fork().subscribe(|v: &i32| i = *v * 2);
-      broadcast.next(&1);
+      broadcast.fork().subscribe(|v| i = v * 2);
+      broadcast.next(1);
     }
     assert_eq!(i, 2);
   }
@@ -227,8 +231,8 @@ mod test {
     let mut broadcast = Subject::local();
     broadcast
       .fork()
-      .subscribe_err(|_: &i32| {}, |e: &_| panic!(*e));
-    broadcast.next(&1);
+      .subscribe_err(|_: i32| {}, |e: _| panic!(e));
+    broadcast.next(1);
 
     broadcast.error(&"should panic!");
   }
@@ -239,8 +243,8 @@ mod test {
 
     {
       let mut subject = Subject::local();
-      subject.fork().subscribe(|v| i = *v).unsubscribe();
-      subject.next(&100);
+      subject.fork().subscribe(|v| i = v).unsubscribe();
+      subject.next(100);
     }
 
     assert_eq!(i, 0);
@@ -265,12 +269,12 @@ mod test {
     let c_v = value.clone();
     let mut subject = Subject::local().to_shared();
     subject.fork().observe_on(Schedulers::NewThread).subscribe(
-      move |v: &i32| {
-        *value.lock().unwrap() = *v;
+      move |v: i32| {
+        *value.lock().unwrap() = v;
       },
     );
 
-    subject.next(&100);
+    subject.next(100);
     std::thread::sleep(std::time::Duration::from_millis(1));
 
     assert_eq!(*c_v.lock().unwrap(), 100);

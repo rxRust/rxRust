@@ -2,7 +2,7 @@ use crate::prelude::*;
 use ops::reduce::{Reduce, ReduceOp};
 
 pub type CountOp<Source, Item> =
-  ReduceOp<Source, fn(&usize, &Item) -> usize, Item, usize>;
+  ReduceOp<Source, fn(usize, Item) -> usize, Item, usize>;
 
 pub trait Count {
   /// Emits the number of items emitted by a source observable when this source
@@ -31,7 +31,7 @@ pub trait Count {
   where
     Self: Sized,
   {
-    self.reduce(|&acc, _v| acc + 1)
+    self.reduce(|acc, _v| acc + 1)
   }
 }
 
@@ -46,7 +46,7 @@ mod test {
     let mut emitted = 0;
     observable::from_iter(vec!['1', '7', '3', '0', '4'])
       .count()
-      .subscribe(|v| emitted = *v);
+      .subscribe(|v| emitted = v);
     assert_eq!(5, emitted);
   }
 
@@ -55,7 +55,7 @@ mod test {
     let mut emitted = 0;
     observable::empty()
       .count::<i32>()
-      .subscribe(|v| emitted = *v);
+      .subscribe(|v| emitted = v);
     assert_eq!(0, emitted);
   }
 

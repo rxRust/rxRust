@@ -12,7 +12,7 @@ type Accum<Item> = (Item, usize);
 /// Computing an average by multiplying accumulated nominator by a reciprocal
 /// of accumulated denominator. In this way some generic types that support
 /// linear scaling over floats values could be averaged (e.g. vectors)
-fn average_floats<T>(acc: &Accum<T>) -> T
+fn average_floats<T>(acc: Accum<T>) -> T
 where
   T: Default + Copy + Send + Mul<f64, Output = T>,
 {
@@ -25,11 +25,11 @@ where
   acc.0 * (1.0 / (acc.1 as f64))
 }
 
-fn accumulate_item<T>(acc: &Accum<T>, v: &T) -> Accum<T>
+fn accumulate_item<T>(acc: Accum<T>, v: T) -> Accum<T>
 where
   T: Copy + Add<T, Output = T>,
 {
-  let newacc = acc.0 + *v;
+  let newacc = acc.0 + v;
   let newcount = acc.1 + 1;
   (newacc, newcount)
 }
@@ -37,10 +37,10 @@ where
 /// Realised as chained composition of scan->last->map operators.
 pub type AverageOp<Source, Item> = MapOp<
   LastOrOp<
-    ScanOp<Source, fn(&Accum<Item>, &Item) -> Accum<Item>, Item, Accum<Item>>,
+    ScanOp<Source, fn(Accum<Item>, Item) -> Accum<Item>, Item, Accum<Item>>,
     Accum<Item>,
   >,
-  fn(&Accum<Item>) -> Item,
+  fn(Accum<Item>) -> Item,
   Accum<Item>,
 >;
 
@@ -83,8 +83,8 @@ where
     // our starting point
     let start = (Item::default(), 0);
 
-    let acc = accumulate_item as fn(&Accum<Item>, &Item) -> Accum<Item>;
-    let avg = average_floats as fn(&Accum<Item>) -> Item;
+    let acc = accumulate_item as fn(Accum<Item>, Item) -> Accum<Item>;
+    let avg = average_floats as fn(Accum<Item>) -> Item;
 
     self.scan_initial(start, acc).last().map(avg)
   }
@@ -106,7 +106,7 @@ mod test {
       .subscribe_all(
         |v| {
           num_emissions += 1;
-          emitted = *v
+          emitted = v
         },
         |_| num_errors += 1,
         || num_completions += 1,
@@ -148,7 +148,7 @@ mod test {
     let mut num_emissions = 0;
     observable::of(123.0).average().subscribe(|v| {
       num_emissions += 1;
-      emitted = *v
+      emitted = v
     });
     assert!(approx_eq!(f64, 123.0, emitted));
     assert_eq!(1, num_emissions);
@@ -159,7 +159,7 @@ mod test {
     let mut emitted: Option<f64> = None;
     observable::empty()
       .average()
-      .subscribe(|v| emitted = Some(*v));
+      .subscribe(|v| emitted = Some(v));
     assert_eq!(None, emitted);
   }
 

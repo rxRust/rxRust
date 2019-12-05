@@ -137,7 +137,7 @@ where
   O: Observer<Item, Err> + Send + 'static,
   Item: Clone + Send + 'static,
 {
-  fn next(&mut self, value: &Item) {
+  fn next(&mut self, value: Item) {
     let mut inner = self.0.lock().unwrap();
     if inner.edge == ThrottleEdge::Tailing {
       inner.trailing_value = Some(value.clone());
@@ -149,7 +149,7 @@ where
         move |_, _| {
           let mut inner = c_inner.lock().unwrap();
           if let Some(v) = inner.trailing_value.take() {
-            inner.observer.next(&v);
+            inner.observer.next(v);
           }
           if let Some(mut throttled) = inner.throttled.take() {
             throttled.unsubscribe();
@@ -167,14 +167,14 @@ where
     }
   }
 
-  fn error(&mut self, err: &Err) {
+  fn error(&mut self, err: Err) {
     let mut inner = self.0.lock().unwrap();
     inner.observer.error(err)
   }
   fn complete(&mut self) {
     let mut inner = self.0.lock().unwrap();
     if let Some(value) = inner.trailing_value.take() {
-      inner.observer.next(&value);
+      inner.observer.next(value);
     }
     inner.observer.complete();
   }
@@ -192,7 +192,7 @@ fn smoke() {
       .fork()
       .to_shared()
       .throttle_time(Duration::from_millis(48), edge)
-      .subscribe(move |v| x.lock().unwrap().push(*v))
+      .subscribe(move |v| x.lock().unwrap().push(v))
   };
 
   // tailing throttle

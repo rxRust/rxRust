@@ -21,9 +21,9 @@ use rxrust::{
 
 let mut numbers = observable::from_iter(0..10);
 // crate a even stream by filter
-let even = numbers.fork().filter(|v| *v % 2 == 0);
+let even = numbers.fork().filter(|v| v % 2 == 0);
 // crate an odd stream by filter
-let odd = numbers.fork().filter(|v| *v % 2 != 0);
+let odd = numbers.fork().filter(|v| v % 2 != 0);
 
 // merge odd and even stream again
 even.merge(odd).subscribe(|v| print!("{} ", v, ));
@@ -60,7 +60,7 @@ use rxrust::{ops::{ ObserveOn, SubscribeOn, Map }, scheduler::Schedulers };
 
 observable::from_iter(0..10)
   .subscribe_on(Schedulers::NewThread)
-  .map(|v| *v*2)
+  .map(|v| v*2)
   .observe_on(Schedulers::NewThread)
   .subscribe(|v| {println!("{},", v)});
 ```

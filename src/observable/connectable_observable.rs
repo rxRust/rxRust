@@ -156,8 +156,8 @@ mod test {
     let connected = LocalConnectableObservable::local(o);
     let mut first = 0;
     let mut second = 0;
-    connected.fork().subscribe(|v| first = *v);
-    connected.fork().subscribe(|v| second = *v);
+    connected.fork().subscribe(|v| first = v);
+    connected.fork().subscribe(|v| second = v);
 
     connected.connect();
     assert_eq!(first, 100);

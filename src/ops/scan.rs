@@ -50,7 +50,7 @@ pub trait Scan<OutputItem> {
   ) -> ScanOp<Self, BinaryOp, InputItem, OutputItem>
   where
     Self: Sized,
-    BinaryOp: Fn(&OutputItem, &InputItem) -> OutputItem,
+    BinaryOp: Fn(OutputItem, InputItem) -> OutputItem,
   {
     ScanOp {
       source_observable: self,
@@ -74,7 +74,7 @@ pub trait Scan<OutputItem> {
   ) -> ScanOp<Self, BinaryOp, InputItem, OutputItem>
   where
     Self: Sized,
-    BinaryOp: Fn(&OutputItem, &InputItem) -> OutputItem,
+    BinaryOp: Fn(OutputItem, InputItem) -> OutputItem,
     OutputItem: Default,
   {
     self.scan_initial(OutputItem::default(), binary_op)
@@ -111,7 +111,7 @@ where
     Err,
     Subscriber<ScanObserver<Observer, BinaryOp, OutputItem>, Subscription>,
   >,
-  BinaryOp: FnMut(&OutputItem, &InputItem) -> OutputItem,
+  BinaryOp: FnMut(OutputItem, InputItem) -> OutputItem,
 {
   type Unsub = Source::Unsub;
   fn raw_subscribe(
@@ -136,16 +136,17 @@ impl<InputItem, Err, Source, BinaryOp, OutputItem> Observer<InputItem, Err>
   for ScanObserver<Source, BinaryOp, OutputItem>
 where
   Source: Observer<OutputItem, Err>,
-  BinaryOp: FnMut(&OutputItem, &InputItem) -> OutputItem,
+  BinaryOp: FnMut(OutputItem, InputItem) -> OutputItem,
+  OutputItem: Clone,
 {
-  fn next(&mut self, value: &InputItem) {
+  fn next(&mut self, value: InputItem) {
     // accumulating each item with a current value
-    self.acc = (self.binary_op)(&self.acc, value);
-    self.target_observer.next(&self.acc)
+    self.acc = (self.binary_op)(self.acc.clone(), value);
+    self.target_observer.next(self.acc.clone())
   }
 
   #[inline(always)]
-  fn error(&mut self, err: &Err) { self.target_observer.error(err); }
+  fn error(&mut self, err: Err) { self.target_observer.error(err); }
 
   #[inline(always)]
   fn complete(&mut self) { self.target_observer.complete(); }
@@ -216,7 +217,7 @@ mod test {
     // should work like accumulate from 100
     observable::from_iter(vec![1, 1, 1, 1, 1])
       .scan_initial(100, |acc, v| acc + v)
-      .subscribe(|v| emitted.push(*v));
+      .subscribe(|v| emitted.push(v));
 
     assert_eq!(vec!(101, 102, 103, 104, 105), emitted);
   }
@@ -225,8 +226,8 @@ mod test {
     let mut emitted = Vec::<i32>::new();
     // should work like accumulate from 100
     observable::empty()
-      .scan_initial(100, |acc, v| acc + v)
-      .subscribe(|v| emitted.push(*v));
+      .scan_initial(100, |acc, v: i32| acc + v)
+      .subscribe(|v| emitted.push(v));
 
     assert_eq!(Vec::<i32>::new(), emitted);
   }
@@ -239,7 +240,7 @@ mod test {
     // increment the accumulated value given.
     observable::from_iter(vec!['a', 'b', 'c', 'd', 'e'])
       .scan_initial(100, |acc, _v| acc + 1)
-      .subscribe(|v| emitted.push(*v));
+      .subscribe(|v| emitted.push(v));
 
     assert_eq!(vec!(101, 102, 103, 104, 105), emitted);
   }
@@ -250,7 +251,7 @@ mod test {
     // should work like accumulate from 0
     observable::from_iter(vec![1, 1, 1, 1, 1])
       .scan(|acc, v| acc + v)
-      .subscribe(|v| emitted.push(*v));
+      .subscribe(|v| emitted.push(v));
 
     assert_eq!(vec!(1, 2, 3, 4, 5), emitted);
   }
@@ -260,7 +261,7 @@ mod test {
     // type to type can fork
     let m = observable::from_iter(vec!['a', 'b', 'c']).scan(|_acc, _v| 1i32);
     m.fork()
-      .scan(|_acc, v| *v as f32)
+      .scan(|_acc, v| v as f32)
       .fork()
       .to_shared()
       .fork()
@@ -271,9 +272,9 @@ mod test {
   #[test]
   fn scan_fork_and_shared() {
     // type to type can fork
-    let m = observable::from_iter(0..100).scan(|acc, v| acc + *v);
+    let m = observable::from_iter(0..100).scan(|acc: i32, v| acc + v);
     m.fork()
-      .scan(|acc, v| acc + *v)
+      .scan(|acc: i32, v| acc + v)
       .fork()
       .to_shared()
       .fork()
