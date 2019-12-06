@@ -224,6 +224,26 @@ impl SubscriptionLike for Box<dyn SubscriptionLike + Send + Sync> {
   fn inner_addr(&self) -> *const () { (&**self).inner_addr() }
 }
 
+impl<'a, Item, Err> SubscriptionLike for Box<dyn Publisher<Item, Err> + 'a> {
+  #[inline(always)]
+  fn unsubscribe(&mut self) { (&mut **self).unsubscribe(); }
+  #[inline(always)]
+  fn is_closed(&self) -> bool { (&**self).is_closed() }
+  #[inline(always)]
+  fn inner_addr(&self) -> *const () { (&**self).inner_addr() }
+}
+
+impl<Item, Err> SubscriptionLike
+  for Box<dyn Publisher<Item, Err> + Send + Sync>
+{
+  #[inline(always)]
+  fn unsubscribe(&mut self) { (&mut **self).unsubscribe(); }
+  #[inline(always)]
+  fn is_closed(&self) -> bool { (&**self).is_closed() }
+  #[inline(always)]
+  fn inner_addr(&self) -> *const () { (&**self).inner_addr() }
+}
+
 #[cfg(test)]
 mod test {
   use super::*;

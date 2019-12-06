@@ -10,34 +10,22 @@ pub struct Subject<O, S> {
   pub(crate) subscription: S,
 }
 
-type LocalPublishersRef<'a, Item, Err> =
+type LocalPublishers<'a, Item, Err> =
   Rc<RefCell<Vec<Box<dyn Publisher<Item, Err> + 'a>>>>;
-
-pub struct LocalPublishers<'a, Item, Err>(LocalPublishersRef<'a, Item, Err>);
 
 pub type LocalSubject<'a, Item, Err> =
   Subject<LocalPublishers<'a, Item, Err>, LocalSubscription>;
 
-impl<'a, Item, Err> Clone for LocalPublishers<'a, Item, Err> {
-  fn clone(&self) -> Self { LocalPublishers(self.0.clone()) }
-}
-
-type SharedPublishersRef<Item, Err> =
+type SharedPublishers<Item, Err> =
   Arc<Mutex<Vec<Box<dyn Publisher<Item, Err> + Send + Sync>>>>;
 
 pub type SharedSubject<Item, Err> =
   Subject<SharedPublishers<Item, Err>, SharedSubscription>;
 
-pub struct SharedPublishers<Item, Err>(SharedPublishersRef<Item, Err>);
-
-impl<Item, Err> Clone for SharedPublishers<Item, Err> {
-  fn clone(&self) -> Self { SharedPublishers(self.0.clone()) }
-}
-
 impl<'a, Item, Err> LocalSubject<'a, Item, Err> {
   pub fn local() -> Self {
     Subject {
-      observers: LocalPublishers(Rc::new(RefCell::new(vec![]))),
+      observers: Rc::new(RefCell::new(vec![])),
       subscription: LocalSubscription::default(),
     }
   }
@@ -46,7 +34,7 @@ impl<'a, Item, Err> LocalSubject<'a, Item, Err> {
 impl<Item, Err> SharedSubject<Item, Err> {
   pub fn shared() -> Self {
     Subject {
-      observers: SharedPublishers(Arc::new(Mutex::new(vec![]))),
+      observers: Arc::new(Mutex::new(vec![])),
       subscription: SharedSubscription::default(),
     }
   }
@@ -73,12 +61,12 @@ where
       subscription,
     } = self;
     let observers = util::unwrap_rc_ref_cell(
-      observers.0,
+      observers,
       "Cannot convert a `LocalSubscription` to `SharedSubscription` \
        when it referenced by other.",
     );
     let observers = if observers.is_empty() {
-      SharedPublishers(Arc::new(Mutex::new(vec![])))
+      Arc::new(Mutex::new(vec![]))
     } else {
       panic!(
         "Cannot convert a `LocalSubscription` to `SharedSubscription` \
@@ -103,7 +91,7 @@ where
   fn raw_subscribe(mut self, subscriber: Subscriber<O, U>) -> Self::Unsub {
     let subscription = subscriber.subscription.clone();
     self.subscription.add(subscription.clone());
-    self.observers.0.borrow_mut().push(Box::new(subscriber));
+    self.observers.borrow_mut().push(Box::new(subscriber));
     subscription
   }
 }
@@ -121,7 +109,7 @@ where
     let subscriber = subscriber.to_shared();
     let subscription = subscriber.subscription.clone();
     self.subscription.add(subscription.clone());
-    self.observers.0.lock().unwrap().push(Box::new(subscriber));
+    self.observers.lock().unwrap().push(Box::new(subscriber));
     subscription
   }
 }
@@ -134,77 +122,51 @@ where
   fn fork(&self) -> Self::Output { self.clone() }
 }
 
-impl<'a, Item, Err, S> Observer<Item, Err>
-  for Subject<LocalPublishers<'a, Item, Err>, S>
+impl<Item, Err, T> Observer<Item, Err> for Vec<T>
 where
-  S: SubscriptionLike,
   Item: Copy,
   Err: Copy,
+  T: Publisher<Item, Err>,
 {
   fn next(&mut self, value: Item) {
-    if !self.subscription.is_closed() {
-      let mut publishers = self.observers.0.borrow_mut();
-      publishers.drain_filter(|subscriber| {
-        subscriber.next(value);
-        subscriber.is_closed()
-      });
-    }
+    self.drain_filter(|subscriber| {
+      subscriber.next(value);
+      subscriber.is_closed()
+    });
   }
   fn error(&mut self, err: Err) {
-    if !self.subscription.is_closed() {
-      let mut publishers = self.observers.0.borrow_mut();
-      publishers.iter_mut().for_each(|subscriber| {
-        subscriber.error(err);
-      });
-      publishers.clear();
-      self.subscription.unsubscribe();
-    };
+    self.iter_mut().for_each(|subscriber| {
+      subscriber.error(err);
+    });
+    self.clear();
   }
   fn complete(&mut self) {
-    if !self.subscription.is_closed() {
-      let mut publishers = self.observers.0.borrow_mut();
-      publishers.iter_mut().for_each(|subscriber| {
-        subscriber.complete();
-      });
-      publishers.clear();
-      self.subscription.unsubscribe();
-    }
+    self.iter_mut().for_each(|subscriber| {
+      subscriber.complete();
+    });
+    self.clear();
   }
 }
 
-impl<Item, Err, S> Observer<Item, Err>
-  for Subject<SharedPublishers<Item, Err>, S>
+impl<Item, Err, S, O> Observer<Item, Err> for Subject<O, S>
 where
+  O: Observer<Item, Err>,
   S: SubscriptionLike,
-  Item: Copy,
-  Err: Copy,
 {
   fn next(&mut self, value: Item) {
     if !self.subscription.is_closed() {
-      let mut publishers = self.observers.0.lock().unwrap();
-      publishers.drain_filter(|subscriber| {
-        subscriber.next(value);
-        subscriber.is_closed()
-      });
+      self.observers.next(value)
     }
   }
   fn error(&mut self, err: Err) {
     if !self.subscription.is_closed() {
-      let mut publishers = self.observers.0.lock().unwrap();
-      publishers.iter_mut().for_each(|subscriber| {
-        subscriber.error(err);
-      });
-      publishers.clear();
+      self.observers.error(err);
       self.subscription.unsubscribe();
     };
   }
   fn complete(&mut self) {
     if !self.subscription.is_closed() {
-      let mut publishers = self.observers.0.lock().unwrap();
-      publishers.iter_mut().for_each(|subscriber| {
-        subscriber.complete();
-      });
-      publishers.clear();
+      self.observers.complete();
       self.subscription.unsubscribe();
     }
   }

@@ -5,7 +5,7 @@ pub use subscribable_err::*;
 mod subscribable_pure;
 pub use subscribable_pure::*;
 mod subscribable_comp;
-use crate::subscription::SubscriptionLike;
+use crate::subscription::{Publisher, SubscriptionLike};
 use std::sync::{Arc, Mutex};
 pub use subscribable_comp::*;
 
@@ -40,8 +40,28 @@ impl<'a, Item, Err> Observer<Item, Err> for Box<dyn Observer<Item, Err> + 'a> {
   fn complete(&mut self) { (&mut **self).complete(); }
 }
 
+impl<'a, Item, Err> Observer<Item, Err> for Box<dyn Publisher<Item, Err> + 'a> {
+  #[inline(always)]
+  fn next(&mut self, value: Item) { (&mut **self).next(value); }
+  #[inline(always)]
+  fn error(&mut self, err: Err) { (&mut **self).error(err); }
+  #[inline(always)]
+  fn complete(&mut self) { (&mut **self).complete(); }
+}
+
 impl<Item, Err> Observer<Item, Err>
   for Box<dyn Observer<Item, Err> + Send + Sync>
+{
+  #[inline(always)]
+  fn next(&mut self, value: Item) { (&mut **self).next(value); }
+  #[inline(always)]
+  fn error(&mut self, err: Err) { (&mut **self).error(err); }
+  #[inline(always)]
+  fn complete(&mut self) { (&mut **self).complete(); }
+}
+
+impl<Item, Err> Observer<Item, Err>
+  for Box<dyn Publisher<Item, Err> + Send + Sync>
 {
   #[inline(always)]
   fn next(&mut self, value: Item) { (&mut **self).next(value); }
