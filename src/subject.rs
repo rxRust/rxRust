@@ -114,6 +114,18 @@ where
   }
 }
 
+impl<O, S> SubscriptionLike for Subject<O, S>
+where
+  S: SubscriptionLike,
+{
+  #[inline]
+  fn unsubscribe(&mut self) { self.subscription.unsubscribe() }
+  #[inline]
+  fn is_closed(&self) -> bool { self.subscription.is_closed() }
+  #[inline]
+  fn inner_addr(&self) -> *const () { self.subscription.inner_addr() }
+}
+
 impl<O, S> Fork for Subject<O, S>
 where
   Self: Clone,
