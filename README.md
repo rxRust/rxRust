@@ -93,3 +93,5 @@ Help and contributions can be any of the following:
 - documentation and README enhancement (VERY important)
 - continuous improvement in a ci Pipeline
 - implement any unimplemented operator, remember to create a pull request before you start your code, so other people know you are work on it.
+
+See [missing features](./missing_features)
