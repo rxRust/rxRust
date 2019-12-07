@@ -17,6 +17,7 @@
   fn_traits,
   step_trait,
   unboxed_closures,
+  never_type,
   drain_filter,
   test,
   raw,
@@ -43,7 +44,7 @@ pub mod prelude {
   pub use crate::ops;
   pub use crate::scheduler::*;
   pub use crate::subject;
-  pub use crate::subject::Subject;
+  pub use crate::subject::{LocalSubject, SharedSubject, Subject, SubjectCopy};
   pub use crate::subscribable;
   pub use crate::subscribable::*;
   pub use crate::subscriber;
