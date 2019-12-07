@@ -1,4 +1,6 @@
-## [Unreleased](https://github.com/M-Adoo/rxRust/compare/v0.5.0...HEAD)
+## [Unreleased](https://github.com/M-Adoo/rxRust/compare/v0.6.0...HEAD)
+
+## [0.6.0](https://github.com/M-Adoo/rxRust/releases/tag/v0.6.0)  (2019-12-07)
 
 ### Breaking Changes
 
