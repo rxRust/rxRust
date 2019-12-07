@@ -287,8 +287,9 @@ mod test {
     subject.next(&1);
 
     // emit mut ref
+    let mut i = 0;
     let mut subject: LocalSubject<'_, _, ()> = Subject::local();
-    subject.next(&mut 1);
+    subject.next(&mut i);
   }
   #[test]
   fn base_data_flow() {
