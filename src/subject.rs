@@ -122,21 +122,113 @@ where
   fn fork(&self) -> Self::Output { self.clone() }
 }
 
+/// By default, `Subject` can only emit item which implemented `Copy`,
+/// that because subject is a multicast stream, need pass item to multi
+/// subscriber.
+/// But `Copy` bound is not perfect to subject. Like `&mut T` should be emitted
+/// by `Subject`, because `Subject` just immediately pass it to subscribers and
+/// never alias it, but `&mut T` is not `Copy`.
+/// So we introduced `SubjectCopy`, it's only use to support `Item` be passed
+/// to many subscriber in `Subject`. The drawback is `SubjectCopy` is not auto
+/// implement for a type when the type is implemented `Copy`. Just use macro
+/// `impl_subject_copy_for_copy!` to impl `SubjectCopy` for your type after
+/// implemented `Copy`.
+///
+/// # Example
+/// ```
+/// # use rxrust::prelude::*;
+/// # use rxrust::subject::impl_subject_copy_for_copy;
+///
+/// #[derive(Clone)]
+/// struct CustomType;
+///
+/// impl Copy for CustomType {}
+/// impl_subject_copy_for_copy!(CustomType);
+///
+/// // can pass `&mut CustomType` now.
+/// let mut ct = CustomType;
+///
+/// let mut subject = Subject::local();
+/// subject.next(&mut ct);
+/// subject.error(());
+/// ```
+pub trait SubjectCopy {
+  fn copy(&self) -> Self;
+}
+
+/// todo: maybe we can support SubjectCopy like below.
+///
+/// impl<T: Copy> SubjectCopy for T {
+/// #[inline]
+///   fn copy(&self) -> Self { self.clone() }
+/// }
+///
+/// impl<T> SubjectCopy for &mut T {
+///   #[inline]
+///   fn copy(&self) -> Self { unsafe { std::mem::transmute_copy(self) } }
+/// }
+///
+/// but code like these can't compile, so we'll implement `SubjectCopy` for
+/// primitive types.
+impl<T> SubjectCopy for &mut T {
+  #[inline]
+  fn copy(&self) -> Self { unsafe { std::mem::transmute_copy(self) } }
+}
+
+pub macro impl_subject_copy_for_copy($t: ty) {
+  impl SubjectCopy for $t {
+    #[inline]
+    fn copy(&self) -> Self { *self }
+  }
+}
+mod subject_copy_impls {
+  use super::{impl_subject_copy_for_copy, SubjectCopy};
+
+  macro impl_subject_copys($($t:ty )*) {
+    $(impl_subject_copy_for_copy!($t);)*
+  }
+
+  impl_subject_copys! {
+      usize u8 u16 u32 u64 u128
+      isize i8 i16 i32 i64 i128
+      f32 f64
+      bool char
+  }
+
+  impl_subject_copy_for_copy!(!);
+  impl_subject_copy_for_copy!(());
+
+  impl<T: ?Sized> SubjectCopy for *const T {
+    #[inline]
+    fn copy(&self) -> Self { *self }
+  }
+
+  impl<T: ?Sized> SubjectCopy for *mut T {
+    #[inline]
+    fn copy(&self) -> Self { *self }
+  }
+
+  impl<T: ?Sized> SubjectCopy for &T {
+    #[inline]
+    fn copy(&self) -> Self { *self }
+  }
+}
+
 impl<Item, Err, T> Observer<Item, Err> for Vec<T>
 where
-  Item: Copy,
-  Err: Copy,
+  Item: SubjectCopy,
+  Err: SubjectCopy,
   T: Publisher<Item, Err>,
 {
   fn next(&mut self, value: Item) {
     self.drain_filter(|subscriber| {
-      subscriber.next(value);
+      subscriber.next(value.copy());
       subscriber.is_closed()
     });
   }
   fn error(&mut self, err: Err) {
     self.iter_mut().for_each(|subscriber| {
-      subscriber.error(err);
+      subscriber.error(err.copy());
     });
     self.clear();
   }
@@ -176,6 +268,16 @@ where
 mod test {
   use crate::prelude::*;
 
+  #[test]
+  fn emit_ref() {
+    // emit ref
+    let mut subject: LocalSubject<'_, _, ()> = Subject::local();
+    subject.next(&1);
+
+    // emit mut ref
+    let mut subject: LocalSubject<'_, _, ()> = Subject::local();
+    subject.next(&mut 1);
+  }
   #[test]
   fn base_data_flow() {
     let mut i = 0;
