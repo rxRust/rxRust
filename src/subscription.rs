@@ -206,42 +206,44 @@ impl<T> Default for Inner<T> {
   }
 }
 
-impl<'a> SubscriptionLike for Box<dyn SubscriptionLike + 'a> {
+macro subscription_direct_impl_proxy() {
   #[inline(always)]
   fn unsubscribe(&mut self) { (&mut **self).unsubscribe(); }
   #[inline(always)]
   fn is_closed(&self) -> bool { (&**self).is_closed() }
   #[inline(always)]
   fn inner_addr(&self) -> *const () { (&**self).inner_addr() }
+}
+
+impl<'a> SubscriptionLike for Box<dyn SubscriptionLike + 'a> {
+  subscription_direct_impl_proxy!();
+}
+impl<'a, Item, Err> SubscriptionLike for Box<dyn Publisher<Item, Err> + 'a> {
+  subscription_direct_impl_proxy!();
+}
+impl<'a, Item, Err> SubscriptionLike
+  for Box<dyn for<'r> Publisher<&'r mut Item, Err> + 'a>
+{
+  subscription_direct_impl_proxy!();
+}
+impl<'a, Item, Err> SubscriptionLike
+  for Box<dyn for<'r> Publisher<Item, &'r Err> + 'a>
+{
+  subscription_direct_impl_proxy!();
+}
+impl<'a, Item, Err> SubscriptionLike
+  for Box<dyn for<'r> Publisher<&'r mut Item, &'r Err> + 'a>
+{
+  subscription_direct_impl_proxy!();
 }
 
 impl SubscriptionLike for Box<dyn SubscriptionLike + Send + Sync> {
-  #[inline(always)]
-  fn unsubscribe(&mut self) { (&mut **self).unsubscribe(); }
-  #[inline(always)]
-  fn is_closed(&self) -> bool { (&**self).is_closed() }
-  #[inline(always)]
-  fn inner_addr(&self) -> *const () { (&**self).inner_addr() }
+  subscription_direct_impl_proxy!();
 }
-
-impl<'a, Item, Err> SubscriptionLike for Box<dyn Publisher<Item, Err> + 'a> {
-  #[inline(always)]
-  fn unsubscribe(&mut self) { (&mut **self).unsubscribe(); }
-  #[inline(always)]
-  fn is_closed(&self) -> bool { (&**self).is_closed() }
-  #[inline(always)]
-  fn inner_addr(&self) -> *const () { (&**self).inner_addr() }
-}
-
 impl<Item, Err> SubscriptionLike
   for Box<dyn Publisher<Item, Err> + Send + Sync>
 {
-  #[inline(always)]
-  fn unsubscribe(&mut self) { (&mut **self).unsubscribe(); }
-  #[inline(always)]
-  fn is_closed(&self) -> bool { (&**self).is_closed() }
-  #[inline(always)]
-  fn inner_addr(&self) -> *const () { (&**self).inner_addr() }
+  subscription_direct_impl_proxy!();
 }
 
 #[cfg(test)]
