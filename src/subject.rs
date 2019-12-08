@@ -10,11 +10,10 @@ pub struct Subject<O, S> {
   pub(crate) subscription: S,
 }
 
-type LocalPublishers<'a, Item, Err> =
-  Rc<RefCell<Vec<Box<dyn Publisher<Item, Err> + 'a>>>>;
+type LocalObserver<P> = Rc<RefCell<Vec<P>>>;
 
 pub type LocalSubject<'a, Item, Err> =
-  Subject<LocalPublishers<'a, Item, Err>, LocalSubscription>;
+  Subject<LocalObserver<Box<dyn Publisher<Item, Err> + 'a>>, LocalSubscription>;
 
 type SharedPublishers<Item, Err> =
   Arc<Mutex<Vec<Box<dyn Publisher<Item, Err> + Send + Sync>>>>;
@@ -23,7 +22,11 @@ pub type SharedSubject<Item, Err> =
   Subject<SharedPublishers<Item, Err>, SharedSubscription>;
 
 impl<'a, Item, Err> LocalSubject<'a, Item, Err> {
-  pub fn local() -> Self {
+  pub fn local() -> Self { LocalSubject::local_new() }
+}
+
+impl<P> Subject<LocalObserver<P>, LocalSubscription> {
+  pub fn local_new() -> Self {
     Subject {
       observers: Rc::new(RefCell::new(vec![])),
       subscription: LocalSubscription::default(),
@@ -279,6 +282,7 @@ where
 #[cfg(test)]
 mod test {
   use crate::prelude::*;
+  use crate::subject::LocalObserver;
 
   #[test]
   fn emit_ref() {
@@ -287,9 +291,10 @@ mod test {
     subject.next(&1);
 
     // emit mut ref
-    let mut i = 0;
-    let mut subject: LocalSubject<'_, _, ()> = Subject::local();
-    subject.next(&mut i);
+    type MutRefObserver<Item> = Box<dyn for<'r> Publisher<&'r mut Item, ()>>;
+    let mut subject: Subject<LocalObserver<MutRefObserver<_>>, _> =
+      Subject::local_new();
+    subject.next(&mut 1);
   }
   #[test]
   fn base_data_flow() {
