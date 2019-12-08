@@ -83,6 +83,9 @@ std::thread::sleep(std::time::Duration::new(1, 0));
 
 A `from_future_with_err` function also provided to propagating error from `Future`.
 
+## Missing Features List
+See [missing features](./missing_features) to know what rxRust not have for now.
+
 ## All contributions are welcome
 
 We are looking for contributors! Feel free to open issues for asking questions, suggesting features or other things!
@@ -93,5 +96,3 @@ Help and contributions can be any of the following:
 - documentation and README enhancement (VERY important)
 - continuous improvement in a ci Pipeline
 - implement any unimplemented operator, remember to create a pull request before you start your code, so other people know you are work on it.
-
-See [missing features](./missing_features)
