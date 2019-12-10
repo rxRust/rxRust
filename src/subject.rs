@@ -10,7 +10,7 @@ pub struct Subject<O, S> {
   pub(crate) subscription: S,
 }
 
-type LocalObserver<P> = Rc<RefCell<Vec<P>>>;
+pub type LocalObserver<P> = Rc<RefCell<Vec<P>>>;
 
 pub type LocalSubject<'a, Item, Err> =
   Subject<LocalObserver<Box<dyn Publisher<Item, Err> + 'a>>, LocalSubscription>;
@@ -84,19 +84,58 @@ where
   }
 }
 
+macro local_subject_raw_subscribe_impl($o: ident,$u: ident) {
+  type Unsub = $u;
+  fn raw_subscribe(mut self, subscriber: Subscriber<$o, $u>) -> Self::Unsub {
+    let subscription = subscriber.subscription.clone();
+    self.subscription.add(subscription.clone());
+    self.observers.borrow_mut().push(Box::new(subscriber));
+    subscription
+  }
+}
 impl<'a, Item, Err, O, U> RawSubscribable<Item, Err, Subscriber<O, U>>
   for LocalSubject<'a, Item, Err>
 where
   O: Observer<Item, Err> + 'a,
   U: SubscriptionLike + Clone + 'static,
 {
-  type Unsub = U;
-  fn raw_subscribe(mut self, subscriber: Subscriber<O, U>) -> Self::Unsub {
-    let subscription = subscriber.subscription.clone();
-    self.subscription.add(subscription.clone());
-    self.observers.borrow_mut().push(Box::new(subscriber));
-    subscription
-  }
+  local_subject_raw_subscribe_impl!(O, U);
+}
+
+impl<'a, Item, Err, O, U> RawSubscribable<Item, Err, Subscriber<O, U>>
+  for Subject<
+    LocalObserver<Box<dyn for<'r> Publisher<&'r mut Item, Err> + 'a>>,
+    LocalSubscription,
+  >
+where
+  O: for<'r> Observer<&'r mut Item, Err> + 'a,
+  U: SubscriptionLike + Clone + 'static,
+{
+  local_subject_raw_subscribe_impl!(O, U);
+}
+
+impl<'a, Item, Err, O, U> RawSubscribable<Item, Err, Subscriber<O, U>>
+  for Subject<
+    LocalObserver<Box<dyn for<'r> Publisher<Item, &'r mut Err> + 'a>>,
+    LocalSubscription,
+  >
+where
+  O: for<'r> Observer<Item, &'r mut Err> + 'a,
+  U: SubscriptionLike + Clone + 'static,
+{
+  local_subject_raw_subscribe_impl!(O, U);
+}
+
+impl<'a, Item, Err, O, U> RawSubscribable<Item, Err, Subscriber<O, U>>
+  for Subject<
+    LocalObserver<Box<dyn for<'r> Publisher<&'r mut Item, &'r mut Err> + 'a>>,
+    LocalSubscription,
+  >
+where
+  O: for<'r> Observer<&'r mut Item, &'r mut Err> + 'a,
+  U: SubscriptionLike + Clone + 'static,
+{
+  local_subject_raw_subscribe_impl!(O, U);
 }
 
 impl<Item, Err, O, S> RawSubscribable<Item, Err, Subscriber<O, S>>
@@ -292,8 +331,13 @@ mod test {
 
     // emit mut ref
     type MutRefObserver<Item> = Box<dyn for<'r> Publisher<&'r mut Item, ()>>;
-    let mut subject: Subject<LocalObserver<MutRefObserver<_>>, _> =
+    let mut subject: Subject<LocalObserver<MutRefObserver<i32>>, _> =
       Subject::local_new();
+
+    // blocking on: RawSubscribe refactor.
+    // subject
+    //   .clone()
+    //   .subscribe((|_: &mut _| {}) as for<'r> fn(&'r mut i32));
     subject.next(&mut 1);
   }
   #[test]
