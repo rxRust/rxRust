@@ -6,7 +6,7 @@ pub struct SubscribeComplete<N, C> {
   complete: C,
 }
 
-impl<Item, Err, N, C> Observer<Item, Err> for SubscribeComplete<N, C>
+impl<Item, N, C> Observer<Item, ()> for SubscribeComplete<N, C>
 where
   N: FnMut(Item),
   C: FnMut(),
@@ -14,7 +14,7 @@ where
   #[inline(always)]
   fn next(&mut self, value: Item) { (self.next)(value); }
   #[inline(always)]
-  fn error(&mut self, _err: Err) {}
+  fn error(&mut self, _err: ()) {}
   #[inline(always)]
   fn complete(&mut self) { (self.complete)(); }
 }
@@ -35,7 +35,7 @@ where
   fn to_shared(self) -> Self::Shared { self }
 }
 
-pub trait SubscribableComplete<Item, N, C> {
+pub trait SubscribableComplete<N, C> {
   /// A type implementing [`SubscriptionLike`]
   type Unsub;
 
@@ -44,15 +44,9 @@ pub trait SubscribableComplete<Item, N, C> {
   fn subscribe_complete(self, next: N, complete: C) -> Self::Unsub;
 }
 
-impl<Item, S, N, C> SubscribableComplete<Item, N, C> for S
+impl<S, N, C> SubscribableComplete<N, C> for S
 where
-  S: RawSubscribable<
-    Item,
-    (),
-    Subscriber<SubscribeComplete<N, C>, LocalSubscription>,
-  >,
-  N: FnMut(Item),
-  C: FnMut(),
+  S: RawSubscribable<Subscriber<SubscribeComplete<N, C>, LocalSubscription>>,
 {
   type Unsub = S::Unsub;
   fn subscribe_complete(self, next: N, complete: C) -> Self::Unsub

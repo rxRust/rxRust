@@ -41,7 +41,7 @@ where
   fn complete(&mut self) { (self.complete)(); }
 }
 
-pub trait SubscribableAll<Item, Err, N, E, C> {
+pub trait SubscribableAll<N, E, C> {
   /// A type implementing [`SubscriptionLike`]
   type Unsub;
 
@@ -55,16 +55,9 @@ pub trait SubscribableAll<Item, Err, N, E, C> {
   fn subscribe_all(self, next: N, error: E, complete: C) -> Self::Unsub;
 }
 
-impl<S, Item, Err, N, E, C> SubscribableAll<Item, Err, N, E, C> for S
+impl<S, N, E, C> SubscribableAll<N, E, C> for S
 where
-  S: RawSubscribable<
-    Item,
-    Err,
-    Subscriber<SubscribeAll<N, E, C>, LocalSubscription>,
-  >,
-  N: FnMut(Item),
-  E: FnMut(Err),
-  C: FnMut(),
+  S: RawSubscribable<Subscriber<SubscribeAll<N, E, C>, LocalSubscription>>,
 {
   type Unsub = S::Unsub;
   fn subscribe_all(self, next: N, error: E, complete: C) -> Self::Unsub

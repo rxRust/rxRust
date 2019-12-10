@@ -38,10 +38,9 @@ pub struct FilterOp<S, F> {
   filter: F,
 }
 
-impl<Item, Err, O, U, S, F> RawSubscribable<Item, Err, Subscriber<O, U>>
-  for FilterOp<S, F>
+impl<O, U, S, F> RawSubscribable<Subscriber<O, U>> for FilterOp<S, F>
 where
-  S: RawSubscribable<Item, Err, Subscriber<FilterObserver<O, F>, U>>,
+  S: RawSubscribable<Subscriber<FilterObserver<O, F>, U>>,
 {
   type Unsub = S::Unsub;
 

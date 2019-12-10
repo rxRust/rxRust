@@ -102,13 +102,11 @@ pub struct ScanObserver<Observer, BinaryOp, OutputItem> {
 // Once instantiated, it will have a `raw_subscribe` method in it.
 // Note: we're accepting such subscribers that accept `Output` as their
 // `Item` type.
-impl<OutputItem, Err, InputItem, Observer, Subscription, Source, BinaryOp>
-  RawSubscribable<OutputItem, Err, Subscriber<Observer, Subscription>>
+impl<OutputItem, InputItem, Observer, Subscription, Source, BinaryOp>
+  RawSubscribable<Subscriber<Observer, Subscription>>
   for ScanOp<Source, BinaryOp, InputItem, OutputItem>
 where
   Source: RawSubscribable<
-    InputItem,
-    Err,
     Subscriber<ScanObserver<Observer, BinaryOp, OutputItem>, Subscription>,
   >,
   BinaryOp: FnMut(OutputItem, InputItem) -> OutputItem,

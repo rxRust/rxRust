@@ -36,13 +36,10 @@ where
   fn to_shared(self) -> Self::Shared { self }
 }
 
-impl<S, Item, Err, O, U, SD> RawSubscribable<Item, Err, Subscriber<O, U>>
-  for ObserveOnOp<S, SD>
+impl<S, O, U, SD> RawSubscribable<Subscriber<O, U>> for ObserveOnOp<S, SD>
 where
-  O: Observer<Item, Err> + IntoShared,
+  O: IntoShared,
   S: RawSubscribable<
-    Item,
-    Err,
     Subscriber<ObserveOnSubscribe<O::Shared, SD>, SharedSubscription>,
   >,
   U: IntoShared<Shared = SharedSubscription>,

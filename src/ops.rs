@@ -41,9 +41,9 @@ pub use filter_map::FilterMap;
 use crate::prelude::*;
 pub struct SharedOp<T>(pub(crate) T);
 
-impl<Item, Err, S, OP> RawSubscribable<Item, Err, S> for SharedOp<OP>
+impl<S, OP> RawSubscribable<S> for SharedOp<OP>
 where
-  OP: RawSubscribable<Item, Err, S::Shared>,
+  OP: RawSubscribable<S::Shared>,
   S: IntoShared,
 {
   type Unsub = OP::Unsub;

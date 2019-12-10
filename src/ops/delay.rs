@@ -39,14 +39,13 @@ where
   fn to_shared(self) -> Self::Shared { self }
 }
 
-impl<Item, Err, Sub, S> RawSubscribable<Item, Err, Sub> for DelayOp<S>
+impl<Sub, S> RawSubscribable<Sub> for DelayOp<S>
 where
-  S:IntoShared,
-  S::Shared: RawSubscribable<Item, Err, Sub::Shared>,
+  S: IntoShared,
+  S::Shared: RawSubscribable<Sub::Shared>,
   Sub: IntoShared,
-  <S::Shared as RawSubscribable<Item, Err, Sub::Shared>>::Unsub: IntoShared,
-  <<S::Shared as RawSubscribable<Item, Err, Sub::Shared>>::Unsub as IntoShared>
-  ::Shared:
+  <S::Shared as RawSubscribable<Sub::Shared>>::Unsub: IntoShared,
+  <<S::Shared as RawSubscribable<Sub::Shared>>::Unsub as IntoShared>::Shared:
     SubscriptionLike,
 {
   type Unsub = SharedSubscription;
@@ -55,11 +54,13 @@ where
     let source = source.to_shared();
     let subscriber = subscriber.to_shared();
 
-     Schedulers::ThreadPool.schedule(move |mut subscription, _| {
+    Schedulers::ThreadPool.schedule(
+      move |mut subscription, _| {
         subscription.add(source.raw_subscribe(subscriber).to_shared());
       },
       Some(delay),
-      ())
+      (),
+    )
   }
 }
 

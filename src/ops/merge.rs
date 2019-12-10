@@ -67,12 +67,11 @@ macro merge_subscribe(
   subscription
 }}
 
-impl<S1, S2, Item, Err, O>
-  RawSubscribable<Item, Err, Subscriber<O, LocalSubscription>>
+impl<S1, S2, O> RawSubscribable<Subscriber<O, LocalSubscription>>
   for MergeOp<S1, S2>
 where
-  S1: RawSubscribable<Item, Err, LocalMergeSubscriber<O>>,
-  S2: RawSubscribable<Item, Err, LocalMergeSubscriber<O>>,
+  S1: RawSubscribable<LocalMergeSubscriber<O>>,
+  S2: RawSubscribable<LocalMergeSubscriber<O>>,
 {
   type Unsub = LocalSubscription;
 
@@ -84,18 +83,13 @@ where
   }
 }
 
-impl<S1, S2, Item, Err, O, U> RawSubscribable<Item, Err, Subscriber<O, U>>
-  for SharedMergeOp<S1, S2>
+impl<S1, S2, O, U> RawSubscribable<Subscriber<O, U>> for SharedMergeOp<S1, S2>
 where
   S1: RawSubscribable<
-    Item,
-    Err,
     SharedMergeSubscriber<O::Shared>,
     Unsub = SharedSubscription,
   >,
   S2: RawSubscribable<
-    Item,
-    Err,
     SharedMergeSubscriber<O::Shared>,
     Unsub = SharedSubscription,
   >,

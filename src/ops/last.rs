@@ -75,10 +75,9 @@ pub struct LastOrOp<S, Item> {
   last: Option<Item>,
 }
 
-impl<Item, Err, O, U, S> RawSubscribable<Item, Err, Subscriber<O, U>>
-  for LastOrOp<S, Item>
+impl<Item, O, U, S> RawSubscribable<Subscriber<O, U>> for LastOrOp<S, Item>
 where
-  S: RawSubscribable<Item, Err, Subscriber<LastOrObserver<O, Item>, U>>,
+  S: RawSubscribable<Subscriber<LastOrObserver<O, Item>, U>>,
 {
   type Unsub = S::Unsub;
   fn raw_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub {

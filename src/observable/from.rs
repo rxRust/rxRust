@@ -28,13 +28,13 @@ use crate::prelude::*;
 ///   .subscribe(|v| {println!("{},", v)});
 /// ```
 ///
-pub fn from_iter<O, U, Iter>(
+pub fn from_iter<O, U, Iter, I>(
   iter: Iter,
-) -> Observable<impl FnOnce(Subscriber<O, U>) + Clone>
+) -> Observable<impl FnOnce(Subscriber<O, U>) + Clone, I, ()>
 where
-  O: Observer<<Iter as IntoIterator>::Item, ()>,
+  O: Observer<I, ()>,
   U: SubscriptionLike,
-  Iter: IntoIterator + Clone,
+  Iter: IntoIterator<Item = I> + Clone,
 {
   Observable::new(move |mut subscriber| {
     for v in iter.into_iter() {
@@ -69,7 +69,7 @@ where
 ///
 pub fn of<O, U, Item>(
   v: Item,
-) -> Observable<impl FnOnce(Subscriber<O, U>) + Clone>
+) -> Observable<impl FnOnce(Subscriber<O, U>) + Clone, Item, ()>
 where
   O: Observer<Item, ()>,
   U: SubscriptionLike,
@@ -107,7 +107,7 @@ where
 pub fn repeat<O, U, Item>(
   v: Item,
   n: usize,
-) -> Observable<impl FnOnce(Subscriber<O, U>) + Clone>
+) -> Observable<impl FnOnce(Subscriber<O, U>) + Clone, Item, ()>
 where
   O: Observer<Item, ()>,
   U: SubscriptionLike,
@@ -142,7 +142,7 @@ where
 ///
 pub fn of_result<O, U, Item, Err>(
   r: Result<Item, Err>,
-) -> Observable<impl FnOnce(Subscriber<O, U>) + Clone>
+) -> Observable<impl FnOnce(Subscriber<O, U>) + Clone, Item, Err>
 where
   O: Observer<Item, Err>,
   U: SubscriptionLike,
@@ -178,7 +178,7 @@ where
 ///
 pub fn of_option<O, U, Item>(
   o: Option<Item>,
-) -> Observable<impl FnOnce(Subscriber<O, U>) + Clone>
+) -> Observable<impl FnOnce(Subscriber<O, U>) + Clone, Item, ()>
 where
   O: Observer<Item, ()>,
   U: SubscriptionLike,
@@ -211,7 +211,7 @@ where
 ///
 pub fn from_fn<O, U, Callable, Item>(
   f: Callable,
-) -> Observable<impl FnOnce(Subscriber<O, U>) + Clone>
+) -> Observable<impl FnOnce(Subscriber<O, U>) + Clone, Item, ()>
 where
   Callable: FnOnce() -> Item,
   O: Observer<Item, ()>,
@@ -275,10 +275,11 @@ mod test {
     let mut value1 = 0;
     let mut completed1 = false;
     let r: Result<i32, &str> = Ok(123);
-    observable::of_result(r).subscribe_complete(
+    observable::of_result(r).subscribe_all(
       |v| {
         value1 = v;
       },
+      |_| {},
       || completed1 = true,
     );
 

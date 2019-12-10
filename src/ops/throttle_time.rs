@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use std::marker::PhantomData;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -14,7 +15,7 @@ use std::time::Duration;
 ///   .throttle_time(Duration::from_millis(9), ThrottleEdge::Leading)
 ///   .subscribe(move |v| println!("{}", v));
 /// ```
-pub trait ThrottleTime
+pub trait ThrottleTime<Item>
 where
   Self: Sized,
 {
@@ -22,11 +23,12 @@ where
     self,
     duration: Duration,
     edge: ThrottleEdge,
-  ) -> ThrottleTimeOp<Self> {
+  ) -> ThrottleTimeOp<Self, Item> {
     ThrottleTimeOp {
       source: self,
       duration,
       edge,
+      _p: PhantomData,
     }
   }
 }
@@ -38,48 +40,53 @@ pub enum ThrottleEdge {
   Leading,
 }
 
-pub struct ThrottleTimeOp<S> {
+pub struct ThrottleTimeOp<S, Item> {
   source: S,
   duration: Duration,
   edge: ThrottleEdge,
+  _p: PhantomData<Item>,
 }
 
-impl<S> Fork for ThrottleTimeOp<S>
+unsafe impl<S, Item> Sync for ThrottleTimeOp<S, Item> where S: Sync {}
+unsafe impl<S, Item> Send for ThrottleTimeOp<S, Item> where S: Send {}
+
+impl<S, Item> Fork for ThrottleTimeOp<S, Item>
 where
   S: Fork,
 {
-  type Output = ThrottleTimeOp<S::Output>;
+  type Output = ThrottleTimeOp<S::Output, Item>;
   fn fork(&self) -> Self::Output {
     ThrottleTimeOp {
       source: self.source.fork(),
       edge: self.edge,
       duration: self.duration,
+      _p: PhantomData,
     }
   }
 }
 
-impl<S> IntoShared for ThrottleTimeOp<S>
+impl<S, Item> IntoShared for ThrottleTimeOp<S, Item>
 where
   S: IntoShared,
+  Item: 'static,
 {
-  type Shared = ThrottleTimeOp<S::Shared>;
+  type Shared = ThrottleTimeOp<S::Shared, Item>;
   fn to_shared(self) -> Self::Shared {
     ThrottleTimeOp {
       source: self.source.to_shared(),
       edge: self.edge,
       duration: self.duration,
+      _p: PhantomData,
     }
   }
 }
 
-impl<S> ThrottleTime for S {}
+impl<S, Item> ThrottleTime<Item> for S {}
 
-impl<Item, Err, O, U, S> RawSubscribable<Item, Err, Subscriber<O, U>>
-  for ThrottleTimeOp<S>
+impl<Item, O, U, S> RawSubscribable<Subscriber<O, U>>
+  for ThrottleTimeOp<S, Item>
 where
   S: RawSubscribable<
-    Item,
-    Err,
     Subscriber<ThrottleTimeObserver<O::Shared, Item>, SharedSubscription>,
   >,
   O: IntoShared,
@@ -91,6 +98,7 @@ where
       source,
       duration,
       edge,
+      _p,
     } = self;
     let subscription = subscriber.subscription.to_shared();
     source.raw_subscribe(Subscriber {
