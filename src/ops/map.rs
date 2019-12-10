@@ -26,10 +26,9 @@ pub struct MapOp<S, M, B> {
   _p: PhantomData<B>,
 }
 
-impl<Item, Err, B, O, U, S, M> RawSubscribable<Item, Err, Subscriber<O, U>>
-  for MapOp<S, M, B>
+impl<Item, B, O, U, S, M> RawSubscribable<Subscriber<O, U>> for MapOp<S, M, B>
 where
-  S: RawSubscribable<B, Err, Subscriber<MapObserver<O, M>, U>>,
+  S: RawSubscribable<Subscriber<MapObserver<O, M>, U>>,
   M: FnMut(B) -> Item,
 {
   type Unsub = S::Unsub;

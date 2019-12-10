@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use std::marker::PhantomData;
 
 mod trivial;
 pub use trivial::*;
@@ -8,20 +9,30 @@ pub(crate) mod from_future;
 pub use from_future::{from_future, from_future_with_err};
 pub(crate) mod interval;
 pub use interval::{interval, interval_at};
+
 pub(crate) mod connectable_observable;
-pub use connectable_observable::{
-  Connect, LocalConnectableObservable, SharedConnectableObservable,
-};
+pub use connectable_observable::{Connect, ConnectableObservable};
 pub use ops::SharedOp;
 
 /// A representation of any set of values over any amount of time. This is the
 /// most basic building block rxrust
 ///
-#[derive(Clone)]
+pub struct Observable<F, Item, Err>(F, PhantomData<(Item, Err)>);
 
-pub struct Observable<F>(F);
+macro impl_observable($t: ident) {
+  unsafe impl<F, Item, Err> Send for $t<F, Item, Err> {}
+  unsafe impl<F, Item, Err> Sync for $t<F, Item, Err> {}
+  impl<F, Item, Err> Clone for $t<F, Item, Err>
+  where
+    F: Clone,
+  {
+    fn clone(&self) -> Self { $t(self.0.clone(), PhantomData) }
+  }
+}
 
-impl<F> Observable<F> {
+impl_observable!(Observable);
+
+impl<F, Item, Err> Observable<F, Item, Err> {
   /// param `subscribe`: the function that is called when the Observable is
   /// initially subscribed to. This function is given a Subscriber, to which
   /// new values can be `next`ed, or an `error` method can be called to raise
@@ -30,22 +41,23 @@ impl<F> Observable<F> {
   pub fn new<S, U>(subscribe: F) -> Self
   where
     F: FnOnce(Subscriber<S, U>),
+    S: Observer<Item, Err>,
   {
-    Self(subscribe)
+    Self(subscribe, PhantomData)
   }
 }
 
-impl<F> Fork for Observable<F>
+impl<F, Item, Err> Fork for Observable<F, Item, Err>
 where
   F: Clone,
 {
-  type Output = ForkObservable<F>;
+  type Output = ForkObservable<F, Item, Err>;
   #[inline]
-  fn fork(&self) -> Self::Output { ForkObservable(self.0.clone()) }
+  fn fork(&self) -> Self::Output { ForkObservable(self.0.clone(), PhantomData) }
 }
 
-impl<F, Item, Err, S, U> RawSubscribable<Item, Err, Subscriber<S, U>>
-  for Observable<F>
+impl<F, S, U, Item, Err> RawSubscribable<Subscriber<S, U>>
+  for Observable<F, Item, Err>
 where
   F: FnOnce(Subscriber<S, U>),
   U: SubscriptionLike + Clone + 'static,
@@ -58,37 +70,43 @@ where
   }
 }
 
-impl<F> IntoShared for Observable<F>
+impl<F, Item, Err> IntoShared for Observable<F, Item, Err>
 where
   F: Send + Sync + 'static,
+  Item: 'static,
+  Err: 'static,
 {
   type Shared = SharedOp<Self>;
   #[inline]
   fn to_shared(self) -> Self::Shared { SharedOp(self) }
 }
 
-#[derive(Clone)]
-pub struct ForkObservable<F>(F);
+pub struct ForkObservable<F, Item, Err>(F, PhantomData<(Item, Err)>);
+impl_observable!(ForkObservable);
 
-impl<F> IntoShared for ForkObservable<F>
+impl<F, Item, Err> IntoShared for ForkObservable<F, Item, Err>
 where
   F: Send + Sync + 'static,
+  Item: 'static,
+  Err: 'static,
 {
-  type Shared = SharedForkObservable<F>;
-  fn to_shared(self) -> Self::Shared { SharedForkObservable(self.0) }
+  type Shared = SharedForkObservable<F, Item, Err>;
+  fn to_shared(self) -> Self::Shared {
+    SharedForkObservable(self.0, PhantomData)
+  }
 }
 
-impl<F> Fork for ForkObservable<F>
+impl<F, Item, Err> Fork for ForkObservable<F, Item, Err>
 where
   F: Clone,
 {
-  type Output = ForkObservable<F>;
+  type Output = Self;
   #[inline(always)]
   fn fork(&self) -> Self::Output { self.clone() }
 }
 
-impl<'a, F, Item, Err, S, U> RawSubscribable<Item, Err, Subscriber<S, U>>
-  for ForkObservable<F>
+impl<'a, F, Item, Err, S, U> RawSubscribable<Subscriber<S, U>>
+  for ForkObservable<F, Item, Err>
 where
   S: Observer<Item, Err> + 'a,
   F: FnOnce(Subscriber<Box<dyn Observer<Item, Err> + 'a>, U>),
@@ -109,10 +127,10 @@ where
   }
 }
 
-#[derive(Clone)]
-pub struct SharedForkObservable<F>(F);
+pub struct SharedForkObservable<F, Item, Err>(F, PhantomData<(Item, Err)>);
+impl_observable!(SharedForkObservable);
 
-impl<F> IntoShared for SharedForkObservable<F>
+impl<F, Item, Err> IntoShared for SharedForkObservable<F, Item, Err>
 where
   Self: Send + Sync + 'static,
 {
@@ -121,7 +139,7 @@ where
   fn to_shared(self) -> Self::Shared { self }
 }
 
-impl<F> Fork for SharedForkObservable<F>
+impl<F, Item, Err> Fork for SharedForkObservable<F, Item, Err>
 where
   F: Clone,
 {
@@ -130,8 +148,8 @@ where
   fn fork(&self) -> Self::Output { self.clone() }
 }
 
-impl<F, Item, Err, O, U> RawSubscribable<Item, Err, Subscriber<O, U>>
-  for SharedForkObservable<F>
+impl<F, Item, Err, O, U> RawSubscribable<Subscriber<O, U>>
+  for SharedForkObservable<F, Item, Err>
 where
   O: IntoShared,
   U: IntoShared,

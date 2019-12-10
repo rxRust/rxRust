@@ -31,8 +31,14 @@ impl LocalSubscription {
   pub fn remove(&mut self, subscription: &dyn SubscriptionLike) {
     self.0.borrow_mut().remove(subscription);
   }
+}
 
-  pub fn teardown_size(&self) -> usize { self.0.borrow().teardown.size() }
+impl TearDownSize for LocalSubscription {
+  fn teardown_size(&self) -> usize { self.0.borrow().teardown.size() }
+}
+
+pub trait TearDownSize: SubscriptionLike {
+  fn teardown_size(&self) -> usize;
 }
 
 impl IntoShared for LocalSubscription {
@@ -89,10 +95,10 @@ impl SharedSubscription {
   pub fn remove(&mut self, subscription: &dyn SubscriptionLike) {
     self.0.lock().unwrap().remove(subscription);
   }
+}
 
-  pub fn teardown_size(&self) -> usize {
-    self.0.lock().unwrap().teardown.size()
-  }
+impl TearDownSize for SharedSubscription {
+  fn teardown_size(&self) -> usize { self.0.lock().unwrap().teardown.size() }
 }
 
 impl SubscriptionLike for SharedSubscription {

@@ -33,7 +33,7 @@ where
   fn to_shared(self) -> Self::Shared { self }
 }
 
-pub trait SubscribableErr<Item, Err, N, E> {
+pub trait SubscribableErr<N, E> {
   /// A type implementing [`SubscriptionLike`]
   type Unsub;
 
@@ -46,15 +46,9 @@ pub trait SubscribableErr<Item, Err, N, E> {
   fn subscribe_err(self, next: N, error: E) -> Self::Unsub;
 }
 
-impl<Item, Err, S, N, E> SubscribableErr<Item, Err, N, E> for S
+impl<S, N, E> SubscribableErr<N, E> for S
 where
-  S: RawSubscribable<
-    Item,
-    Err,
-    Subscriber<SubscribeErr<N, E>, LocalSubscription>,
-  >,
-  N: FnMut(Item),
-  E: FnMut(Err),
+  S: RawSubscribable<Subscriber<SubscribeErr<N, E>, LocalSubscription>>,
 {
   type Unsub = S::Unsub;
   fn subscribe_err(self, next: N, error: E) -> Self::Unsub

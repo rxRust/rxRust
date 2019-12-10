@@ -57,10 +57,10 @@ pub struct FilterMapOp<S, F, I> {
   _p: PhantomData<I>,
 }
 
-impl<Item, Err, SourceItem, S, F, O, U>
-  RawSubscribable<Item, Err, Subscriber<O, U>> for FilterMapOp<S, F, SourceItem>
+impl<Item, SourceItem, S, F, O, U> RawSubscribable<Subscriber<O, U>>
+  for FilterMapOp<S, F, SourceItem>
 where
-  S: RawSubscribable<SourceItem, Err, Subscriber<FilterMapObserver<O, F>, U>>,
+  S: RawSubscribable<Subscriber<FilterMapObserver<O, F>, U>>,
   F: FnMut(SourceItem) -> Option<Item>,
 {
   type Unsub = S::Unsub;

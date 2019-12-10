@@ -1,3 +1,4 @@
+use crate::ops::SharedOp;
 use crate::prelude::*;
 use futures::{
   executor::ThreadPool, future::Future, future::FutureExt, task::SpawnExt,
@@ -29,13 +30,14 @@ lazy_static! {
 /// If your `Future` poll an `Result` type value, and you want dispatch the
 /// error by rxrust, you can use [`from_future_with_err`]
 ///
-pub fn from_future<O, U, F>(
+pub fn from_future<O, U, F, Item>(
   f: F,
-) -> ops::SharedOp<Observable<impl FnOnce(Subscriber<O, U>) + Clone>>
+) -> ops::SharedOp<Observable<impl FnOnce(Subscriber<O, U>) + Clone, Item, ()>>
 where
-  O: Observer<<F as Future>::Output, ()> + Send + 'static,
+  Item: 'static,
+  O: Observer<Item, ()> + Send + 'static,
   U: SubscriptionLike + Send + 'static,
-  F: Future + Send + Clone + Sync + 'static,
+  F: Future<Output = Item> + Send + Clone + Sync + 'static,
 {
   Observable::new(move |mut subscriber| {
     let fmapped = f.map(move |v| {
@@ -54,8 +56,10 @@ where
 /// emit to next handle, and `Result::Err` as an error to handle.
 pub fn from_future_with_err<O, U, F, Item, Error>(
   f: F,
-) -> ops::SharedOp<Observable<impl FnOnce(Subscriber<O, U>) + Clone>>
+) -> SharedOp<Observable<impl FnOnce(Subscriber<O, U>) + Clone, Item, Error>>
 where
+  Error: 'static,
+  Item: 'static,
   O: Observer<Item, Error> + Send + 'static,
   U: SubscriptionLike + Send + 'static,
   F: Future + Send + Clone + Sync + 'static,

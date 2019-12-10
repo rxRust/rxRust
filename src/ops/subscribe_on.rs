@@ -74,11 +74,11 @@ where
 
 impl<T> SubscribeOn for T {}
 
-impl<Item, Err, O, S, SD> RawSubscribable<Item, Err, O> for SubscribeOnOP<S, SD>
+impl<O, S, SD> RawSubscribable<O> for SubscribeOnOP<S, SD>
 where
   O: IntoShared,
   S: IntoShared,
-  S::Shared: RawSubscribable<Item, Err, O::Shared, Unsub = SharedSubscription>,
+  S::Shared: RawSubscribable<O::Shared, Unsub = SharedSubscription>,
   SD: Scheduler,
 {
   type Unsub = SharedSubscription;

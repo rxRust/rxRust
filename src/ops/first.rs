@@ -35,10 +35,9 @@ pub struct FirstOrOp<S, V> {
   default: V,
 }
 
-impl<Item, Err, O, U, S, T> RawSubscribable<Item, Err, Subscriber<O, U>>
-  for FirstOrOp<S, T>
+impl<O, U, S, T> RawSubscribable<Subscriber<O, U>> for FirstOrOp<S, T>
 where
-  S: RawSubscribable<Item, Err, Subscriber<FirstOrSubscribe<O, T>, U>>,
+  S: RawSubscribable<Subscriber<FirstOrSubscribe<O, T>, U>>,
 {
   type Unsub = S::Unsub;
   fn raw_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub {

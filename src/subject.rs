@@ -93,7 +93,7 @@ macro local_subject_raw_subscribe_impl($o: ident,$u: ident) {
     subscription
   }
 }
-impl<'a, Item, Err, O, U> RawSubscribable<Item, Err, Subscriber<O, U>>
+impl<'a, Item, Err, O, U> RawSubscribable<Subscriber<O, U>>
   for LocalSubject<'a, Item, Err>
 where
   O: Observer<Item, Err> + 'a,
@@ -102,7 +102,7 @@ where
   local_subject_raw_subscribe_impl!(O, U);
 }
 
-impl<'a, Item, Err, O, U> RawSubscribable<Item, Err, Subscriber<O, U>>
+impl<'a, Item, Err, O, U> RawSubscribable<Subscriber<O, U>>
   for Subject<
     LocalObserver<Box<dyn for<'r> Publisher<&'r mut Item, Err> + 'a>>,
     LocalSubscription,
@@ -114,7 +114,7 @@ where
   local_subject_raw_subscribe_impl!(O, U);
 }
 
-impl<'a, Item, Err, O, U> RawSubscribable<Item, Err, Subscriber<O, U>>
+impl<'a, Item, Err, O, U> RawSubscribable<Subscriber<O, U>>
   for Subject<
     LocalObserver<Box<dyn for<'r> Publisher<Item, &'r mut Err> + 'a>>,
     LocalSubscription,
@@ -126,7 +126,7 @@ where
   local_subject_raw_subscribe_impl!(O, U);
 }
 
-impl<'a, Item, Err, O, U> RawSubscribable<Item, Err, Subscriber<O, U>>
+impl<'a, Item, Err, O, U> RawSubscribable<Subscriber<O, U>>
   for Subject<
     LocalObserver<Box<dyn for<'r> Publisher<&'r mut Item, &'r mut Err> + 'a>>,
     LocalSubscription,
@@ -138,7 +138,7 @@ where
   local_subject_raw_subscribe_impl!(O, U);
 }
 
-impl<Item, Err, O, S> RawSubscribable<Item, Err, Subscriber<O, S>>
+impl<Item, Err, O, S> RawSubscribable<Subscriber<O, S>>
   for SharedSubject<Item, Err>
 where
   S: IntoShared,
@@ -334,10 +334,9 @@ mod test {
     let mut subject: Subject<LocalObserver<MutRefObserver<i32>>, _> =
       Subject::local_new();
 
-    // blocking on: RawSubscribe refactor.
-    // subject
-    //   .clone()
-    //   .subscribe((|_: &mut _| {}) as for<'r> fn(&'r mut i32));
+    subject
+      .clone()
+      .subscribe((|_: &mut _| {}) as for<'r> fn(&'r mut i32));
     subject.next(&mut 1);
   }
   #[test]

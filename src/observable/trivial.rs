@@ -8,7 +8,7 @@ use crate::prelude::*;
 ///
 pub fn throw<O, U, Item, Err>(
   e: Err,
-) -> Observable<impl FnOnce(Subscriber<O, U>) + Clone>
+) -> Observable<impl FnOnce(Subscriber<O, U>) + Clone, Item, Err>
 where
   O: Observer<Item, Err>,
   U: SubscriptionLike,
@@ -34,7 +34,8 @@ where
 /// // Result: no thing printed
 /// ```
 ///
-pub fn empty<O, U, Item>() -> Observable<impl FnOnce(Subscriber<O, U>) + Clone>
+pub fn empty<O, U, Item>()
+-> Observable<impl FnOnce(Subscriber<O, U>) + Clone, Item, ()>
 where
   O: Observer<Item, ()>,
   U: SubscriptionLike,
@@ -48,7 +49,8 @@ where
 ///
 /// Neither emitts a value, nor completes, nor emitts an error.
 ///
-pub fn never<O, U, Item>() -> Observable<impl FnOnce(Subscriber<O, U>) + Clone>
+pub fn never<O, U, Item>()
+-> Observable<impl FnOnce(Subscriber<O, U>) + Clone, Item, ()>
 where
   O: Observer<Item, ()>,
   U: SubscriptionLike,

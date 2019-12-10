@@ -24,7 +24,7 @@ where
   fn to_shared(self) -> Self::Shared { self }
 }
 
-pub trait SubscribablePure<Item, N> {
+pub trait SubscribablePure<N> {
   /// A type implementing [`SubscriptionLike`]
   type Unsub;
 
@@ -33,10 +33,9 @@ pub trait SubscribablePure<Item, N> {
   fn subscribe(self, next: N) -> Self::Unsub;
 }
 
-impl<Item, S, N> SubscribablePure<Item, N> for S
+impl<S, N> SubscribablePure<N> for S
 where
-  S: RawSubscribable<Item, (), Subscriber<SubscribePure<N>, LocalSubscription>>,
-  N: FnMut(Item),
+  S: RawSubscribable<Subscriber<SubscribePure<N>, LocalSubscription>>,
 {
   type Unsub = S::Unsub;
   fn subscribe(self, next: N) -> Self::Unsub

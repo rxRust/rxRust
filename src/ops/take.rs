@@ -58,10 +58,9 @@ where
   }
 }
 
-impl<Item, Err, O, U, S> RawSubscribable<Item, Err, Subscriber<O, U>>
-  for TakeOp<S>
+impl<O, U, S> RawSubscribable<Subscriber<O, U>> for TakeOp<S>
 where
-  S: RawSubscribable<Item, Err, Subscriber<TakeObserver<O, U>, U>>,
+  S: RawSubscribable<Subscriber<TakeObserver<O, U>, U>>,
   U: SubscriptionLike + Clone + 'static,
 {
   type Unsub = S::Unsub;
