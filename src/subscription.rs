@@ -227,12 +227,12 @@ impl<'a, Item, Err> SubscriptionLike
   subscription_direct_impl_proxy!();
 }
 impl<'a, Item, Err> SubscriptionLike
-  for Box<dyn for<'r> Publisher<Item, &'r Err> + 'a>
+  for Box<dyn for<'r> Publisher<Item, &'r mut Err> + 'a>
 {
   subscription_direct_impl_proxy!();
 }
 impl<'a, Item, Err> SubscriptionLike
-  for Box<dyn for<'r> Publisher<&'r mut Item, &'r Err> + 'a>
+  for Box<dyn for<'r> Publisher<&'r mut Item, &'r mut Err> + 'a>
 {
   subscription_direct_impl_proxy!();
 }
