@@ -1,4 +1,15 @@
-## [Unreleased](https://github.com/M-Adoo/rxRust/compare/v0.6.0...HEAD)
+## [Unreleased](https://github.com/M-Adoo/rxRust/compare/v0.7.0...HEAD)
+
+## [0.7.0](https://github.com/M-Adoo/rxRust/releases/tag/v0.7.0)  (2019-12-12)
+
+### Features
+
+- **Subject**: local subject support emit mut ref item.
+
+### Breaking Changes
+
+- **observable**: `LocalConnectableObservable` and `SharedConnectableObservable` has merged into `ConnectableObservable`
+- **observable**: remove generic type `Item` and `Err` from `RawSubscribable`, almost not effect user code.
 
 ## [0.6.0](https://github.com/M-Adoo/rxRust/releases/tag/v0.6.0)  (2019-12-07)
 
