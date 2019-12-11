@@ -9,7 +9,7 @@ Add this to your Cargo.toml:
 
 ```ignore
 [dependencies]
-rxrust = "0.5.0";
+rxrust = "0.7.0";
 ```
 
 ## Example 
@@ -84,7 +84,7 @@ std::thread::sleep(std::time::Duration::new(1, 0));
 A `from_future_with_err` function also provided to propagating error from `Future`.
 
 ## Missing Features List
-See [missing features](./missing_features) to know what rxRust not have for now.
+See [missing features](missing_features.md) to know what rxRust not have for now.
 
 ## All contributions are welcome
 
