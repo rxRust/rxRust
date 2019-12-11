@@ -9,7 +9,7 @@ Add this to your Cargo.toml:
 
 ```ignore
 [dependencies]
-rxrust = "0.7.0";
+rxrust = "0.7.1";
 ```
 
 ## Example 
