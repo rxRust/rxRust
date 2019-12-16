@@ -8,7 +8,7 @@
 //! implementation also exists. The trait `IntoShared` will convert a
 //! local-thread struct to thread-safe version. So we can call `to_shared`
 //! method to ensure operators or subscription can shared between threads.
-//! * **[Fork](prelude::IntoShared):** In Rxrust all operators consume the
+//! * **[Fork](prelude::Fork):** In RxRust all operators consume the
 //! upstream except `Fork`, so operators always combine a single-chain and can
 //! only subscribe once. We use `Fork` to fork the stream.
 
