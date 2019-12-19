@@ -12,17 +12,7 @@
 //! upstream except `Fork`, so operators always combine a single-chain and can
 //! only subscribe once. We use `Fork` to fork the stream.
 
-#![feature(
-  external_doc,
-  fn_traits,
-  step_trait,
-  unboxed_closures,
-  never_type,
-  drain_filter,
-  test,
-  raw,
-  decl_macro
-)]
+#![feature(external_doc, specialization, drain_filter, test, decl_macro)]
 #[doc(include = "../README.md")]
 #[macro_use]
 extern crate lazy_static;
