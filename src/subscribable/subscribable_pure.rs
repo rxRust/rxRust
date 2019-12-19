@@ -1,18 +1,32 @@
 use crate::prelude::*;
+use crate::subscribable::{ObserverComplete, ObserverError, ObserverNext};
 
 #[derive(Clone)]
 pub struct SubscribePure<N>(N);
 
-impl<Item, N> Observer<Item, ()> for SubscribePure<N>
+impl<N> ObserverComplete for SubscribePure<N> {
+  #[inline(always)]
+  fn complete(&mut self) {}
+}
+
+impl<N> ObserverError<()> for SubscribePure<N> {
+  #[inline(always)]
+  fn error(&mut self, _err: ()) {}
+}
+
+impl<N, Item> ObserverNext<Item> for SubscribePure<N>
 where
   N: FnMut(Item),
 {
   #[inline(always)]
-  fn next(&mut self, value: Item) { (self.0)(value); }
-  #[inline(always)]
-  fn error(&mut self, _err: ()) {}
-  #[inline(always)]
-  fn complete(&mut self) {}
+  default fn next(&mut self, value: Item) { (self.0)(value); }
+}
+
+impl<Item, N> ObserverNext<&mut Item> for SubscribePure<N>
+where
+  N: for<'r> FnMut(&'r mut Item),
+{
+  fn next(&mut self, value: &mut Item) { (self.0)(value); }
 }
 
 impl<N> IntoShared for SubscribePure<N>

@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use crate::subscribable::{ObserverComplete, ObserverError, ObserverNext};
 
 #[derive(Clone)]
 pub struct SubscribeComplete<N, C> {
@@ -6,17 +7,33 @@ pub struct SubscribeComplete<N, C> {
   complete: C,
 }
 
-impl<Item, N, C> Observer<Item, ()> for SubscribeComplete<N, C>
+impl<N, C> ObserverComplete for SubscribeComplete<N, C>
 where
-  N: FnMut(Item),
   C: FnMut(),
 {
   #[inline(always)]
-  fn next(&mut self, value: Item) { (self.next)(value); }
+  fn complete(&mut self) { (self.complete)(); }
+}
+
+impl<N, C> ObserverError<()> for SubscribeComplete<N, C> {
   #[inline(always)]
   fn error(&mut self, _err: ()) {}
+}
+
+impl<N, C, Item> ObserverNext<Item> for SubscribeComplete<N, C>
+where
+  N: FnMut(Item),
+{
   #[inline(always)]
-  fn complete(&mut self) { (self.complete)(); }
+  default fn next(&mut self, value: Item) { (self.next)(value); }
+}
+
+impl<N, C, Item> ObserverNext<&mut Item> for SubscribeComplete<N, C>
+where
+  N: for<'r> FnMut(&'r mut Item),
+{
+  #[inline(always)]
+  fn next(&mut self, value: &mut Item) { (self.next)(value); }
 }
 
 impl<N, C> SubscribeComplete<N, C> {
