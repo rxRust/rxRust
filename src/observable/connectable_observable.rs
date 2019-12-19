@@ -1,5 +1,8 @@
 use crate::prelude::*;
-use crate::subject::{LocalObserver, SharedSubject};
+use crate::subject::{
+  LocalSubjectMutRef, LocalSubjectMutRefErr, LocalSubjectMutRefItem,
+  SharedSubject,
+};
 
 pub struct ConnectableObservable<Source, Subject> {
   source: Source,
@@ -24,13 +27,42 @@ where
   }
 }
 
-impl<S, P>
-  ConnectableObservable<S, Subject<LocalObserver<P>, LocalSubscription>>
-{
+impl<'a, Item, Err, S> ConnectableObservable<S, LocalSubject<'a, Item, Err>> {
   pub fn local(observable: S) -> Self {
     Self {
       source: observable,
-      subject: Subject::local_new(),
+      subject: Subject::local(),
+    }
+  }
+}
+
+impl<'a, Item, Err, S>
+  ConnectableObservable<S, LocalSubjectMutRef<'a, Item, Err>>
+{
+  pub fn local_mut_ref(observable: S) -> Self {
+    Self {
+      source: observable,
+      subject: Subject::local_mut_ref(),
+    }
+  }
+}
+impl<'a, Item, Err, S>
+  ConnectableObservable<S, LocalSubjectMutRefItem<'a, Item, Err>>
+{
+  pub fn local_mut_ref_item(observable: S) -> Self {
+    Self {
+      source: observable,
+      subject: Subject::local_mut_ref_item(),
+    }
+  }
+}
+impl<'a, Item, Err, S>
+  ConnectableObservable<S, LocalSubjectMutRefErr<'a, Item, Err>>
+{
+  pub fn local_mut_ref_err(observable: S) -> Self {
+    Self {
+      source: observable,
+      subject: Subject::local_mut_ref_err(),
     }
   }
 }

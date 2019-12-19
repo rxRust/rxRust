@@ -6,46 +6,42 @@
 ///
 use crate::observable::connectable_observable::ConnectableObservable;
 pub use crate::prelude::*;
-use crate::subject::LocalObserver;
+use crate::subject::{
+  LocalSubjectMutRef, LocalSubjectMutRefErr, LocalSubjectMutRefItem,
+};
 
-pub trait Publish
+pub trait Publish<'a, Item, Err>
 where
   Self: Sized,
 {
   #[inline(always)]
-  fn publish<'a, Item, Err>(
-    self,
-  ) -> ConnectableObservable<Self, LocalSubject<'a, Item, Err>> {
-    self.publish_raw()
+  fn publish(self) -> ConnectableObservable<Self, LocalSubject<'a, Item, Err>> {
+    ConnectableObservable::local(self)
   }
 
-  /// publish_raw let you can give an explicit box `Publisher` type to the
-  /// `ConnectableObservable`, for most scenes use `publish` is enough, but when
-  /// you pass a mut reference item or error, you can use `publish_raw` to give
-  /// a box trait type for `Subject`
-  /// ```ignore
-  /// use rxrust::prelude::*;
-  /// use rxrust::observable::Connect;
-  /// use rxrust::subscription::Publisher;
-  /// use rxrust::ops::{Publish};
-  ///
-  /// let p = observable::of(100)
-  ///   .publish_raw::<Box<dyn for<'r> Publisher<&'r mut i32, _>>>();
-  /// let mut first = 0;
-  /// let mut second = 0;
-  /// p.fork().subscribe(|v| first = *v);
-  /// p.fork().subscribe(|v| second = *v);
-  /// ```
   #[inline(always)]
-  fn publish_raw<P>(
+  fn publish_mut_ref(
     self,
-  ) -> ConnectableObservable<Self, Subject<LocalObserver<P>, LocalSubscription>>
-  {
-    ConnectableObservable::local(self)
+  ) -> ConnectableObservable<Self, LocalSubjectMutRef<'a, Item, Err>> {
+    ConnectableObservable::local_mut_ref(self)
+  }
+
+  #[inline(always)]
+  fn publish_mut_ref_item(
+    self,
+  ) -> ConnectableObservable<Self, LocalSubjectMutRefItem<'a, Item, Err>> {
+    ConnectableObservable::local_mut_ref_item(self)
+  }
+
+  #[inline(always)]
+  fn publish_mut_ref_err(
+    self,
+  ) -> ConnectableObservable<Self, LocalSubjectMutRefErr<'a, Item, Err>> {
+    ConnectableObservable::local_mut_ref_err(self)
   }
 }
 
-impl<T> Publish for T {}
+impl<'a, Item, Err, T> Publish<'a, Item, Err> for T {}
 
 #[test]
 fn smoke() {

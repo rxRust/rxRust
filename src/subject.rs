@@ -15,6 +15,21 @@ pub type LocalObserver<P> = Rc<RefCell<Vec<P>>>;
 pub type LocalSubject<'a, Item, Err> =
   Subject<LocalObserver<Box<dyn Publisher<Item, Err> + 'a>>, LocalSubscription>;
 
+pub type LocalSubjectMutRef<'a, Item, Err> = Subject<
+  LocalObserver<Box<dyn for<'r> Publisher<&'r mut Item, &'r mut Err> + 'a>>,
+  LocalSubscription,
+>;
+
+pub type LocalSubjectMutRefItem<'a, Item, Err> = Subject<
+  LocalObserver<Box<dyn for<'r> Publisher<&'r mut Item, Err> + 'a>>,
+  LocalSubscription,
+>;
+
+pub type LocalSubjectMutRefErr<'a, Item, Err> = Subject<
+  LocalObserver<Box<dyn for<'r> Publisher<Item, &'r mut Err> + 'a>>,
+  LocalSubscription,
+>;
+
 type SharedPublishers<Item, Err> =
   Arc<Mutex<Vec<Box<dyn Publisher<Item, Err> + Send + Sync>>>>;
 
@@ -22,11 +37,27 @@ pub type SharedSubject<Item, Err> =
   Subject<SharedPublishers<Item, Err>, SharedSubscription>;
 
 impl<'a, Item, Err> LocalSubject<'a, Item, Err> {
-  pub fn local() -> Self { LocalSubject::local_new() }
+  #[inline(always)]
+  pub fn local() -> Self { Subject::new() }
+}
+
+impl<'a, Item, Err> LocalSubjectMutRef<'a, Item, Err> {
+  #[inline(always)]
+  pub fn local_mut_ref() -> Self { Subject::new() }
+}
+
+impl<'a, Item, Err> LocalSubjectMutRefItem<'a, Item, Err> {
+  #[inline(always)]
+  pub fn local_mut_ref_item() -> Self { Subject::new() }
+}
+
+impl<'a, Item, Err> LocalSubjectMutRefErr<'a, Item, Err> {
+  #[inline(always)]
+  pub fn local_mut_ref_err() -> Self { Subject::new() }
 }
 
 impl<P> Subject<LocalObserver<P>, LocalSubscription> {
-  pub fn local_new() -> Self {
+  fn new() -> Self {
     Subject {
       observers: Rc::new(RefCell::new(vec![])),
       subscription: LocalSubscription::default(),
@@ -103,10 +134,7 @@ where
 }
 
 impl<'a, Item, Err, O, U> RawSubscribable<Subscriber<O, U>>
-  for Subject<
-    LocalObserver<Box<dyn for<'r> Publisher<&'r mut Item, Err> + 'a>>,
-    LocalSubscription,
-  >
+  for LocalSubjectMutRefItem<'a, Item, Err>
 where
   O: for<'r> Observer<&'r mut Item, Err> + 'a,
   U: SubscriptionLike + Clone + 'static,
@@ -115,10 +143,7 @@ where
 }
 
 impl<'a, Item, Err, O, U> RawSubscribable<Subscriber<O, U>>
-  for Subject<
-    LocalObserver<Box<dyn for<'r> Publisher<Item, &'r mut Err> + 'a>>,
-    LocalSubscription,
-  >
+  for LocalSubjectMutRefErr<'a, Item, Err>
 where
   O: for<'r> Observer<Item, &'r mut Err> + 'a,
   U: SubscriptionLike + Clone + 'static,
@@ -127,10 +152,7 @@ where
 }
 
 impl<'a, Item, Err, O, U> RawSubscribable<Subscriber<O, U>>
-  for Subject<
-    LocalObserver<Box<dyn for<'r> Publisher<&'r mut Item, &'r mut Err> + 'a>>,
-    LocalSubscription,
-  >
+  for LocalSubjectMutRef<'a, Item, Err>
 where
   O: for<'r> Observer<&'r mut Item, &'r mut Err> + 'a,
   U: SubscriptionLike + Clone + 'static,
@@ -321,7 +343,6 @@ where
 #[cfg(test)]
 mod test {
   use crate::prelude::*;
-  use crate::subject::LocalObserver;
 
   #[test]
   fn emit_ref() {
@@ -330,13 +351,9 @@ mod test {
     subject.next(&1);
 
     // emit mut ref
-    type MutRefObserver<Item> = Box<dyn for<'r> Publisher<&'r mut Item, ()>>;
-    let mut subject: Subject<LocalObserver<MutRefObserver<i32>>, _> =
-      Subject::local_new();
+    let mut subject = Subject::local_mut_ref_item();
 
-    subject
-      .clone()
-      .subscribe((|_: &mut _| {}) as for<'r> fn(&'r mut i32));
+    subject.clone().subscribe(|_: &mut _| {});
     subject.next(&mut 1);
   }
   #[test]
