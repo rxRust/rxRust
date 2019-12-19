@@ -1,5 +1,5 @@
+use crate::observer::{ObserverComplete, ObserverError, ObserverNext};
 use crate::prelude::*;
-use crate::subscribable::{ObserverComplete, ObserverError, ObserverNext};
 
 #[derive(Clone)]
 pub struct SubscribeAll<N, E, C> {
