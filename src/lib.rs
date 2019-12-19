@@ -21,6 +21,7 @@ extern crate lazy_static;
 extern crate float_cmp;
 
 pub mod observable;
+pub mod observer;
 pub mod ops;
 pub mod scheduler;
 pub mod subject;
@@ -31,6 +32,7 @@ pub mod subscription;
 pub mod prelude {
   pub use crate::observable;
   pub use crate::observable::Observable;
+  pub use crate::observer;
   pub use crate::ops;
   pub use crate::scheduler::*;
   pub use crate::subject;
@@ -41,6 +43,7 @@ pub mod prelude {
   pub use crate::subscriber::Subscriber;
   pub use crate::subscription;
   pub use crate::subscription::*;
+  pub use observer::Observer;
   pub use ops::Fork;
 }
 mod util;
