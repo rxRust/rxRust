@@ -266,17 +266,14 @@ fn fork_and_shared() {
 #[test]
 fn filter() {
   use crate::ops::{FilterMap, Publish};
-  use subject::LocalObserver;
-  type MutRefObserver<Item> = Box<dyn for<'r> Publisher<&'r mut Item, ()>>;
-  let mut subject: Subject<LocalObserver<MutRefObserver<i32>>, _> =
-    Subject::local_new();
+  let mut subject = Subject::local_mut_ref();
 
   subject
-    .clone()
     .fork()
     .filter_map((|v: &mut i32| Some(v)) as fn(v: &mut i32) -> Option<&mut i32>)
-    .publish_raw::<MutRefObserver<i32>>()
+    .publish_mut_ref()
     .ref_count();
 
   subject.next(&mut 1);
+  subject.error(&mut 2);
 }
