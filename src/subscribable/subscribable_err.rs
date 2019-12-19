@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use crate::subscribable::{ObserverComplete, ObserverError, ObserverNext};
 
 #[derive(Clone)]
 pub struct SubscribeErr<N, E> {
@@ -6,17 +7,41 @@ pub struct SubscribeErr<N, E> {
   error: E,
 }
 
-impl<Item, Err, N, E> Observer<Item, Err> for SubscribeErr<N, E>
+impl<N, E> ObserverComplete for SubscribeErr<N, E> {
+  #[inline(always)]
+  fn complete(&mut self) {}
+}
+
+impl<N, E, Item> ObserverNext<Item> for SubscribeErr<N, E>
 where
   N: FnMut(Item),
+{
+  #[inline(always)]
+  default fn next(&mut self, err: Item) { (self.next)(err); }
+}
+
+impl<N, E, Item> ObserverNext<&mut Item> for SubscribeErr<N, E>
+where
+  N: for<'r> FnMut(&'r mut Item),
+{
+  #[inline(always)]
+  fn next(&mut self, value: &mut Item) { (self.next)(value); }
+}
+
+impl<N, E, Err> ObserverError<Err> for SubscribeErr<N, E>
+where
   E: FnMut(Err),
 {
   #[inline(always)]
-  fn next(&mut self, value: Item) { (self.next)(value); }
+  default fn error(&mut self, err: Err) { (self.error)(err); }
+}
+
+impl<N, E, Err> ObserverError<&mut Err> for SubscribeErr<N, E>
+where
+  E: for<'r> FnMut(&'r mut Err),
+{
   #[inline(always)]
-  fn error(&mut self, err: Err) { (self.error)(err); }
-  #[inline(always)]
-  fn complete(&mut self) {}
+  fn error(&mut self, err: &mut Err) { (self.error)(err); }
 }
 
 impl<N, E> SubscribeErr<N, E> {

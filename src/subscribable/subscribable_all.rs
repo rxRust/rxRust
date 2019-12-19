@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use crate::subscribable::{ObserverComplete, ObserverError, ObserverNext};
 
 #[derive(Clone)]
 pub struct SubscribeAll<N, E, C> {
@@ -27,18 +28,44 @@ where
   fn to_shared(self) -> Self::Shared { self }
 }
 
-impl<Item, Err, N, E, C> Observer<Item, Err> for SubscribeAll<N, E, C>
+impl<N, E, C> ObserverComplete for SubscribeAll<N, E, C>
 where
-  N: FnMut(Item),
-  E: FnMut(Err),
   C: FnMut(),
 {
   #[inline(always)]
-  fn next(&mut self, value: Item) { (self.next)(value); }
-  #[inline(always)]
-  fn error(&mut self, err: Err) { (self.error)(err); }
-  #[inline(always)]
   fn complete(&mut self) { (self.complete)(); }
+}
+
+impl<N, E, C, Err> ObserverError<Err> for SubscribeAll<N, E, C>
+where
+  E: FnMut(Err),
+{
+  #[inline(always)]
+  default fn error(&mut self, err: Err) { (self.error)(err); }
+}
+
+impl<N, E, C, Err> ObserverError<&mut Err> for SubscribeAll<N, E, C>
+where
+  E: for<'r> FnMut(&'r mut Err),
+{
+  #[inline(always)]
+  fn error(&mut self, err: &mut Err) { (self.error)(err); }
+}
+
+impl<N, E, C, Item> ObserverNext<Item> for SubscribeAll<N, E, C>
+where
+  N: FnMut(Item),
+{
+  #[inline(always)]
+  default fn next(&mut self, value: Item) { (self.next)(value); }
+}
+
+impl<N, E, C, Item> ObserverNext<&mut Item> for SubscribeAll<N, E, C>
+where
+  N: for<'r> FnMut(&'r mut Item),
+{
+  #[inline(always)]
+  fn next(&mut self, value: &mut Item) { (self.next)(value); }
 }
 
 pub trait SubscribableAll<N, E, C> {
