@@ -139,7 +139,8 @@ where
 }
 
 observer_error_proxy_impl!(FilterMapObserver<O, F>, O, down_observer, <O, F>);
-observer_complete_proxy_impl!(FilterMapObserver<O, F>, O, down_observer, <O, F>);
+observer_complete_proxy_impl!(
+  FilterMapObserver<O, F>, O, down_observer, <O, F>);
 
 impl<O, F> IntoShared for FilterMapObserver<O, F>
 where
@@ -188,5 +189,15 @@ mod test {
       .fork()
       .to_shared()
       .subscribe(|_| {});
+  }
+  #[test]
+  fn filter_map_mut_ref() {
+    use crate::subject::LocalSubjectMutRefItem;
+
+    let subject: LocalSubjectMutRefItem<'_, i32, ()> =
+      Subject::local_mut_ref_item();
+    subject
+      .filter_map((|v| Some(v)) as fn(v: &mut i32) -> Option<&mut i32>)
+      .subscribe(|_: &mut _| {});
   }
 }
