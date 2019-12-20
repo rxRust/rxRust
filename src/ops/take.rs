@@ -1,3 +1,6 @@
+use crate::observer::{
+  observer_complete_proxy_impl, observer_error_proxy_impl,
+};
 use crate::ops::SharedOp;
 use crate::prelude::*;
 /// Emits only the first `count` values emitted by the source Observable.
@@ -101,10 +104,10 @@ where
   }
 }
 
-impl<S, ST, Item, Err> Observer<Item, Err> for TakeObserver<S, ST>
+impl<Item, O, U> ObserverNext<Item> for TakeObserver<O, U>
 where
-  S: Observer<Item, Err>,
-  ST: SubscriptionLike,
+  O: ObserverNext<Item> + ObserverComplete,
+  U: SubscriptionLike,
 {
   fn next(&mut self, value: Item) {
     if self.hits < self.count {
@@ -116,11 +119,10 @@ where
       }
     }
   }
-  #[inline(always)]
-  fn error(&mut self, err: Err) { self.observer.error(err); }
-  #[inline(always)]
-  fn complete(&mut self) { self.observer.complete(); }
 }
+
+observer_error_proxy_impl!(TakeObserver<O, U>, O, observer, <O,U>);
+observer_complete_proxy_impl!(TakeObserver<O, U>, O,  observer, <O,U>);
 
 impl<S> Fork for TakeOp<S>
 where

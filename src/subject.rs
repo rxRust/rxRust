@@ -1,3 +1,4 @@
+use crate::observer::{ObserverComplete, ObserverError, ObserverNext};
 use crate::prelude::*;
 use crate::util;
 use std::cell::RefCell;
@@ -290,11 +291,10 @@ mod subject_copy_impls {
   }
 }
 
-impl<Item, Err, T> Observer<Item, Err> for Vec<T>
+impl<Item, T> ObserverNext<Item> for Vec<T>
 where
   Item: SubjectCopy,
-  Err: SubjectCopy,
-  T: Publisher<Item, Err>,
+  T: ObserverNext<Item> + SubscriptionLike,
 {
   fn next(&mut self, value: Item) {
     self.drain_filter(|subscriber| {
@@ -302,12 +302,25 @@ where
       subscriber.is_closed()
     });
   }
+}
+
+impl<Err, T> ObserverError<Err> for Vec<T>
+where
+  Err: SubjectCopy,
+  T: ObserverError<Err> + SubscriptionLike,
+{
   fn error(&mut self, err: Err) {
     self.iter_mut().for_each(|subscriber| {
       subscriber.error(err.copy());
     });
     self.clear();
   }
+}
+
+impl<T> ObserverComplete for Vec<T>
+where
+  T: ObserverComplete,
+{
   fn complete(&mut self) {
     self.iter_mut().for_each(|subscriber| {
       subscriber.complete();
@@ -316,9 +329,9 @@ where
   }
 }
 
-impl<Item, Err, S, O> Observer<Item, Err> for Subject<O, S>
+impl<Item, S, O> ObserverNext<Item> for Subject<O, S>
 where
-  O: Observer<Item, Err>,
+  O: ObserverNext<Item>,
   S: SubscriptionLike,
 {
   fn next(&mut self, value: Item) {
@@ -326,12 +339,26 @@ where
       self.observers.next(value)
     }
   }
+}
+
+impl<Err, S, O> ObserverError<Err> for Subject<O, S>
+where
+  O: ObserverError<Err>,
+  S: SubscriptionLike,
+{
   fn error(&mut self, err: Err) {
     if !self.subscription.is_closed() {
       self.observers.error(err);
       self.subscription.unsubscribe();
     };
   }
+}
+
+impl<S, O> ObserverComplete for Subject<O, S>
+where
+  O: ObserverComplete,
+  S: SubscriptionLike,
+{
   fn complete(&mut self) {
     if !self.subscription.is_closed() {
       self.observers.complete();
@@ -342,7 +369,7 @@ where
 
 #[cfg(test)]
 mod test {
-  use crate::prelude::*;
+  use super::*;
 
   #[test]
   fn emit_ref() {
@@ -352,9 +379,14 @@ mod test {
 
     // emit mut ref
     let mut subject = Subject::local_mut_ref_item();
-
-    subject.clone().subscribe(|_: &mut _| {});
+    subject.fork().subscribe(|_: &mut _| {});
     subject.next(&mut 1);
+
+    let ds = Subject::local_mut_ref_item();
+    subject.fork().raw_subscribe(Subscriber {
+      observer: ds.observers,
+      subscription: ds.subscription,
+    });
   }
   #[test]
   fn base_data_flow() {

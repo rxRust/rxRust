@@ -1,3 +1,6 @@
+use crate::observer::{
+  observer_complete_proxy_impl, observer_error_proxy_impl,
+};
 use crate::ops::SharedOp;
 use crate::prelude::*;
 use std::marker::PhantomData;
@@ -123,11 +126,9 @@ pub struct FilterMapObserver<O, F> {
   down_observer: O,
   f: F,
 }
-
-impl<O, F, Item, Err, OutputItem> Observer<Item, Err>
-  for FilterMapObserver<O, F>
+impl<O, F, Item, OutputItem> ObserverNext<Item> for FilterMapObserver<O, F>
 where
-  O: Observer<OutputItem, Err>,
+  O: ObserverNext<OutputItem>,
   F: FnMut(Item) -> Option<OutputItem>,
 {
   fn next(&mut self, value: Item) {
@@ -135,11 +136,10 @@ where
       self.down_observer.next(v)
     }
   }
-  #[inline(always)]
-  fn error(&mut self, err: Err) { self.down_observer.error(err) }
-  #[inline(always)]
-  fn complete(&mut self) { self.down_observer.complete() }
 }
+
+observer_error_proxy_impl!(FilterMapObserver<O, F>, O, down_observer, <O, F>);
+observer_complete_proxy_impl!(FilterMapObserver<O, F>, O, down_observer, <O, F>);
 
 impl<O, F> IntoShared for FilterMapObserver<O, F>
 where
