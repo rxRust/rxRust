@@ -1,3 +1,6 @@
+use crate::observer::{
+  observer_complete_proxy_impl, observer_error_proxy_impl,
+};
 use crate::prelude::*;
 use ops::SharedOp;
 use std::marker::PhantomData;
@@ -49,19 +52,16 @@ pub struct MapObserver<S, M> {
   map: M,
 }
 
-impl<Item, Err, S, M, B> Observer<Item, Err> for MapObserver<S, M>
+impl<Item, S, M, B> ObserverNext<Item> for MapObserver<S, M>
 where
-  S: Observer<B, Err>,
+  S: ObserverNext<B>,
   M: FnMut(Item) -> B,
 {
   fn next(&mut self, value: Item) { self.observer.next((self.map)(value)) }
-
-  #[inline(always)]
-  fn error(&mut self, err: Err) { self.observer.error(err); }
-
-  #[inline(always)]
-  fn complete(&mut self) { self.observer.complete(); }
 }
+
+observer_complete_proxy_impl!(MapObserver<O, M>, O, observer, <O, M>);
+observer_error_proxy_impl!(MapObserver<O, M>, O, observer, <O, M>);
 
 impl<S, M, B> Fork for MapOp<S, M, B>
 where

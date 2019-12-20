@@ -42,9 +42,9 @@ where
   }
 }
 
-impl<Item, Err, S, U> Observer<Item, Err> for Subscriber<S, U>
+impl<Item, O, U> ObserverNext<Item> for Subscriber<O, U>
 where
-  S: Observer<Item, Err>,
+  O: ObserverNext<Item>,
   U: SubscriptionLike,
 {
   fn next(&mut self, v: Item) {
@@ -52,18 +52,30 @@ where
       self.observer.next(v)
     }
   }
+}
 
-  fn complete(&mut self) {
-    if !self.subscription.is_closed() {
-      self.observer.complete();
-      self.subscription.unsubscribe()
-    }
-  }
-
+impl<Err, O, U> ObserverError<Err> for Subscriber<O, U>
+where
+  O: ObserverError<Err>,
+  U: SubscriptionLike,
+{
   fn error(&mut self, err: Err) {
     if !self.subscription.is_closed() {
       self.observer.error(err);
       self.subscription.unsubscribe();
+    }
+  }
+}
+
+impl<O, U> ObserverComplete for Subscriber<O, U>
+where
+  O: ObserverComplete,
+  U: SubscriptionLike,
+{
+  fn complete(&mut self) {
+    if !self.subscription.is_closed() {
+      self.observer.complete();
+      self.subscription.unsubscribe()
     }
   }
 }

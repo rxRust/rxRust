@@ -1,3 +1,4 @@
+use crate::observer::observer_error_proxy_impl;
 use crate::{ops::SharedOp, prelude::*};
 
 /// Emits a single last item emitted by the source observable.
@@ -114,16 +115,16 @@ pub struct LastOrObserver<S, T> {
   last: Option<T>,
 }
 
-impl<Item, Err, S> Observer<Item, Err> for LastOrObserver<S, Item>
-where
-  S: Observer<Item, Err>,
-  Item: Clone,
-{
+impl<O, Item> ObserverNext<Item> for LastOrObserver<O, Item> {
   fn next(&mut self, value: Item) { self.last = Some(value); }
+}
 
-  #[inline(always)]
-  fn error(&mut self, err: Err) { self.observer.error(err); }
+observer_error_proxy_impl!(LastOrObserver<O, Item>, O, observer, <O, Item>);
 
+impl<O, Item> ObserverComplete for LastOrObserver<O, Item>
+where
+  O: ObserverNext<Item> + ObserverComplete,
+{
   fn complete(&mut self) {
     if let Some(v) = self.last.take().or_else(|| self.default.take()) {
       self.observer.next(v)

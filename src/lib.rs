@@ -36,14 +36,14 @@ pub mod prelude {
   pub use crate::ops;
   pub use crate::scheduler::*;
   pub use crate::subject;
-  pub use crate::subject::{LocalSubject, SharedSubject, Subject, SubjectCopy};
+  pub use crate::subject::{LocalSubject, SharedSubject, Subject};
   pub use crate::subscribable;
   pub use crate::subscribable::*;
   pub use crate::subscriber;
   pub use crate::subscriber::Subscriber;
   pub use crate::subscription;
   pub use crate::subscription::*;
-  pub use observer::Observer;
+  pub use observer::{Observer, ObserverComplete, ObserverError, ObserverNext};
   pub use ops::Fork;
 }
 mod util;

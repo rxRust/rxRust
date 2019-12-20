@@ -1,3 +1,6 @@
+use crate::observer::{
+  observer_complete_proxy_impl, observer_error_proxy_impl,
+};
 use crate::prelude::*;
 use ops::SharedOp;
 
@@ -61,9 +64,9 @@ pub struct FilterObserver<S, F> {
   filter: F,
 }
 
-impl<Item, Err, S, F> Observer<Item, Err> for FilterObserver<S, F>
+impl<Item, O, F> ObserverNext<Item> for FilterObserver<O, F>
 where
-  S: Observer<Item, Err>,
+  O: ObserverNext<Item>,
   F: FnMut(&Item) -> bool,
 {
   fn next(&mut self, value: Item) {
@@ -71,11 +74,10 @@ where
       self.observer.next(value)
     }
   }
-  #[inline(always)]
-  fn error(&mut self, err: Err) { self.observer.error(err); }
-  #[inline(always)]
-  fn complete(&mut self) { self.observer.complete(); }
 }
+
+observer_error_proxy_impl!(FilterObserver<O, F>, O, observer, <O, F>);
+observer_complete_proxy_impl!(FilterObserver<O, F>, O, observer, <O, F>);
 
 impl<S, F> Fork for FilterOp<S, F>
 where

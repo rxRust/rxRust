@@ -1,4 +1,5 @@
 use crate::{
+  observer::observer_error_proxy_impl,
   ops::{take::TakeOp, SharedOp, Take},
   prelude::*,
 };
@@ -37,12 +38,12 @@ pub struct FirstOrOp<S, V> {
 
 impl<O, U, S, T> RawSubscribable<Subscriber<O, U>> for FirstOrOp<S, T>
 where
-  S: RawSubscribable<Subscriber<FirstOrSubscribe<O, T>, U>>,
+  S: RawSubscribable<Subscriber<FirstOrObserver<O, T>, U>>,
 {
   type Unsub = S::Unsub;
   fn raw_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub {
     let subscriber = Subscriber {
-      observer: FirstOrSubscribe {
+      observer: FirstOrObserver {
         observer: subscriber.observer,
         default: Some(self.default),
       },
@@ -66,21 +67,27 @@ where
   }
 }
 
-pub struct FirstOrSubscribe<S, T> {
+pub struct FirstOrObserver<S, T> {
   default: Option<T>,
   observer: S,
 }
 
-impl<Item, Err, S> Observer<Item, Err> for FirstOrSubscribe<S, Item>
+impl<O, Item> ObserverNext<Item> for FirstOrObserver<O, Item>
 where
-  S: Observer<Item, Err>,
+  O: ObserverNext<Item>,
 {
   fn next(&mut self, value: Item) {
     self.observer.next(value);
     self.default = None;
   }
-  #[inline(always)]
-  fn error(&mut self, err: Err) { self.observer.error(err); }
+}
+
+observer_error_proxy_impl!(FirstOrObserver<O, Item>, O, observer, <O, Item>);
+
+impl<O, Item> ObserverComplete for FirstOrObserver<O, Item>
+where
+  O: ObserverComplete + ObserverNext<Item>,
+{
   fn complete(&mut self) {
     if let Some(v) = Option::take(&mut self.default) {
       self.observer.next(v)
@@ -89,14 +96,14 @@ where
   }
 }
 
-impl<S, V> IntoShared for FirstOrSubscribe<S, V>
+impl<S, V> IntoShared for FirstOrObserver<S, V>
 where
   S: IntoShared,
   V: Send + Sync + 'static,
 {
-  type Shared = FirstOrSubscribe<S::Shared, V>;
+  type Shared = FirstOrObserver<S::Shared, V>;
   fn to_shared(self) -> Self::Shared {
-    FirstOrSubscribe {
+    FirstOrObserver {
       observer: self.observer.to_shared(),
       default: self.default,
     }

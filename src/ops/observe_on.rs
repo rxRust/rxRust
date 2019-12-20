@@ -74,11 +74,10 @@ where
   fn to_shared(self) -> Self { self }
 }
 
-impl<Item, Err, O, SD> Observer<Item, Err> for ObserveOnSubscribe<O, SD>
+impl<Item, O, SD> ObserverNext<Item> for ObserveOnSubscribe<O, SD>
 where
-  O: Observer<Item, Err> + Send + Sync + 'static,
   Item: Clone + Send + Sync + 'static,
-  Err: Clone + Send + Sync + 'static,
+  O: ObserverNext<Item> + Send + Sync + 'static,
   SD: Scheduler,
 {
   fn next(&mut self, value: Item) {
@@ -94,6 +93,14 @@ where
     );
     self.proxy.add(s);
   }
+}
+
+impl<Err, O, SD> ObserverError<Err> for ObserveOnSubscribe<O, SD>
+where
+  O: ObserverError<Err> + Send + Sync + 'static,
+  Err: Clone + Send + Sync + 'static,
+  SD: Scheduler,
+{
   fn error(&mut self, err: Err) {
     let s = self.scheduler.schedule(
       |mut subscription, state| {
@@ -108,6 +115,13 @@ where
     );
     self.proxy.add(s);
   }
+}
+
+impl<O, SD> ObserverComplete for ObserveOnSubscribe<O, SD>
+where
+  O: ObserverComplete + Send + Sync + 'static,
+  SD: Scheduler,
+{
   fn complete(&mut self) {
     let s = self.scheduler.schedule(
       |mut subscription, observer| {

@@ -140,9 +140,9 @@ where
   fn to_shared(self) -> Self::Shared { self }
 }
 
-impl<O, Item, Err> Observer<Item, Err> for ThrottleTimeObserver<O, Item>
+impl<O, Item> ObserverNext<Item> for ThrottleTimeObserver<O, Item>
 where
-  O: Observer<Item, Err> + Send + 'static,
+  O: ObserverNext<Item> + Send + 'static,
   Item: Clone + Send + 'static,
 {
   fn next(&mut self, value: Item) {
@@ -174,11 +174,22 @@ where
       }
     }
   }
+}
 
+impl<O, Item, Err> ObserverError<Err> for ThrottleTimeObserver<O, Item>
+where
+  O: ObserverError<Err>,
+{
   fn error(&mut self, err: Err) {
     let mut inner = self.0.lock().unwrap();
     inner.observer.error(err)
   }
+}
+
+impl<O, Item> ObserverComplete for ThrottleTimeObserver<O, Item>
+where
+  O: ObserverComplete + ObserverNext<Item>,
+{
   fn complete(&mut self) {
     let mut inner = self.0.lock().unwrap();
     if let Some(value) = inner.trailing_value.take() {

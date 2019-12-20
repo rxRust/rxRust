@@ -1,3 +1,4 @@
+use crate::observer::observer_next_proxy_impl;
 use crate::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -151,19 +152,24 @@ fn shared_observer<O>(
   }))
 }
 
-impl<Item, Err, O, Unsub> Observer<Item, Err> for MergeObserver<O, Unsub>
+observer_next_proxy_impl!(MergeObserver<O, Unsub>, O, observer, <O, Unsub>);
+
+impl<Err, O, Unsub> ObserverError<Err> for MergeObserver<O, Unsub>
 where
-  O: Observer<Item, Err>,
+  O: ObserverError<Err>,
   Unsub: SubscriptionLike,
 {
-  #[inline(always)]
-  fn next(&mut self, value: Item) { self.observer.next(value); }
-
   fn error(&mut self, err: Err) {
     self.observer.error(err);
     self.subscription.unsubscribe();
   }
+}
 
+impl<O, Unsub> ObserverComplete for MergeObserver<O, Unsub>
+where
+  O: ObserverComplete,
+  Unsub: SubscriptionLike,
+{
   fn complete(&mut self) {
     if self.completed_one {
       self.observer.complete();

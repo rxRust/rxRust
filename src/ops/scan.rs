@@ -1,3 +1,6 @@
+use crate::observer::{
+  observer_complete_proxy_impl, observer_error_proxy_impl,
+};
 use crate::prelude::*;
 use ops::SharedOp;
 use std::marker::PhantomData;
@@ -130,10 +133,11 @@ where
 // We're making `ScanObserver` being able to be subscribed to other observables
 // by implementing `Observer` trait. Thanks to this, it is able to observe
 // sources having `Item` type as its `InputItem` type.
-impl<InputItem, Err, Source, BinaryOp, OutputItem> Observer<InputItem, Err>
+
+impl<InputItem, Source, BinaryOp, OutputItem> ObserverNext<InputItem>
   for ScanObserver<Source, BinaryOp, OutputItem>
 where
-  Source: Observer<OutputItem, Err>,
+  Source: ObserverNext<OutputItem>,
   BinaryOp: FnMut(OutputItem, InputItem) -> OutputItem,
   OutputItem: Clone,
 {
@@ -142,13 +146,10 @@ where
     self.acc = (self.binary_op)(self.acc.clone(), value);
     self.target_observer.next(self.acc.clone())
   }
-
-  #[inline(always)]
-  fn error(&mut self, err: Err) { self.target_observer.error(err); }
-
-  #[inline(always)]
-  fn complete(&mut self) { self.target_observer.complete(); }
 }
+
+observer_error_proxy_impl!(ScanObserver<Source, BinaryOp, OutputItem>, Source, target_observer, <Source, BinaryOp, OutputItem>);
+observer_complete_proxy_impl!(ScanObserver<Source, BinaryOp, OutputItem>, Source, target_observer, <Source, BinaryOp, OutputItem>);
 
 impl<Source, BinaryOp, InputItem, OutputItem> Fork
   for ScanOp<Source, BinaryOp, InputItem, OutputItem>
