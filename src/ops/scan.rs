@@ -148,8 +148,10 @@ where
   }
 }
 
-observer_error_proxy_impl!(ScanObserver<Source, BinaryOp, OutputItem>, Source, target_observer, <Source, BinaryOp, OutputItem>);
-observer_complete_proxy_impl!(ScanObserver<Source, BinaryOp, OutputItem>, Source, target_observer, <Source, BinaryOp, OutputItem>);
+observer_error_proxy_impl!(ScanObserver<Source, BinaryOp, OutputItem>,
+  Source, target_observer, <Source, BinaryOp, OutputItem>);
+observer_complete_proxy_impl!(ScanObserver<Source, BinaryOp, OutputItem>,
+  Source, target_observer, <Source, BinaryOp, OutputItem>);
 
 impl<Source, BinaryOp, InputItem, OutputItem> Fork
   for ScanOp<Source, BinaryOp, InputItem, OutputItem>
