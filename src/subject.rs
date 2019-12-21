@@ -13,23 +13,30 @@ pub struct Subject<O, S> {
 
 pub type LocalObserver<P> = Rc<RefCell<Vec<P>>>;
 
-pub type LocalSubject<'a, Item, Err> =
-  Subject<LocalObserver<Box<dyn Publisher<Item, Err> + 'a>>, LocalSubscription>;
+type LSubject<V> = Subject<Rc<RefCell<V>>, LocalSubscription>;
 
-pub type LocalSubjectMutRef<'a, Item, Err> = Subject<
-  LocalObserver<Box<dyn for<'r> Publisher<&'r mut Item, &'r mut Err> + 'a>>,
-  LocalSubscription,
->;
+pub struct LocalSubjectVec<'a, Item, Err>(
+  Vec<Box<dyn Publisher<Item, Err> + 'a>>,
+);
+pub type LocalSubject<'a, Item, Err> = LSubject<LocalSubjectVec<'a, Item, Err>>;
 
-pub type LocalSubjectMutRefItem<'a, Item, Err> = Subject<
-  LocalObserver<Box<dyn for<'r> Publisher<&'r mut Item, Err> + 'a>>,
-  LocalSubscription,
->;
+pub struct LocalSubjectMutRefVec<'a, Item, Err>(
+  Vec<Box<dyn for<'r> Publisher<&'r mut Item, &'r mut Err> + 'a>>,
+);
+pub type LocalSubjectMutRef<'a, Item, Err> =
+  LSubject<LocalSubjectMutRefVec<'a, Item, Err>>;
 
-pub type LocalSubjectMutRefErr<'a, Item, Err> = Subject<
-  LocalObserver<Box<dyn for<'r> Publisher<Item, &'r mut Err> + 'a>>,
-  LocalSubscription,
->;
+pub struct LocalSubjectMutRefItemVec<'a, Item, Err>(
+  Vec<Box<dyn for<'r> Publisher<&'r mut Item, Err> + 'a>>,
+);
+pub type LocalSubjectMutRefItem<'a, Item, Err> =
+  LSubject<LocalSubjectMutRefItemVec<'a, Item, Err>>;
+
+pub struct LocalSubjectMutRefErrVec<'a, Item, Err>(
+  Vec<Box<dyn for<'r> Publisher<Item, &'r mut Err> + 'a>>,
+);
+pub type LocalSubjectMutRefErr<'a, Item, Err> =
+  LSubject<LocalSubjectMutRefErrVec<'a, Item, Err>>;
 
 type SharedPublishers<Item, Err> =
   Arc<Mutex<Vec<Box<dyn Publisher<Item, Err> + Send + Sync>>>>;
@@ -37,32 +44,34 @@ type SharedPublishers<Item, Err> =
 pub type SharedSubject<Item, Err> =
   Subject<SharedPublishers<Item, Err>, SharedSubscription>;
 
+macro local_subject_create($ty: ident) {
+  Subject {
+    observers: Rc::new(RefCell::new($ty(vec![]))),
+    subscription: LocalSubscription::default(),
+  }
+}
+
 impl<'a, Item, Err> LocalSubject<'a, Item, Err> {
-  #[inline(always)]
-  pub fn local() -> Self { Subject::new() }
+  pub fn local() -> Self { local_subject_create!(LocalSubjectVec) }
 }
 
 impl<'a, Item, Err> LocalSubjectMutRef<'a, Item, Err> {
-  #[inline(always)]
-  pub fn local_mut_ref() -> Self { Subject::new() }
+  pub fn local_mut_ref() -> Self {
+    local_subject_create!(LocalSubjectMutRefVec)
+  }
 }
 
 impl<'a, Item, Err> LocalSubjectMutRefItem<'a, Item, Err> {
   #[inline(always)]
-  pub fn local_mut_ref_item() -> Self { Subject::new() }
+  pub fn local_mut_ref_item() -> Self {
+    local_subject_create!(LocalSubjectMutRefItemVec)
+  }
 }
 
 impl<'a, Item, Err> LocalSubjectMutRefErr<'a, Item, Err> {
   #[inline(always)]
-  pub fn local_mut_ref_err() -> Self { Subject::new() }
-}
-
-impl<P> Subject<LocalObserver<P>, LocalSubscription> {
-  fn new() -> Self {
-    Subject {
-      observers: Rc::new(RefCell::new(vec![])),
-      subscription: LocalSubscription::default(),
-    }
+  pub fn local_mut_ref_err() -> Self {
+    local_subject_create!(LocalSubjectMutRefErrVec)
   }
 }
 
@@ -100,7 +109,7 @@ where
       "Cannot convert a `LocalSubscription` to `SharedSubscription` \
        when it referenced by other.",
     );
-    let observers = if observers.is_empty() {
+    let observers = if observers.0.is_empty() {
       Arc::new(Mutex::new(vec![]))
     } else {
       panic!(
@@ -121,7 +130,7 @@ macro local_subject_raw_subscribe_impl($o: ident,$u: ident) {
   fn raw_subscribe(mut self, subscriber: Subscriber<$o, $u>) -> Self::Unsub {
     let subscription = subscriber.subscription.clone();
     self.subscription.add(subscription.clone());
-    self.observers.borrow_mut().push(Box::new(subscriber));
+    self.observers.borrow_mut().0.push(Box::new(subscriber));
     subscription
   }
 }
@@ -199,106 +208,14 @@ where
   fn fork(&self) -> Self::Output { self.clone() }
 }
 
-/// By default, `Subject` can only emit item which implemented `Copy`,
-/// that because subject is a multicast stream, need pass item to multi
-/// subscriber.
-/// But `Copy` bound is not perfect to subject. Like `&mut T` should be emitted
-/// by `Subject`, because `Subject` just immediately pass it to subscribers and
-/// never alias it, but `&mut T` is not `Copy`.
-/// So we introduced `SubjectCopy`, it's only use to support `Item` be passed
-/// to many subscriber in `Subject`. The drawback is `SubjectCopy` is not auto
-/// implement for a type when the type is implemented `Copy`. Just use macro
-/// `impl_subject_copy_for_copy!` to impl `SubjectCopy` for your type after
-/// implemented `Copy`.
-///
-/// # Example
-/// ```
-/// # use rxrust::prelude::*;
-/// # use rxrust::subject::impl_subject_copy_for_copy;
-///
-/// #[derive(Clone)]
-/// struct CustomType;
-///
-/// impl Copy for CustomType {}
-/// impl_subject_copy_for_copy!(CustomType);
-///
-/// // can pass `&mut CustomType` now.
-/// let mut ct = CustomType;
-///
-/// let mut subject = Subject::local();
-/// subject.next(&mut ct);
-/// subject.error(());
-/// ```
-pub trait SubjectCopy {
-  fn copy(&self) -> Self;
-}
-
-/// todo: maybe we can support SubjectCopy like below.
-///
-/// impl<T: Copy> SubjectCopy for T {
-/// #[inline]
-///   fn copy(&self) -> Self { self.clone() }
-/// }
-///
-/// impl<T> SubjectCopy for &mut T {
-///   #[inline]
-///   fn copy(&self) -> Self { unsafe { std::mem::transmute_copy(self) } }
-/// }
-///
-/// but code like these can't compile, so we'll implement `SubjectCopy` for
-/// primitive types.
-impl<T> SubjectCopy for &mut T {
-  #[inline]
-  fn copy(&self) -> Self { unsafe { std::mem::transmute_copy(self) } }
-}
-
-pub macro impl_subject_copy_for_copy($t: ty) {
-  impl SubjectCopy for $t {
-    #[inline]
-    fn copy(&self) -> Self { *self }
-  }
-}
-mod subject_copy_impls {
-  use super::{impl_subject_copy_for_copy, SubjectCopy};
-
-  macro impl_subject_copys($($t:ty )*) {
-    $(impl_subject_copy_for_copy!($t);)*
-  }
-
-  impl_subject_copys! {
-      usize u8 u16 u32 u64 u128
-      isize i8 i16 i32 i64 i128
-      f32 f64
-      bool char
-  }
-
-  impl_subject_copy_for_copy!(!);
-  impl_subject_copy_for_copy!(());
-
-  impl<T: ?Sized> SubjectCopy for *const T {
-    #[inline]
-    fn copy(&self) -> Self { *self }
-  }
-
-  impl<T: ?Sized> SubjectCopy for *mut T {
-    #[inline]
-    fn copy(&self) -> Self { *self }
-  }
-
-  impl<T: ?Sized> SubjectCopy for &T {
-    #[inline]
-    fn copy(&self) -> Self { *self }
-  }
-}
-
 impl<Item, T> ObserverNext<Item> for Vec<T>
 where
-  Item: SubjectCopy,
+  Item: Copy,
   T: ObserverNext<Item> + SubscriptionLike,
 {
   fn next(&mut self, value: Item) {
     self.drain_filter(|subscriber| {
-      subscriber.next(value.copy());
+      subscriber.next(value);
       subscriber.is_closed()
     });
   }
@@ -306,12 +223,12 @@ where
 
 impl<Err, T> ObserverError<Err> for Vec<T>
 where
-  Err: SubjectCopy,
+  Err: Copy,
   T: ObserverError<Err> + SubscriptionLike,
 {
   fn error(&mut self, err: Err) {
     self.iter_mut().for_each(|subscriber| {
-      subscriber.error(err.copy());
+      subscriber.error(err);
     });
     self.clear();
   }
@@ -327,6 +244,119 @@ where
     });
     self.clear();
   }
+}
+
+/// After rust fixed [this bug](https://github.com/rust-lang/rust/issues/48869)
+/// we needn't split local subject to four vec collection type, and implement
+/// `Observer` for them one by one.LocalSubjectMutRefErrVec
+///
+/// Just implement specialization versions of `Observer` for `Vec<T>`, like this
+/// ```ignore
+/// impl<Item, T> ObserverNext<&mut Item> for Vec<T>
+/// where
+///   T: for<'r> ObserverNext<&'r mut Item> + SubscriptionLike,
+/// {
+///   fn next(&mut self, value: &mut Item) {
+///     self.drain_filter(|subscriber| {
+///       subscriber.next(value);
+///       subscriber.is_closed()
+///     });
+///   }
+/// }
+/// ```
+///
+/// specialization impl for local subject.
+
+macro impl_local_subject_vec_observer_next($item: ty) {
+  fn next(&mut self, value: $item) {
+    self.0.drain_filter(|subscriber| {
+      subscriber.next(value);
+      subscriber.is_closed()
+    });
+  }
+}
+
+macro impl_local_subject_vec_observer_error($err: ty) {
+  fn error(&mut self, err: $err) {
+      self.0.iter_mut().for_each(|subscriber| {
+        subscriber.error(err);
+      });
+      self.0.clear();
+    }
+}
+macro impl_local_subject_vec_observer_complete() {
+  fn complete(&mut self) {
+      self.0.iter_mut().for_each(|subscriber| {
+        subscriber.complete();
+      });
+      self.0.clear();
+    }
+}
+
+impl<'a, Item, Err> ObserverNext<Item> for LocalSubjectVec<'a, Item, Err>
+where
+  Item: Copy,
+{
+  impl_local_subject_vec_observer_next!(Item);
+}
+impl<'a, Item, Err> ObserverError<Err> for LocalSubjectVec<'a, Item, Err>
+where
+  Err: Copy,
+{
+  impl_local_subject_vec_observer_error!(Err);
+}
+impl<'a, Item, Err> ObserverComplete for LocalSubjectVec<'a, Item, Err> {
+  impl_local_subject_vec_observer_complete!();
+}
+
+impl<'a, Item, Err> ObserverNext<&mut Item>
+  for LocalSubjectMutRefItemVec<'a, Item, Err>
+{
+  impl_local_subject_vec_observer_next!(&mut Item);
+}
+impl<'a, Item, Err> ObserverError<Err>
+  for LocalSubjectMutRefItemVec<'a, Item, Err>
+where
+  Err: Copy,
+{
+  impl_local_subject_vec_observer_error!(Err);
+}
+impl<'a, Item, Err> ObserverComplete
+  for LocalSubjectMutRefItemVec<'a, Item, Err>
+{
+  impl_local_subject_vec_observer_complete!();
+}
+
+impl<'a, Item, Err> ObserverNext<Item>
+  for LocalSubjectMutRefErrVec<'a, Item, Err>
+where
+  Item: Copy,
+{
+  impl_local_subject_vec_observer_next!(Item);
+}
+impl<'a, Item, Err> ObserverError<&mut Err>
+  for LocalSubjectMutRefErrVec<'a, Item, Err>
+{
+  impl_local_subject_vec_observer_error!(&mut Err);
+}
+impl<'a, Item, Err> ObserverComplete
+  for LocalSubjectMutRefErrVec<'a, Item, Err>
+{
+  impl_local_subject_vec_observer_complete!();
+}
+
+impl<'a, Item, Err> ObserverNext<&mut Item>
+  for LocalSubjectMutRefVec<'a, Item, Err>
+{
+  impl_local_subject_vec_observer_next!(&mut Item);
+}
+impl<'a, Item, Err> ObserverError<&mut Err>
+  for LocalSubjectMutRefVec<'a, Item, Err>
+{
+  impl_local_subject_vec_observer_error!(&mut Err);
+}
+impl<'a, Item, Err> ObserverComplete for LocalSubjectMutRefVec<'a, Item, Err> {
+  impl_local_subject_vec_observer_complete!();
 }
 
 impl<Item, S, O> ObserverNext<Item> for Subject<O, S>
@@ -381,12 +411,6 @@ mod test {
     let mut subject = Subject::local_mut_ref_item();
     subject.fork().subscribe(|_: &mut _| {});
     subject.next(&mut 1);
-
-    let ds = Subject::local_mut_ref_item();
-    subject.fork().raw_subscribe(Subscriber {
-      observer: ds.observers,
-      subscription: ds.subscription,
-    });
   }
   #[test]
   fn base_data_flow() {
