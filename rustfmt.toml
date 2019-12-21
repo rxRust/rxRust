@@ -2,7 +2,5 @@ error_on_line_overflow = true
 error_on_unformatted = true
 max_width = 80
 tab_spaces = 2
-fn_args_density = "Compressed"
 fn_single_line = true
-
 version = "Two"

@@ -270,7 +270,7 @@ fn filter() {
 
   subject
     .fork()
-    .filter_map(|v: &mut i32| Some(v))
+    .filter_map::<_, &mut i32, _>(Some)
     .publish_mut_ref()
     .subscribe_err(|_: &mut i32| {}, |_: &mut i32| {});
 
