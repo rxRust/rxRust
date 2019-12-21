@@ -20,18 +20,21 @@ pub struct LocalSubjectVec<'a, Item, Err>(
 );
 pub type LocalSubject<'a, Item, Err> = LSubject<LocalSubjectVec<'a, Item, Err>>;
 
+#[allow(clippy::type_complexity)]
 pub struct LocalSubjectMutRefVec<'a, Item, Err>(
   Vec<Box<dyn for<'r> Publisher<&'r mut Item, &'r mut Err> + 'a>>,
 );
 pub type LocalSubjectMutRef<'a, Item, Err> =
   LSubject<LocalSubjectMutRefVec<'a, Item, Err>>;
 
+#[allow(clippy::type_complexity)]
 pub struct LocalSubjectMutRefItemVec<'a, Item, Err>(
   Vec<Box<dyn for<'r> Publisher<&'r mut Item, Err> + 'a>>,
 );
 pub type LocalSubjectMutRefItem<'a, Item, Err> =
   LSubject<LocalSubjectMutRefItemVec<'a, Item, Err>>;
 
+#[allow(clippy::type_complexity)]
 pub struct LocalSubjectMutRefErrVec<'a, Item, Err>(
   Vec<Box<dyn for<'r> Publisher<Item, &'r mut Err> + 'a>>,
 );
