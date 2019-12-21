@@ -146,5 +146,5 @@ Specialty Observables that have more precisely-controlled subscription dynamics
   - [ ] having some real life representative algorithms implemented to measure over performance,
   - [ ] more complex test, not just `bool` or `i32`. Maybe bringing a mocking library?
 - [ ] ci
-  - [ ] unit test coverage report.
+  - [x] unit test coverage report.
   - [ ] benchmark to measure the performance for every commit.
