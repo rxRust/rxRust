@@ -1,16 +1,16 @@
 # RxRust: a zero cost Rust implementation of Reactive Extensions
 [![](https://docs.rs/rxrust/badge.svg)](https://docs.rs/rxrust/)
 [![codecov](https://codecov.io/gh/rxRust/rxRust/branch/master/graph/badge.svg)](https://codecov.io/gh/rxRust/rxRust)
-![](https://github.com/M-Adoo/rxRust/workflows/test/badge.svg)
+![](https://github.com/rxRust/rxRust/workflows/test/badge.svg)
 [![](https://img.shields.io/crates/v/rxrust.svg)](https://crates.io/crates/rxrust)
 [![](https://img.shields.io/crates/d/rxrust.svg)](https://crates.io/crates/rxrust)
 
 ## Usage
 Add this to your Cargo.toml:
 
-```ignore
+```toml
 [dependencies]
-rxrust = "0.7.1";
+rxrust = "0.7.1"
 ```
 
 ## Example 
