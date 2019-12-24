@@ -1,6 +1,6 @@
-## [Unreleased](https://github.com/M-Adoo/rxRust/compare/v0.7.0...HEAD)
+## [Unreleased](https://github.com/rxRust/rxRust/compare/v0.7.0...HEAD)
 
-## [0.7.0](https://github.com/M-Adoo/rxRust/releases/tag/v0.7.0)  (2019-12-12)
+## [0.7.0](https://github.com/rxRust/rxRust/releases/tag/v0.7.0)  (2019-12-12)
 
 ### Features
 
@@ -11,7 +11,7 @@
 - **observable**: `LocalConnectableObservable` and `SharedConnectableObservable` has merged into `ConnectableObservable`
 - **observable**: remove generic type `Item` and `Err` from `RawSubscribable`, almost not effect user code.
 
-## [0.6.0](https://github.com/M-Adoo/rxRust/releases/tag/v0.6.0)  (2019-12-07)
+## [0.6.0](https://github.com/rxRust/rxRust/releases/tag/v0.6.0)  (2019-12-07)
 
 ### Breaking Changes
 
@@ -19,7 +19,7 @@
 - **operator**: remove `map_return_ref` operator, now `map` cover its use scenes.
 - **operator**: remove `filter_map_return_ref`, now `filter_map` cover its use scenes.
 
-## [0.5.0](https://github.com/M-Adoo/rxRust/releases/tag/v0.5.0)  (2019-11-19)
+## [0.5.0](https://github.com/rxRust/rxRust/releases/tag/v0.5.0)  (2019-11-19)
 
 ### Features
 - **operator**: add `scan` operator.
@@ -36,7 +36,7 @@
 - **observable**: macros `of!`, `empty!`, `from_iter!`, `from_future!` and
   `from_future_with_errors!` replaced by functions.
 
-## [0.4.0](https://github.com/M-Adoo/rxRust/releases/tag/v0.4.0)  (2019-11-07)
+## [0.4.0](https://github.com/rxRust/rxRust/releases/tag/v0.4.0)  (2019-11-07)
 
 ### Features
 - **observable**: add `ConnectableObservable` to support multicast.
@@ -69,7 +69,7 @@ pub trait Scheduler {
 }
 ```
 
-## [0.3.0](https://github.com/M-Adoo/rxRust/releases/tag/v0.3.0)  (2019-10-12)
+## [0.3.0](https://github.com/rxRust/rxRust/releases/tag/v0.3.0)  (2019-10-12)
 
 ### Code Refactoring
 
@@ -113,7 +113,7 @@ assert_eq!(res, 100);
 - **observe_on**: unsubscribe should also cancel dispatched message.
 - **subscribe_on**: unsubscribe should also cancel task in scheduler queue.
 
-## [0.2.0](https://github.com/M-Adoo/rxRust/releases/tag/v0.2.0)  (2019-09-02)
+## [0.2.0](https://github.com/rxRust/rxRust/releases/tag/v0.2.0)  (2019-09-02)
 
 ### Features
 - **observable**: add `observable::from_vec` and `observable::from_range`
