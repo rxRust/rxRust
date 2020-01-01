@@ -54,7 +54,7 @@ pub(crate) macro observer_error_proxy_impl(
 }
 
 pub(crate) macro observer_complete_proxy_impl(
-  $t: ty, $host_ty: ident, $name: ident, <$($generics: tt),*>) {
+  $t: ty, $host_ty: ident, $name: tt, <$($generics: tt),*>) {
   impl<$($generics),*> ObserverComplete for $t
     where $host_ty: ObserverComplete
   {
@@ -95,30 +95,6 @@ observer_error_pointer_proxy_impl!(
 observer_complete_pointer_proxy_impl!(
   Box<dyn Observer<Item, Err> + 'a>, <'a, Item, Err>);
 
-// implement `Observer for  Box<dyn for<'r> Observer<&'r mut Item, Err> + 'a>
-observer_next_pointer_proxy_impl!(
-  &mut Item, Box<dyn for<'r> Observer<&'r mut Item, Err> + 'a>, <'a, Item, Err>);
-observer_error_pointer_proxy_impl!(
-  Err, Box<dyn for<'r> Observer<&'r mut Item, Err> + 'a>, <'a, Item, Err> );
-observer_complete_pointer_proxy_impl!(
-  Box<dyn for<'r> Observer<&'r mut Item, Err> + 'a>, <'a, Item, Err> );
-
-// implement `Observer` for  Box<dyn for<'r> Observer<Item, &'r mut  Err> + 'a>
-observer_next_pointer_proxy_impl!(
-  Item, Box<dyn for<'r> Observer<Item, &'r mut Err> + 'a>, <'a, Item, Err>);
-observer_error_pointer_proxy_impl!(
-  &mut Err, Box<dyn for<'r> Observer<Item, &'r mut Err> + 'a>, <'a, Item, Err>);
-observer_complete_pointer_proxy_impl!(
-  Box<dyn for<'r> Observer<Item, &'r mut Err> + 'a>, <'a, Item, Err>);
-
-// implement `Observer and emit mut ref error for  Box<dyn for<'r> Observer<&'r mut Item, &'r mut Err> + 'a>
-observer_next_pointer_proxy_impl!(
-  &mut Item, Box<dyn for<'r> Observer<&'r mut Item, &'r mut Err> + 'a> , <'a, Item, Err>);
-observer_error_pointer_proxy_impl!(
-  &mut Err, Box<dyn for<'r> Observer<&'r mut Item, &'r mut Err> + 'a> , <'a, Item, Err>);
-observer_complete_pointer_proxy_impl!(
-  Box<dyn for<'r> Observer<&'r mut Item, &'r mut Err> + 'a> , <'a, Item, Err>);
-
 // implement `Observer` for Box<dyn Observer<Item, Err> + Send + Sync>
 observer_next_pointer_proxy_impl!(
   Item, Box<dyn Observer<Item, Err> + Send + Sync>, <'a, Item, Err>);
@@ -134,30 +110,6 @@ observer_error_pointer_proxy_impl!(
   Err, Box<dyn Publisher<Item, Err> + 'a>, <'a, Item, Err>);
 observer_complete_pointer_proxy_impl!(
   Box<dyn Publisher<Item, Err> + 'a>, <'a, Item, Err>);
-
-// implement `Observer` which emit mut ref item for  Box<dyn for<'r> Publisher<&'r mut Item, Err> + 'a>
-observer_next_pointer_proxy_impl!(
-  &mut Item,  Box<dyn for<'r> Publisher<&'r mut Item, Err> + 'a>, <'a, Item, Err> );
-observer_error_pointer_proxy_impl!(
-  Err,  Box<dyn for<'r> Publisher<&'r mut Item, Err> + 'a>, <'a, Item, Err> );
-observer_complete_pointer_proxy_impl!(
-  Box<dyn for<'r> Publisher<&'r mut Item, Err> + 'a>, <'a, Item, Err> );
-
-// implement `Observer` which emit mut ref error for  Box<dyn for<'r> Publisher<Item, &'r mut  Err> + 'a>
-observer_next_pointer_proxy_impl!(
-  Item, Box<dyn for<'r> Publisher<Item, &'r mut Err> + 'a>, <'a, Item, Err>);
-observer_error_pointer_proxy_impl!(
-  &mut Err, Box<dyn for<'r> Publisher<Item, &'r mut Err> + 'a>, <'a, Item, Err>);
-observer_complete_pointer_proxy_impl!(
-  Box<dyn for<'r> Publisher<Item, &'r mut Err> + 'a>, <'a, Item, Err>);
-
-// implement `Observer` which emit mut ref item and emit mut ref error for  Box<dyn for<'r> Publisher<&'r mut Item, &'r mut Err> + 'a>
-observer_next_pointer_proxy_impl!(
-  &mut Item, Box<dyn for<'r> Publisher<&'r mut Item, &'r mut Err> + 'a> , <'a, Item, Err>);
-observer_error_pointer_proxy_impl!(
-  &mut Err, Box<dyn for<'r> Publisher<&'r mut Item, &'r mut Err> + 'a> , <'a, Item, Err>);
-observer_complete_pointer_proxy_impl!(
-  Box<dyn for<'r> Publisher<&'r mut Item, &'r mut Err> + 'a> , <'a, Item, Err>);
 
 // implement `Observer` for Box<dyn Publisher<Item, Err> + Send + Sync>
 observer_next_pointer_proxy_impl!(

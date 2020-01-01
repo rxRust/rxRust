@@ -1,8 +1,5 @@
 use crate::prelude::*;
-use crate::subject::{
-  LocalSubjectMutRef, LocalSubjectMutRefErr, LocalSubjectMutRefItem,
-  SharedSubject,
-};
+use crate::subject::{LocalSubject, SharedSubject};
 
 pub struct ConnectableObservable<Source, Subject> {
   source: Source,
@@ -14,15 +11,16 @@ pub trait Connect {
   fn connect(self) -> Self::Unsub;
 }
 
-impl<S, O, U, Subscriber> RawSubscribable<Subscriber>
+impl<S, O, U, Sub> RawSubscribable<Sub>
   for ConnectableObservable<S, Subject<O, U>>
 where
-  Subject<O, U>: RawSubscribable<Subscriber>,
+  S: RawSubscribable<Subscriber<O, U>>,
+  Subject<O, U>: RawSubscribable<Sub>,
 {
-  type Unsub = <Subject<O, U> as RawSubscribable<Subscriber>>::Unsub;
+  type Unsub = <Subject<O, U> as RawSubscribable<Sub>>::Unsub;
 
   #[inline(always)]
-  fn raw_subscribe(self, subscriber: Subscriber) -> Self::Unsub {
+  fn raw_subscribe(self, subscriber: Sub) -> Self::Unsub {
     self.subject.raw_subscribe(subscriber)
   }
 }
@@ -32,37 +30,6 @@ impl<'a, Item, Err, S> ConnectableObservable<S, LocalSubject<'a, Item, Err>> {
     Self {
       source: observable,
       subject: Subject::local(),
-    }
-  }
-}
-
-impl<'a, Item, Err, S>
-  ConnectableObservable<S, LocalSubjectMutRef<'a, Item, Err>>
-{
-  pub fn local_mut_ref(observable: S) -> Self {
-    Self {
-      source: observable,
-      subject: Subject::local_mut_ref(),
-    }
-  }
-}
-impl<'a, Item, Err, S>
-  ConnectableObservable<S, LocalSubjectMutRefItem<'a, Item, Err>>
-{
-  pub fn local_mut_ref_item(observable: S) -> Self {
-    Self {
-      source: observable,
-      subject: Subject::local_mut_ref_item(),
-    }
-  }
-}
-impl<'a, Item, Err, S>
-  ConnectableObservable<S, LocalSubjectMutRefErr<'a, Item, Err>>
-{
-  pub fn local_mut_ref_err(observable: S) -> Self {
-    Self {
-      source: observable,
-      subject: Subject::local_mut_ref_err(),
     }
   }
 }

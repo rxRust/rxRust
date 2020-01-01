@@ -6,42 +6,17 @@
 ///
 use crate::observable::connectable_observable::ConnectableObservable;
 pub use crate::prelude::*;
-use crate::subject::{
-  LocalSubjectMutRef, LocalSubjectMutRefErr, LocalSubjectMutRefItem,
-};
 
-pub trait Publish<'a, Item, Err>
-where
-  Self: Sized,
-{
+pub trait Publish<'a, Item, Err>: Sized {
+  fn publish(self) -> ConnectableObservable<Self, LocalSubject<'a, Item, Err>>;
+}
+
+impl<'a, Item, Err, T> Publish<'a, Item, Err> for T {
   #[inline(always)]
   fn publish(self) -> ConnectableObservable<Self, LocalSubject<'a, Item, Err>> {
     ConnectableObservable::local(self)
   }
-
-  #[inline(always)]
-  fn publish_mut_ref(
-    self,
-  ) -> ConnectableObservable<Self, LocalSubjectMutRef<'a, Item, Err>> {
-    ConnectableObservable::local_mut_ref(self)
-  }
-
-  #[inline(always)]
-  fn publish_mut_ref_item(
-    self,
-  ) -> ConnectableObservable<Self, LocalSubjectMutRefItem<'a, Item, Err>> {
-    ConnectableObservable::local_mut_ref_item(self)
-  }
-
-  #[inline(always)]
-  fn publish_mut_ref_err(
-    self,
-  ) -> ConnectableObservable<Self, LocalSubjectMutRefErr<'a, Item, Err>> {
-    ConnectableObservable::local_mut_ref_err(self)
-  }
 }
-
-impl<'a, Item, Err, T> Publish<'a, Item, Err> for T {}
 
 #[test]
 fn smoke() {
