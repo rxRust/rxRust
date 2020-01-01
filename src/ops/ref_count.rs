@@ -237,11 +237,11 @@ fn fork_and_shared() {
   use crate::ops::Publish;
   observable::of(1).publish().ref_count().subscribe(|_| {});
 
-  LocalSubject::<'_, (), ()>::local()
+  LocalSubject::local()
     .publish()
     .ref_count()
     .to_shared()
-    .subscribe(|_| {});
+    .subscribe(|_: i32| {});
 
   observable::of(1)
     .publish()
@@ -266,13 +266,13 @@ fn fork_and_shared() {
 #[test]
 fn filter() {
   use crate::ops::{FilterMap, Publish};
-  let mut subject = Subject::local_mut_ref();
+  let mut subject = Subject::local();
 
   subject
     .fork()
-    .filter_map::<_, &mut i32, _>(Some)
-    .publish_mut_ref()
-    .subscribe_err(|_: &mut i32| {}, |_: &mut i32| {});
+    .filter_map::<fn(&mut i32) -> Option<&mut i32>, _, _>(|v| Some(v))
+    .publish()
+    .subscribe_err(|_: &mut _| {}, |_: &mut i32| {});
 
   subject.next(&mut 1);
   subject.error(&mut 2);

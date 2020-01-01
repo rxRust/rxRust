@@ -192,12 +192,12 @@ mod test {
   }
   #[test]
   fn filter_map_mut_ref() {
-    use crate::subject::LocalSubjectMutRefItem;
-
-    let subject: LocalSubjectMutRefItem<'_, i32, ()> =
-      Subject::local_mut_ref_item();
+    let mut subject = Subject::local();
     subject
-      .filter_map((|v| Some(v)) as fn(v: &mut i32) -> Option<&mut i32>)
-      .subscribe(|_: &mut _| {});
+      .fork()
+      .filter_map::<fn(&mut i32) -> Option<&mut i32>, _, _>(|v| Some(v))
+      .subscribe(|_: &mut i32| {});
+
+    subject.next(&mut 1);
   }
 }
