@@ -277,3 +277,13 @@ fn filter() {
   subject.next(&mut 1);
   subject.error(&mut 2);
 }
+
+#[test]
+#[should_panic]
+fn convert_local_ref_count_to_shared_should_panic() {
+  use crate::ops::Publish;
+
+  let ref_count = Subject::local().fork().publish().ref_count();
+  ref_count.fork().subscribe(|_: i32| {});
+  ref_count.to_shared();
+}
