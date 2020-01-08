@@ -1,4 +1,18 @@
-## [Unreleased](https://github.com/rxRust/rxRust/compare/v0.7.0...HEAD)
+## [Unreleased](https://github.com/rxRust/rxRust/compare/v0.7.2...HEAD)
+
+## [0.7.2](https://github.com/rxRust/rxRust/releases/tag/v0.7.1)  (2019-12-12)
+
+### Refactor
+
+- **Subject**: merge four version local subject into same version.
+
+### Breaking Changes
+
+- **Subject**: `Subject::local`,`Subject::local_mut_ref`, `Subject::local_mut_ref_item` and `Subject::local_mut_ref_err` merge into `Subject::local`.
+
+## [0.7.1](https://github.com/rxRust/rxRust/releases/tag/v0.7.1)  (2019-12-12)
+
+**Nothing changed, just fix release package**
 
 ## [0.7.0](https://github.com/rxRust/rxRust/releases/tag/v0.7.0)  (2019-12-12)
 
