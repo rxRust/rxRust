@@ -373,14 +373,25 @@ mod test {
     subject.next(&1);
 
     let mut i = 1;
-    // emit mut ref
+    // emit item by mut ref, emit error by value
     let mut subject = Subject::local();
-    subject.fork().subscribe(|v: &mut _| {
-      *v = 100;
-    });
+    subject.fork().subscribe_err(|v: &mut _| *v = 100, |_| {});
     subject.next(&mut i);
+    subject.error(1);
     assert_eq!(i, 100);
+
+    // emit item by value, emit error by mut ref
+    let mut subject = Subject::local();
+    subject.fork().subscribe_err(|_| {}, |_: &mut _| {});
+    subject.next(1);
+    subject.error(&mut 1);
+    // emit item by mut ref and emit error by mut ref
+    let mut subject = Subject::local();
+    subject.fork().subscribe_err(|_: &mut _| {}, |_: &mut _| {});
+    subject.next(&mut 1);
+    subject.error(&mut 1);
   }
+
   #[test]
   fn base_data_flow() {
     let mut i = 0;
@@ -474,5 +485,13 @@ mod test {
     });
     local.next(1);
     local.error(2);
+  }
+
+  #[test]
+  #[should_panic]
+  fn convert_subscribed_local_subject_to_shared_should_panic() {
+    let subject = Subject::local();
+    subject.fork().subscribe(|_: i32| {});
+    subject.to_shared();
   }
 }
