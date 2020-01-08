@@ -7,6 +7,9 @@ description = "A Rust implementation of Reactive Extensions."
 keywords = ["reactivex", "rx", "frp"]
 license = "MIT"
 
+[package.metadata.release]
+no-dev-version = false
+
 [dependencies]
 futures-preview = "=0.3.0-alpha.18"
 lazy_static = "1.3.0"
