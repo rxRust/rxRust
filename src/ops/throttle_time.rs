@@ -204,7 +204,7 @@ fn smoke() {
   let x = Arc::new(Mutex::new(vec![]));
   let x_c = x.clone();
 
-  let interval = observable::interval!(Duration::from_millis(5));
+  let interval = observable::interval(Duration::from_millis(5));
   let throttle_subscribe = |edge| {
     let x = x.clone();
     interval
