@@ -11,7 +11,7 @@ use std::time::Duration;
 /// use rxrust::{ prelude::*, ops::{ ThrottleTime, ThrottleEdge }};
 /// use std::time::Duration;
 ///
-/// observable::interval!(Duration::from_millis(1))
+/// observable::interval(Duration::from_millis(1))
 ///   .throttle_time(Duration::from_millis(9), ThrottleEdge::Leading)
 ///   .subscribe(move |v| println!("{}", v));
 /// ```
