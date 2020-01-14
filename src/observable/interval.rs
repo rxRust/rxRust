@@ -1,5 +1,6 @@
 #![allow(unused_imports)]
 use crate::observable::from_future::DEFAULT_RUNTIME;
+use crate::observable::SharedOp;
 use crate::prelude::*;
 use futures::prelude::*;
 use futures::{future::RemoteHandle, task::SpawnExt};
@@ -9,23 +10,44 @@ use std::time::{Duration, Instant};
 /// Creates an observable which will fire at `dur` time into the future,
 /// and will repeat every `dur` interval after.
 ///
-pub macro interval($dur: expr) {
-  interval_observable!(Interval::new($dur))
+pub fn interval<O, Err>(
+  dur: Duration,
+) -> IntervalOp<impl IntervalFnOnce<O>, Err>
+where
+  O: Observer<usize, Err> + Send + Sync + 'static,
+  Err: 'static,
+{
+  interval_observable_impl(move || Interval::new(dur))
 }
 
-/// Creates a observable which will fire at the time specified by `at`,
+/// Creates an observable which will fire at the time specified by `at`,
 /// and then will repeat every `dur` interval after
 ///
-pub macro interval_at($at: expr, $dur: expr) {
-  interval_observable!(Interval::new_at(at, dur))
+pub fn interval_at<O, Err>(
+  at: Instant,
+  dur: Duration,
+) -> IntervalOp<impl IntervalFnOnce<O>, Err>
+where
+  O: Observer<usize, Err> + Send + Sync + 'static,
+  Err: 'static,
+{
+  interval_observable_impl(move || Interval::new_at(at, dur))
 }
 
-#[allow(unused_macros)]
-macro interval_observable($interval: expr) {
-  Observable::new(move |mut subscriber: Subscriber<_, SharedSubscription>| {
+pub type IntervalOp<F, Err> = SharedOp<Observable<F, usize, Err>>;
+pub trait IntervalFnOnce<O> = FnOnce(Subscriber<O, SharedSubscription>) + Clone;
+
+fn interval_observable_impl<O, Err>(
+  build_interval: impl FnOnce() -> Interval + Send + Sync + Clone + 'static,
+) -> IntervalOp<impl IntervalFnOnce<O>, Err>
+where
+  O: Observer<usize, Err> + Send + Sync + 'static,
+  Err: 'static,
+{
+  Observable::new(move |mut subscriber: Subscriber<O, SharedSubscription>| {
     let mut subscription = subscriber.subscription.clone();
     let mut number = 0;
-    let f = $interval.for_each(move |_| {
+    let f = build_interval().for_each(move |_| {
       subscriber.next(number);
       number += 1;
       future::ready(())
@@ -34,7 +56,7 @@ macro interval_observable($interval: expr) {
       .lock()
       .unwrap()
       .spawn_with_handle(f)
-      .expect("spawn future for interval failed");
+      .expect("spawn future for an interval failed");
 
     subscription.add(SpawnHandle::new(handle));
   })
@@ -79,7 +101,7 @@ fn smoke() {
   use std::sync::{Arc, Mutex};
   let seconds = Arc::new(Mutex::new(0));
   let c_seconds = seconds.clone();
-  interval!(Duration::from_millis(20)).subscribe(move |_| {
+  interval(Duration::from_millis(20)).subscribe(move |_| {
     *seconds.lock().unwrap() += 1;
   });
   std::thread::sleep(Duration::from_millis(110));
@@ -88,7 +110,7 @@ fn smoke() {
 
 #[test]
 fn smoke_fork() {
-  interval!(Duration::from_millis(10))
+  interval(Duration::from_millis(10))
     .fork()
     .to_shared()
     .fork()
