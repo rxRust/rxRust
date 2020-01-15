@@ -52,7 +52,7 @@ Operators that selectively emit items from a source Observable.
 - [ ] Skip — suppress the first n items emitted by an Observable
 - [ ] SkipLast — suppress the last n items emitted by an Observable
 - [x] Take — emit only the first n items emitted by an Observable
-- [ ] TakeLast — emit only the last n items emitted by an Observable
+- [x] TakeLast — emit only the last n items emitted by an Observable
 
 ### Combining Observables
 Operators that work with multiple source Observables to create a single Observable
