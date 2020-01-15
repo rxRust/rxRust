@@ -8,7 +8,8 @@ use std::marker::PhantomData;
 ///
 /// `take_last` returns an Observable that emits only the last `count` values
 /// emitted by the source Observable. If the source emits fewer than `count`
-/// values then all of its values are emitted. It will not emit values until source Observable complete.
+/// values then all of its values are emitted.
+/// It will not emit values until source Observable complete.
 ///
 /// # Example
 /// Take the last 5 seconds of an infinite 1-second interval Observable
@@ -133,7 +134,9 @@ where
   }
 }
 
-observer_error_proxy_impl!(TakeLastObserver<O, U, Item>, O, observer, <O, U, Item>);
+observer_error_proxy_impl!(
+  TakeLastObserver<O, U, Item>, O, observer, <O, U, Item>
+);
 
 impl<S, Item> Fork for TakeLastOp<S, Item>
 where
