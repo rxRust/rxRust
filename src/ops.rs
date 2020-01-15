@@ -20,6 +20,8 @@ pub mod merge;
 pub use merge::Merge;
 pub mod take;
 pub use take::Take;
+pub mod take_last;
+pub use take_last::TakeLast;
 pub mod first;
 pub use first::{First, FirstOr};
 pub mod fork;
