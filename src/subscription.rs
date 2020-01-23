@@ -2,7 +2,6 @@ use crate::prelude::*;
 use crate::util;
 use smallvec::SmallVec;
 use std::cell::RefCell;
-use std::mem::transmute;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
@@ -56,10 +55,8 @@ impl IntoShared for LocalSubscription {
          can not covert to SharedSubscription "
       );
     }
-    let inner: Inner<Box<dyn SubscriptionLike + Send + Sync + 'static>> =
-      unsafe { transmute(inner) };
     SharedSubscription(Arc::new(Mutex::new(Inner {
-      teardown: inner.teardown,
+      teardown: SmallVec::new(),
       closed: inner.closed,
     })))
   }
