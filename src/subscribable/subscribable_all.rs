@@ -41,15 +41,7 @@ where
   E: FnMut(Err),
 {
   #[inline(always)]
-  default fn error(&mut self, err: Err) { (self.error)(err); }
-}
-
-impl<N, E, C, Err> ObserverError<&mut Err> for SubscribeAll<N, E, C>
-where
-  E: for<'r> FnMut(&'r mut Err),
-{
-  #[inline(always)]
-  fn error(&mut self, err: &mut Err) { (self.error)(err); }
+  fn error(&mut self, err: Err) { (self.error)(err); }
 }
 
 impl<N, E, C, Item> ObserverNext<Item> for SubscribeAll<N, E, C>
@@ -57,15 +49,7 @@ where
   N: FnMut(Item),
 {
   #[inline(always)]
-  default fn next(&mut self, value: Item) { (self.next)(value); }
-}
-
-impl<N, E, C, Item> ObserverNext<&mut Item> for SubscribeAll<N, E, C>
-where
-  N: for<'r> FnMut(&'r mut Item),
-{
-  #[inline(always)]
-  fn next(&mut self, value: &mut Item) { (self.next)(value); }
+  fn next(&mut self, value: Item) { (self.next)(value); }
 }
 
 pub trait SubscribableAll<N, E, C> {

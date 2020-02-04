@@ -25,15 +25,7 @@ where
   N: FnMut(Item),
 {
   #[inline(always)]
-  default fn next(&mut self, value: Item) { (self.next)(value); }
-}
-
-impl<N, C, Item> ObserverNext<&mut Item> for SubscribeComplete<N, C>
-where
-  N: for<'r> FnMut(&'r mut Item),
-{
-  #[inline(always)]
-  fn next(&mut self, value: &mut Item) { (self.next)(value); }
+  fn next(&mut self, value: Item) { (self.next)(value); }
 }
 
 impl<N, C> SubscribeComplete<N, C> {
