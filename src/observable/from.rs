@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use observable::ObservableFromFn;
 
 /// Creates an observable that produces values from an iterator.
 ///
@@ -30,13 +31,13 @@ use crate::prelude::*;
 ///
 pub fn from_iter<O, U, Iter, I>(
   iter: Iter,
-) -> Observable<impl FnOnce(Subscriber<O, U>) + Clone, I, ()>
+) -> ObservableFromFn<impl FnOnce(Subscriber<O, U>) + Clone, I, ()>
 where
   O: Observer<I, ()>,
   U: SubscriptionLike,
   Iter: IntoIterator<Item = I> + Clone,
 {
-  Observable::new(move |mut subscriber| {
+  observable::new(move |mut subscriber| {
     for v in iter.into_iter() {
       if !subscriber.is_closed() {
         subscriber.next(v);
@@ -69,13 +70,13 @@ where
 ///
 pub fn of<O, U, Item>(
   v: Item,
-) -> Observable<impl FnOnce(Subscriber<O, U>) + Clone, Item, ()>
+) -> ObservableFromFn<impl FnOnce(Subscriber<O, U>) + Clone, Item, ()>
 where
   O: Observer<Item, ()>,
   U: SubscriptionLike,
   Item: Clone,
 {
-  Observable::new(move |mut subscriber| {
+  observable::new(move |mut subscriber| {
     subscriber.next(v);
     subscriber.complete();
   })
@@ -107,7 +108,7 @@ where
 pub fn repeat<O, U, Item>(
   v: Item,
   n: usize,
-) -> Observable<impl FnOnce(Subscriber<O, U>) + Clone, Item, ()>
+) -> ObservableFromFn<impl FnOnce(Subscriber<O, U>) + Clone, Item, ()>
 where
   O: Observer<Item, ()>,
   U: SubscriptionLike,
@@ -142,14 +143,14 @@ where
 ///
 pub fn of_result<O, U, Item, Err>(
   r: Result<Item, Err>,
-) -> Observable<impl FnOnce(Subscriber<O, U>) + Clone, Item, Err>
+) -> ObservableFromFn<impl FnOnce(Subscriber<O, U>) + Clone, Item, Err>
 where
   O: Observer<Item, Err>,
   U: SubscriptionLike,
   Item: Clone,
   Err: Clone,
 {
-  Observable::new(move |mut subscriber| {
+  observable::new(move |mut subscriber| {
     match r {
       Ok(v) => subscriber.next(v),
       Err(e) => subscriber.error(e),
@@ -178,13 +179,13 @@ where
 ///
 pub fn of_option<O, U, Item>(
   o: Option<Item>,
-) -> Observable<impl FnOnce(Subscriber<O, U>) + Clone, Item, ()>
+) -> ObservableFromFn<impl FnOnce(Subscriber<O, U>) + Clone, Item, ()>
 where
   O: Observer<Item, ()>,
   U: SubscriptionLike,
   Item: Clone,
 {
-  Observable::new(move |mut subscriber| {
+  observable::new(move |mut subscriber| {
     if let Some(v) = o {
       subscriber.next(v)
     }
@@ -211,7 +212,7 @@ where
 ///
 pub fn from_fn<O, U, Callable, Item>(
   f: Callable,
-) -> Observable<impl FnOnce(Subscriber<O, U>) + Clone, Item, ()>
+) -> ObservableFromFn<impl FnOnce(Subscriber<O, U>) + Clone, Item, ()>
 where
   Callable: FnOnce() -> Item,
   O: Observer<Item, ()>,

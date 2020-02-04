@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use observable::ObservableFromFn;
 
 /// Creates an observable that emitts no items, just terminates with an error.
 ///
@@ -8,14 +9,14 @@ use crate::prelude::*;
 ///
 pub fn throw<O, U, Item, Err>(
   e: Err,
-) -> Observable<impl FnOnce(Subscriber<O, U>) + Clone, Item, Err>
+) -> ObservableFromFn<impl FnOnce(Subscriber<O, U>) + Clone, Item, Err>
 where
   O: Observer<Item, Err>,
   U: SubscriptionLike,
   Err: Clone,
   Item: Clone,
 {
-  Observable::new(move |mut subscriber| {
+  observable::new(move |mut subscriber| {
     subscriber.error(e);
   })
 }
@@ -35,12 +36,12 @@ where
 /// ```
 ///
 pub fn empty<O, U, Item>()
--> Observable<impl FnOnce(Subscriber<O, U>) + Clone, Item, ()>
+-> ObservableFromFn<impl FnOnce(Subscriber<O, U>) + Clone, Item, ()>
 where
   O: Observer<Item, ()>,
   U: SubscriptionLike,
 {
-  Observable::new(move |mut subscriber: Subscriber<O, U>| {
+  observable::new(move |mut subscriber: Subscriber<O, U>| {
     subscriber.complete();
   })
 }
@@ -50,12 +51,12 @@ where
 /// Neither emitts a value, nor completes, nor emitts an error.
 ///
 pub fn never<O, U, Item>()
--> Observable<impl FnOnce(Subscriber<O, U>) + Clone, Item, ()>
+-> ObservableFromFn<impl FnOnce(Subscriber<O, U>) + Clone, Item, ()>
 where
   O: Observer<Item, ()>,
   U: SubscriptionLike,
 {
-  Observable::new(move |_subscriber: Subscriber<O, U>| {
+  observable::new(move |_subscriber: Subscriber<O, U>| {
     loop {
       // will not complete
       std::thread::sleep(std::time::Duration::from_secs(1));

@@ -17,7 +17,7 @@ pub use ops::SharedOp;
 /// A representation of any set of values over any amount of time. This is the
 /// most basic building block rxrust
 ///
-pub struct Observable<F, Item, Err>(F, PhantomData<(Item, Err)>);
+pub struct ObservableFromFn<F, Item, Err>(F, PhantomData<(Item, Err)>);
 
 macro impl_observable($t: ident) {
   unsafe impl<F, Item, Err> Send for $t<F, Item, Err> {}
@@ -30,24 +30,22 @@ macro impl_observable($t: ident) {
   }
 }
 
-impl_observable!(Observable);
+impl_observable!(ObservableFromFn);
 
-impl<F, Item, Err> Observable<F, Item, Err> {
-  /// param `subscribe`: the function that is called when the Observable is
-  /// initially subscribed to. This function is given a Subscriber, to which
-  /// new values can be `next`ed, or an `error` method can be called to raise
-  /// an error, or `complete` can be called to notify of a successful
-  /// completion.
-  pub fn new<S, U>(subscribe: F) -> Self
-  where
-    F: FnOnce(Subscriber<S, U>),
-    S: Observer<Item, Err>,
-  {
-    Self(subscribe, PhantomData)
-  }
+/// param `subscribe`: the function that is called when the Observable is
+/// initially subscribed to. This function is given a Subscriber, to which
+/// new values can be `next`ed, or an `error` method can be called to raise
+/// an error, or `complete` can be called to notify of a successful
+/// completion.
+pub fn new<F, Item, Err, S, U>(subscribe: F) -> ObservableFromFn<F, Item, Err>
+where
+  F: FnOnce(Subscriber<S, U>),
+  S: Observer<Item, Err>,
+{
+  ObservableFromFn(subscribe, PhantomData)
 }
 
-impl<F, Item, Err> Fork for Observable<F, Item, Err>
+impl<F, Item, Err> Fork for ObservableFromFn<F, Item, Err>
 where
   F: Clone,
 {
@@ -57,7 +55,7 @@ where
 }
 
 impl<F, S, U, Item, Err> RawSubscribable<Subscriber<S, U>>
-  for Observable<F, Item, Err>
+  for ObservableFromFn<F, Item, Err>
 where
   F: FnOnce(Subscriber<S, U>),
   U: SubscriptionLike + Clone + 'static,
@@ -70,7 +68,7 @@ where
   }
 }
 
-impl<F, Item, Err> IntoShared for Observable<F, Item, Err>
+impl<F, Item, Err> IntoShared for ObservableFromFn<F, Item, Err>
 where
   F: Send + Sync + 'static,
   Item: 'static,
@@ -189,7 +187,7 @@ mod test {
     let c_err = err.clone();
     let c_complete = complete.clone();
 
-    Observable::new(|mut subscriber| {
+    observable::new(|mut subscriber| {
       subscriber.next(&1);
       subscriber.next(&2);
       subscriber.next(&3);
@@ -210,7 +208,7 @@ mod test {
   }
   #[test]
   fn support_fork() {
-    let o = Observable::new(|mut subscriber| {
+    let o = observable::new(|mut subscriber| {
       subscriber.next(&1);
       subscriber.next(&2);
       subscriber.next(&3);

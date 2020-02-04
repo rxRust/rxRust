@@ -38,7 +38,6 @@ pub mod subscription;
 
 pub mod prelude {
   pub use crate::observable;
-  pub use crate::observable::Observable;
   pub use crate::observer;
   pub use crate::ops;
   pub use crate::scheduler::*;
