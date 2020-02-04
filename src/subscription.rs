@@ -179,21 +179,6 @@ impl<'a> SubscriptionLike for Box<dyn SubscriptionLike + 'a> {
 impl<'a, Item, Err> SubscriptionLike for Box<dyn Publisher<Item, Err> + 'a> {
   subscription_direct_impl_proxy!();
 }
-impl<'a, Item, Err> SubscriptionLike
-  for Box<dyn for<'r> Publisher<&'r mut Item, Err> + 'a>
-{
-  subscription_direct_impl_proxy!();
-}
-impl<'a, Item, Err> SubscriptionLike
-  for Box<dyn for<'r> Publisher<Item, &'r mut Err> + 'a>
-{
-  subscription_direct_impl_proxy!();
-}
-impl<'a, Item, Err> SubscriptionLike
-  for Box<dyn for<'r> Publisher<&'r mut Item, &'r mut Err> + 'a>
-{
-  subscription_direct_impl_proxy!();
-}
 
 impl SubscriptionLike for Box<dyn SubscriptionLike + Send + Sync> {
   subscription_direct_impl_proxy!();

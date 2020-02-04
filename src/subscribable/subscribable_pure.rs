@@ -19,14 +19,7 @@ where
   N: FnMut(Item),
 {
   #[inline(always)]
-  default fn next(&mut self, value: Item) { (self.0)(value); }
-}
-
-impl<Item, N> ObserverNext<&mut Item> for SubscribePure<N>
-where
-  N: for<'r> FnMut(&'r mut Item),
-{
-  fn next(&mut self, value: &mut Item) { (self.0)(value); }
+  fn next(&mut self, value: Item) { (self.0)(value); }
 }
 
 impl<N> IntoShared for SubscribePure<N>

@@ -17,15 +17,7 @@ where
   N: FnMut(Item),
 {
   #[inline(always)]
-  default fn next(&mut self, err: Item) { (self.next)(err); }
-}
-
-impl<N, E, Item> ObserverNext<&mut Item> for SubscribeErr<N, E>
-where
-  N: for<'r> FnMut(&'r mut Item),
-{
-  #[inline(always)]
-  fn next(&mut self, value: &mut Item) { (self.next)(value); }
+  fn next(&mut self, err: Item) { (self.next)(err); }
 }
 
 impl<N, E, Err> ObserverError<Err> for SubscribeErr<N, E>
@@ -33,15 +25,7 @@ where
   E: FnMut(Err),
 {
   #[inline(always)]
-  default fn error(&mut self, err: Err) { (self.error)(err); }
-}
-
-impl<N, E, Err> ObserverError<&mut Err> for SubscribeErr<N, E>
-where
-  E: for<'r> FnMut(&'r mut Err),
-{
-  #[inline(always)]
-  fn error(&mut self, err: &mut Err) { (self.error)(err); }
+  fn error(&mut self, err: Err) { (self.error)(err); }
 }
 
 impl<N, E> SubscribeErr<N, E> {
