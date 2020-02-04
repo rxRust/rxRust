@@ -154,7 +154,7 @@ mod test {
     let emit_thread = Arc::new(Mutex::new(id));
     let observe_thread = Arc::new(Mutex::new(vec![]));
     let oc = observe_thread.clone();
-    Observable::new(|mut s| {
+    observable::new(|mut s| {
       s.next(&1);
       s.next(&1);
       *emit_thread.lock().unwrap() = thread::current().id();

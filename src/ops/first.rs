@@ -182,7 +182,7 @@ mod test {
   fn first_or_support_fork() {
     let mut default = 0;
     let mut default2 = 0;
-    let o = Observable::new(|mut subscriber| {
+    let o = observable::new(|mut subscriber| {
       subscriber.complete();
     })
     .first_or(100);

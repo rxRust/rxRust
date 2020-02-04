@@ -3,6 +3,7 @@ use crate::prelude::*;
 use futures::{
   executor::ThreadPool, future::Future, future::FutureExt, task::SpawnExt,
 };
+use observable::ObservableFromFn;
 use std::sync::Mutex;
 
 lazy_static! {
@@ -32,14 +33,16 @@ lazy_static! {
 ///
 pub fn from_future<O, U, F, Item>(
   f: F,
-) -> ops::SharedOp<Observable<impl FnOnce(Subscriber<O, U>) + Clone, Item, ()>>
+) -> ops::SharedOp<
+  ObservableFromFn<impl FnOnce(Subscriber<O, U>) + Clone, Item, ()>,
+>
 where
   Item: 'static,
   O: Observer<Item, ()> + Send + 'static,
   U: SubscriptionLike + Send + 'static,
   F: Future<Output = Item> + Send + Clone + Sync + 'static,
 {
-  Observable::new(move |mut subscriber| {
+  observable::new(move |mut subscriber| {
     let fmapped = f.map(move |v| {
       if !subscriber.is_closed() {
         subscriber.next(v);
@@ -56,7 +59,9 @@ where
 /// emit to next handle, and `Result::Err` as an error to handle.
 pub fn from_future_with_err<O, U, F, Item, Error>(
   f: F,
-) -> SharedOp<Observable<impl FnOnce(Subscriber<O, U>) + Clone, Item, Error>>
+) -> SharedOp<
+  ObservableFromFn<impl FnOnce(Subscriber<O, U>) + Clone, Item, Error>,
+>
 where
   Error: 'static,
   Item: 'static,
@@ -65,7 +70,7 @@ where
   F: Future + Send + Clone + Sync + 'static,
   <F as Future>::Output: Into<Result<Item, Error>>,
 {
-  Observable::new(move |mut subscriber| {
+  observable::new(move |mut subscriber| {
     let fmapped = f.map(move |v| {
       if !subscriber.is_closed() {
         match v.into() {
