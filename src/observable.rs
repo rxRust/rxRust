@@ -37,7 +37,9 @@ impl_observable!(ObservableFromFn);
 /// new values can be `next`ed, or an `error` method can be called to raise
 /// an error, or `complete` can be called to notify of a successful
 /// completion.
-pub fn new<F, Item, Err, S, U>(subscribe: F) -> ObservableFromFn<F, Item, Err>
+pub fn create<F, Item, Err, S, U>(
+  subscribe: F,
+) -> ObservableFromFn<F, Item, Err>
 where
   F: FnOnce(Subscriber<S, U>),
   S: Observer<Item, Err>,
@@ -187,7 +189,7 @@ mod test {
     let c_err = err.clone();
     let c_complete = complete.clone();
 
-    observable::new(|mut subscriber| {
+    observable::create(|mut subscriber| {
       subscriber.next(&1);
       subscriber.next(&2);
       subscriber.next(&3);
@@ -208,7 +210,7 @@ mod test {
   }
   #[test]
   fn support_fork() {
-    let o = observable::new(|mut subscriber| {
+    let o = observable::create(|mut subscriber| {
       subscriber.next(&1);
       subscriber.next(&2);
       subscriber.next(&3);

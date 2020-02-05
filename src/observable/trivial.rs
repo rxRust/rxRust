@@ -16,7 +16,7 @@ where
   Err: Clone,
   Item: Clone,
 {
-  observable::new(move |mut subscriber| {
+  observable::create(move |mut subscriber| {
     subscriber.error(e);
   })
 }
@@ -41,7 +41,7 @@ where
   O: Observer<Item, ()>,
   U: SubscriptionLike,
 {
-  observable::new(move |mut subscriber: Subscriber<O, U>| {
+  observable::create(move |mut subscriber: Subscriber<O, U>| {
     subscriber.complete();
   })
 }
@@ -56,7 +56,7 @@ where
   O: Observer<Item, ()>,
   U: SubscriptionLike,
 {
-  observable::new(move |_subscriber: Subscriber<O, U>| {
+  observable::create(move |_subscriber: Subscriber<O, U>| {
     loop {
       // will not complete
       std::thread::sleep(std::time::Duration::from_secs(1));

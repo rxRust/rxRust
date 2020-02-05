@@ -9,7 +9,7 @@
 
 ### Breaking Changes
 
-- **observable**: remove `Observable::new`, and add a same `new` function in `observable` to replace it.
+- **observable**: remove `Observable::new`, and add a same `create` function in `observable` to replace it.
 - **observable**: Rename `Observable` to `ObservableFromFn`.
 
 ## [0.7.2](https://github.com/rxRust/rxRust/releases/tag/v0.7.2)  (2020-01-09)

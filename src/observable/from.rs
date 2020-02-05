@@ -37,7 +37,7 @@ where
   U: SubscriptionLike,
   Iter: IntoIterator<Item = I> + Clone,
 {
-  observable::new(move |mut subscriber| {
+  observable::create(move |mut subscriber| {
     for v in iter.into_iter() {
       if !subscriber.is_closed() {
         subscriber.next(v);
@@ -76,7 +76,7 @@ where
   U: SubscriptionLike,
   Item: Clone,
 {
-  observable::new(move |mut subscriber| {
+  observable::create(move |mut subscriber| {
     subscriber.next(v);
     subscriber.complete();
   })
@@ -150,7 +150,7 @@ where
   Item: Clone,
   Err: Clone,
 {
-  observable::new(move |mut subscriber| {
+  observable::create(move |mut subscriber| {
     match r {
       Ok(v) => subscriber.next(v),
       Err(e) => subscriber.error(e),
@@ -185,7 +185,7 @@ where
   U: SubscriptionLike,
   Item: Clone,
 {
-  observable::new(move |mut subscriber| {
+  observable::create(move |mut subscriber| {
     if let Some(v) = o {
       subscriber.next(v)
     }

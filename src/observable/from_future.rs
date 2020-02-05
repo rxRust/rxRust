@@ -42,7 +42,7 @@ where
   U: SubscriptionLike + Send + 'static,
   F: Future<Output = Item> + Send + Clone + Sync + 'static,
 {
-  observable::new(move |mut subscriber| {
+  observable::create(move |mut subscriber| {
     let fmapped = f.map(move |v| {
       if !subscriber.is_closed() {
         subscriber.next(v);
@@ -70,7 +70,7 @@ where
   F: Future + Send + Clone + Sync + 'static,
   <F as Future>::Output: Into<Result<Item, Error>>,
 {
-  observable::new(move |mut subscriber| {
+  observable::create(move |mut subscriber| {
     let fmapped = f.map(move |v| {
       if !subscriber.is_closed() {
         match v.into() {
