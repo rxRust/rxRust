@@ -41,15 +41,16 @@ pub struct FilterOp<S, F> {
   filter: F,
 }
 
-impl<O, U, S, F> RawSubscribable<Subscriber<O, U>> for FilterOp<S, F>
+impl<O, U, S, F> Observable<O, U> for FilterOp<S, F>
 where
-  S: RawSubscribable<Subscriber<FilterObserver<O, F>, U>>,
+  S: Observable<FilterObserver<O, F>, U>,
+  U: SubscriptionLike,
 {
   type Unsub = S::Unsub;
 
-  fn raw_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub {
+  fn actual_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub {
     let filter = self.filter;
-    self.source.raw_subscribe(Subscriber {
+    self.source.actual_subscribe(Subscriber {
       observer: FilterObserver {
         filter,
         observer: subscriber.observer,

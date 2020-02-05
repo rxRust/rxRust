@@ -43,12 +43,6 @@ pub struct MergeOp<S1, S2> {
 
 pub struct SharedMergeOp<S1, S2>(MergeOp<S1, S2>);
 
-type LocalMergeSubscriber<O> =
-  Subscriber<LocalMergeObserver<O>, LocalSubscription>;
-
-type SharedMergeSubscriber<O> =
-  Subscriber<SharedMergeObserver<O>, SharedSubscription>;
-
 macro merge_subscribe(
   $op:ident, $subscriber:ident,
   $unsub_type: ty, $observer_creator: ident) {{
@@ -57,26 +51,27 @@ macro merge_subscribe(
   subscription.add(downstream.clone());
   let merge_observer =
     $observer_creator($subscriber.observer, subscription.clone());
-  subscription.add($op.source1.raw_subscribe(Subscriber {
+  subscription.add($op.source1.actual_subscribe(Subscriber {
     observer: merge_observer.clone(),
     subscription: <$unsub_type>::default(),
   }));
-  subscription.add($op.source2.raw_subscribe(Subscriber {
+  subscription.add($op.source2.actual_subscribe(Subscriber {
     observer: merge_observer,
     subscription: <$unsub_type>::default(),
   }));
   subscription
 }}
 
-impl<S1, S2, O> RawSubscribable<Subscriber<O, LocalSubscription>>
-  for MergeOp<S1, S2>
+impl<S1, S2, O> Observable<O, LocalSubscription> for MergeOp<S1, S2>
 where
-  S1: RawSubscribable<LocalMergeSubscriber<O>>,
-  S2: RawSubscribable<LocalMergeSubscriber<O>>,
+  S1: Observable<LocalMergeObserver<O>, LocalSubscription>,
+  S2: Observable<LocalMergeObserver<O>, LocalSubscription>,
+  S1::Unsub: 'static,
+  S2::Unsub: 'static,
 {
   type Unsub = LocalSubscription;
 
-  fn raw_subscribe(
+  fn actual_subscribe(
     self,
     subscriber: Subscriber<O, LocalSubscription>,
   ) -> Self::Unsub {
@@ -84,22 +79,24 @@ where
   }
 }
 
-impl<S1, S2, O, U> RawSubscribable<Subscriber<O, U>> for SharedMergeOp<S1, S2>
+impl<S1, S2, O, U> Observable<O, U> for SharedMergeOp<S1, S2>
 where
-  S1: RawSubscribable<
-    SharedMergeSubscriber<O::Shared>,
+  S1: Observable<
+    SharedMergeObserver<O::Shared>,
+    SharedSubscription,
     Unsub = SharedSubscription,
   >,
-  S2: RawSubscribable<
-    SharedMergeSubscriber<O::Shared>,
+  S2: Observable<
+    SharedMergeObserver<O::Shared>,
+    SharedSubscription,
     Unsub = SharedSubscription,
   >,
   O: IntoShared,
-  U: IntoShared<Shared = SharedSubscription>,
+  U: IntoShared<Shared = SharedSubscription> + SubscriptionLike,
 {
   type Unsub = SharedSubscription;
 
-  fn raw_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub {
+  fn actual_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub {
     let subscriber = subscriber.to_shared();
     let merge = self.0;
     merge_subscribe!(merge, subscriber, SharedSubscription, shared_observer)

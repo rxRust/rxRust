@@ -4,21 +4,21 @@ use std::time::{Duration, Instant};
 /// Delays the emission of items from the source Observable by a given timeout
 /// or until a given `Instant`.
 pub trait Delay {
-  fn delay(self, dur: Duration) -> DelayOp<Self>
+  fn delay(self, dur: Duration) -> DelayOp<Self::Shared>
   where
-    Self: Sized,
+    Self: Sized + IntoShared,
   {
     DelayOp {
-      source: self,
+      source: self.to_shared(),
       delay: dur,
     }
   }
-  fn delay_at(self, at: Instant) -> DelayOp<Self>
+  fn delay_at(self, at: Instant) -> DelayOp<Self::Shared>
   where
-    Self: Sized,
+    Self: Sized + IntoShared,
   {
     DelayOp {
-      source: self,
+      source: self.to_shared(),
       delay: at.elapsed(),
     }
   }
@@ -39,24 +39,22 @@ where
   fn to_shared(self) -> Self::Shared { self }
 }
 
-impl<Sub, S> RawSubscribable<Sub> for DelayOp<S>
+impl<O, U, Source> Observable<O, U> for DelayOp<Source>
 where
-  S: IntoShared,
-  S::Shared: RawSubscribable<Sub::Shared>,
-  Sub: IntoShared,
-  <S::Shared as RawSubscribable<Sub::Shared>>::Unsub: IntoShared,
-  <<S::Shared as RawSubscribable<Sub::Shared>>::Unsub as IntoShared>::Shared:
-    SubscriptionLike,
+  O: IntoShared,
+  U: IntoShared + SubscriptionLike,
+  U::Shared: SubscriptionLike,
+  Source: Observable<O::Shared, U::Shared> + Send + Sync + 'static,
+  Source::Unsub: Send + Sync + 'static,
 {
   type Unsub = SharedSubscription;
-  fn raw_subscribe(self, subscriber: Sub) -> Self::Unsub {
+  fn actual_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub {
     let Self { delay, source } = self;
-    let source = source.to_shared();
     let subscriber = subscriber.to_shared();
 
     Schedulers::ThreadPool.schedule(
       move |mut subscription, _| {
-        subscription.add(source.raw_subscribe(subscriber).to_shared());
+        subscription.add(source.actual_subscribe(subscriber));
       },
       Some(delay),
       (),

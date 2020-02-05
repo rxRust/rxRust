@@ -76,12 +76,13 @@ pub struct LastOrOp<S, Item> {
   last: Option<Item>,
 }
 
-impl<Item, O, U, S> RawSubscribable<Subscriber<O, U>> for LastOrOp<S, Item>
+impl<Item, O, U, S> Observable<O, U> for LastOrOp<S, Item>
 where
-  S: RawSubscribable<Subscriber<LastOrObserver<O, Item>, U>>,
+  S: Observable<LastOrObserver<O, Item>, U>,
+  U: SubscriptionLike,
 {
   type Unsub = S::Unsub;
-  fn raw_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub {
+  fn actual_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub {
     let subscriber = Subscriber {
       observer: LastOrObserver {
         observer: subscriber.observer,
@@ -90,7 +91,7 @@ where
       },
       subscription: subscriber.subscription,
     };
-    self.source.raw_subscribe(subscriber)
+    self.source.actual_subscribe(subscriber)
   }
 }
 

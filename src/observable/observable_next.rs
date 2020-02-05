@@ -2,19 +2,19 @@ use crate::observer::{ObserverComplete, ObserverError, ObserverNext};
 use crate::prelude::*;
 
 #[derive(Clone)]
-pub struct SubscribePure<N>(N);
+pub struct ObserverN<N>(N);
 
-impl<N> ObserverComplete for SubscribePure<N> {
+impl<N> ObserverComplete for ObserverN<N> {
   #[inline(always)]
   fn complete(&mut self) {}
 }
 
-impl<N> ObserverError<()> for SubscribePure<N> {
+impl<N> ObserverError<()> for ObserverN<N> {
   #[inline(always)]
   fn error(&mut self, _err: ()) {}
 }
 
-impl<N, Item> ObserverNext<Item> for SubscribePure<N>
+impl<N, Item> ObserverNext<Item> for ObserverN<N>
 where
   N: FnMut(Item),
 {
@@ -22,7 +22,7 @@ where
   fn next(&mut self, value: Item) { (self.0)(value); }
 }
 
-impl<N> IntoShared for SubscribePure<N>
+impl<N> IntoShared for ObserverN<N>
 where
   N: Send + Sync + 'static,
 {
@@ -31,7 +31,7 @@ where
   fn to_shared(self) -> Self::Shared { self }
 }
 
-pub trait SubscribablePure<N> {
+pub trait SubscribeNext<N> {
   /// A type implementing [`SubscriptionLike`]
   type Unsub;
 
@@ -40,15 +40,15 @@ pub trait SubscribablePure<N> {
   fn subscribe(self, next: N) -> Self::Unsub;
 }
 
-impl<S, N> SubscribablePure<N> for S
+impl<S, N> SubscribeNext<N> for S
 where
-  S: RawSubscribable<Subscriber<SubscribePure<N>, LocalSubscription>>,
+  S: Observable<ObserverN<N>, LocalSubscription>,
 {
   type Unsub = S::Unsub;
   fn subscribe(self, next: N) -> Self::Unsub
   where
     Self: Sized,
   {
-    self.raw_subscribe(Subscriber::local(SubscribePure(next)))
+    self.actual_subscribe(Subscriber::local(ObserverN(next)))
   }
 }

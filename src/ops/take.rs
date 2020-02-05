@@ -61,13 +61,13 @@ where
   }
 }
 
-impl<O, U, S> RawSubscribable<Subscriber<O, U>> for TakeOp<S>
+impl<O, U, S> Observable<O, U> for TakeOp<S>
 where
-  S: RawSubscribable<Subscriber<TakeObserver<O, U>, U>>,
+  S: Observable<TakeObserver<O, U>, U>,
   U: SubscriptionLike + Clone + 'static,
 {
   type Unsub = S::Unsub;
-  fn raw_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub {
+  fn actual_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub {
     let subscriber = Subscriber {
       observer: TakeObserver {
         observer: subscriber.observer,
@@ -77,7 +77,7 @@ where
       },
       subscription: subscriber.subscription,
     };
-    self.source.raw_subscribe(subscriber)
+    self.source.actual_subscribe(subscriber)
   }
 }
 

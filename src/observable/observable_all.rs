@@ -2,16 +2,16 @@ use crate::observer::{ObserverComplete, ObserverError, ObserverNext};
 use crate::prelude::*;
 
 #[derive(Clone)]
-pub struct SubscribeAll<N, E, C> {
+pub struct ObserverAll<N, E, C> {
   next: N,
   error: E,
   complete: C,
 }
 
-impl<N, E, C> SubscribeAll<N, E, C> {
+impl<N, E, C> ObserverAll<N, E, C> {
   #[inline(always)]
   pub fn new(next: N, error: E, complete: C) -> Self {
-    SubscribeAll {
+    ObserverAll {
       next,
       error,
       complete,
@@ -19,7 +19,7 @@ impl<N, E, C> SubscribeAll<N, E, C> {
   }
 }
 
-impl<N, E, C> IntoShared for SubscribeAll<N, E, C>
+impl<N, E, C> IntoShared for ObserverAll<N, E, C>
 where
   Self: Send + Sync + 'static,
 {
@@ -28,7 +28,7 @@ where
   fn to_shared(self) -> Self::Shared { self }
 }
 
-impl<N, E, C> ObserverComplete for SubscribeAll<N, E, C>
+impl<N, E, C> ObserverComplete for ObserverAll<N, E, C>
 where
   C: FnMut(),
 {
@@ -36,7 +36,7 @@ where
   fn complete(&mut self) { (self.complete)(); }
 }
 
-impl<N, E, C, Err> ObserverError<Err> for SubscribeAll<N, E, C>
+impl<N, E, C, Err> ObserverError<Err> for ObserverAll<N, E, C>
 where
   E: FnMut(Err),
 {
@@ -44,7 +44,7 @@ where
   fn error(&mut self, err: Err) { (self.error)(err); }
 }
 
-impl<N, E, C, Item> ObserverNext<Item> for SubscribeAll<N, E, C>
+impl<N, E, C, Item> ObserverNext<Item> for ObserverAll<N, E, C>
 where
   N: FnMut(Item),
 {
@@ -52,7 +52,7 @@ where
   fn next(&mut self, value: Item) { (self.next)(value); }
 }
 
-pub trait SubscribableAll<N, E, C> {
+pub trait SubscribeAll<N, E, C> {
   /// A type implementing [`SubscriptionLike`]
   type Unsub;
 
@@ -66,20 +66,20 @@ pub trait SubscribableAll<N, E, C> {
   fn subscribe_all(self, next: N, error: E, complete: C) -> Self::Unsub;
 }
 
-impl<S, N, E, C> SubscribableAll<N, E, C> for S
+impl<S, N, E, C> SubscribeAll<N, E, C> for S
 where
-  S: RawSubscribable<Subscriber<SubscribeAll<N, E, C>, LocalSubscription>>,
+  S: Observable<ObserverAll<N, E, C>, LocalSubscription>,
 {
   type Unsub = S::Unsub;
   fn subscribe_all(self, next: N, error: E, complete: C) -> Self::Unsub
   where
     Self: Sized,
   {
-    let subscriber = Subscriber::local(SubscribeAll {
+    let subscriber = Subscriber::local(ObserverAll {
       next,
       error,
       complete,
     });
-    self.raw_subscribe(subscriber)
+    self.actual_subscribe(subscriber)
   }
 }

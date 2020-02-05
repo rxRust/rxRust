@@ -83,17 +83,14 @@ where
 
 impl<S, Item> ThrottleTime<Item> for S {}
 
-impl<Item, O, U, S> RawSubscribable<Subscriber<O, U>>
-  for ThrottleTimeOp<S, Item>
+impl<Item, O, U, S> Observable<O, U> for ThrottleTimeOp<S, Item>
 where
-  S: RawSubscribable<
-    Subscriber<ThrottleTimeObserver<O::Shared, Item>, SharedSubscription>,
-  >,
+  S: Observable<ThrottleTimeObserver<O::Shared, Item>, SharedSubscription>,
   O: IntoShared,
-  U: IntoShared<Shared = SharedSubscription>,
+  U: IntoShared<Shared = SharedSubscription> + SubscriptionLike,
 {
   type Unsub = S::Unsub;
-  fn raw_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub {
+  fn actual_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub {
     let Self {
       source,
       duration,
@@ -101,7 +98,7 @@ where
       _p,
     } = self;
     let subscription = subscriber.subscription.to_shared();
-    source.raw_subscribe(Subscriber {
+    source.actual_subscribe(Subscriber {
       observer: ThrottleTimeObserver(Arc::new(Mutex::new(
         InnerThrottleTimeObserver {
           observer: subscriber.observer.to_shared(),

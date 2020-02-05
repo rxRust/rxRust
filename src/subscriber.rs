@@ -135,7 +135,7 @@ mod test {
       next.clone(),
       err.clone(),
       complete.clone(),
-      Subscriber::shared(SubscribeAll::new(
+      Subscriber::shared(ObserverAll::new(
         move |_| *next.lock().unwrap() += 1,
         move |_| *err.lock().unwrap() += 1,
         move || *complete.lock().unwrap() += 1,
@@ -149,7 +149,7 @@ mod test {
     let mut next = 0;
     let mut complete = 0;
 
-    let mut subscriber = Subscriber::local(SubscribeAll::new(
+    let mut subscriber = Subscriber::local(ObserverAll::new(
       |_: &_| next += 1,
       |_: &i32| {},
       || complete += 1,
@@ -169,10 +169,8 @@ mod test {
     let mut next = 0;
     let mut err = 0;
 
-    let mut subscriber = Subscriber::local(SubscribeErr::new(
-      |_: &_| next += 1,
-      |_: &()| err += 1,
-    ));
+    let mut subscriber =
+      Subscriber::local(ObserverErr::new(|_: &_| next += 1, |_: &()| err += 1));
 
     subscriber.next(&1);
     subscriber.next(&2);

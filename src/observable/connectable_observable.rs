@@ -11,17 +11,19 @@ pub trait Connect {
   fn connect(self) -> Self::Unsub;
 }
 
-impl<S, O, U, Sub> RawSubscribable<Sub>
+impl<S, O, U, SO, SU> Observable<SO, SU>
   for ConnectableObservable<S, Subject<O, U>>
 where
-  S: RawSubscribable<Subscriber<O, U>>,
-  Subject<O, U>: RawSubscribable<Sub>,
+  S: Observable<O, U>,
+  Subject<O, U>: Observable<SO, SU>,
+  U: SubscriptionLike,
+  SU: SubscriptionLike,
 {
-  type Unsub = <Subject<O, U> as RawSubscribable<Sub>>::Unsub;
+  type Unsub = <Subject<O, U> as Observable<SO, SU>>::Unsub;
 
   #[inline(always)]
-  fn raw_subscribe(self, subscriber: Sub) -> Self::Unsub {
-    self.subject.raw_subscribe(subscriber)
+  fn actual_subscribe(self, subscriber: Subscriber<SO, SU>) -> Self::Unsub {
+    self.subject.actual_subscribe(subscriber)
   }
 }
 
@@ -50,11 +52,12 @@ where
 
 impl<Source, O, U> Connect for ConnectableObservable<Source, Subject<O, U>>
 where
-  Source: RawSubscribable<Subscriber<O, U>>,
+  Source: Observable<O, U>,
+  U: SubscriptionLike,
 {
   type Unsub = Source::Unsub;
   fn connect(self) -> Self::Unsub {
-    self.source.raw_subscribe(Subscriber {
+    self.source.actual_subscribe(Subscriber {
       observer: self.subject.observers,
       subscription: self.subject.subscription,
     })

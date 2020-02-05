@@ -1,5 +1,5 @@
 use crate::prelude::*;
-pub use ops::SharedOp;
+use ops::SharedOp;
 use std::marker::PhantomData;
 
 /// A representation of any set of values over any amount of time. This is the
@@ -25,12 +25,12 @@ impl_observable!(ObservableFromFn);
 /// new values can be `next`ed, or an `error` method can be called to raise
 /// an error, or `complete` can be called to notify of a successful
 /// completion.
-pub fn create<F, Item, Err, S, U>(
+pub fn create<F, Item, Err, O, U>(
   subscribe: F,
 ) -> ObservableFromFn<F, Item, Err>
 where
-  F: FnOnce(Subscriber<S, U>),
-  S: Observer<Item, Err>,
+  F: FnOnce(Subscriber<O, U>),
+  O: Observer<Item, Err>,
 {
   ObservableFromFn(subscribe, PhantomData)
 }
@@ -44,14 +44,13 @@ where
   fn fork(&self) -> Self::Output { ForkObservable(self.0.clone(), PhantomData) }
 }
 
-impl<F, S, U, Item, Err> RawSubscribable<Subscriber<S, U>>
-  for ObservableFromFn<F, Item, Err>
+impl<F, O, U, Item, Err> Observable<O, U> for ObservableFromFn<F, Item, Err>
 where
-  F: FnOnce(Subscriber<S, U>),
-  U: SubscriptionLike + Clone + 'static,
+  F: FnOnce(Subscriber<O, U>),
+  U: SubscriptionLike + Clone,
 {
   type Unsub = U;
-  fn raw_subscribe(self, subscriber: Subscriber<S, U>) -> Self::Unsub {
+  fn actual_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub {
     let subscription = subscriber.subscription.clone();
     (self.0)(subscriber);
     subscription
@@ -93,25 +92,24 @@ where
   fn fork(&self) -> Self::Output { self.clone() }
 }
 
-impl<'a, F, Item, Err, S, U> RawSubscribable<Subscriber<S, U>>
-  for ForkObservable<F, Item, Err>
+impl<'a, F, Item, Err, O, U> Observable<O, U> for ForkObservable<F, Item, Err>
 where
-  S: Observer<Item, Err> + 'a,
+  O: Observer<Item, Err> + 'a,
   F: FnOnce(Subscriber<Box<dyn Observer<Item, Err> + 'a>, U>),
   U: SubscriptionLike + Clone + 'static,
 {
   type Unsub = U;
-  fn raw_subscribe(self, subscriber: Subscriber<S, U>) -> Self::Unsub {
+  fn actual_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub {
     let observer: Box<dyn Observer<Item, Err> + 'a> =
       Box::new(subscriber.observer);
-    let subscriber = Subscriber {
-      observer,
-      subscription: subscriber.subscription,
-    };
 
-    let subscription = subscriber.subscription.clone();
-    (self.0)(subscriber);
-    subscription
+    let subscription = subscriber.subscription;
+    let unsub = subscription.clone();
+    (self.0)(Subscriber {
+      observer,
+      subscription,
+    });
+    unsub
   }
 }
 
@@ -136,24 +134,19 @@ where
   fn fork(&self) -> Self::Output { self.clone() }
 }
 
-impl<F, Item, Err, O, U> RawSubscribable<Subscriber<O, U>>
-  for SharedForkObservable<F, Item, Err>
+impl<F, Item, Err, O, U> Observable<O, U> for SharedForkObservable<F, Item, Err>
 where
-  O: IntoShared,
-  U: IntoShared,
+  O: IntoShared + Observer<Item, Err>,
+  U: IntoShared + SubscriptionLike,
   O::Shared: Observer<Item, Err> + Send + Sync + 'static,
   U::Shared: SubscriptionLike + Clone,
   F: FnOnce(Subscriber<Box<dyn Observer<Item, Err> + Send + Sync>, U::Shared>),
 {
   type Unsub = U::Shared;
-  fn raw_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub {
-    let Subscriber {
-      observer,
-      subscription,
-    } = subscriber.to_shared();
+  fn actual_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub {
+    let subscription = subscriber.subscription.to_shared();
     let observer: Box<dyn Observer<Item, Err> + Send + Sync> =
-      Box::new(observer);
-
+      Box::new(subscriber.observer.to_shared());
     (self.0)(Subscriber {
       observer,
       subscription: subscription.clone(),

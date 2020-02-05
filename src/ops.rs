@@ -43,14 +43,16 @@ pub use filter_map::FilterMap;
 use crate::prelude::*;
 pub struct SharedOp<T>(pub(crate) T);
 
-impl<S, OP> RawSubscribable<S> for SharedOp<OP>
+impl<O, U, OP> Observable<O, U> for SharedOp<OP>
 where
-  OP: RawSubscribable<S::Shared>,
-  S: IntoShared,
+  O: IntoShared,
+  U: SubscriptionLike + IntoShared,
+  U::Shared: SubscriptionLike,
+  OP: Observable<O::Shared, U::Shared>,
 {
   type Unsub = OP::Unsub;
-  fn raw_subscribe(self, subscriber: S) -> Self::Unsub {
-    self.0.raw_subscribe(subscriber.to_shared())
+  fn actual_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub {
+    self.0.actual_subscribe(subscriber.to_shared())
   }
 }
 

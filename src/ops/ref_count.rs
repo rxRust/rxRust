@@ -47,7 +47,8 @@ pub(crate) fn local<S, O, U>(
   connectable: ConnectableObservable<S, Subject<O, U>>,
 ) -> LocalRefCount<S, Subject<O, U>, S::Unsub>
 where
-  S: RawSubscribable<Subscriber<O, U>>,
+  S: Observable<O, U>,
+  U: SubscriptionLike,
   Subject<O, U>: Fork,
 {
   LocalRefCount(Rc::new(RefCell::new(Inner {
@@ -68,19 +69,19 @@ impl<Source, Subject: Fork, U> Fork for SharedRefCount<Source, Subject, U> {
   fn fork(&self) -> Self::Output { SharedRefCount(self.0.clone()) }
 }
 
-macro raw_subscribe($inner: ident, $subscriber: ident) {{
+macro actual_subscribe($inner: ident, $subscriber: ident) {{
   let source = &mut $inner.source;
   let subscription = match source {
     Source::Connectable(c) => {
       let subject = c.fork();
       let c = std::mem::replace(source, Source::Subject(subject.fork()));
-      let subscription = subject.raw_subscribe($subscriber);
+      let subscription = subject.actual_subscribe($subscriber);
       if let Source::Connectable(c) = c {
         $inner.connection = Some(c.connect());
       }
       subscription
     }
-    Source::Subject(s) => s.fork().raw_subscribe($subscriber),
+    Source::Subject(s) => s.fork().actual_subscribe($subscriber),
   };
   let connection = $inner.connection.as_ref().unwrap().clone();
   RefCountSubscription {
@@ -89,36 +90,39 @@ macro raw_subscribe($inner: ident, $subscriber: ident) {{
   }
 }}
 
-impl<S, O, U, Sub> RawSubscribable<Sub>
+impl<S, O, U, SO, SU> Observable<SO, SU>
   for LocalRefCount<S, Subject<O, U>, S::Unsub>
 where
-  S: RawSubscribable<Subscriber<O, U>>,
-  Subject<O, U>: RawSubscribable<Sub, Unsub = U> + Fork<Output = Subject<O, U>>,
+  S: Observable<O, U>,
+  Subject<O, U>: Observable<SO, SU, Unsub = U> + Fork<Output = Subject<O, U>>,
   S::Unsub: Clone,
   U: TearDownSize + 'static,
+  SU: SubscriptionLike,
 {
   type Unsub = RefCountSubscription<U, S::Unsub>;
-  fn raw_subscribe(self, subscriber: Sub) -> Self::Unsub {
+  fn actual_subscribe(self, subscriber: Subscriber<SO, SU>) -> Self::Unsub {
     let mut inner = self.0.borrow_mut();
-    raw_subscribe!(inner, subscriber)
+    actual_subscribe!(inner, subscriber)
   }
 }
 
-impl<S, O, U, Sub> RawSubscribable<Sub>
+impl<S, O, U, SO, SU> Observable<SO, SU>
   for SharedRefCount<S, Subject<O, U>, S::Unsub>
 where
-  S: RawSubscribable<Subscriber<O, U>>,
-  Subject<O, U>:
-    RawSubscribable<Sub::Shared, Unsub = U> + Fork<Output = Subject<O, U>>,
+  S: Observable<O, U>,
+  Subject<O, U>: Observable<SO::Shared, SU::Shared, Unsub = U>
+    + Fork<Output = Subject<O, U>>,
   U: TearDownSize + 'static,
   S::Unsub: Clone,
-  Sub: IntoShared,
+  SO: IntoShared,
+  SU: IntoShared + SubscriptionLike,
+  SU::Shared: SubscriptionLike,
 {
   type Unsub = RefCountSubscription<U, S::Unsub>;
-  fn raw_subscribe(self, subscriber: Sub) -> Self::Unsub {
+  fn actual_subscribe(self, subscriber: Subscriber<SO, SU>) -> Self::Unsub {
     let subscriber = subscriber.to_shared();
     let mut inner = self.0.lock().unwrap();
-    raw_subscribe!(inner, subscriber)
+    actual_subscribe!(inner, subscriber)
   }
 }
 
@@ -190,8 +194,9 @@ where
 impl<Source, O, U> ConnectableObservable<Source, Subject<O, U>> {
   pub fn ref_count(self) -> LocalRefCount<Source, Subject<O, U>, Source::Unsub>
   where
-    Source: RawSubscribable<Subscriber<O, U>>,
+    Source: Observable<O, U>,
     Subject<O, U>: Fork,
+    U: SubscriptionLike,
   {
     local(self)
   }
