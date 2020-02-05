@@ -1,6 +1,6 @@
 #![allow(unused_imports)]
 use crate::observable::from_future::DEFAULT_RUNTIME;
-use crate::observable::SharedOp;
+use crate::ops::SharedOp;
 use crate::prelude::*;
 use futures::prelude::*;
 use futures::{future::RemoteHandle, task::SpawnExt};
