@@ -2,17 +2,17 @@ use crate::observer::{ObserverComplete, ObserverError, ObserverNext};
 use crate::prelude::*;
 
 #[derive(Clone)]
-pub struct SubscribeErr<N, E> {
+pub struct ObserverErr<N, E> {
   next: N,
   error: E,
 }
 
-impl<N, E> ObserverComplete for SubscribeErr<N, E> {
+impl<N, E> ObserverComplete for ObserverErr<N, E> {
   #[inline(always)]
   fn complete(&mut self) {}
 }
 
-impl<N, E, Item> ObserverNext<Item> for SubscribeErr<N, E>
+impl<N, E, Item> ObserverNext<Item> for ObserverErr<N, E>
 where
   N: FnMut(Item),
 {
@@ -20,7 +20,7 @@ where
   fn next(&mut self, err: Item) { (self.next)(err); }
 }
 
-impl<N, E, Err> ObserverError<Err> for SubscribeErr<N, E>
+impl<N, E, Err> ObserverError<Err> for ObserverErr<N, E>
 where
   E: FnMut(Err),
 {
@@ -28,12 +28,12 @@ where
   fn error(&mut self, err: Err) { (self.error)(err); }
 }
 
-impl<N, E> SubscribeErr<N, E> {
+impl<N, E> ObserverErr<N, E> {
   #[inline(always)]
-  pub fn new(next: N, error: E) -> Self { SubscribeErr { next, error } }
+  pub fn new(next: N, error: E) -> Self { ObserverErr { next, error } }
 }
 
-impl<N, E> IntoShared for SubscribeErr<N, E>
+impl<N, E> IntoShared for ObserverErr<N, E>
 where
   Self: Send + Sync + 'static,
 {
@@ -42,7 +42,7 @@ where
   fn to_shared(self) -> Self::Shared { self }
 }
 
-pub trait SubscribableErr<N, E> {
+pub trait SubscribeErr<N, E> {
   /// A type implementing [`SubscriptionLike`]
   type Unsub;
 
@@ -55,15 +55,15 @@ pub trait SubscribableErr<N, E> {
   fn subscribe_err(self, next: N, error: E) -> Self::Unsub;
 }
 
-impl<S, N, E> SubscribableErr<N, E> for S
+impl<S, N, E> SubscribeErr<N, E> for S
 where
-  S: RawSubscribable<Subscriber<SubscribeErr<N, E>, LocalSubscription>>,
+  S: Observable<ObserverErr<N, E>, LocalSubscription>,
 {
   type Unsub = S::Unsub;
   fn subscribe_err(self, next: N, error: E) -> Self::Unsub
   where
     Self: Sized,
   {
-    self.raw_subscribe(Subscriber::local(SubscribeErr { next, error }))
+    self.actual_subscribe(Subscriber::local(ObserverErr { next, error }))
   }
 }

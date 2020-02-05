@@ -35,7 +35,7 @@ impl<Item, Err, T> Observer<Item, Err> for T where
 }
 
 pub(crate) macro observer_next_proxy_impl(
-  $t: ty,  $host_ty: ident, $name:ident, <$($generics: tt),*>) {
+  $t: ty,  $host_ty: ident, $name:tt, <$($generics: tt),*>) {
   impl<$($generics ,)* Item> ObserverNext<Item> for $t
     where $host_ty: ObserverNext<Item> {
     #[inline(always)]
@@ -44,7 +44,7 @@ pub(crate) macro observer_next_proxy_impl(
 }
 
 pub(crate) macro observer_error_proxy_impl(
-  $t: ty,  $host_ty: ident, $name:ident, <$($generics: tt),*>) {
+  $t: ty,  $host_ty: ident, $name:tt, <$($generics: tt),*>) {
   impl<$($generics ,)* Err> ObserverError<Err> for $t
     where $host_ty: ObserverError<Err>
   {

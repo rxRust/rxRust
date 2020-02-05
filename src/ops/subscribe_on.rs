@@ -74,21 +74,23 @@ where
 
 impl<T> SubscribeOn for T {}
 
-impl<O, S, SD> RawSubscribable<O> for SubscribeOnOP<S, SD>
+impl<O, U, Source, SD> Observable<O, U> for SubscribeOnOP<Source, SD>
 where
   O: IntoShared,
-  S: IntoShared,
-  S::Shared: RawSubscribable<O::Shared, Unsub = SharedSubscription>,
+  U: IntoShared + SubscriptionLike,
+  U::Shared: SubscriptionLike,
+  Source: IntoShared,
+  Source::Shared: Observable<O::Shared, U::Shared, Unsub = SharedSubscription>,
   SD: Scheduler,
 {
   type Unsub = SharedSubscription;
 
-  fn raw_subscribe(self, subscriber: O) -> Self::Unsub {
+  fn actual_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub {
     let source = self.source.to_shared();
     let subscriber = subscriber.to_shared();
     self.scheduler.schedule(
       move |mut subscription, _| {
-        subscription.add(source.raw_subscribe(subscriber))
+        subscription.add(source.actual_subscribe(subscriber))
       },
       None,
       (),

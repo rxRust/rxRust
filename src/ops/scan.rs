@@ -101,25 +101,25 @@ pub struct ScanObserver<Observer, BinaryOp, OutputItem> {
 
 // We're making the `ScanOp` being an publisher - an object that
 // subscribers can subscribe to.
-// Doing so by implementing `RawSubscribable` trait for it.
-// Once instantiated, it will have a `raw_subscribe` method in it.
+// Doing so by implementing `Observable` trait for it.
+// Once instantiated, it will have a `actual_subscribe` method in it.
 // Note: we're accepting such subscribers that accept `Output` as their
 // `Item` type.
 impl<OutputItem, InputItem, Observer, Subscription, Source, BinaryOp>
-  RawSubscribable<Subscriber<Observer, Subscription>>
+  Observable<Observer, Subscription>
   for ScanOp<Source, BinaryOp, InputItem, OutputItem>
 where
-  Source: RawSubscribable<
-    Subscriber<ScanObserver<Observer, BinaryOp, OutputItem>, Subscription>,
-  >,
+  Source:
+    Observable<ScanObserver<Observer, BinaryOp, OutputItem>, Subscription>,
   BinaryOp: FnMut(OutputItem, InputItem) -> OutputItem,
+  Subscription: SubscriptionLike,
 {
   type Unsub = Source::Unsub;
-  fn raw_subscribe(
+  fn actual_subscribe(
     self,
     subscriber: Subscriber<Observer, Subscription>,
   ) -> Self::Unsub {
-    self.source_observable.raw_subscribe(Subscriber {
+    self.source_observable.actual_subscribe(Subscriber {
       observer: ScanObserver {
         target_observer: subscriber.observer,
         binary_op: self.binary_op,

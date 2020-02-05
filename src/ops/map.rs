@@ -29,15 +29,16 @@ pub struct MapOp<S, M, B> {
   _p: PhantomData<B>,
 }
 
-impl<Item, B, O, U, S, M> RawSubscribable<Subscriber<O, U>> for MapOp<S, M, B>
+impl<Item, B, O, U, S, M> Observable<O, U> for MapOp<S, M, B>
 where
-  S: RawSubscribable<Subscriber<MapObserver<O, M>, U>>,
+  S: Observable<MapObserver<O, M>, U>,
   M: FnMut(B) -> Item,
+  U: SubscriptionLike,
 {
   type Unsub = S::Unsub;
-  fn raw_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub {
+  fn actual_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub {
     let map = self.func;
-    self.source.raw_subscribe(Subscriber {
+    self.source.actual_subscribe(Subscriber {
       observer: MapObserver {
         observer: subscriber.observer,
         map,

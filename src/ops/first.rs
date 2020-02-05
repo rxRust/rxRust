@@ -36,12 +36,13 @@ pub struct FirstOrOp<S, V> {
   default: V,
 }
 
-impl<O, U, S, T> RawSubscribable<Subscriber<O, U>> for FirstOrOp<S, T>
+impl<O, U, S, T> Observable<O, U> for FirstOrOp<S, T>
 where
-  S: RawSubscribable<Subscriber<FirstOrObserver<O, T>, U>>,
+  S: Observable<FirstOrObserver<O, T>, U>,
+  U: SubscriptionLike,
 {
   type Unsub = S::Unsub;
-  fn raw_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub {
+  fn actual_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub {
     let subscriber = Subscriber {
       observer: FirstOrObserver {
         observer: subscriber.observer,
@@ -49,7 +50,7 @@ where
       },
       subscription: subscriber.subscription,
     };
-    self.source.raw_subscribe(subscriber)
+    self.source.actual_subscribe(subscriber)
   }
 }
 

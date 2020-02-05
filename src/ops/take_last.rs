@@ -66,13 +66,13 @@ where
   }
 }
 
-impl<O, U, S, Item> RawSubscribable<Subscriber<O, U>> for TakeLastOp<S, Item>
+impl<O, U, S, Item> Observable<O, U> for TakeLastOp<S, Item>
 where
-  S: RawSubscribable<Subscriber<TakeLastObserver<O, U, Item>, U>>,
+  S: Observable<TakeLastObserver<O, U, Item>, U>,
   U: SubscriptionLike + Clone + 'static,
 {
   type Unsub = S::Unsub;
-  fn raw_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub {
+  fn actual_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub {
     let subscriber = Subscriber {
       observer: TakeLastObserver {
         observer: subscriber.observer,
@@ -82,7 +82,7 @@ where
       },
       subscription: subscriber.subscription,
     };
-    self.source.raw_subscribe(subscriber)
+    self.source.actual_subscribe(subscriber)
   }
 }
 

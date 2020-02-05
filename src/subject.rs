@@ -24,9 +24,9 @@ impl<T> Clone for SubjectMutRefValue<T> {
 
 impl<T> Copy for SubjectMutRefValue<T> {}
 
-pub struct LocalSubjectObserver<'a, Item, Err>(
-  Rc<RefCell<Vec<Box<dyn Publisher<Item, Err> + 'a>>>>,
-);
+type RcBoxPublisher<'a, Item, Err> =
+  Rc<RefCell<Vec<Box<dyn Publisher<Item, Err> + 'a>>>>;
+pub struct LocalSubjectObserver<'a, Item, Err>(RcBoxPublisher<'a, Item, Err>);
 pub type LocalSubject<'a, Item, Err> =
   Subject<LocalSubjectObserver<'a, Item, Err>, LocalSubscription>;
 
@@ -96,9 +96,9 @@ where
   }
 }
 
-macro local_subject_raw_subscribe_impl($o: ident,$u: ident) {
+macro local_subject_actual_subscribe_impl($o: ident,$u: ident) {
   type Unsub = $u;
-  fn raw_subscribe(mut self, subscriber: Subscriber<$o, $u>) -> Self::Unsub {
+  fn actual_subscribe(mut self, subscriber: Subscriber<$o, $u>) -> Self::Unsub {
     let subscription = subscriber.subscription.clone();
     self.subscription.add(subscription.clone());
     self
@@ -109,52 +109,51 @@ macro local_subject_raw_subscribe_impl($o: ident,$u: ident) {
   }
 }
 
-impl<'a, Item: Copy, Err: Copy, O, U> RawSubscribable<Subscriber<O, U>>
+impl<'a, Item: Copy, Err: Copy, O, U> Observable<O, U>
   for LocalSubject<'a, SubjectValue<Item>, SubjectValue<Err>>
 where
   O: Observer<Item, Err> + 'a,
   U: SubscriptionLike + Clone + 'static,
 {
-  local_subject_raw_subscribe_impl!(O, U);
+  local_subject_actual_subscribe_impl!(O, U);
 }
 
-impl<'a, Item, Err: Copy, O, U> RawSubscribable<Subscriber<O, U>>
+impl<'a, Item, Err: Copy, O, U> Observable<O, U>
   for LocalSubject<'a, SubjectMutRefValue<Item>, SubjectValue<Err>>
 where
   O: for<'r> Observer<&'r mut Item, Err> + 'a,
   U: SubscriptionLike + Clone + 'static,
 {
-  local_subject_raw_subscribe_impl!(O, U);
+  local_subject_actual_subscribe_impl!(O, U);
 }
 
-impl<'a, Item: Copy, Err, O, U> RawSubscribable<Subscriber<O, U>>
+impl<'a, Item: Copy, Err, O, U> Observable<O, U>
   for LocalSubject<'a, SubjectValue<Item>, SubjectMutRefValue<Err>>
 where
   O: for<'r> Observer<Item, &'r mut Err> + 'a,
   U: SubscriptionLike + Clone + 'static,
 {
-  local_subject_raw_subscribe_impl!(O, U);
+  local_subject_actual_subscribe_impl!(O, U);
 }
 
-impl<'a, Item, Err, O, U> RawSubscribable<Subscriber<O, U>>
+impl<'a, Item, Err, O, U> Observable<O, U>
   for LocalSubject<'a, SubjectMutRefValue<Item>, SubjectMutRefValue<Err>>
 where
   O: for<'r> Observer<&'r mut Item, &'r mut Err> + 'a,
   U: SubscriptionLike + Clone + 'static,
 {
-  local_subject_raw_subscribe_impl!(O, U);
+  local_subject_actual_subscribe_impl!(O, U);
 }
 
-impl<Item, Err, O, S> RawSubscribable<Subscriber<O, S>>
-  for SharedSubject<Item, Err>
+impl<Item, Err, O, U> Observable<O, U> for SharedSubject<Item, Err>
 where
-  S: IntoShared,
-  O: IntoShared,
+  U: IntoShared + SubscriptionLike,
+  O: IntoShared + Observer<Item, Err>,
   O::Shared: Observer<Item, Err>,
-  S::Shared: SubscriptionLike + Clone + 'static,
+  U::Shared: SubscriptionLike + Clone + 'static,
 {
-  type Unsub = S::Shared;
-  fn raw_subscribe(mut self, subscriber: Subscriber<O, S>) -> Self::Unsub {
+  type Unsub = U::Shared;
+  fn actual_subscribe(mut self, subscriber: Subscriber<O, U>) -> Self::Unsub {
     let subscriber = subscriber.to_shared();
     let subscription = subscriber.subscription.clone();
     self.subscription.add(subscription.clone());
@@ -479,7 +478,7 @@ mod test {
   fn subject_subscribe_subject() {
     let mut local = Subject::local();
     let local2 = Subject::local();
-    local.fork().raw_subscribe(Subscriber {
+    local.fork().actual_subscribe(Subscriber {
       observer: local2.observers,
       subscription: local2.subscription,
     });

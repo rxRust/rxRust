@@ -32,19 +32,17 @@ pub mod observer;
 pub mod ops;
 pub mod scheduler;
 pub mod subject;
-pub mod subscribable;
 pub mod subscriber;
 pub mod subscription;
 
 pub mod prelude {
   pub use crate::observable;
+  pub use crate::observable::*;
   pub use crate::observer;
   pub use crate::ops;
   pub use crate::scheduler::*;
   pub use crate::subject;
   pub use crate::subject::{LocalSubject, SharedSubject, Subject};
-  pub use crate::subscribable;
-  pub use crate::subscribable::*;
   pub use crate::subscriber;
   pub use crate::subscriber::Subscriber;
   pub use crate::subscription;

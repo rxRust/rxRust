@@ -60,15 +60,16 @@ pub struct FilterMapOp<S, F, I> {
   _p: PhantomData<I>,
 }
 
-impl<Item, SourceItem, S, F, O, U> RawSubscribable<Subscriber<O, U>>
+impl<Item, SourceItem, S, F, O, U> Observable<O, U>
   for FilterMapOp<S, F, SourceItem>
 where
-  S: RawSubscribable<Subscriber<FilterMapObserver<O, F>, U>>,
+  U: SubscriptionLike,
+  S: Observable<FilterMapObserver<O, F>, U>,
   F: FnMut(SourceItem) -> Option<Item>,
 {
   type Unsub = S::Unsub;
-  fn raw_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub {
-    self.source.raw_subscribe(Subscriber {
+  fn actual_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub {
+    self.source.actual_subscribe(Subscriber {
       observer: FilterMapObserver {
         down_observer: subscriber.observer,
         f: self.f,

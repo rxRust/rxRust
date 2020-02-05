@@ -2,12 +2,12 @@ use crate::observer::{ObserverComplete, ObserverError, ObserverNext};
 use crate::prelude::*;
 
 #[derive(Clone)]
-pub struct SubscribeComplete<N, C> {
+pub struct ObserverComp<N, C> {
   next: N,
   complete: C,
 }
 
-impl<N, C> ObserverComplete for SubscribeComplete<N, C>
+impl<N, C> ObserverComplete for ObserverComp<N, C>
 where
   C: FnMut(),
 {
@@ -15,12 +15,12 @@ where
   fn complete(&mut self) { (self.complete)(); }
 }
 
-impl<N, C> ObserverError<()> for SubscribeComplete<N, C> {
+impl<N, C> ObserverError<()> for ObserverComp<N, C> {
   #[inline(always)]
   fn error(&mut self, _err: ()) {}
 }
 
-impl<N, C, Item> ObserverNext<Item> for SubscribeComplete<N, C>
+impl<N, C, Item> ObserverNext<Item> for ObserverComp<N, C>
 where
   N: FnMut(Item),
 {
@@ -28,14 +28,12 @@ where
   fn next(&mut self, value: Item) { (self.next)(value); }
 }
 
-impl<N, C> SubscribeComplete<N, C> {
+impl<N, C> ObserverComp<N, C> {
   #[inline(always)]
-  pub fn new(next: N, complete: C) -> Self {
-    SubscribeComplete { next, complete }
-  }
+  pub fn new(next: N, complete: C) -> Self { ObserverComp { next, complete } }
 }
 
-impl<N, C> IntoShared for SubscribeComplete<N, C>
+impl<N, C> IntoShared for ObserverComp<N, C>
 where
   Self: Send + Sync + 'static,
 {
@@ -44,7 +42,7 @@ where
   fn to_shared(self) -> Self::Shared { self }
 }
 
-pub trait SubscribableComplete<N, C> {
+pub trait SubscribeComplete<N, C> {
   /// A type implementing [`SubscriptionLike`]
   type Unsub;
 
@@ -53,15 +51,16 @@ pub trait SubscribableComplete<N, C> {
   fn subscribe_complete(self, next: N, complete: C) -> Self::Unsub;
 }
 
-impl<S, N, C> SubscribableComplete<N, C> for S
+impl<S, N, C> SubscribeComplete<N, C> for S
 where
-  S: RawSubscribable<Subscriber<SubscribeComplete<N, C>, LocalSubscription>>,
+  S: Observable<ObserverComp<N, C>, LocalSubscription>,
+  C: FnMut(),
 {
   type Unsub = S::Unsub;
   fn subscribe_complete(self, next: N, complete: C) -> Self::Unsub
   where
     Self: Sized,
   {
-    self.raw_subscribe(Subscriber::local(SubscribeComplete { next, complete }))
+    self.actual_subscribe(Subscriber::local(ObserverComp { next, complete }))
   }
 }
