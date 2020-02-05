@@ -325,7 +325,7 @@ mod test {
 
   #[test]
   fn merge_fork() {
-    let o = observable::new(|mut s| {
+    let o = observable::create(|mut s| {
       s.next(1);
       s.next(2);
       s.error(());

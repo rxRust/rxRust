@@ -255,7 +255,7 @@ mod test {
   fn last_or_support_fork() {
     let mut default = 0;
     let mut default2 = 0;
-    let o = observable::new(|mut subscriber| {
+    let o = observable::create(|mut subscriber| {
       subscriber.complete();
     })
     .last_or(100);

@@ -45,22 +45,24 @@ where
   O: Observer<usize, Err> + Send + Sync + 'static,
   Err: 'static,
 {
-  observable::new(move |mut subscriber: Subscriber<O, SharedSubscription>| {
-    let mut subscription = subscriber.subscription.clone();
-    let mut number = 0;
-    let f = build_interval().for_each(move |_| {
-      subscriber.next(number);
-      number += 1;
-      future::ready(())
-    });
-    let handle = DEFAULT_RUNTIME
-      .lock()
-      .unwrap()
-      .spawn_with_handle(f)
-      .expect("spawn future for an interval failed");
+  observable::create(
+    move |mut subscriber: Subscriber<O, SharedSubscription>| {
+      let mut subscription = subscriber.subscription.clone();
+      let mut number = 0;
+      let f = build_interval().for_each(move |_| {
+        subscriber.next(number);
+        number += 1;
+        future::ready(())
+      });
+      let handle = DEFAULT_RUNTIME
+        .lock()
+        .unwrap()
+        .spawn_with_handle(f)
+        .expect("spawn future for an interval failed");
 
-    subscription.add(SpawnHandle::new(handle));
-  })
+      subscription.add(SpawnHandle::new(handle));
+    },
+  )
   .to_shared()
 }
 
