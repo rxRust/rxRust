@@ -9,6 +9,20 @@
 
 ### Breaking Changes
 
+- **observable** Redefine `RawSubscribable` as `Observable`. From
+  ```rust
+  pub trait RawSubscribable<Subscriber> {
+    type Unsub: SubscriptionLike + 'static;
+    fn raw_subscribe(self, subscriber: Subscriber) -> Self::Unsub;
+  }
+  ```
+  to
+  ```rust
+  pub trait Observable<O, U: SubscriptionLike> {
+    type Unsub: SubscriptionLike + 'static;
+    fn actual_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub;
+  }
+  ```
 - **observable**: remove `Observable::new`, and add a same `create` function in `observable` to replace it.
 - **observable**: Rename `Observable` to `ObservableFromFn`.
 
