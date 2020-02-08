@@ -189,6 +189,24 @@ impl<Item, Err> SubscriptionLike
   subscription_direct_impl_proxy!();
 }
 
+/// An RAII implementation of a "scoped subscribed" of a subscription.
+/// When this structure is dropped (falls out of scope), the subscription will
+/// be unsubscribed.
+pub struct SubscriptionGuard<T: SubscriptionLike>(pub(crate) T);
+impl<T: SubscriptionLike> Drop for SubscriptionGuard<T> {
+  #[inline]
+  fn drop(&mut self) { self.0.unsubscribe() }
+}
+
+impl<T: SubscriptionLike> SubscriptionLike for SubscriptionGuard<T> {
+  #[inline(always)]
+  fn unsubscribe(&mut self) { self.0.unsubscribe(); }
+  #[inline(always)]
+  fn is_closed(&self) -> bool { self.0.is_closed() }
+  #[inline(always)]
+  fn inner_addr(&self) -> *const () { self.0.inner_addr() }
+}
+
 #[cfg(test)]
 mod test {
   use super::*;

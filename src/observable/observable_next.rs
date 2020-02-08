@@ -33,11 +33,11 @@ where
 
 pub trait SubscribeNext<N> {
   /// A type implementing [`SubscriptionLike`]
-  type Unsub;
+  type Unsub: SubscriptionLike;
 
   /// Invokes an execution of an Observable and registers Observer handlers for
   /// notifications it will emit.
-  fn subscribe(self, next: N) -> Self::Unsub;
+  fn subscribe(self, next: N) -> SubscriptionGuard<Self::Unsub>;
 }
 
 impl<S, N> SubscribeNext<N> for S
@@ -45,10 +45,24 @@ where
   S: Observable<ObserverN<N>, LocalSubscription>,
 {
   type Unsub = S::Unsub;
-  fn subscribe(self, next: N) -> Self::Unsub
+  fn subscribe(self, next: N) -> SubscriptionGuard<Self::Unsub>
   where
     Self: Sized,
   {
-    self.actual_subscribe(Subscriber::local(ObserverN(next)))
+    let unsub = self.actual_subscribe(Subscriber::local(ObserverN(next)));
+    SubscriptionGuard(unsub)
   }
+}
+
+#[test]
+fn raii() {
+  let mut times = 0;
+  {
+    let mut subject = Subject::local();
+    subject.fork().subscribe(|_| {
+      times += 1;
+    });
+    subject.next(());
+  }
+  assert_eq!(times, 0);
 }

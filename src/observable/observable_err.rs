@@ -44,7 +44,7 @@ where
 
 pub trait SubscribeErr<N, E> {
   /// A type implementing [`SubscriptionLike`]
-  type Unsub;
+  type Unsub: SubscriptionLike;
 
   /// Invokes an execution of an Observable and registers Observer handlers for
   /// notifications it will emit.
@@ -52,7 +52,7 @@ pub trait SubscribeErr<N, E> {
   /// * `error`: A handler for a terminal event resulting from an error.
   /// completion.
   ///
-  fn subscribe_err(self, next: N, error: E) -> Self::Unsub;
+  fn subscribe_err(self, next: N, error: E) -> SubscriptionGuard<Self::Unsub>;
 }
 
 impl<S, N, E> SubscribeErr<N, E> for S
@@ -60,10 +60,24 @@ where
   S: Observable<ObserverErr<N, E>, LocalSubscription>,
 {
   type Unsub = S::Unsub;
-  fn subscribe_err(self, next: N, error: E) -> Self::Unsub
+  fn subscribe_err(self, next: N, error: E) -> SubscriptionGuard<Self::Unsub>
   where
     Self: Sized,
   {
-    self.actual_subscribe(Subscriber::local(ObserverErr { next, error }))
+    let unsub =
+      self.actual_subscribe(Subscriber::local(ObserverErr { next, error }));
+    SubscriptionGuard(unsub)
   }
+}
+
+#[test]
+fn raii() {
+  let mut times = 0;
+  {
+    let mut subject = Subject::local();
+    subject.fork().subscribe_err(|_| times += 1, |_| {});
+    subject.next(());
+    subject.error(());
+  }
+  assert_eq!(times, 0);
 }
