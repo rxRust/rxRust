@@ -20,6 +20,22 @@ pub trait SubscriptionLike {
 #[derive(Clone, Default)]
 pub struct LocalSubscription(Rc<RefCell<Inner<Box<dyn SubscriptionLike>>>>);
 
+pub(crate) macro subscription_proxy_impl(
+  $t: ty,  $host_ty: ident, $name:tt,
+  <$($generics: ident  $(: $bound: tt)?),*>) {
+  impl<$($generics $(:$bound)?),*> SubscriptionLike for $t
+  where
+    $host_ty: SubscriptionLike,
+  {
+    #[inline(always)]
+    fn unsubscribe(&mut self) { self.$name.unsubscribe(); }
+    #[inline(always)]
+    fn is_closed(&self) -> bool { self.$name.is_closed() }
+    #[inline(always)]
+    fn inner_addr(&self) -> *const () { self.$name.inner_addr() }
+  }
+}
+
 impl LocalSubscription {
   pub fn add<S: SubscriptionLike + 'static>(&mut self, subscription: S) {
     if self.inner_addr() != subscription.inner_addr() {
@@ -198,14 +214,7 @@ impl<T: SubscriptionLike> Drop for SubscriptionGuard<T> {
   fn drop(&mut self) { self.0.unsubscribe() }
 }
 
-impl<T: SubscriptionLike> SubscriptionLike for SubscriptionGuard<T> {
-  #[inline(always)]
-  fn unsubscribe(&mut self) { self.0.unsubscribe(); }
-  #[inline(always)]
-  fn is_closed(&self) -> bool { self.0.is_closed() }
-  #[inline(always)]
-  fn inner_addr(&self) -> *const () { self.0.inner_addr() }
-}
+subscription_proxy_impl!(SubscriptionGuard<T>, T, 0, <T>);
 
 #[cfg(test)]
 mod test {

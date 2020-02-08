@@ -139,7 +139,7 @@ where
   }
 }
 
-observer_error_proxy_impl!(FilterMapObserver<O, F>, O, down_observer, <O, F>);
+observer_error_proxy_impl!(FilterMapObserver<O, F>, O, down_observer, <O, F, Err>, Err);
 observer_complete_proxy_impl!(
   FilterMapObserver<O, F>, O, down_observer, <O, F>);
 
@@ -159,6 +159,7 @@ where
 
 #[cfg(test)]
 mod test {
+  use crate::subject::MutRefValue;
   use crate::{ops::FilterMap, prelude::*};
 
   #[test]
@@ -199,6 +200,6 @@ mod test {
       .filter_map::<fn(&mut i32) -> Option<&mut i32>, _, _>(|v| Some(v))
       .subscribe(|_: &mut i32| {});
 
-    subject.next(&mut 1);
+    subject.next(MutRefValue(&mut 1));
   }
 }

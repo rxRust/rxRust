@@ -149,7 +149,7 @@ where
 }
 
 observer_error_proxy_impl!(ScanObserver<Source, BinaryOp, OutputItem>,
-  Source, target_observer, <Source, BinaryOp, OutputItem>);
+  Source, target_observer, <Source, BinaryOp, OutputItem, Err>, Err);
 observer_complete_proxy_impl!(ScanObserver<Source, BinaryOp, OutputItem>,
   Source, target_observer, <Source, BinaryOp, OutputItem>);
 

@@ -62,7 +62,7 @@ where
 }
 
 observer_complete_proxy_impl!(MapObserver<O, M>, O, observer, <O, M>);
-observer_error_proxy_impl!(MapObserver<O, M>, O, observer, <O, M>);
+observer_error_proxy_impl!(MapObserver<O, M>, O, observer, <O, M, Err>, Err);
 
 impl<S, M, B> Fork for MapOp<S, M, B>
 where

@@ -121,7 +121,7 @@ where
   }
 }
 
-observer_error_proxy_impl!(TakeObserver<O, U>, O, observer, <O,U>);
+observer_error_proxy_impl!(TakeObserver<O, U>, O, observer, <O,U, Err>, Err);
 observer_complete_proxy_impl!(TakeObserver<O, U>, O,  observer, <O,U>);
 
 impl<S> Fork for TakeOp<S>

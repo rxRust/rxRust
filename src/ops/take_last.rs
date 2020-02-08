@@ -135,7 +135,7 @@ where
 }
 
 observer_error_proxy_impl!(
-  TakeLastObserver<O, U, Item>, O, observer, <O, U, Item>
+  TakeLastObserver<O, U, Item>, O, observer, <O, U, Item, Err>, Err
 );
 
 impl<S, Item> Fork for TakeLastOp<S, Item>

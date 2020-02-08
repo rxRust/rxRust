@@ -120,7 +120,8 @@ impl<O, Item> ObserverNext<Item> for LastOrObserver<O, Item> {
   fn next(&mut self, value: Item) { self.last = Some(value); }
 }
 
-observer_error_proxy_impl!(LastOrObserver<O, Item>, O, observer, <O, Item>);
+observer_error_proxy_impl!(
+  LastOrObserver<O, Item>, O, observer, <O, Item, Err>, Err);
 
 impl<O, Item> ObserverComplete for LastOrObserver<O, Item>
 where

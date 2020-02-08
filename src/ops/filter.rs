@@ -77,7 +77,7 @@ where
   }
 }
 
-observer_error_proxy_impl!(FilterObserver<O, F>, O, observer, <O, F>);
+observer_error_proxy_impl!(FilterObserver<O, F>, O, observer, <O, F, Err>, Err);
 observer_complete_proxy_impl!(FilterObserver<O, F>, O, observer, <O, F>);
 
 impl<S, F> Fork for FilterOp<S, F>

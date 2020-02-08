@@ -83,7 +83,8 @@ where
   }
 }
 
-observer_error_proxy_impl!(FirstOrObserver<O, Item>, O, observer, <O, Item>);
+observer_error_proxy_impl!(
+  FirstOrObserver<O, Item>, O, observer, <O, Item, Err>, Err);
 
 impl<O, Item> ObserverComplete for FirstOrObserver<O, Item>
 where

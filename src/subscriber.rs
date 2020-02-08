@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use subscription::subscription_proxy_impl;
 
 /// Implements the Observer trait and Subscription trait. While the Observer is
 /// the public API for consuming the values of an Observable, all Observers get
@@ -80,19 +81,7 @@ where
   }
 }
 
-impl<O, U> SubscriptionLike for Subscriber<O, U>
-where
-  U: SubscriptionLike,
-{
-  #[inline(always)]
-  fn unsubscribe(&mut self) { self.subscription.unsubscribe(); }
-
-  #[inline(always)]
-  fn is_closed(&self) -> bool { self.subscription.is_closed() }
-
-  #[inline(always)]
-  fn inner_addr(&self) -> *const () { self.subscription.inner_addr() }
-}
+subscription_proxy_impl!(Subscriber<O, U>, U, subscription, <O, U>);
 
 #[cfg(test)]
 mod test {

@@ -149,7 +149,8 @@ fn shared_observer<O>(
   }))
 }
 
-observer_next_proxy_impl!(MergeObserver<O, Unsub>, O, observer, <O, Unsub>);
+observer_next_proxy_impl!(
+  MergeObserver<O, Unsub>,  O, observer, <Item, O, Unsub>, Item);
 
 impl<Err, O, Unsub> ObserverError<Err> for MergeObserver<O, Unsub>
 where

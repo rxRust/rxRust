@@ -35,21 +35,25 @@ impl<Item, Err, T> Observer<Item, Err> for T where
 }
 
 pub(crate) macro observer_next_proxy_impl(
-  $t: ty,  $host_ty: ident, $name:tt, <$($generics: tt),*>) {
-  impl<$($generics ,)* Item> ObserverNext<Item> for $t
-    where $host_ty: ObserverNext<Item> {
+  $t: ty,  $host_ty: ident, $name:tt,
+  <$($generics: ident  $(: $bound: tt)?),*>, $item: ident) {
+  impl<$($generics $(:$bound)?),*> ObserverNext<$item> for $t
+  where
+    $host_ty: ObserverNext<$item>,
+  {
     #[inline(always)]
-    fn next(&mut self, value: Item) { self.$name.next(value); }
+    fn next(&mut self, value: $item) { self.$name.next(value); }
   }
 }
 
 pub(crate) macro observer_error_proxy_impl(
-  $t: ty,  $host_ty: ident, $name:tt, <$($generics: tt),*>) {
-  impl<$($generics ,)* Err> ObserverError<Err> for $t
-    where $host_ty: ObserverError<Err>
+  $t: ty,  $host_ty: ident, $name:tt,
+  <$($generics: ident  $(: $bound: tt)?),*>, $err: ident) {
+  impl<$($generics $(:$bound)?),*> ObserverError<$err> for $t
+    where $host_ty: ObserverError<$err>
   {
     #[inline(always)]
-    fn error(&mut self, err: Err) { self.$name.error(err); }
+    fn error(&mut self, err: $err) { self.$name.error(err); }
   }
 }
 

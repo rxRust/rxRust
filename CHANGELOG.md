@@ -6,11 +6,14 @@
 ### Refactor
 
 - **observable**: Observable split into many concrete type, not only use a Observable struct to wrap all, every observable creating function has a concrete type.
+- **observable** rename `RawSubscribable` to `Observable` 
 
 ### Breaking Changes
 
-- **subscription** Now `subscribe`, `subscribe_err`, `subscribe_complete` and `subscribe_all` return a RAII implementation of a "scoped subscribed" of a subscription, and their "scoped subscribed" is bind to the return value.
-- **observable** Redefine `RawSubscribable` as `Observable`. From
+- **subject**: For now, LocalSubject emit value by mut ref must wrap with `subject::MutRefValue`. Use `subject.next(MutRefValue(&mut i))` replace `subject.next(&mut 1);`.
+
+- **subscription**: Now `subscribe`, `subscribe_err`, `subscribe_complete` and `subscribe_all` return a RAII implementation of a "scoped subscribed" of a subscription, and their "scoped subscribed" is bind to the return value.
+- **observable**: Redefine `RawSubscribable` as `Observable`. From
   ```rust
   pub trait RawSubscribable<Subscriber> {
     type Unsub: SubscriptionLike + 'static;

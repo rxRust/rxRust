@@ -269,21 +269,6 @@ fn fork_and_shared() {
 }
 
 #[test]
-fn filter() {
-  use crate::ops::{FilterMap, Publish};
-  let mut subject = Subject::local();
-
-  subject
-    .fork()
-    .filter_map::<fn(&mut i32) -> Option<&mut i32>, _, _>(|v| Some(v))
-    .publish()
-    .subscribe_err(|_: &mut _| {}, |_: &mut i32| {});
-
-  subject.next(&mut 1);
-  subject.error(&mut 2);
-}
-
-#[test]
 #[should_panic]
 fn convert_local_ref_count_to_shared_should_panic() {
   use crate::ops::Publish;
