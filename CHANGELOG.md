@@ -9,6 +9,7 @@
 
 ### Breaking Changes
 
+- **subscription** Now `subscribe`, `subscribe_err`, `subscribe_complete` and `subscribe_all` return a RAII implementation of a "scoped subscribed" of a subscription, and their "scoped subscribed" is bind to the return value.
 - **observable** Redefine `RawSubscribable` as `Observable`. From
   ```rust
   pub trait RawSubscribable<Subscriber> {

@@ -374,7 +374,7 @@ mod test {
     let mut i = 1;
     // emit item by mut ref, emit error by value
     let mut subject = Subject::local();
-    subject.fork().subscribe_err(|v: &mut _| *v = 100, |_| {});
+    let _guard = subject.fork().subscribe_err(|v: &mut _| *v = 100, |_| {});
     subject.next(&mut i);
     subject.error(1);
     assert_eq!(i, 100);
@@ -396,7 +396,7 @@ mod test {
     let mut i = 0;
     {
       let mut broadcast = Subject::local();
-      broadcast.fork().subscribe(|v| i = v * 2);
+      let _guard = broadcast.fork().subscribe(|v| i = v * 2);
       broadcast.next(1);
     }
     assert_eq!(i, 2);
@@ -406,7 +406,7 @@ mod test {
   #[should_panic]
   fn error() {
     let mut broadcast = Subject::local();
-    broadcast
+    let _guard = broadcast
       .fork()
       .subscribe_err(|_: i32| {}, |e: _| panic!(e));
     broadcast.next(1);
@@ -445,7 +445,7 @@ mod test {
     let value = Arc::new(Mutex::new(0));
     let c_v = value.clone();
     let mut subject = Subject::local().to_shared();
-    subject.fork().observe_on(Schedulers::NewThread).subscribe(
+    let _guard = subject.fork().observe_on(Schedulers::NewThread).subscribe(
       move |v: i32| {
         *value.lock().unwrap() = v;
       },
@@ -463,7 +463,7 @@ mod test {
     {
       // emit mut ref
       let mut subject = Subject::local();
-      subject
+      let _guard = subject
         .fork()
         .filter_map((|v| Some(v)) as for<'r> fn(&'r mut _) -> Option<&'r mut _>)
         .subscribe(|_: &mut i32| {

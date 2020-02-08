@@ -21,7 +21,7 @@ lazy_static! {
 /// let res = Arc::new(Mutex::new(0));
 /// let c_res = res.clone();
 /// use futures::future;
-/// observable::from_future(future::ready(1))
+/// let _guard = observable::from_future(future::ready(1))
 ///   .subscribe(move |v| {
 ///     *res.lock().unwrap() = v;
 ///   });
@@ -94,7 +94,7 @@ fn smoke() {
   let res = Arc::new(Mutex::new(0));
   let c_res = res.clone();
   {
-    from_future_with_err(future::ok(1)).subscribe(move |v| {
+    let _guard = from_future_with_err(future::ok(1)).subscribe(move |v| {
       *res.lock().unwrap() = v;
     });
     std::thread::sleep(std::time::Duration::from_millis(10));
@@ -102,7 +102,7 @@ fn smoke() {
   }
   // from_future
   let res = c_res.clone();
-  from_future(future::ready(2)).subscribe(move |v| {
+  let _guard = from_future(future::ready(2)).subscribe(move |v| {
     *res.lock().unwrap() = v;
   });
   std::thread::sleep(std::time::Duration::from_millis(10));

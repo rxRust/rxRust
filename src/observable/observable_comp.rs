@@ -44,11 +44,15 @@ where
 
 pub trait SubscribeComplete<N, C> {
   /// A type implementing [`SubscriptionLike`]
-  type Unsub;
+  type Unsub: SubscriptionLike;
 
   /// Invokes an execution of an Observable and registers Observer handlers for
   /// notifications it will emit.
-  fn subscribe_complete(self, next: N, complete: C) -> Self::Unsub;
+  fn subscribe_complete(
+    self,
+    next: N,
+    complete: C,
+  ) -> SubscriptionGuard<Self::Unsub>;
 }
 
 impl<S, N, C> SubscribeComplete<N, C> for S
@@ -57,10 +61,27 @@ where
   C: FnMut(),
 {
   type Unsub = S::Unsub;
-  fn subscribe_complete(self, next: N, complete: C) -> Self::Unsub
+  fn subscribe_complete(
+    self,
+    next: N,
+    complete: C,
+  ) -> SubscriptionGuard<Self::Unsub>
   where
     Self: Sized,
   {
-    self.actual_subscribe(Subscriber::local(ObserverComp { next, complete }))
+    let unsub =
+      self.actual_subscribe(Subscriber::local(ObserverComp { next, complete }));
+    SubscriptionGuard(unsub)
   }
+}
+
+#[test]
+fn raii() {
+  let mut times = 0;
+  {
+    let mut subject = Subject::local();
+    subject.fork().subscribe_complete(|_| times += 1, || {});
+    subject.next(());
+  }
+  assert_eq!(times, 0);
 }

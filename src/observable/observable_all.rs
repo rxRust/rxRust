@@ -54,7 +54,7 @@ where
 
 pub trait SubscribeAll<N, E, C> {
   /// A type implementing [`SubscriptionLike`]
-  type Unsub;
+  type Unsub: SubscriptionLike;
 
   /// Invokes an execution of an Observable and registers Observer handlers for
   /// notifications it will emit.
@@ -63,7 +63,12 @@ pub trait SubscribeAll<N, E, C> {
   /// * `complete`: A handler for a terminal event resulting from successful
   /// completion.
   ///
-  fn subscribe_all(self, next: N, error: E, complete: C) -> Self::Unsub;
+  fn subscribe_all(
+    self,
+    next: N,
+    error: E,
+    complete: C,
+  ) -> SubscriptionGuard<Self::Unsub>;
 }
 
 impl<S, N, E, C> SubscribeAll<N, E, C> for S
@@ -71,7 +76,12 @@ where
   S: Observable<ObserverAll<N, E, C>, LocalSubscription>,
 {
   type Unsub = S::Unsub;
-  fn subscribe_all(self, next: N, error: E, complete: C) -> Self::Unsub
+  fn subscribe_all(
+    self,
+    next: N,
+    error: E,
+    complete: C,
+  ) -> SubscriptionGuard<Self::Unsub>
   where
     Self: Sized,
   {
@@ -80,6 +90,18 @@ where
       error,
       complete,
     });
-    self.actual_subscribe(subscriber)
+    SubscriptionGuard(self.actual_subscribe(subscriber))
   }
+}
+
+#[test]
+fn raii() {
+  let mut times = 0;
+  {
+    let mut subject = Subject::local();
+    subject.fork().subscribe_all(|_| times += 1, |_| {}, || {});
+    subject.next(());
+    subject.error(());
+  }
+  assert_eq!(times, 0);
 }

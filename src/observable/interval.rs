@@ -91,20 +91,12 @@ where
   fn to_shared(self) -> Self::Shared { self }
 }
 
-impl<T> Drop for SpawnHandle<T> {
-  fn drop(&mut self) {
-    if self.0.is_some() {
-      self.0.take().unwrap().forget()
-    }
-  }
-}
-
 #[test]
 fn smoke() {
   use std::sync::{Arc, Mutex};
   let seconds = Arc::new(Mutex::new(0));
   let c_seconds = seconds.clone();
-  interval(Duration::from_millis(20)).subscribe(move |_| {
+  let _guard = interval(Duration::from_millis(20)).subscribe(move |_| {
     *seconds.lock().unwrap() += 1;
   });
   std::thread::sleep(Duration::from_millis(110));

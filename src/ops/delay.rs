@@ -67,7 +67,7 @@ fn smoke() {
   use std::sync::{Arc, Mutex};
   let value = Arc::new(Mutex::new(0));
   let c_value = value.clone();
-  observable::of(1)
+  let _guard = observable::of(1)
     .delay(Duration::from_millis(50))
     .subscribe(move |v| {
       *value.lock().unwrap() = v;
