@@ -1,11 +1,18 @@
 use crate::prelude::*;
-use ops::SharedOp;
+use observer::{
+  observer_complete_proxy_impl, observer_error_proxy_impl,
+  observer_next_proxy_impl,
+};
 use std::marker::PhantomData;
 
-/// A representation of any set of values over any amount of time. This is the
-/// most basic building block rxrust
-///
+/// A representation of any set of values over any amount of time.
 pub struct ObservableFromFn<F, Item, Err>(F, PhantomData<(Item, Err)>);
+pub struct ObservableFromFnShared<F, Item, Err>(F, PhantomData<(Item, Err)>);
+
+pub struct PublisherFn<P>(P);
+observer_next_proxy_impl!(PublisherFn<P>, P, 0, <Item, P>, Item);
+observer_error_proxy_impl!(PublisherFn<P>, P, 0, <Err, P>, Err);
+observer_complete_proxy_impl!(PublisherFn<P>, P, 0, <P>);
 
 macro impl_observable($t: ident) {
   unsafe impl<F, Item, Err> Send for $t<F, Item, Err> {}
@@ -16,43 +23,80 @@ macro impl_observable($t: ident) {
   {
     fn clone(&self) -> Self { $t(self.0.clone(), PhantomData) }
   }
+  impl<F, Item, Err> Fork for $t<F, Item, Err>
+  where
+    F: Clone,
+  {
+    type Output = Self;
+    #[inline]
+    fn fork(&self) -> Self::Output { self.clone() }
+  }
 }
 
 impl_observable!(ObservableFromFn);
+impl_observable!(ObservableFromFnShared);
 
 /// param `subscribe`: the function that is called when the Observable is
 /// initially subscribed to. This function is given a Subscriber, to which
 /// new values can be `next`ed, or an `error` method can be called to raise
 /// an error, or `complete` can be called to notify of a successful
 /// completion.
-pub fn create<F, Item, Err, O, U>(
-  subscribe: F,
-) -> ObservableFromFn<F, Item, Err>
+pub fn create<F, P, Item, Err>(subscribe: F) -> ObservableFromFn<F, Item, Err>
 where
-  F: FnOnce(Subscriber<O, U>),
-  O: Observer<Item, Err>,
+  F: FnOnce(PublisherFn<P>),
+  P: Publisher<Item, Err>,
 {
   ObservableFromFn(subscribe, PhantomData)
 }
 
-impl<F, Item, Err> Fork for ObservableFromFn<F, Item, Err>
+#[derive(Clone)]
+pub struct FnEmitter<F, Item, Err>(F, PhantomData<(Item, Err)>);
+
+impl<'a, F, Item, Err> Emitter for FnEmitter<F, Item, Err>
 where
-  F: Clone,
+  F: FnOnce(Box<dyn Publisher<Item, Err> + 'a>),
 {
-  type Output = ForkObservable<F, Item, Err>;
-  #[inline]
-  fn fork(&self) -> Self::Output { ForkObservable(self.0.clone(), PhantomData) }
+  type Item = Item;
+  type Err = Err;
+  fn emit<O, U>(self, subscriber: Subscriber<O, U>)
+  where
+    O: Observer<Self::Item, Self::Err>,
+    U: SubscriptionLike,
+  {
+    unimplemented!();
+    // (self.0)(Box::new(subscriber))
+  }
 }
 
-impl<F, O, U, Item, Err> Observable<O, U> for ObservableFromFn<F, Item, Err>
+impl<'a, F, O, U, Item, Err> Observable<O, U> for ObservableFromFn<F, Item, Err>
 where
-  F: FnOnce(Subscriber<O, U>),
+  O: Observer<Item, Err> + 'a,
+  U: SubscriptionLike + 'a,
+  F: FnOnce(PublisherFn<Box<dyn Publisher<Item, Err> + 'a>>),
   U: SubscriptionLike + Clone,
 {
   type Unsub = U;
   fn actual_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub {
     let subscription = subscriber.subscription.clone();
-    (self.0)(subscriber);
+    (self.0)(PublisherFn(Box::new(subscriber)));
+    subscription
+  }
+}
+
+impl<F, O, U, Item, Err> Observable<O, U>
+  for ObservableFromFnShared<F, Item, Err>
+where
+  O: IntoShared,
+  O::Shared: Observer<Item, Err> + Send + Sync + 'static,
+  U: IntoShared,
+  U::Shared: SubscriptionLike + Send + Sync + 'static,
+  F: FnOnce(PublisherFn<Box<dyn Publisher<Item, Err> + Send + Sync>>),
+  U: SubscriptionLike + Clone,
+{
+  type Unsub = U;
+  fn actual_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub {
+    let subscription = subscriber.subscription.clone();
+    (self.0)(PublisherFn(Box::new(subscriber.to_shared())));
     subscription
   }
 }
@@ -63,96 +107,20 @@ where
   Item: 'static,
   Err: 'static,
 {
-  type Shared = SharedOp<Self>;
+  type Shared = ObservableFromFnShared<F, Item, Err>;
   #[inline]
-  fn to_shared(self) -> Self::Shared { SharedOp(self) }
-}
-
-pub struct ForkObservable<F, Item, Err>(F, PhantomData<(Item, Err)>);
-impl_observable!(ForkObservable);
-
-impl<F, Item, Err> IntoShared for ForkObservable<F, Item, Err>
-where
-  F: Send + Sync + 'static,
-  Item: 'static,
-  Err: 'static,
-{
-  type Shared = SharedForkObservable<F, Item, Err>;
   fn to_shared(self) -> Self::Shared {
-    SharedForkObservable(self.0, PhantomData)
+    ObservableFromFnShared(self.0, PhantomData)
   }
 }
 
-impl<F, Item, Err> Fork for ForkObservable<F, Item, Err>
-where
-  F: Clone,
-{
-  type Output = Self;
-  #[inline(always)]
-  fn fork(&self) -> Self::Output { self.clone() }
-}
-
-impl<'a, F, Item, Err, O, U> Observable<O, U> for ForkObservable<F, Item, Err>
-where
-  O: Observer<Item, Err> + 'a,
-  F: FnOnce(Subscriber<Box<dyn Observer<Item, Err> + 'a>, U>),
-  U: SubscriptionLike + Clone + 'static,
-{
-  type Unsub = U;
-  fn actual_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub {
-    let observer: Box<dyn Observer<Item, Err> + 'a> =
-      Box::new(subscriber.observer);
-
-    let subscription = subscriber.subscription;
-    let unsub = subscription.clone();
-    (self.0)(Subscriber {
-      observer,
-      subscription,
-    });
-    unsub
-  }
-}
-
-pub struct SharedForkObservable<F, Item, Err>(F, PhantomData<(Item, Err)>);
-impl_observable!(SharedForkObservable);
-
-impl<F, Item, Err> IntoShared for SharedForkObservable<F, Item, Err>
+impl<F, Item, Err> IntoShared for ObservableFromFnShared<F, Item, Err>
 where
   Self: Send + Sync + 'static,
 {
   type Shared = Self;
-  #[inline(always)]
+  #[inline]
   fn to_shared(self) -> Self::Shared { self }
-}
-
-impl<F, Item, Err> Fork for SharedForkObservable<F, Item, Err>
-where
-  F: Clone,
-{
-  type Output = Self;
-  #[inline(always)]
-  fn fork(&self) -> Self::Output { self.clone() }
-}
-
-impl<F, Item, Err, O, U> Observable<O, U> for SharedForkObservable<F, Item, Err>
-where
-  O: IntoShared + Observer<Item, Err>,
-  U: IntoShared + SubscriptionLike,
-  O::Shared: Observer<Item, Err> + Send + Sync + 'static,
-  U::Shared: SubscriptionLike + Clone,
-  F: FnOnce(Subscriber<Box<dyn Observer<Item, Err> + Send + Sync>, U::Shared>),
-{
-  type Unsub = U::Shared;
-  fn actual_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub {
-    let subscription = subscriber.subscription.to_shared();
-    let observer: Box<dyn Observer<Item, Err> + Send + Sync> =
-      Box::new(subscriber.observer.to_shared());
-    (self.0)(Subscriber {
-      observer,
-      subscription: subscription.clone(),
-    });
-    subscription
-  }
 }
 
 #[cfg(test)]
@@ -176,7 +144,7 @@ mod test {
       subscriber.next(&3);
       subscriber.complete();
       subscriber.next(&3);
-      subscriber.error(&"never dispatch error");
+      subscriber.error("never dispatch error");
     })
     .to_shared()
     .subscribe_all(
@@ -210,14 +178,14 @@ mod test {
 
   #[test]
   fn fork_and_share() {
-    let observable = observable::empty();
+    let observable = observable::create::<_, _, (), ()>(|_| {});
     // shared after fork
-    observable.fork().to_shared().subscribe(|_: &()| {});
+    observable.fork().to_shared().subscribe(|_| {});
     observable.fork().to_shared().subscribe(|_| {});
 
     // shared before fork
-    let observable = observable::empty().to_shared();
-    observable.fork().subscribe(|_: &()| {});
+    let observable = observable::create::<_, _, (), ()>(|_| {}).to_shared();
+    observable.fork().subscribe(|_| {});
     observable.fork().subscribe(|_| {});
   }
 }

@@ -11,59 +11,60 @@ use std::time::{Duration, Instant};
 /// Creates an observable which will fire at `dur` time into the future,
 /// and will repeat every `dur` interval after.
 ///
-pub fn interval<O, Err>(
-  dur: Duration,
-) -> IntervalOp<impl IntervalFnOnce<O>, Err>
-where
-  O: Observer<usize, Err> + Send + Sync + 'static,
-  Err: 'static,
-{
-  interval_observable_impl(move || Interval::new(dur))
+pub fn interval(dur: Duration) -> ObservableBase<SharedOp<IntervalEmitter>> {
+  ObservableBase::new(SharedOp(IntervalEmitter {
+    dur,
+    at: Instant::now(),
+  }))
 }
 
 /// Creates an observable which will fire at the time specified by `at`,
 /// and then will repeat every `dur` interval after
 ///
-pub fn interval_at<O, Err>(
+pub fn interval_at(
   at: Instant,
   dur: Duration,
-) -> IntervalOp<impl IntervalFnOnce<O>, Err>
-where
-  O: Observer<usize, Err> + Send + Sync + 'static,
-  Err: 'static,
-{
-  interval_observable_impl(move || Interval::new_at(at, dur))
+) -> ObservableBase<SharedOp<IntervalEmitter>> {
+  ObservableBase::new(SharedOp(IntervalEmitter { dur, at }))
 }
 
-pub type IntervalOp<F, Err> = SharedOp<ObservableFromFn<F, usize, Err>>;
-pub trait IntervalFnOnce<O> = FnOnce(Subscriber<O, SharedSubscription>) + Clone;
+#[derive(Clone)]
+pub struct IntervalEmitter {
+  dur: Duration,
+  at: Instant,
+}
 
-fn interval_observable_impl<O, Err>(
-  build_interval: impl FnOnce() -> Interval + Send + Sync + Clone + 'static,
-) -> IntervalOp<impl IntervalFnOnce<O>, Err>
-where
-  O: Observer<usize, Err> + Send + Sync + 'static,
-  Err: 'static,
-{
-  observable::create(
-    move |mut subscriber: Subscriber<O, SharedSubscription>| {
-      let mut subscription = subscriber.subscription.clone();
-      let mut number = 0;
-      let f = build_interval().for_each(move |_| {
-        subscriber.next(number);
-        number += 1;
-        future::ready(())
-      });
-      let handle = DEFAULT_RUNTIME
-        .lock()
-        .unwrap()
-        .spawn_with_handle(f)
-        .expect("spawn future for an interval failed");
+impl IntoShared for IntervalEmitter {
+  type Shared = Self;
+  #[inline(always)]
+  fn to_shared(self) -> Self { self }
+}
 
-      subscription.add(SpawnHandle::new(handle));
-    },
-  )
-  .to_shared()
+impl SharedEmitter for SharedOp<IntervalEmitter> {
+  type Item = usize;
+  type Err = ();
+  fn shared_emit<O>(self, subscriber: Subscriber<O, SharedSubscription>)
+  where
+    O: Observer<Self::Item, Self::Err> + Send + Sync + 'static,
+  {
+    let Subscriber {
+      mut observer,
+      mut subscription,
+    } = subscriber;
+    let mut number = 0;
+    let f = Interval::new_at(self.0.at, self.0.dur).for_each(move |_| {
+      observer.next(number);
+      number += 1;
+      future::ready(())
+    });
+    let handle = DEFAULT_RUNTIME
+      .lock()
+      .unwrap()
+      .spawn_with_handle(f)
+      .expect("spawn future for an interval failed");
+
+    subscription.add(SpawnHandle::new(handle));
+  }
 }
 
 pub struct SpawnHandle<T>(Option<RemoteHandle<T>>);

@@ -41,14 +41,15 @@ pub mod ref_count;
 pub use filter_map::FilterMap;
 
 use crate::prelude::*;
-pub struct SharedOp<T>(pub(crate) T);
+#[derive(Clone)]
+pub struct SharedOp<T: Send + Sync + 'static>(pub(crate) T);
 
 impl<O, U, OP> Observable<O, U> for SharedOp<OP>
 where
   O: IntoShared,
   U: SubscriptionLike + IntoShared,
   U::Shared: SubscriptionLike,
-  OP: Observable<O::Shared, U::Shared>,
+  OP: Observable<O::Shared, U::Shared> + Send + Sync + 'static,
 {
   type Unsub = OP::Unsub;
   fn actual_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub {
@@ -56,19 +57,17 @@ where
   }
 }
 
-impl<OP> Fork for SharedOp<OP>
+impl<OP: Send + Sync + 'static> Fork for SharedOp<OP>
 where
   OP: Fork,
+  OP::Output: Send + Sync + 'static,
 {
   type Output = SharedOp<OP::Output>;
   fn fork(&self) -> Self::Output { SharedOp(self.0.fork()) }
 }
 
-impl<S> IntoShared for SharedOp<S>
-where
-  S: IntoShared + Send + Sync + 'static,
-{
-  type Shared = SharedOp<S::Shared>;
+impl<S: Send + Sync + 'static> IntoShared for SharedOp<S> {
+  type Shared = Self;
   #[inline(always)]
-  fn to_shared(self) -> Self::Shared { SharedOp(self.0.to_shared()) }
+  fn to_shared(self) -> Self::Shared { self }
 }

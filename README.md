@@ -82,7 +82,7 @@ observable::from_future(future::ready(1))
 std::thread::sleep(std::time::Duration::new(1, 0));
 ```
 
-A `from_future_with_err` function also provided to propagating error from `Future`.
+A `from_future_result` function also provided to propagating error from `Future`.
 
 ## Missing Features List
 See [missing features](missing_features.md) to know what rxRust not have for now.

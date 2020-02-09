@@ -1,17 +1,23 @@
 mod trivial;
 pub use trivial::*;
 
-mod from;
-pub use from::*;
+mod from_iter;
+pub use from_iter::{from_iter, repeat};
+
+mod of;
+pub use of::{of, of_fn, of_option, of_result};
 
 pub(crate) mod from_future;
-pub use from_future::{from_future, from_future_with_err};
+pub use from_future::{from_future, from_future_result};
 
 pub(crate) mod interval;
 pub use interval::{interval, interval_at};
 
 pub(crate) mod connectable_observable;
 pub use connectable_observable::{Connect, ConnectableObservable};
+
+mod base;
+pub use base::*;
 
 pub mod from_fn;
 pub use from_fn::{create, ObservableFromFn};
