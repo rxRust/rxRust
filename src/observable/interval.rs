@@ -1,21 +1,19 @@
 #![allow(unused_imports)]
 use crate::observable::from_future::DEFAULT_RUNTIME;
-use crate::ops::SharedOp;
 use crate::prelude::*;
 use futures::prelude::*;
 use futures::{future::RemoteHandle, task::SpawnExt};
 use futures_timer::Interval;
-use observable::ObservableFromFn;
 use std::time::{Duration, Instant};
 
 /// Creates an observable which will fire at `dur` time into the future,
 /// and will repeat every `dur` interval after.
 ///
-pub fn interval(dur: Duration) -> ObservableBase<SharedOp<IntervalEmitter>> {
-  ObservableBase::new(SharedOp(IntervalEmitter {
+pub fn interval(dur: Duration) -> ObservableBase<IntervalEmitter> {
+  ObservableBase::new(IntervalEmitter {
     dur,
     at: Instant::now(),
-  }))
+  })
 }
 
 /// Creates an observable which will fire at the time specified by `at`,
@@ -24,8 +22,8 @@ pub fn interval(dur: Duration) -> ObservableBase<SharedOp<IntervalEmitter>> {
 pub fn interval_at(
   at: Instant,
   dur: Duration,
-) -> ObservableBase<SharedOp<IntervalEmitter>> {
-  ObservableBase::new(SharedOp(IntervalEmitter { dur, at }))
+) -> ObservableBase<IntervalEmitter> {
+  ObservableBase::new(IntervalEmitter { dur, at })
 }
 
 #[derive(Clone)]
@@ -34,13 +32,7 @@ pub struct IntervalEmitter {
   at: Instant,
 }
 
-impl IntoShared for IntervalEmitter {
-  type Shared = Self;
-  #[inline(always)]
-  fn to_shared(self) -> Self { self }
-}
-
-impl SharedEmitter for SharedOp<IntervalEmitter> {
+impl SharedEmitter for IntervalEmitter {
   type Item = usize;
   type Err = ();
   fn shared_emit<O>(self, subscriber: Subscriber<O, SharedSubscription>)
@@ -52,7 +44,7 @@ impl SharedEmitter for SharedOp<IntervalEmitter> {
       mut subscription,
     } = subscriber;
     let mut number = 0;
-    let f = Interval::new_at(self.0.at, self.0.dur).for_each(move |_| {
+    let f = Interval::new_at(self.at, self.dur).for_each(move |_| {
       observer.next(number);
       number += 1;
       future::ready(())
@@ -83,23 +75,17 @@ impl<T> SubscriptionLike for SpawnHandle<T> {
   fn inner_addr(&self) -> *const () { ((&self.0) as *const _) as *const () }
 }
 
-impl<T> IntoShared for SpawnHandle<T>
-where
-  T: Send + Sync + 'static,
-{
-  type Shared = Self;
-  #[inline(always)]
-  fn to_shared(self) -> Self::Shared { self }
-}
-
 #[test]
 fn smoke() {
   use std::sync::{Arc, Mutex};
   let seconds = Arc::new(Mutex::new(0));
   let c_seconds = seconds.clone();
-  let _guard = interval(Duration::from_millis(20)).subscribe(move |_| {
-    *seconds.lock().unwrap() += 1;
-  });
+  let _guard =
+    interval(Duration::from_millis(20))
+      .shared()
+      .subscribe(move |_| {
+        *seconds.lock().unwrap() += 1;
+      });
   std::thread::sleep(Duration::from_millis(110));
   assert_eq!(*c_seconds.lock().unwrap(), 5);
 }
@@ -108,7 +94,7 @@ fn smoke() {
 fn smoke_fork() {
   interval(Duration::from_millis(10))
     .fork()
-    .to_shared()
     .fork()
+    .shared()
     .subscribe(|_| {});
 }

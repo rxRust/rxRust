@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use shared::auto_impl_shared_emitter;
 use std::marker::PhantomData;
 
 /// Creates an observable that emits no items, just terminates with an error.
@@ -14,7 +15,7 @@ pub fn throw<Err>(e: Err) -> ObservableBase<ThrowEmitter<Err>> {
 #[derive(Clone)]
 pub struct ThrowEmitter<Err>(Err);
 
-impl<Err> Emitter for ThrowEmitter<Err> {
+impl<'a, Err> Emitter<'a> for ThrowEmitter<Err> {
   type Item = ();
   type Err = Err;
   #[inline]
@@ -26,6 +27,8 @@ impl<Err> Emitter for ThrowEmitter<Err> {
     subscriber.error(self.0);
   }
 }
+
+auto_impl_shared_emitter!(ThrowEmitter<Err>, <Err>);
 
 /// Creates an observable that produces no values.
 ///
@@ -48,7 +51,7 @@ pub fn empty<Item>() -> ObservableBase<EmptyEmitter<Item>> {
 #[derive(Clone)]
 pub struct EmptyEmitter<Item>(PhantomData<Item>);
 
-impl<Item> Emitter for EmptyEmitter<Item> {
+impl<'a, Item> Emitter<'a> for EmptyEmitter<Item> {
   type Item = Item;
   type Err = ();
   #[inline]
@@ -60,6 +63,7 @@ impl<Item> Emitter for EmptyEmitter<Item> {
     subscriber.complete();
   }
 }
+auto_impl_shared_emitter!(EmptyEmitter<Item>, <Item>);
 
 /// Creates an observable that never emits anything.
 ///
@@ -72,7 +76,7 @@ pub fn never() -> ObservableBase<NeverEmitter> {
 #[derive(Clone)]
 pub struct NeverEmitter();
 
-impl Emitter for NeverEmitter {
+impl<'a> Emitter<'a> for NeverEmitter {
   type Item = ();
   type Err = ();
   #[inline]
@@ -83,6 +87,7 @@ impl Emitter for NeverEmitter {
   {
   }
 }
+auto_impl_shared_emitter!(NeverEmitter);
 
 #[cfg(test)]
 mod test {

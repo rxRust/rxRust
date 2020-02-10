@@ -56,28 +56,6 @@ pub trait TearDownSize: SubscriptionLike {
   fn teardown_size(&self) -> usize;
 }
 
-impl IntoShared for LocalSubscription {
-  type Shared = SharedSubscription;
-  fn to_shared(self) -> SharedSubscription {
-    let inner = util::unwrap_rc_ref_cell(
-      self.0,
-      "Cannot convert a `LocalSubscription` to `SharedSubscription` \
-       when it referenced by other.",
-    );
-
-    if !inner.teardown.is_empty() {
-      panic!(
-        "LocalSubscription already has some teardown work to do,
-         can not covert to SharedSubscription "
-      );
-    }
-    SharedSubscription(Arc::new(Mutex::new(Inner {
-      teardown: SmallVec::new(),
-      closed: inner.closed,
-    })))
-  }
-}
-
 impl SubscriptionLike for LocalSubscription {
   fn unsubscribe(&mut self) {
     let mut inner = self.0.borrow_mut();
@@ -126,12 +104,6 @@ impl SubscriptionLike for SharedSubscription {
     let pointer = &*inner as *const _;
     pointer as *const ()
   }
-}
-
-impl IntoShared for SharedSubscription {
-  type Shared = SharedSubscription;
-  #[inline(always)]
-  fn to_shared(self) -> SharedSubscription { self }
 }
 
 pub trait Publisher<Item, Err>: Observer<Item, Err> + SubscriptionLike {}

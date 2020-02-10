@@ -1,5 +1,4 @@
 use crate::prelude::*;
-use crate::util;
 use observer::{
   observer_complete_proxy_impl, observer_error_proxy_impl,
   observer_next_proxy_impl, ObserverComplete, ObserverError, ObserverNext,
@@ -42,47 +41,6 @@ impl<Item, Err> SharedSubject<Item, Err> {
     Subject {
       observers: Arc::new(Mutex::new(vec![])),
       subscription: SharedSubscription::default(),
-    }
-  }
-}
-impl<Item, Err> IntoShared for SharedSubject<Item, Err>
-where
-  Item: 'static,
-  Err: 'static,
-{
-  type Shared = Self;
-  #[inline(always)]
-  fn to_shared(self) -> Self::Shared { self }
-}
-
-impl<'a, Item, Err> IntoShared for LocalSubject<'a, Item, Err>
-where
-  Item: 'static,
-  Err: 'static,
-{
-  type Shared = Subject<SharedPublishers<Item, Err>, SharedSubscription>;
-  fn to_shared(self) -> Self::Shared {
-    let Self {
-      observers,
-      subscription,
-    } = self;
-    let observers = util::unwrap_rc_ref_cell(
-      observers,
-      "Cannot convert a `LocalSubscription` to `SharedSubscription` \
-       when it referenced by other.",
-    );
-    let observers = if observers.is_empty() {
-      Arc::new(Mutex::new(vec![]))
-    } else {
-      panic!(
-        "Cannot convert a `LocalSubscription` to `SharedSubscription` \
-         when it subscribed."
-      )
-    };
-    let subscription = subscription.to_shared();
-    Subject {
-      observers,
-      subscription,
     }
   }
 }

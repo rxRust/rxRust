@@ -39,7 +39,7 @@ where
 #[derive(Clone)]
 pub struct IterEmitter<Iter>(Iter);
 
-impl<Iter, Item> Emitter for IterEmitter<Iter>
+impl<'a, Iter, Item> Emitter<'a> for IterEmitter<Iter>
 where
   Iter: IntoIterator<Item = Item>,
 {
@@ -48,7 +48,7 @@ where
   fn emit<O, U>(self, mut subscriber: Subscriber<O, U>)
   where
     O: Observer<Self::Item, Self::Err>,
-    U: SubscriptionLike,
+    U: SubscriptionLike + 'a,
   {
     for v in self.0.into_iter() {
       if !subscriber.is_closed() {
@@ -63,13 +63,15 @@ where
   }
 }
 
+shared::auto_impl_shared_emitter!(IterEmitter<Iter>, <Iter>);
+
 /// Creates an observable producing same value repeated N times.
 ///
-/// Completes immediatelly after emitting N values. Never emits an error.
+/// Completes immediately after emitting N values. Never emits an error.
 ///
 /// # Arguments
 ///
-/// * `v` - A value to emitt.
+/// * `v` - A value to emits.
 /// * `n` - A number of time to repeat it.
 ///
 /// # Examples

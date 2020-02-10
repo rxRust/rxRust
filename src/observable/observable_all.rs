@@ -19,15 +19,6 @@ impl<N, E, C> ObserverAll<N, E, C> {
   }
 }
 
-impl<N, E, C> IntoShared for ObserverAll<N, E, C>
-where
-  Self: Send + Sync + 'static,
-{
-  type Shared = Self;
-  #[inline(always)]
-  fn to_shared(self) -> Self::Shared { self }
-}
-
 impl<N, E, C> ObserverComplete for ObserverAll<N, E, C>
 where
   C: FnMut(),
@@ -71,11 +62,14 @@ pub trait SubscribeAll<N, E, C> {
   ) -> SubscriptionGuard<Self::Unsub>;
 }
 
-impl<S, N, E, C> SubscribeAll<N, E, C> for S
+impl<'a, S, N, E, C> SubscribeAll<N, E, C> for S
 where
-  S: Observable<ObserverAll<N, E, C>, LocalSubscription>,
+  S: Observable<'a>,
+  N: FnMut(S::Item) + 'a,
+  E: FnMut(S::Err) + 'a,
+  C: FnMut() + 'a,
 {
-  type Unsub = S::Unsub;
+  type Unsub = LocalSubscription;
   fn subscribe_all(
     self,
     next: N,
@@ -91,6 +85,32 @@ where
       complete,
     });
     SubscriptionGuard(self.actual_subscribe(subscriber))
+  }
+}
+
+impl<S, N, E, C> SubscribeAll<N, E, C> for Shared<S>
+where
+  S: SharedObservable + Send + Sync + 'static,
+  N: FnMut(S::Item) + Send + Sync + 'static,
+  E: FnMut(S::Err) + Send + Sync + 'static,
+  C: FnMut() + Send + Sync + 'static,
+{
+  type Unsub = SharedSubscription;
+  fn subscribe_all(
+    self,
+    next: N,
+    error: E,
+    complete: C,
+  ) -> SubscriptionGuard<Self::Unsub>
+  where
+    Self: Sized,
+  {
+    let subscriber = Subscriber::shared(ObserverAll {
+      next,
+      error,
+      complete,
+    });
+    SubscriptionGuard(self.0.shared_actual_subscribe(subscriber))
   }
 }
 

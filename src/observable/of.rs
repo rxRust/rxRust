@@ -24,7 +24,7 @@ pub fn of<Item>(v: Item) -> ObservableBase<OfEmitter<Item>> {
 #[derive(Clone)]
 pub struct OfEmitter<Item>(pub(crate) Item);
 
-impl<Item> Emitter for OfEmitter<Item> {
+impl<'a, Item> Emitter<'a> for OfEmitter<Item> {
   type Item = Item;
   type Err = ();
   fn emit<O, U>(self, mut subscriber: Subscriber<O, U>)
@@ -38,6 +38,8 @@ impl<Item> Emitter for OfEmitter<Item> {
     }
   }
 }
+
+auto_impl_shared_emitter!(OfEmitter<Item>, <Item>);
 
 /// Creates an observable that emits value or the error from a [`Result`] given.
 ///
@@ -71,7 +73,7 @@ pub fn of_result<Item, Err>(
 
 #[derive(Clone)]
 pub struct ResultEmitter<Item, Err>(pub(crate) Result<Item, Err>);
-impl<Item, Err> Emitter for ResultEmitter<Item, Err> {
+impl<'a, Item, Err> Emitter<'a> for ResultEmitter<Item, Err> {
   type Item = Item;
   type Err = Err;
   fn emit<O, U>(self, mut subscriber: Subscriber<O, U>)
@@ -88,6 +90,8 @@ impl<Item, Err> Emitter for ResultEmitter<Item, Err> {
     }
   }
 }
+
+auto_impl_shared_emitter!(ResultEmitter<Item,Err>, <Item, Err>);
 
 /// Creates an observable that potentially emits a single value from [`Option`].
 ///
@@ -113,7 +117,7 @@ pub fn of_option<Item>(o: Option<Item>) -> ObservableBase<OptionEmitter<Item>> {
 
 #[derive(Clone)]
 pub struct OptionEmitter<Item>(pub(crate) Option<Item>);
-impl<Item> Emitter for OptionEmitter<Item> {
+impl<'a, Item> Emitter<'a> for OptionEmitter<Item> {
   type Item = Item;
   type Err = ();
   fn emit<O, U>(self, mut subscriber: Subscriber<O, U>)
@@ -129,6 +133,8 @@ impl<Item> Emitter for OptionEmitter<Item> {
     }
   }
 }
+
+auto_impl_shared_emitter!(OptionEmitter<Item>, <Item>);
 
 /// Creates an observable that emits the return value of a callable.
 ///
@@ -155,7 +161,7 @@ where
 }
 
 pub struct CallableEmitter<F>(F);
-impl<Item, F> Emitter for CallableEmitter<F>
+impl<'a, Item, F> Emitter<'a> for CallableEmitter<F>
 where
   F: FnOnce() -> Item,
 {
@@ -171,6 +177,7 @@ where
     }
   }
 }
+auto_impl_shared_emitter!(CallableEmitter<F>, <F>);
 
 #[cfg(test)]
 mod test {

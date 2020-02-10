@@ -1,21 +1,12 @@
 use crate::prelude::*;
-use ops::SharedOp;
 
-pub trait Emitter {
+pub trait Emitter<'a> {
   type Item;
   type Err;
   fn emit<O, U>(self, subscriber: Subscriber<O, U>)
   where
-    O: Observer<Self::Item, Self::Err>,
-    U: SubscriptionLike;
-}
-
-impl<T> IntoShared for T
-where
-  T: Emitter + Sync + Send + 'static,
-{
-  type Shared = SharedOp<Self>;
-  fn to_shared(self) -> Self::Shared { SharedOp(self) }
+    O: Observer<Self::Item, Self::Err> + 'a,
+    U: SubscriptionLike + 'a;
 }
 
 #[derive(Clone)]
@@ -25,50 +16,41 @@ impl<Emit> ObservableBase<Emit> {
   pub fn new(emitter: Emit) -> Self { ObservableBase(emitter) }
 }
 
-impl<Emit, O, U> Observable<O, U> for ObservableBase<Emit>
+impl<'a, Emit> Observable<'a> for ObservableBase<Emit>
 where
-  O: Observer<Emit::Item, Emit::Err>,
-  U: SubscriptionLike + Clone,
-  Emit: Emitter,
+  Emit: Emitter<'a>,
 {
-  type Unsub = U;
-  fn actual_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub {
+  type Item = Emit::Item;
+  type Err = Emit::Err;
+  fn actual_subscribe<
+    O: Observer<Self::Item, Self::Err> + 'a,
+    U: SubscriptionLike + Clone + 'static,
+  >(
+    self,
+    subscriber: Subscriber<O, U>,
+  ) -> U {
     let subscription = subscriber.subscription.clone();
     self.0.emit(subscriber);
     subscription
   }
 }
 
-impl<Emit, O, U> Observable<O, U> for ObservableBase<SharedOp<Emit>>
+impl<Emit> SharedObservable for ObservableBase<Emit>
 where
-  Emit: Send + Sync + 'static,
-  O: IntoShared,
-  O::Shared: Observer<
-      <SharedOp<Emit> as SharedEmitter>::Item,
-      <SharedOp<Emit> as SharedEmitter>::Err,
-    > + Send
-    + Sync
-    + 'static,
-  U: IntoShared<Shared = SharedSubscription> + SubscriptionLike,
-  SharedOp<Emit>: SharedEmitter,
+  Emit: SharedEmitter + Send + Sync + 'static,
 {
-  type Unsub = U::Shared;
-  fn actual_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub {
-    let subscriber = subscriber.to_shared();
+  type Item = Emit::Item;
+  type Err = Emit::Err;
+  fn shared_actual_subscribe<
+    O: Observer<Self::Item, Self::Err> + Sync + Send + 'static,
+  >(
+    self,
+    subscriber: Subscriber<O, SharedSubscription>,
+  ) -> SharedSubscription {
     let subscription = subscriber.subscription.clone();
     self.0.shared_emit(subscriber);
     subscription
   }
-}
-
-impl<Emit> IntoShared for ObservableBase<Emit>
-where
-  Emit: IntoShared,
-  Self: Send + Sync + 'static,
-{
-  type Shared = ObservableBase<Emit::Shared>;
-  #[inline(always)]
-  fn to_shared(self) -> Self::Shared { ObservableBase(self.0.to_shared()) }
 }
 
 impl<Emit> Fork for ObservableBase<Emit>

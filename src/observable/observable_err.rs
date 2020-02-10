@@ -33,15 +33,6 @@ impl<N, E> ObserverErr<N, E> {
   pub fn new(next: N, error: E) -> Self { ObserverErr { next, error } }
 }
 
-impl<N, E> IntoShared for ObserverErr<N, E>
-where
-  Self: Send + Sync + 'static,
-{
-  type Shared = Self;
-  #[inline(always)]
-  fn to_shared(self) -> Self::Shared { self }
-}
-
 pub trait SubscribeErr<N, E> {
   /// A type implementing [`SubscriptionLike`]
   type Unsub: SubscriptionLike;
@@ -55,17 +46,37 @@ pub trait SubscribeErr<N, E> {
   fn subscribe_err(self, next: N, error: E) -> SubscriptionGuard<Self::Unsub>;
 }
 
-impl<S, N, E> SubscribeErr<N, E> for S
+impl<'a, S, N, E> SubscribeErr<N, E> for S
 where
-  S: Observable<ObserverErr<N, E>, LocalSubscription>,
+  S: Observable<'a>,
+  N: FnMut(S::Item) + 'a,
+  E: FnMut(S::Err) + 'a,
 {
-  type Unsub = S::Unsub;
+  type Unsub = LocalSubscription;
   fn subscribe_err(self, next: N, error: E) -> SubscriptionGuard<Self::Unsub>
   where
     Self: Sized,
   {
     let unsub =
       self.actual_subscribe(Subscriber::local(ObserverErr { next, error }));
+    SubscriptionGuard(unsub)
+  }
+}
+
+impl<S, N, E> SubscribeErr<N, E> for Shared<S>
+where
+  S: SharedObservable + Send + Sync + 'static,
+  N: FnMut(S::Item) + Send + Sync + 'static,
+  E: FnMut(S::Err) + Send + Sync + 'static,
+{
+  type Unsub = SharedSubscription;
+  fn subscribe_err(self, next: N, error: E) -> SubscriptionGuard<Self::Unsub>
+  where
+    Self: Sized,
+  {
+    let unsub = self
+      .0
+      .shared_actual_subscribe(Subscriber::shared(ObserverErr { next, error }));
     SubscriptionGuard(unsub)
   }
 }

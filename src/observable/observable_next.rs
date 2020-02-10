@@ -22,15 +22,6 @@ where
   fn next(&mut self, value: Item) { (self.0)(value); }
 }
 
-impl<N> IntoShared for ObserverN<N>
-where
-  N: Send + Sync + 'static,
-{
-  type Shared = Self;
-  #[inline(always)]
-  fn to_shared(self) -> Self::Shared { self }
-}
-
 pub trait SubscribeNext<N> {
   /// A type implementing [`SubscriptionLike`]
   type Unsub: SubscriptionLike;
@@ -40,16 +31,28 @@ pub trait SubscribeNext<N> {
   fn subscribe(self, next: N) -> SubscriptionGuard<Self::Unsub>;
 }
 
-impl<S, N> SubscribeNext<N> for S
+impl<'a, S, N> SubscribeNext<N> for S
 where
-  S: Observable<ObserverN<N>, LocalSubscription>,
+  S: Observable<'a, Err = ()>,
+  N: FnMut(S::Item) + 'a,
 {
-  type Unsub = S::Unsub;
-  fn subscribe(self, next: N) -> SubscriptionGuard<Self::Unsub>
-  where
-    Self: Sized,
-  {
+  type Unsub = LocalSubscription;
+  fn subscribe(self, next: N) -> SubscriptionGuard<Self::Unsub> {
     let unsub = self.actual_subscribe(Subscriber::local(ObserverN(next)));
+    SubscriptionGuard(unsub)
+  }
+}
+
+impl<'a, S, N> SubscribeNext<N> for Shared<S>
+where
+  S: SharedObservable<Err = ()> + Send + Sync + 'static,
+  N: FnMut(S::Item) + Send + Sync + 'static,
+{
+  type Unsub = SharedSubscription;
+  fn subscribe(self, next: N) -> SubscriptionGuard<Self::Unsub> {
+    let unsub = self
+      .0
+      .shared_actual_subscribe(Subscriber::shared(ObserverN(next)));
     SubscriptionGuard(unsub)
   }
 }

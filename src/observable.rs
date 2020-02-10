@@ -13,14 +13,14 @@ pub use from_future::{from_future, from_future_result};
 pub(crate) mod interval;
 pub use interval::{interval, interval_at};
 
-pub(crate) mod connectable_observable;
-pub use connectable_observable::{Connect, ConnectableObservable};
+// pub(crate) mod connectable_observable;
+// pub use connectable_observable::{Connect, ConnectableObservable};
 
 mod base;
 pub use base::*;
 
 pub mod from_fn;
-pub use from_fn::{create, ObservableFromFn};
+pub use from_fn::*;
 
 mod observable_all;
 pub use observable_all::*;
@@ -29,23 +29,17 @@ pub use observable_err::*;
 mod observable_next;
 pub use observable_next::*;
 mod observable_comp;
-pub use observable_comp::*;
-
 use crate::prelude::*;
+pub use observable_comp::*;
 
 pub trait Observable<'a> {
   type Item;
   type Err;
-  fn actual_subscribe<O: Observer<Self::Item, Self::Err> + 'a>(
+  fn actual_subscribe<
+    O: Observer<Self::Item, Self::Err> + 'a,
+    U: SubscriptionLike + Clone + 'static,
+  >(
     self,
-    subscriber: Subscriber<O, LocalSubscription>,
-  ) -> LocalSubscription;
-
-  #[inline]
-  fn shared(self) -> Shared<Self>
-  where
-    Self: Sized + Send + Sync + 'static,
-  {
-    Shared(self)
-  }
+    subscriber: Subscriber<O, U>,
+  ) -> U;
 }

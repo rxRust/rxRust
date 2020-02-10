@@ -29,20 +29,6 @@ impl<O> Subscriber<O, SharedSubscription> {
   }
 }
 
-impl<S, U> IntoShared for Subscriber<S, U>
-where
-  S: IntoShared,
-  U: IntoShared,
-{
-  type Shared = Subscriber<S::Shared, U::Shared>;
-  fn to_shared(self) -> Self::Shared {
-    Subscriber {
-      subscription: self.subscription.to_shared(),
-      observer: self.observer.to_shared(),
-    }
-  }
-}
-
 impl<Item, O, U> ObserverNext<Item> for Subscriber<O, U>
 where
   O: ObserverNext<Item>,

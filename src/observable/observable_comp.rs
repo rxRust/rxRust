@@ -33,15 +33,6 @@ impl<N, C> ObserverComp<N, C> {
   pub fn new(next: N, complete: C) -> Self { ObserverComp { next, complete } }
 }
 
-impl<N, C> IntoShared for ObserverComp<N, C>
-where
-  Self: Send + Sync + 'static,
-{
-  type Shared = Self;
-  #[inline(always)]
-  fn to_shared(self) -> Self::Shared { self }
-}
-
 pub trait SubscribeComplete<N, C> {
   /// A type implementing [`SubscriptionLike`]
   type Unsub: SubscriptionLike;
@@ -55,12 +46,13 @@ pub trait SubscribeComplete<N, C> {
   ) -> SubscriptionGuard<Self::Unsub>;
 }
 
-impl<S, N, C> SubscribeComplete<N, C> for S
+impl<'a, S, N, C> SubscribeComplete<N, C> for S
 where
-  S: Observable<ObserverComp<N, C>, LocalSubscription>,
-  C: FnMut(),
+  S: Observable<'a, Err = ()>,
+  C: FnMut() + 'a,
+  N: FnMut(S::Item) + 'a,
 {
-  type Unsub = S::Unsub;
+  type Unsub = LocalSubscription;
   fn subscribe_complete(
     self,
     next: N,
@@ -71,6 +63,32 @@ where
   {
     let unsub =
       self.actual_subscribe(Subscriber::local(ObserverComp { next, complete }));
+    SubscriptionGuard(unsub)
+  }
+}
+
+impl<S, N, C> SubscribeComplete<N, C> for Shared<S>
+where
+  S: SharedObservable<Err = ()> + Send + Sync + 'static,
+  C: FnMut() + Send + Sync + 'static,
+  N: FnMut(S::Item) + Send + Sync + 'static,
+{
+  type Unsub = SharedSubscription;
+  fn subscribe_complete(
+    self,
+    next: N,
+    complete: C,
+  ) -> SubscriptionGuard<Self::Unsub>
+  where
+    Self: Sized,
+  {
+    let unsub =
+      self
+        .0
+        .shared_actual_subscribe(Subscriber::shared(ObserverComp {
+          next,
+          complete,
+        }));
     SubscriptionGuard(unsub)
   }
 }
