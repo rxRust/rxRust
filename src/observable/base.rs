@@ -10,34 +10,12 @@ pub trait Emitter {
     U: SubscriptionLike;
 }
 
-pub trait SharedEmitter {
-  type Item;
-  type Err;
-  fn shared_emit<O>(self, subscriber: Subscriber<O, SharedSubscription>)
-  where
-    O: Observer<Self::Item, Self::Err> + Send + Sync + 'static;
-}
-
 impl<T> IntoShared for T
 where
   T: Emitter + Sync + Send + 'static,
 {
   type Shared = SharedOp<Self>;
   fn to_shared(self) -> Self::Shared { SharedOp(self) }
-}
-
-impl<T> SharedEmitter for SharedOp<T>
-where
-  T: Emitter + Send + Sync + 'static,
-{
-  type Item = T::Item;
-  type Err = T::Err;
-  fn shared_emit<O>(self, subscriber: Subscriber<O, SharedSubscription>)
-  where
-    O: Observer<Self::Item, Self::Err> + Send + Sync + 'static,
-  {
-    self.0.emit(subscriber)
-  }
 }
 
 #[derive(Clone)]

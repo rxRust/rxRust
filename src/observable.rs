@@ -32,12 +32,6 @@ mod observable_comp;
 pub use observable_comp::*;
 
 use crate::prelude::*;
-use std::sync::{Arc, Mutex};
-
-pub trait IntoShared {
-  type Shared: Sync + Send + 'static;
-  fn to_shared(self) -> Self::Shared;
-}
 
 pub trait Observable<'a> {
   type Item;
@@ -46,22 +40,12 @@ pub trait Observable<'a> {
     self,
     subscriber: Subscriber<O, LocalSubscription>,
   ) -> LocalSubscription;
-}
 
-impl<Item, Err> IntoShared for Box<dyn Observer<Item, Err> + Send + Sync>
-where
-  Item: 'static,
-  Err: 'static,
-{
-  type Shared = Self;
-  #[inline(always)]
-  fn to_shared(self) -> Self::Shared { self }
-}
-impl<S> IntoShared for Arc<Mutex<S>>
-where
-  S: Send + Sync + 'static,
-{
-  type Shared = Self;
-  #[inline(always)]
-  fn to_shared(self) -> Self::Shared { self }
+  #[inline]
+  fn shared(self) -> Shared<Self>
+  where
+    Self: Sized + Send + Sync + 'static,
+  {
+    Shared(self)
+  }
 }
