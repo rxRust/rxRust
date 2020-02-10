@@ -50,6 +50,6 @@ pub mod prelude {
   pub use crate::subscriber::Subscriber;
   pub use crate::subscription;
   pub use crate::subscription::*;
-  pub use observer::{Observer, ObserverComplete, ObserverError, ObserverNext};
+  pub use observer::Observer;
 }
 mod util;

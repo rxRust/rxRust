@@ -1,4 +1,3 @@
-use crate::observer::{ObserverComplete, ObserverError, ObserverNext};
 use crate::prelude::*;
 
 #[derive(Clone)]
@@ -7,25 +6,17 @@ pub struct ObserverErr<N, E> {
   error: E,
 }
 
-impl<N, E> ObserverComplete for ObserverErr<N, E> {
-  #[inline(always)]
-  fn complete(&mut self) {}
-}
-
-impl<N, E, Item> ObserverNext<Item> for ObserverErr<N, E>
+impl<Item, Err, N, E> Observer<Item, Err> for ObserverErr<N, E>
 where
   N: FnMut(Item),
-{
-  #[inline(always)]
-  fn next(&mut self, err: Item) { (self.next)(err); }
-}
-
-impl<N, E, Err> ObserverError<Err> for ObserverErr<N, E>
-where
   E: FnMut(Err),
 {
   #[inline(always)]
+  fn next(&mut self, err: Item) { (self.next)(err); }
+  #[inline(always)]
   fn error(&mut self, err: Err) { (self.error)(err); }
+  #[inline(always)]
+  fn complete(&mut self) {}
 }
 
 impl<N, E> ObserverErr<N, E> {

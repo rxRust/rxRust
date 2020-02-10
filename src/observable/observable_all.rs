@@ -1,4 +1,3 @@
-use crate::observer::{ObserverComplete, ObserverError, ObserverNext};
 use crate::prelude::*;
 
 #[derive(Clone)]
@@ -19,28 +18,18 @@ impl<N, E, C> ObserverAll<N, E, C> {
   }
 }
 
-impl<N, E, C> ObserverComplete for ObserverAll<N, E, C>
+impl<Item, Err, N, E, C> Observer<Item, Err> for ObserverAll<N, E, C>
 where
   C: FnMut(),
-{
-  #[inline(always)]
-  fn complete(&mut self) { (self.complete)(); }
-}
-
-impl<N, E, C, Err> ObserverError<Err> for ObserverAll<N, E, C>
-where
+  N: FnMut(Item),
   E: FnMut(Err),
 {
   #[inline(always)]
-  fn error(&mut self, err: Err) { (self.error)(err); }
-}
-
-impl<N, E, C, Item> ObserverNext<Item> for ObserverAll<N, E, C>
-where
-  N: FnMut(Item),
-{
-  #[inline(always)]
   fn next(&mut self, value: Item) { (self.next)(value); }
+  #[inline(always)]
+  fn error(&mut self, err: Err) { (self.error)(err); }
+  #[inline(always)]
+  fn complete(&mut self) { (self.complete)(); }
 }
 
 pub trait SubscribeAll<N, E, C> {

@@ -1,25 +1,18 @@
-use crate::observer::{ObserverComplete, ObserverError, ObserverNext};
 use crate::prelude::*;
 
 #[derive(Clone)]
 pub struct ObserverN<N>(N);
 
-impl<N> ObserverComplete for ObserverN<N> {
-  #[inline(always)]
-  fn complete(&mut self) {}
-}
-
-impl<N> ObserverError<()> for ObserverN<N> {
-  #[inline(always)]
-  fn error(&mut self, _err: ()) {}
-}
-
-impl<N, Item> ObserverNext<Item> for ObserverN<N>
+impl<Item, N> Observer<Item, ()> for ObserverN<N>
 where
   N: FnMut(Item),
 {
   #[inline(always)]
   fn next(&mut self, value: Item) { (self.0)(value); }
+  #[inline(always)]
+  fn error(&mut self, _err: ()) {}
+  #[inline(always)]
+  fn complete(&mut self) {}
 }
 
 pub trait SubscribeNext<N> {

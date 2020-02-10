@@ -29,9 +29,9 @@ impl<O> Subscriber<O, SharedSubscription> {
   }
 }
 
-impl<Item, O, U> ObserverNext<Item> for Subscriber<O, U>
+impl<Item, Err, O, U> Observer<Item, Err> for Subscriber<O, U>
 where
-  O: ObserverNext<Item>,
+  O: Observer<Item, Err>,
   U: SubscriptionLike,
 {
   fn next(&mut self, v: Item) {
@@ -39,26 +39,14 @@ where
       self.observer.next(v)
     }
   }
-}
 
-impl<Err, O, U> ObserverError<Err> for Subscriber<O, U>
-where
-  O: ObserverError<Err>,
-  U: SubscriptionLike,
-{
   fn error(&mut self, err: Err) {
     if !self.subscription.is_closed() {
       self.observer.error(err);
       self.subscription.unsubscribe();
     }
   }
-}
 
-impl<O, U> ObserverComplete for Subscriber<O, U>
-where
-  O: ObserverComplete,
-  U: SubscriptionLike,
-{
   fn complete(&mut self) {
     if !self.subscription.is_closed() {
       self.observer.complete();
