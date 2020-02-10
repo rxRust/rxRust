@@ -10,8 +10,8 @@
 
 ### Breaking Changes
 
+- **operator**: Use `Clone` replace `Fork`, now just call `observable.clone()` replace `observable.fork`.
 - **subject**: For now, LocalSubject emit value by mut ref must wrap with `subject::MutRefValue`. Use `subject.next(MutRefValue(&mut i))` replace `subject.next(&mut 1);`.
-
 - **subscription**: Now `subscribe`, `subscribe_err`, `subscribe_complete` and `subscribe_all` return a RAII implementation of a "scoped subscribed" of a subscription, and their "scoped subscribed" is bind to the return value.
 - **observable**: rename observable creating function `from_fn` to `of_fn`
 - **observable**: rename observable creating function `from_future_with_err` to `from_future_result`

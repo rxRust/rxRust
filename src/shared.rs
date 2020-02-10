@@ -3,15 +3,6 @@ use crate::prelude::*;
 #[derive(Clone)]
 pub struct Shared<R: Send + Sync + 'static>(pub(crate) R);
 
-impl<R> Fork for Shared<R>
-where
-  R: Send + Sync + 'static + Clone,
-{
-  type Output = Self;
-  #[inline]
-  fn fork(&self) -> Self::Output { self.clone() }
-}
-
 pub trait SharedObservable {
   type Item;
   type Err;

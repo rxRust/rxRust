@@ -52,12 +52,3 @@ where
     subscription
   }
 }
-
-impl<Emit> Fork for ObservableBase<Emit>
-where
-  Self: Clone,
-{
-  type Output = Self;
-  #[inline]
-  fn fork(&self) -> Self::Output { self.clone() }
-}

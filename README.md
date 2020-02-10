@@ -32,25 +32,25 @@ even.merge(odd).subscribe(|v| print!("{} ", v, ));
 
 ```
 
-## Fork Stream
+## Clone Stream
 
 In `rxrust` almost all extensions consume the upstream. So when you try to subscribe a stream twice, the compiler will complain. 
 
 ```rust ignore
  # use rxrust::prelude::*;
  let o = observable::from_iter(0..10);
- o.subscribe(|_| {println!("consume in first")});
- o.subscribe(|_| {println!("consume in second")});
+ o.subscribe(|_| { println!("consume in first")} );
+ o.subscribe(|_| { println!("consume in second")} );
 ```
 
-In this case, we can use `Fork` to fork a stream. In general, `Fork` has same mean with `Clone`, this will not change a cold stream to hot stream. If you want convert a stream from  unicast to multicast, from **cold** to **hot** use `Publish` and `RefCount`.
+In this case, we must clone the stream. In
 
 ```rust
  # use rxrust::prelude::*;
  # use rxrust::ops::Fork;
  let o = observable::from_iter(0..10);
- o.fork().subscribe(|_| {println!("consume in first")});
- o.fork().subscribe(|_| {println!("consume in second")});
+ o.clone().subscribe(|_| {println!("consume in first")});
+ o.clone().subscribe(|_| {println!("consume in second")});
 ```
 
 ## Scheduler

@@ -51,6 +51,5 @@ pub mod prelude {
   pub use crate::subscription;
   pub use crate::subscription::*;
   pub use observer::{Observer, ObserverComplete, ObserverError, ObserverNext};
-  pub use ops::Fork;
 }
 mod util;

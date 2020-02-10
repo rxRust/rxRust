@@ -24,8 +24,6 @@
 // pub use take_last::TakeLast;
 // pub mod first;
 // pub use first::{First, FirstOr};
-pub mod fork;
-pub use fork::Fork;
 // pub mod subscribe_on;
 // pub use subscribe_on::SubscribeOn;
 // pub mod observe_on;
