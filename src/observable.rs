@@ -39,10 +39,13 @@ pub trait IntoShared {
   fn to_shared(self) -> Self::Shared;
 }
 
-pub trait Observable<O, U: SubscriptionLike> {
-  /// A type implementing [`SubscriptionLike`]
-  type Unsub: SubscriptionLike;
-  fn actual_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub;
+pub trait Observable<'a> {
+  type Item;
+  type Err;
+  fn actual_subscribe<O: Observer<Self::Item, Self::Err> + 'a>(
+    self,
+    subscriber: Subscriber<O, LocalSubscription>,
+  ) -> LocalSubscription;
 }
 
 impl<Item, Err> IntoShared for Box<dyn Observer<Item, Err> + Send + Sync>
