@@ -55,7 +55,7 @@ where
   }
 }
 
-subscription_proxy_impl!(Subscriber<O, U>, U, subscription, <O, U>);
+subscription_proxy_impl!(Subscriber<O, U>, {subscription}, U, <O>);
 
 #[cfg(test)]
 mod test {

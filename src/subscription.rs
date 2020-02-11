@@ -1,5 +1,4 @@
 use crate::prelude::*;
-use crate::util;
 use smallvec::SmallVec;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -20,19 +19,30 @@ pub trait SubscriptionLike {
 #[derive(Clone, Default)]
 pub struct LocalSubscription(Rc<RefCell<Inner<Box<dyn SubscriptionLike>>>>);
 
+/// subscription_proxy_impl!(
+///   type          // give the type you want to implement for
+///   , {path}      // the path to access to the actual observer, 
+///   , host_type?  // options, give the host type of the actual observer, if it's a generic type
+///   , <generics>? // options, give the generics type must use in the implement, except `Item` and `Err` and host type.
+///   , {where}?      // options, where bounds for the generics
+/// )
 pub(crate) macro subscription_proxy_impl(
-  $t: ty,  $host_ty: ident, $name:tt,
-  <$($generics: ident  $(: $bound: tt)?),*>) {
-  impl<$($generics $(:$bound)?),*> SubscriptionLike for $t
+    $ty: ty
+  , {$($name:tt $($parentheses:tt)?) .+}
+  $(, $host_ty: ident)? $(, <$($generics: tt),*>)?
+  $(, {where $($wty:ty : $bound: tt),*})?
+  ) {
+  impl<$($($generics ,)*)? $($host_ty)?> SubscriptionLike for $ty
   where
-    $host_ty: SubscriptionLike,
+    $($host_ty: SubscriptionLike,)?
+    $($($wty: $bound), *)?
   {
     #[inline(always)]
-    fn unsubscribe(&mut self) { self.$name.unsubscribe(); }
+    fn unsubscribe(&mut self) { self.$($name $($parentheses)? ).+.unsubscribe(); }
     #[inline(always)]
-    fn is_closed(&self) -> bool { self.$name.is_closed() }
+    fn is_closed(&self) -> bool { self.$($name $($parentheses)? ).+.is_closed() }
     #[inline(always)]
-    fn inner_addr(&self) -> *const () { self.$name.inner_addr() }
+    fn inner_addr(&self) -> *const () { self.$($name $($parentheses)? ).+.inner_addr() }
   }
 }
 
@@ -186,7 +196,7 @@ impl<T: SubscriptionLike> Drop for SubscriptionGuard<T> {
   fn drop(&mut self) { self.0.unsubscribe() }
 }
 
-subscription_proxy_impl!(SubscriptionGuard<T>, T, 0, <T>);
+subscription_proxy_impl!(SubscriptionGuard<T>, {0}, T);
 
 #[cfg(test)]
 mod test {

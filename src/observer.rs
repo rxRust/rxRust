@@ -15,16 +15,38 @@ pub trait Observer<Item, Err> {
   fn complete(&mut self);
 }
 
-pub(crate) macro observer_proxy_impl($ty: ty, $host_ty: ident,
-  <$($generics: tt),*>, $($name:ident $($parentheses:tt)?) .+) {
-    impl<$($generics ,)* Item, Err> Observer<Item, Err> for $ty
+/// auto impl a proxy observer
+/// observer_proxy_impl!(
+///   type          // give the type you want to implement for
+///   , {path}      // the path to access to the actual observer, 
+///   , item        // the generic Item name
+///   , err         // the generic Err name
+///   , host_type?  // options, give the host type of the actual observer, if it's a generic type
+///   , <generics>? // options, give the generics type must use in the implement, except `Item` and `Err` and host type.
+///   , {where}?      // options, where bounds for the generics
+/// )
+/// 
+/// # Example 
+/// ```rust
+///  observer_proxy_impl!(Arc<Mutex<S>>, {lock().unwrap()}, S, <S>);
+/// ```
+pub(crate) macro observer_proxy_impl(
+  $ty: ty
+  , {$($name:tt $($parentheses:tt)?) .+}
+  , $item: ident
+  , $err: ident
+  $(, $host_ty: ident)? $(, <$($generics: tt),*>)?
+  $(, {where $($wty:ty : $bound: tt),*})?
+) {
+    impl<$($($generics ,)*)? $item, $err, $($host_ty)? > Observer<$item, $err> for $ty
     where
-      $host_ty: Observer<Item, Err>
+      $($host_ty: Observer<$item, $err>,)?
+      $($($wty: $bound), *)?
     {
       #[inline]
-      fn next(&mut self, value: Item) { self.$($name $($parentheses)? ).+.next(value); }
+      fn next(&mut self, value: $item) { self.$($name $($parentheses)? ).+.next(value); }
       #[inline]
-      fn error(&mut self, err: Err) { self.$($name $($parentheses)? ).+.error(err); }
+      fn error(&mut self, err: $err) { self.$($name $($parentheses)? ).+.error(err); }
       #[inline]
       fn complete(&mut self) { self.$($name $($parentheses)?).+.complete(); }
     }
@@ -65,6 +87,30 @@ observer_pointer_proxy_impl!(
   Err
 );
 
-observer_proxy_impl!(Arc<Mutex<S>>, S, <S>, lock().unwrap());
+observer_proxy_impl!(Arc<Mutex<S>>, {lock().unwrap()}, Item, Err, S);
+observer_proxy_impl!(Rc<RefCell<S>>, { borrow_mut()}, Item, Err, S);
 
-observer_proxy_impl!(Rc<RefCell<S>>, S, <S>, borrow_mut());
+
+impl<Item, Err, T> Observer<Item, Err> for Vec<T>
+where
+  T: Publisher<Item, Err>,
+  Item: Copy,
+  Err: Copy
+{
+  fn next(&mut self, value: Item) {
+    self.drain_filter(|subscriber| {
+      subscriber.next(value);
+      subscriber.is_closed()
+    });
+  }
+
+  fn error(&mut self, err: Err) {
+    self.iter_mut().for_each(|subscriber| subscriber.error(err));
+    self.clear();
+  }
+
+  fn complete(&mut self) {
+    self.iter_mut().for_each(|subscriber| subscriber.complete());
+    self.clear();
+  }
+}
