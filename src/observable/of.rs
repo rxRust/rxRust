@@ -264,13 +264,11 @@ mod test {
 
   #[test]
   fn fork() {
-    use crate::ops::Fork;
-
     observable::from_iter(vec![0; 100])
-      .fork()
-      .fork()
+      .clone()
+      .clone()
       .subscribe(|_| {});
 
-    observable::of(0).fork().fork().subscribe(|_| {});
+    observable::of(0).clone().clone().subscribe(|_| {});
   }
 }

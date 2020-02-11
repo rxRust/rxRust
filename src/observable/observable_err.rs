@@ -77,7 +77,7 @@ fn raii() {
   let mut times = 0;
   {
     let mut subject = Subject::local();
-    subject.fork().subscribe_err(|_| times += 1, |_| {});
+    subject.clone().subscribe_err(|_| times += 1, |_| {});
     subject.next(());
     subject.error(());
   }

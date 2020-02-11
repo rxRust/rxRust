@@ -93,8 +93,8 @@ fn smoke() {
 #[test]
 fn smoke_fork() {
   interval(Duration::from_millis(10))
-    .fork()
-    .fork()
+    .clone()
+    .clone()
     .shared()
     .subscribe(|_| {});
 }

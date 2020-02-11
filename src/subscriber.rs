@@ -102,8 +102,7 @@ mod test {
         move |_| *next.lock().unwrap() += 1,
         move |_| *err.lock().unwrap() += 1,
         move || *complete.lock().unwrap() += 1,
-      ))
-      .to_shared(),
+      )),
     )
   }
 

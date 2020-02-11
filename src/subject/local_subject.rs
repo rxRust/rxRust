@@ -1,22 +1,12 @@
 use crate::prelude::*;
-use observer::observer_proxy_impl;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-type LocalSubjectObserver<'a, Item, Err> =
+type LocalPublishers<'a, Item, Err> =
   Rc<RefCell<Vec<Box<dyn Publisher<Item, Err> + 'a>>>>;
 
-#[derive(Clone)]
-pub struct LocalSubject<'a, Item, Err> {
-  observers: LocalSubjectObserver<'a, Item, Err>,
-  subscription: LocalSubscription,
-}
-
-subscription_proxy_impl!(
-  LocalSubject<'a, Item, Err>, {subscription}, <'a, Item, Err>);
-observer_proxy_impl!(
-  LocalSubject<'a, Item, Err>, {observers}, Item, Err, <'a>,
-  {where Item: Copy, Err: Copy});
+pub type LocalSubject<'a, Item, Err> =
+  Subject<LocalPublishers<'a, Item, Err>, LocalSubscription>;
 
 impl<'a, Item, Err> LocalSubject<'a, Item, Err> {
   pub fn local() -> Self {
@@ -47,10 +37,12 @@ impl<'a, Item, Err> Observable<'a> for LocalSubject<'a, Item, Err> {
 #[test]
 fn smoke() {
   let mut test_code = 1;
-  let subject = LocalSubject::local();
-  subject.clone().subscribe(|v| {
-    test_code = 2;
-  });
-  subject.next(2);
+  {
+    let mut subject = LocalSubject::local();
+    subject.clone().subscribe(|v| {
+      test_code = v;
+    });
+    subject.next(2);
+  }
   assert_eq!(test_code, 2);
 }

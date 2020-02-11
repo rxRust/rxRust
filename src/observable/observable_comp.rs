@@ -89,7 +89,7 @@ fn raii() {
   let mut times = 0;
   {
     let mut subject = Subject::local();
-    subject.fork().subscribe_complete(|_| times += 1, || {});
+    subject.clone().subscribe_complete(|_| times += 1, || {});
     subject.next(());
   }
   assert_eq!(times, 0);

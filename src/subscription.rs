@@ -21,7 +21,7 @@ pub struct LocalSubscription(Rc<RefCell<Inner<Box<dyn SubscriptionLike>>>>);
 
 /// subscription_proxy_impl!(
 ///   type          // give the type you want to implement for
-///   , {path}      // the path to access to the actual observer, 
+///   , {path}      // the path to access to the actual observer
 ///   , host_type?  // options, give the host type of the actual observer, if it's a generic type
 ///   , <generics>? // options, give the generics type must use in the implement, except `Item` and `Err` and host type.
 ///   , {where}?      // options, where bounds for the generics
@@ -196,7 +196,7 @@ impl<T: SubscriptionLike> Drop for SubscriptionGuard<T> {
   fn drop(&mut self) { self.0.unsubscribe() }
 }
 
-subscription_proxy_impl!(SubscriptionGuard<T>, {0}, T);
+subscription_proxy_impl!(SubscriptionGuard<T>, { 0 }, T);
 
 #[cfg(test)]
 mod test {

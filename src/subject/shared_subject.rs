@@ -1,18 +1,11 @@
 use crate::prelude::*;
-use observer::observer_proxy_impl;
 use std::sync::{Arc, Mutex};
 
 type SharedPublishers<Item, Err> =
   Arc<Mutex<Vec<Box<dyn Publisher<Item, Err> + Send + Sync>>>>;
 
-#[derive(Clone)]
-pub struct SharedSubject<Item, Err> {
-  observers: SharedPublishers<Item, Err>,
-  subscription: SharedSubscription,
-}
-
-subscription_proxy_impl!(SharedSubject<Item, Err>, {subscription}, <Item, Err>);
-observer_proxy_impl!(SharedSubject<Item, Err>, {observers}, Item, Err, {where Item: Copy, Err: Copy});
+pub type SharedSubject<Item, Err> =
+  Subject<SharedPublishers<Item, Err>, SharedSubscription>;
 
 impl<Item, Err> SharedObservable for SharedSubject<Item, Err> {
   type Item = Item;
@@ -44,9 +37,10 @@ impl<Item, Err> SharedSubject<Item, Err> {
 
 fn smoke() {
   let test_code = Arc::new(Mutex::new("".to_owned()));
-  let subject = SharedSubject::shared();
-  subject.shared().clone().subscribe(|v: &str| {
-    *test_code.lock().unwrap() = v.to_owned();
+  let mut subject = SharedSubject::shared();
+  let c_test_code = test_code.clone();
+  subject.clone().shared().subscribe(move |v: &str| {
+    *c_test_code.lock().unwrap() = v.to_owned();
   });
   subject.next("test shared subject");
   assert_eq!(*test_code.lock().unwrap(), "test shared subject");

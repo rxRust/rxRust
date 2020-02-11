@@ -75,7 +75,6 @@ where
 
 #[cfg(test)]
 mod test {
-  use crate::ops::Fork;
   use crate::prelude::*;
   use std::sync::{Arc, Mutex};
 
@@ -124,8 +123,8 @@ mod test {
     let sum2 = Arc::new(Mutex::new(0));
     let c_sum1 = sum1.clone();
     let c_sum2 = sum2.clone();
-    o.fork().subscribe(move |v| *sum1.lock().unwrap() += v);
-    o.fork().subscribe(move |v| *sum2.lock().unwrap() += v);
+    o.clone().subscribe(move |v| *sum1.lock().unwrap() += v);
+    o.clone().subscribe(move |v| *sum2.lock().unwrap() += v);
 
     assert_eq!(*c_sum1.lock().unwrap(), 10);
     assert_eq!(*c_sum2.lock().unwrap(), 10);
@@ -134,13 +133,11 @@ mod test {
   #[test]
   fn fork_and_share() {
     let observable = observable::create(|_| {});
-    // shared after fork
-    observable.fork().shared().subscribe(|v: i32| {});
-    observable.fork().shared().subscribe(|_| {});
+    observable.clone().shared().subscribe(|v: i32| {});
+    observable.clone().shared().subscribe(|_| {});
 
-    // shared before fork
     let observable = observable::create(|_| {}).shared();
-    observable.fork().subscribe(|_: i32| {});
-    observable.fork().subscribe(|_| {});
+    observable.clone().subscribe(|_: i32| {});
+    observable.clone().subscribe(|_| {});
   }
 }
