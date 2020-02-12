@@ -1,5 +1,5 @@
-use crate::observer::observer_error_proxy_impl;
-use crate::{ops::SharedOp, prelude::*};
+use crate::observer::error_proxy_impl;
+use crate::prelude::*;
 
 /// Emits a single last item emitted by the source observable.
 /// The item is emitted after source observable has completed.
@@ -70,19 +70,27 @@ pub trait Last<Item> {
 
 impl<Item, O> Last<Item> for O {}
 
+#[derive(Clone)]
 pub struct LastOrOp<S, Item> {
   source: S,
   default: Option<Item>,
   last: Option<Item>,
 }
 
-impl<Item, O, U, S> Observable<O, U> for LastOrOp<S, Item>
+impl<'a, Item, S> Observable<'a> for LastOrOp<S, Item>
 where
-  S: Observable<LastOrObserver<O, Item>, U>,
-  U: SubscriptionLike,
+  S: Observable<'a, Item = Item>,
+  Item: 'a,
 {
-  type Unsub = S::Unsub;
-  fn actual_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub {
+  type Item = Item;
+  type Err = S::Err;
+  fn actual_subscribe<
+    O: Observer<Self::Item, Self::Err> + 'a,
+    U: SubscriptionLike + Clone + 'static,
+  >(
+    self,
+    subscriber: Subscriber<O, U>,
+  ) -> U {
     let subscriber = Subscriber {
       observer: LastOrObserver {
         observer: subscriber.observer,
@@ -95,20 +103,7 @@ where
   }
 }
 
-impl<S, V> IntoShared for LastOrOp<S, V>
-where
-  S: IntoShared,
-  V: Send + Sync + 'static,
-{
-  type Shared = SharedOp<LastOrOp<S::Shared, V>>;
-  fn to_shared(self) -> Self::Shared {
-    SharedOp(LastOrOp {
-      source: self.source.to_shared(),
-      default: self.default,
-      last: self.last,
-    })
-  }
-}
+auto_impl_shared_observable!(LastOrOp<S, Item>, <S, Item>);
 
 pub struct LastOrObserver<S, T> {
   default: Option<T>,
@@ -116,52 +111,17 @@ pub struct LastOrObserver<S, T> {
   last: Option<T>,
 }
 
-impl<O, Item> ObserverNext<Item> for LastOrObserver<O, Item> {
-  fn next(&mut self, value: Item) { self.last = Some(value); }
-}
-
-observer_error_proxy_impl!(
-  LastOrObserver<O, Item>, O, observer, <O, Item, Err>, Err);
-
-impl<O, Item> ObserverComplete for LastOrObserver<O, Item>
+impl<O, Item, Err> Observer<Item, Err> for LastOrObserver<O, Item>
 where
-  O: ObserverNext<Item> + ObserverComplete,
+  O: Observer<Item, Err>,
 {
+  fn next(&mut self, value: Item) { self.last = Some(value); }
+  error_proxy_impl!(Err, observer);
   fn complete(&mut self) {
     if let Some(v) = self.last.take().or_else(|| self.default.take()) {
       self.observer.next(v)
     }
     self.observer.complete();
-  }
-}
-
-impl<S, V> IntoShared for LastOrObserver<S, V>
-where
-  S: IntoShared,
-  V: Send + Sync + 'static,
-{
-  type Shared = LastOrObserver<S::Shared, V>;
-  fn to_shared(self) -> Self::Shared {
-    LastOrObserver {
-      observer: self.observer.to_shared(),
-      default: self.default,
-      last: self.last,
-    }
-  }
-}
-
-impl<S, T> Fork for LastOrOp<S, T>
-where
-  S: Fork,
-  T: Clone,
-{
-  type Output = LastOrOp<S::Output, T>;
-  fn fork(&self) -> Self::Output {
-    LastOrOp {
-      source: self.source.fork(),
-      default: self.default.clone(),
-      last: self.last.clone(),
-    }
   }
 }
 
@@ -244,8 +204,8 @@ mod test {
     let mut value2 = 0;
     {
       let o = observable::from_iter(1..100).last();
-      let o1 = o.fork().last();
-      let o2 = o.fork().last();
+      let o1 = o.clone().last();
+      let o2 = o.clone().last();
       o1.subscribe(|v| value = v);
       o2.subscribe(|v| value2 = v);
     }
@@ -261,8 +221,8 @@ mod test {
       subscriber.complete();
     })
     .last_or(100);
-    let o1 = o.fork().last_or(0);
-    let o2 = o.fork().last_or(0);
+    let o1 = o.clone().last_or(0);
+    let o2 = o.clone().last_or(0);
     o1.subscribe(|v| default = v);
     o2.subscribe(|v| default2 = v);
     assert_eq!(default, 100);
@@ -273,19 +233,19 @@ mod test {
   fn last_fork_and_shared() {
     observable::of(0)
       .last_or(0)
-      .fork()
-      .fork()
+      .clone()
+      .clone()
       .to_shared()
-      .fork()
+      .clone()
       .to_shared()
       .subscribe(|_| {});
 
     observable::of(0)
       .last()
-      .fork()
-      .fork()
+      .clone()
+      .clone()
       .to_shared()
-      .fork()
+      .clone()
       .to_shared()
       .subscribe(|_| {});
   }

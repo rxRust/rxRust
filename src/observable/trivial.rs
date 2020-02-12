@@ -1,5 +1,4 @@
 use crate::prelude::*;
-use shared::auto_impl_shared_emitter;
 use std::marker::PhantomData;
 
 /// Creates an observable that emits no items, just terminates with an error.
@@ -15,20 +14,27 @@ pub fn throw<Err>(e: Err) -> ObservableBase<ThrowEmitter<Err>> {
 #[derive(Clone)]
 pub struct ThrowEmitter<Err>(Err);
 
-impl<'a, Err> Emitter<'a> for ThrowEmitter<Err> {
-  type Item = ();
-  type Err = Err;
+macro throw_emitter($subscription:ty, $($marker:ident +)* $lf: lifetime) {
   #[inline]
-  fn emit<O, U>(self, mut subscriber: Subscriber<O, U>)
+  fn emit<O>(self, mut subscriber: Subscriber<O, $subscription>)
   where
-    O: Observer<Self::Item, Self::Err>,
-    U: SubscriptionLike,
+    O: Observer<Self::Item, Self::Err> + $($marker +)* $lf
   {
     subscriber.error(self.0);
   }
 }
 
-auto_impl_shared_emitter!(ThrowEmitter<Err>, <Err>);
+impl<'a, Err> Emitter<'a> for ThrowEmitter<Err> {
+  type Item = ();
+  type Err = Err;
+  throw_emitter!(LocalSubscription, 'a);
+}
+
+impl<Err> SharedEmitter for ThrowEmitter<Err> {
+  type Item = ();
+  type Err = Err;
+  throw_emitter!(SharedSubscription, Send + Sync + 'static);
+}
 
 /// Creates an observable that produces no values.
 ///
@@ -51,20 +57,27 @@ pub fn empty<Item>() -> ObservableBase<EmptyEmitter<Item>> {
 #[derive(Clone)]
 pub struct EmptyEmitter<Item>(PhantomData<Item>);
 
-impl<'a, Item> Emitter<'a> for EmptyEmitter<Item> {
-  type Item = Item;
-  type Err = ();
+macro empty_emitter($subscription:ty, $($marker:ident +)* $lf: lifetime) {
   #[inline]
-  fn emit<O, U>(self, mut subscriber: Subscriber<O, U>)
+  fn emit<O>(self, mut subscriber: Subscriber<O, $subscription>)
   where
-    O: Observer<Self::Item, Self::Err>,
-    U: SubscriptionLike,
+    O: Observer<Self::Item, Self::Err> + $($marker +)* $lf
   {
     subscriber.complete();
   }
 }
-auto_impl_shared_emitter!(EmptyEmitter<Item>, <Item>);
 
+impl<'a, Item> Emitter<'a> for EmptyEmitter<Item> {
+  type Item = Item;
+  type Err = ();
+  empty_emitter!(LocalSubscription, 'a);
+}
+
+impl<Item> SharedEmitter for EmptyEmitter<Item> {
+  type Item = Item;
+  type Err = ();
+  empty_emitter!(SharedSubscription, Send + Sync + 'static);
+}
 /// Creates an observable that never emits anything.
 ///
 /// Neither emits a value, nor completes, nor emits an error.
@@ -76,18 +89,28 @@ pub fn never() -> ObservableBase<NeverEmitter> {
 #[derive(Clone)]
 pub struct NeverEmitter();
 
+macro never_emitter($subscription:ty, $($marker:ident +)* $lf: lifetime) {
+  #[inline]
+  fn emit<O>(self, subscriber: Subscriber<O, $subscription>)
+  where
+    O: Observer<Self::Item, Self::Err> + $($marker +)* $lf
+  {
+  }
+}
+
 impl<'a> Emitter<'a> for NeverEmitter {
   type Item = ();
   type Err = ();
   #[inline]
-  fn emit<O, U>(self, _subscriber: Subscriber<O, U>)
-  where
-    O: Observer<Self::Item, Self::Err>,
-    U: SubscriptionLike,
-  {
-  }
+  never_emitter!(LocalSubscription, 'a);
 }
-auto_impl_shared_emitter!(NeverEmitter);
+
+impl SharedEmitter for NeverEmitter {
+  type Item = ();
+  type Err = ();
+  #[inline]
+  never_emitter!(SharedSubscription, Send + Sync + 'static);
+}
 
 #[cfg(test)]
 mod test {

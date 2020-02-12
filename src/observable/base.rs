@@ -3,10 +3,9 @@ use crate::prelude::*;
 pub trait Emitter<'a> {
   type Item;
   type Err;
-  fn emit<O, U>(self, subscriber: Subscriber<O, U>)
+  fn emit<O>(self, subscriber: Subscriber<O, LocalSubscription>)
   where
-    O: Observer<Self::Item, Self::Err> + 'a,
-    U: SubscriptionLike + 'a;
+    O: Observer<Self::Item, Self::Err> + 'a;
 }
 
 #[derive(Clone)]
@@ -16,39 +15,33 @@ impl<Emit> ObservableBase<Emit> {
   pub fn new(emitter: Emit) -> Self { ObservableBase(emitter) }
 }
 
-impl<'a, Emit> Observable<'a> for ObservableBase<Emit>
-where
-  Emit: Emitter<'a>,
-{
-  type Item = Emit::Item;
-  type Err = Emit::Err;
-  fn actual_subscribe<
-    O: Observer<Self::Item, Self::Err> + 'a,
-    U: SubscriptionLike + Clone + 'static,
-  >(
+macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
+  fn actual_subscribe<O: Observer<Self::Item, Self::Err> + $($marker +)* $lf>(
     self,
-    subscriber: Subscriber<O, U>,
-  ) -> U {
+    subscriber: Subscriber<O, $subscription>,
+  ) -> Self::Unsub {
     let subscription = subscriber.subscription.clone();
     self.0.emit(subscriber);
     subscription
   }
 }
 
-impl<Emit> SharedObservable for ObservableBase<Emit>
+impl<'a, Emit> Observable<'a> for ObservableBase<Emit>
 where
-  Emit: SharedEmitter + Send + Sync + 'static,
+  Emit: Emitter<'a>,
 {
   type Item = Emit::Item;
   type Err = Emit::Err;
-  fn shared_actual_subscribe<
-    O: Observer<Self::Item, Self::Err> + Sync + Send + 'static,
-  >(
-    self,
-    subscriber: Subscriber<O, SharedSubscription>,
-  ) -> SharedSubscription {
-    let subscription = subscriber.subscription.clone();
-    self.0.shared_emit(subscriber);
-    subscription
-  }
+  type Unsub = LocalSubscription;
+  observable_impl!(LocalSubscription, 'a);
+}
+
+impl<Emit> SharedObservable for ObservableBase<Emit>
+where
+  Emit: SharedEmitter,
+{
+  type Item = Emit::Item;
+  type Err = Emit::Err;
+  type Unsub = SharedSubscription;
+  observable_impl!(SharedSubscription, Send + Sync + 'static);
 }

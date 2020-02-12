@@ -47,16 +47,15 @@ where
 {
   type Item = Item;
   type Err = ();
-  fn shared_emit<O>(self, subscriber: Subscriber<O, SharedSubscription>)
+  fn emit<O>(self, subscriber: Subscriber<O, SharedSubscription>)
   where
     O: Observer<Self::Item, Self::Err> + Send + Sync + 'static,
   {
-    let fmapped = (self.0).map(move |v| of::OfEmitter(v).emit(subscriber));
+    let fmapped =
+      (self.0).map(move |v| SharedEmitter::emit(of::OfEmitter(v), subscriber));
     DEFAULT_RUNTIME.lock().unwrap().spawn(fmapped).unwrap();
   }
 }
-
-auto_impl_shared_emitter!(FutureEmitter<F>, <F>);
 
 /// Converts a `Future` to an observable sequence like [`from_future`].
 /// But only work for which `Future::Output` is `Result` type, and `Result::Ok`
@@ -85,17 +84,16 @@ where
 {
   type Item = Item;
   type Err = Err;
-  fn shared_emit<O>(self, subscriber: Subscriber<O, SharedSubscription>)
+  fn emit<O>(self, subscriber: Subscriber<O, SharedSubscription>)
   where
     O: Observer<Self::Item, Self::Err> + Send + Sync + 'static,
   {
-    let fmapped =
-      (self.0).map(move |v| of::ResultEmitter(v.into()).emit(subscriber));
+    let fmapped = (self.0).map(move |v| {
+      SharedEmitter::emit(of::ResultEmitter(v.into()), subscriber)
+    });
     DEFAULT_RUNTIME.lock().unwrap().spawn(fmapped).unwrap();
   }
 }
-
-auto_impl_shared_emitter!(FutureResultEmitter<F, Item, Err,>, <F, Item, Err>);
 
 #[test]
 fn smoke() {
@@ -106,7 +104,7 @@ fn smoke() {
   {
     let _guard =
       from_future_result(future::ok(1))
-        .shared()
+        .to_shared()
         .subscribe(move |v| {
           *res.lock().unwrap() = v;
         });
@@ -115,9 +113,11 @@ fn smoke() {
   }
   // from_future
   let res = c_res.clone();
-  let _guard = from_future(future::ready(2)).shared().subscribe(move |v| {
-    *res.lock().unwrap() = v;
-  });
+  let _guard = from_future(future::ready(2))
+    .to_shared()
+    .subscribe(move |v| {
+      *res.lock().unwrap() = v;
+    });
   std::thread::sleep(std::time::Duration::from_millis(10));
   assert_eq!(*c_res.lock().unwrap(), 2);
 }

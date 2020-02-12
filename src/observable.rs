@@ -13,8 +13,8 @@ pub use from_future::{from_future, from_future_result};
 pub(crate) mod interval;
 pub use interval::{interval, interval_at};
 
-// pub(crate) mod connectable_observable;
-// pub use connectable_observable::{Connect, ConnectableObservable};
+pub(crate) mod connectable_observable;
+pub use connectable_observable::{Connect, ConnectableObservable};
 
 mod base;
 pub use base::*;
@@ -35,11 +35,9 @@ pub use observable_comp::*;
 pub trait Observable<'a> {
   type Item;
   type Err;
-  fn actual_subscribe<
-    O: Observer<Self::Item, Self::Err> + 'a,
-    U: SubscriptionLike + Clone + 'static,
-  >(
+  type Unsub: SubscriptionLike + 'static;
+  fn actual_subscribe<O: Observer<Self::Item, Self::Err> + 'a>(
     self,
-    subscriber: Subscriber<O, U>,
-  ) -> U;
+    subscriber: Subscriber<O, LocalSubscription>,
+  ) -> Self::Unsub;
 }

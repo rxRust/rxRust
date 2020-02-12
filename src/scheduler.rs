@@ -80,6 +80,7 @@ mod test {
     let sum = Arc::new(Mutex::new(0.));
     observable::from_iter(0..10)
       .observe_on(scheduler)
+      .to_shared()
       .subscribe(move |v| {
         *sum.lock().unwrap() =
           (0..1000).fold((v as f32).sqrt(), |acc, _| acc.sqrt());

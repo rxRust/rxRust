@@ -10,13 +10,13 @@ pub type SharedSubject<Item, Err> =
 impl<Item, Err> SharedObservable for SharedSubject<Item, Err> {
   type Item = Item;
   type Err = Err;
-
-  fn shared_actual_subscribe<
+  type Unsub = SharedSubscription;
+  fn actual_subscribe<
     O: Observer<Self::Item, Self::Err> + Sync + Send + 'static,
   >(
     mut self,
     subscriber: Subscriber<O, SharedSubscription>,
-  ) -> SharedSubscription {
+  ) -> Self::Unsub {
     let subscription = subscriber.subscription.clone();
     self.subscription.add(subscription.clone());
     self.observers.lock().unwrap().push(Box::new(subscriber));
@@ -39,7 +39,7 @@ fn smoke() {
   let test_code = Arc::new(Mutex::new("".to_owned()));
   let mut subject = SharedSubject::shared();
   let c_test_code = test_code.clone();
-  subject.clone().shared().subscribe(move |v: &str| {
+  subject.clone().to_shared().subscribe(move |v: &str| {
     *c_test_code.lock().unwrap() = v.to_owned();
   });
   subject.next("test shared subject");

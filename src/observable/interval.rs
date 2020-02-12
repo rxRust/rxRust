@@ -35,7 +35,7 @@ pub struct IntervalEmitter {
 impl SharedEmitter for IntervalEmitter {
   type Item = usize;
   type Err = ();
-  fn shared_emit<O>(self, subscriber: Subscriber<O, SharedSubscription>)
+  fn emit<O>(self, subscriber: Subscriber<O, SharedSubscription>)
   where
     O: Observer<Self::Item, Self::Err> + Send + Sync + 'static,
   {
@@ -82,7 +82,7 @@ fn smoke() {
   let c_seconds = seconds.clone();
   let _guard =
     interval(Duration::from_millis(20))
-      .shared()
+      .to_shared()
       .subscribe(move |_| {
         *seconds.lock().unwrap() += 1;
       });
@@ -95,6 +95,6 @@ fn smoke_fork() {
   interval(Duration::from_millis(10))
     .clone()
     .clone()
-    .shared()
+    .to_shared()
     .subscribe(|_| {});
 }

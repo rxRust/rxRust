@@ -27,10 +27,13 @@ pub struct OfEmitter<Item>(pub(crate) Item);
 impl<'a, Item> Emitter<'a> for OfEmitter<Item> {
   type Item = Item;
   type Err = ();
-  fn emit<O, U>(self, mut subscriber: Subscriber<O, U>)
+  of_emitter!(LocalSubscription, 'a);
+}
+
+macro of_emitter($subscription:ty, $($marker:ident +)* $lf: lifetime) {
+  fn emit<O>(self, mut subscriber: Subscriber<O, $subscription>)
   where
-    O: Observer<Self::Item, Self::Err>,
-    U: SubscriptionLike,
+    O: Observer<Self::Item, Self::Err> + $($marker +)* $lf
   {
     if !subscriber.is_closed() {
       subscriber.next(self.0);
@@ -39,7 +42,11 @@ impl<'a, Item> Emitter<'a> for OfEmitter<Item> {
   }
 }
 
-auto_impl_shared_emitter!(OfEmitter<Item>, <Item>);
+impl<Item> SharedEmitter for OfEmitter<Item> {
+  type Item = Item;
+  type Err = ();
+  of_emitter!(SharedSubscription, Send + Sync + 'static);
+}
 
 /// Creates an observable that emits value or the error from a [`Result`] given.
 ///
@@ -71,15 +78,10 @@ pub fn of_result<Item, Err>(
   ObservableBase::new(ResultEmitter(r))
 }
 
-#[derive(Clone)]
-pub struct ResultEmitter<Item, Err>(pub(crate) Result<Item, Err>);
-impl<'a, Item, Err> Emitter<'a> for ResultEmitter<Item, Err> {
-  type Item = Item;
-  type Err = Err;
-  fn emit<O, U>(self, mut subscriber: Subscriber<O, U>)
+macro of_result_emitter($subscription:ty, $($marker:ident +)* $lf: lifetime) {
+  fn emit<O>(self, mut subscriber: Subscriber<O, $subscription>)
   where
-    O: Observer<Self::Item, Self::Err>,
-    U: SubscriptionLike,
+    O: Observer<Self::Item, Self::Err> + $($marker +)* $lf
   {
     if !subscriber.is_closed() {
       match self.0 {
@@ -91,7 +93,19 @@ impl<'a, Item, Err> Emitter<'a> for ResultEmitter<Item, Err> {
   }
 }
 
-auto_impl_shared_emitter!(ResultEmitter<Item,Err>, <Item, Err>);
+#[derive(Clone)]
+pub struct ResultEmitter<Item, Err>(pub(crate) Result<Item, Err>);
+impl<'a, Item, Err> Emitter<'a> for ResultEmitter<Item, Err> {
+  type Item = Item;
+  type Err = Err;
+  of_result_emitter!(LocalSubscription, 'a);
+}
+
+impl<Item, Err> SharedEmitter for ResultEmitter<Item, Err> {
+  type Item = Item;
+  type Err = Err;
+  of_result_emitter!(SharedSubscription, Send + Sync + 'static);
+}
 
 /// Creates an observable that potentially emits a single value from [`Option`].
 ///
@@ -117,13 +131,11 @@ pub fn of_option<Item>(o: Option<Item>) -> ObservableBase<OptionEmitter<Item>> {
 
 #[derive(Clone)]
 pub struct OptionEmitter<Item>(pub(crate) Option<Item>);
-impl<'a, Item> Emitter<'a> for OptionEmitter<Item> {
-  type Item = Item;
-  type Err = ();
-  fn emit<O, U>(self, mut subscriber: Subscriber<O, U>)
+
+macro of_option_emitter($subscription:ty, $($marker:ident +)* $lf: lifetime) {
+  fn emit<O>(self, mut subscriber: Subscriber<O, $subscription>)
   where
-    O: Observer<Self::Item, Self::Err>,
-    U: SubscriptionLike,
+    O: Observer<Self::Item, Self::Err> + $($marker +)* $lf
   {
     if !subscriber.is_closed() {
       if let Some(v) = self.0 {
@@ -134,7 +146,17 @@ impl<'a, Item> Emitter<'a> for OptionEmitter<Item> {
   }
 }
 
-auto_impl_shared_emitter!(OptionEmitter<Item>, <Item>);
+impl<'a, Item> Emitter<'a> for OptionEmitter<Item> {
+  type Item = Item;
+  type Err = ();
+  of_option_emitter!(LocalSubscription, 'a);
+}
+
+impl<Item> SharedEmitter for OptionEmitter<Item> {
+  type Item = Item;
+  type Err = ();
+  of_option_emitter!(SharedSubscription, Send + Sync + 'static);
+}
 
 /// Creates an observable that emits the return value of a callable.
 ///
@@ -160,24 +182,37 @@ where
   ObservableBase::new(CallableEmitter(f))
 }
 
+#[derive(Clone)]
 pub struct CallableEmitter<F>(F);
-impl<'a, Item, F> Emitter<'a> for CallableEmitter<F>
-where
-  F: FnOnce() -> Item,
-{
-  type Item = Item;
-  type Err = ();
-  fn emit<O, U>(self, mut subscriber: Subscriber<O, U>)
+
+macro of_fn_emitter($subscription:ty, $($marker:ident +)* $lf: lifetime) {
+  fn emit<O>(self, mut subscriber: Subscriber<O, $subscription>)
   where
-    O: Observer<Self::Item, Self::Err>,
-    U: SubscriptionLike,
+    O: Observer<Self::Item, Self::Err> + $($marker +)* $lf
   {
     if !subscriber.is_closed() {
       subscriber.next((self.0)())
     }
   }
 }
-auto_impl_shared_emitter!(CallableEmitter<F>, <F>);
+
+impl<'a, Item, F> Emitter<'a> for CallableEmitter<F>
+where
+  F: FnOnce() -> Item,
+{
+  type Item = Item;
+  type Err = ();
+  of_fn_emitter!(LocalSubscription, 'a);
+}
+
+impl<Item, F> SharedEmitter for CallableEmitter<F>
+where
+  F: FnOnce() -> Item,
+{
+  type Item = Item;
+  type Err = ();
+  of_fn_emitter!(SharedSubscription, Send + Sync + 'static);
+}
 
 #[cfg(test)]
 mod test {

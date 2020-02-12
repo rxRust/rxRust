@@ -1,7 +1,4 @@
-use crate::observer::{
-  observer_complete_proxy_impl, observer_error_proxy_impl,
-};
-use crate::ops::SharedOp;
+use crate::observer::{complete_proxy_impl, error_proxy_impl};
 use crate::prelude::*;
 /// Emits only the first `count` values emitted by the source Observable.
 ///
@@ -43,31 +40,25 @@ pub trait Take {
 
 impl<O> Take for O {}
 
+#[derive(Clone)]
 pub struct TakeOp<S> {
   source: S,
   count: u32,
 }
 
-impl<S> IntoShared for TakeOp<S>
+impl<'a, S> Observable<'a> for TakeOp<S>
 where
-  S: IntoShared,
+  S: Observable<'a>,
 {
-  type Shared = SharedOp<TakeOp<S::Shared>>;
-  fn to_shared(self) -> Self::Shared {
-    SharedOp(TakeOp {
-      source: self.source.to_shared(),
-      count: self.count,
-    })
-  }
-}
-
-impl<O, U, S> Observable<O, U> for TakeOp<S>
-where
-  S: Observable<TakeObserver<O, U>, U>,
-  U: SubscriptionLike + Clone + 'static,
-{
-  type Unsub = S::Unsub;
-  fn actual_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub {
+  type Item = S::Item;
+  type Err = S::Err;
+  fn actual_subscribe<
+    O: Observer<Self::Item, Self::Err> + 'a,
+    U: SubscriptionLike + Clone + 'static,
+  >(
+    self,
+    subscriber: Subscriber<O, U>,
+  ) -> U {
     let subscriber = Subscriber {
       observer: TakeObserver {
         observer: subscriber.observer,
@@ -81,6 +72,8 @@ where
   }
 }
 
+auto_impl_shared_observable!(TakeOp<S>, <S>);
+
 pub struct TakeObserver<O, S> {
   observer: O,
   subscription: S,
@@ -88,25 +81,9 @@ pub struct TakeObserver<O, S> {
   hits: u32,
 }
 
-impl<S, ST> IntoShared for TakeObserver<S, ST>
+impl<O, U, Item, Err> Observer<Item, Err> for TakeObserver<O, U>
 where
-  S: IntoShared,
-  ST: IntoShared,
-{
-  type Shared = TakeObserver<S::Shared, ST::Shared>;
-  fn to_shared(self) -> Self::Shared {
-    TakeObserver {
-      observer: self.observer.to_shared(),
-      subscription: self.subscription.to_shared(),
-      count: self.count,
-      hits: self.hits,
-    }
-  }
-}
-
-impl<Item, O, U> ObserverNext<Item> for TakeObserver<O, U>
-where
-  O: ObserverNext<Item> + ObserverComplete,
+  O: Observer<Item, Err>,
   U: SubscriptionLike,
 {
   fn next(&mut self, value: Item) {
@@ -119,22 +96,8 @@ where
       }
     }
   }
-}
-
-observer_error_proxy_impl!(TakeObserver<O, U>, O, observer, <O,U, Err>, Err);
-observer_complete_proxy_impl!(TakeObserver<O, U>, O,  observer, <O,U>);
-
-impl<S> Fork for TakeOp<S>
-where
-  S: Fork,
-{
-  type Output = TakeOp<S::Output>;
-  fn fork(&self) -> Self::Output {
-    TakeOp {
-      source: self.source.fork(),
-      count: self.count,
-    }
-  }
+  error_proxy_impl!(Err, observer);
+  complete_proxy_impl!(observer);
 }
 
 #[cfg(test)]
@@ -161,11 +124,11 @@ mod test {
     let mut nc2 = 0;
     {
       let take5 = observable::from_iter(0..100).take(5);
-      let f1 = take5.fork();
-      let f2 = take5.fork();
+      let f1 = take5.clone();
+      let f2 = take5.clone();
 
-      f1.take(5).fork().subscribe(|_| nc1 += 1);
-      f2.take(5).fork().subscribe(|_| nc2 += 1);
+      f1.take(5).clone().subscribe(|_| nc1 += 1);
+      f2.take(5).clone().subscribe(|_| nc2 += 1);
     }
     assert_eq!(nc1, 5);
     assert_eq!(nc2, 5);

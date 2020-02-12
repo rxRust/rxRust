@@ -1,8 +1,5 @@
 use crate::prelude::*;
-use observer::{
-  observer_complete_proxy_impl, observer_error_proxy_impl,
-  observer_next_proxy_impl,
-};
+use observer::{complete_proxy_impl, error_proxy_impl, next_proxy_impl};
 
 pub struct MutRefValue<T>(pub *mut T);
 
@@ -95,8 +92,8 @@ impl<'a, Item, Err: Copy> Observer<&mut Item, Err>
 {
   #[inline]
   fn next(&mut self, value: &mut Item) { self.subject.next(MutRefValue(value)) }
-  observer_error_proxy_impl!(Err, subject);
-  observer_complete_proxy_impl!(subject);
+  error_proxy_impl!(Err, subject);
+  complete_proxy_impl!(subject);
 }
 
 impl<'a, Item: Copy, Err> Observer<Item, &mut Err>
@@ -108,10 +105,10 @@ impl<'a, Item: Copy, Err> Observer<Item, &mut Err>
     fn(MutRefValue<Err>) -> &'a mut Err,
   >
 {
-  observer_next_proxy_impl!(Item, subject);
+  next_proxy_impl!(Item, subject);
   #[inline]
   fn error(&mut self, err: &mut Err) { self.subject.error(MutRefValue(err)) }
-  observer_complete_proxy_impl!(subject);
+  complete_proxy_impl!(subject);
 }
 
 impl<'a, Item, Err> Observer<&mut Item, &mut Err>
@@ -127,7 +124,7 @@ impl<'a, Item, Err> Observer<&mut Item, &mut Err>
   fn next(&mut self, value: &mut Item) { self.subject.next(MutRefValue(value)) }
   #[inline]
   fn error(&mut self, err: &mut Err) { self.subject.error(MutRefValue(err)) }
-  observer_complete_proxy_impl!(subject);
+  complete_proxy_impl!(subject);
 }
 
 struct MutRefObserver<O, MI, ME> {
@@ -144,13 +141,11 @@ where
 {
   type Item = MapItem;
   type Err = MapErr;
-  fn actual_subscribe<
-    O: Observer<Self::Item, Self::Err> + 'a,
-    U: SubscriptionLike + Clone + 'static,
-  >(
+  type Unsub = LocalSubscription;
+  fn actual_subscribe<O: Observer<Self::Item, Self::Err> + 'a>(
     self,
-    subscriber: Subscriber<O, U>,
-  ) -> U {
+    subscriber: Subscriber<O, LocalSubscription>,
+  ) -> LocalSubscription {
     self.subject.actual_subscribe(Subscriber {
       observer: MutRefObserver {
         observer: subscriber.observer,
@@ -171,7 +166,7 @@ where
 {
   fn next(&mut self, v: Item) { self.observer.next((self.map_item)(v)) }
   fn error(&mut self, err: Err) { self.observer.error((self.map_err)(err)) }
-  observer_complete_proxy_impl!(observer);
+  complete_proxy_impl!(observer);
 }
 
 #[test]

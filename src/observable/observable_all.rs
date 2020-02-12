@@ -53,7 +53,7 @@ pub trait SubscribeAll<N, E, C> {
 
 impl<'a, S, N, E, C> SubscribeAll<N, E, C> for S
 where
-  S: Observable<'a>,
+  S: Observable<'a, Unsub = LocalSubscription>,
   N: FnMut(S::Item) + 'a,
   E: FnMut(S::Err) + 'a,
   C: FnMut() + 'a,
@@ -79,12 +79,12 @@ where
 
 impl<S, N, E, C> SubscribeAll<N, E, C> for Shared<S>
 where
-  S: SharedObservable + Send + Sync + 'static,
+  S: SharedObservable,
   N: FnMut(S::Item) + Send + Sync + 'static,
   E: FnMut(S::Err) + Send + Sync + 'static,
   C: FnMut() + Send + Sync + 'static,
 {
-  type Unsub = SharedSubscription;
+  type Unsub = S::Unsub;
   fn subscribe_all(
     self,
     next: N,
@@ -99,7 +99,7 @@ where
       error,
       complete,
     });
-    SubscriptionGuard(self.0.shared_actual_subscribe(subscriber))
+    SubscriptionGuard(self.0.actual_subscribe(subscriber))
   }
 }
 

@@ -8,11 +8,10 @@ use std::option::Option;
 /// Realised as chained composition of scan->last->map operators.
 pub type MinMaxOp<Source, Item> = MapOp<
   LastOrOp<
-    ScanOp<Source, fn(Option<Item>, Item) -> Option<Item>, Item, Option<Item>>,
+    ScanOp<Source, fn(Option<Item>, Item) -> Option<Item>, Option<Item>>,
     Option<Item>,
   >,
   fn(Option<Item>) -> Item,
-  Option<Item>,
 >;
 
 fn get_greater<Item>(i: Option<Item>, v: Item) -> Option<Item>
@@ -182,7 +181,7 @@ mod test {
   fn max_fork_and_shared() {
     // type to type can fork
     let m = observable::from_iter(vec![1., 2.]).max();
-    m.fork().to_shared().fork().to_shared().subscribe(|_| {});
+    m.clone().to_shared().clone().to_shared().subscribe(|_| {});
   }
 
   // -------------------------------------------------------------------
@@ -257,6 +256,6 @@ mod test {
   fn min_fork_and_shared() {
     // type to type can fork
     let m = observable::from_iter(vec![1., 2.]).min();
-    m.fork().to_shared().fork().to_shared().subscribe(|_| {});
+    m.clone().to_shared().clone().to_shared().subscribe(|_| {});
   }
 }

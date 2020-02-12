@@ -39,16 +39,10 @@ where
 #[derive(Clone)]
 pub struct IterEmitter<Iter>(Iter);
 
-impl<'a, Iter, Item> Emitter<'a> for IterEmitter<Iter>
-where
-  Iter: IntoIterator<Item = Item>,
-{
-  type Item = Item;
-  type Err = ();
-  fn emit<O, U>(self, mut subscriber: Subscriber<O, U>)
+macro iter_emitter($subscription:ty, $($marker:ident +)* $lf: lifetime) {
+  fn emit<O>(self, mut subscriber: Subscriber<O, $subscription>)
   where
-    O: Observer<Self::Item, Self::Err>,
-    U: SubscriptionLike + 'a,
+    O: Observer<Self::Item, Self::Err> + $($marker +)* $lf
   {
     for v in self.0.into_iter() {
       if !subscriber.is_closed() {
@@ -63,7 +57,23 @@ where
   }
 }
 
-shared::auto_impl_shared_emitter!(IterEmitter<Iter>, <Iter>);
+impl<'a, Iter, Item> Emitter<'a> for IterEmitter<Iter>
+where
+  Iter: IntoIterator<Item = Item>,
+{
+  type Item = Item;
+  type Err = ();
+  iter_emitter!(LocalSubscription, 'a);
+}
+
+impl<Iter, Item> SharedEmitter for IterEmitter<Iter>
+where
+  Iter: IntoIterator<Item = Item>,
+{
+  type Item = Item;
+  type Err = ();
+  iter_emitter!(SharedSubscription, Send + Sync + 'static);
+}
 
 /// Creates an observable producing same value repeated N times.
 ///

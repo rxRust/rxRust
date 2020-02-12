@@ -26,7 +26,7 @@ pub trait SubscribeNext<N> {
 
 impl<'a, S, N> SubscribeNext<N> for S
 where
-  S: Observable<'a, Err = ()>,
+  S: Observable<'a, Err = (), Unsub = LocalSubscription>,
   N: FnMut(S::Item) + 'a,
 {
   type Unsub = LocalSubscription;
@@ -36,16 +36,14 @@ where
   }
 }
 
-impl<'a, S, N> SubscribeNext<N> for Shared<S>
+impl<S, N> SubscribeNext<N> for Shared<S>
 where
-  S: SharedObservable<Err = ()> + Send + Sync + 'static,
+  S: SharedObservable<Err = ()>,
   N: FnMut(S::Item) + Send + Sync + 'static,
 {
-  type Unsub = SharedSubscription;
+  type Unsub = S::Unsub;
   fn subscribe(self, next: N) -> SubscriptionGuard<Self::Unsub> {
-    let unsub = self
-      .0
-      .shared_actual_subscribe(Subscriber::shared(ObserverN(next)));
+    let unsub = self.0.actual_subscribe(Subscriber::shared(ObserverN(next)));
     SubscriptionGuard(unsub)
   }
 }

@@ -24,7 +24,6 @@ observer_proxy_impl!(
 #[cfg(test)]
 mod test {
   use super::*;
-  use crate::ops::{FilterMap, Map};
 
   #[test]
   fn base_data_flow() {
@@ -69,33 +68,19 @@ mod test {
     let value = Arc::new(Mutex::new(0));
     let c_v = value.clone();
     let mut subject = Subject::shared();
-    let _guard = subject.clone().observe_on(Schedulers::NewThread).subscribe(
-      move |v: i32| {
+    let _guard = subject
+      .clone()
+      .to_shared()
+      .observe_on(Schedulers::NewThread)
+      .to_shared()
+      .subscribe(move |v: i32| {
         *value.lock().unwrap() = v;
-      },
-    );
+      });
 
     subject.next(100);
     std::thread::sleep(std::time::Duration::from_millis(1));
 
     assert_eq!(*c_v.lock().unwrap(), 100);
-  }
-
-  #[test]
-  fn emit_mut_ref_life_time() {
-    let mut i = 1;
-    {
-      // emit mut ref
-      let mut subject = Subject::local();
-      let _guard = subject
-        .clone()
-        .filter_map((|v| Some(v)) as for<'r> fn(&'r mut _) -> Option<&'r mut _>)
-        .subscribe(|_: &mut i32| {
-          i = 100;
-        });
-      subject.next(MutRefValue(&mut 1));
-    }
-    assert_eq!(i, 100);
   }
 
   #[test]

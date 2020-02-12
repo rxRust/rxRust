@@ -39,7 +39,7 @@ pub trait SubscribeComplete<N, C> {
 
 impl<'a, S, N, C> SubscribeComplete<N, C> for S
 where
-  S: Observable<'a, Err = ()>,
+  S: Observable<'a, Err = (), Unsub = LocalSubscription>,
   C: FnMut() + 'a,
   N: FnMut(S::Item) + 'a,
 {
@@ -60,11 +60,11 @@ where
 
 impl<S, N, C> SubscribeComplete<N, C> for Shared<S>
 where
-  S: SharedObservable<Err = ()> + Send + Sync + 'static,
+  S: SharedObservable<Err = ()>,
   C: FnMut() + Send + Sync + 'static,
   N: FnMut(S::Item) + Send + Sync + 'static,
 {
-  type Unsub = SharedSubscription;
+  type Unsub = S::Unsub;
   fn subscribe_complete(
     self,
     next: N,
@@ -73,13 +73,9 @@ where
   where
     Self: Sized,
   {
-    let unsub =
-      self
-        .0
-        .shared_actual_subscribe(Subscriber::shared(ObserverComp {
-          next,
-          complete,
-        }));
+    let unsub = self
+      .0
+      .actual_subscribe(Subscriber::shared(ObserverComp { next, complete }));
     SubscriptionGuard(unsub)
   }
 }

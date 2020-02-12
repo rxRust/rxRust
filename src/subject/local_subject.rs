@@ -20,13 +20,11 @@ impl<'a, Item, Err> LocalSubject<'a, Item, Err> {
 impl<'a, Item, Err> Observable<'a> for LocalSubject<'a, Item, Err> {
   type Item = Item;
   type Err = Err;
-  fn actual_subscribe<
-    O: Observer<Self::Item, Self::Err> + 'a,
-    U: SubscriptionLike + Clone + 'static,
-  >(
+  type Unsub = LocalSubscription;
+  fn actual_subscribe<O: Observer<Self::Item, Self::Err> + 'a>(
     mut self,
-    subscriber: Subscriber<O, U>,
-  ) -> U {
+    subscriber: Subscriber<O, LocalSubscription>,
+  ) -> LocalSubscription {
     let subscription = subscriber.subscription.clone();
     self.subscription.add(subscription.clone());
     self.observers.borrow_mut().push(Box::new(subscriber));

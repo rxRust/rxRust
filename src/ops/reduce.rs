@@ -3,8 +3,8 @@ use ops::last::{Last, LastOrOp};
 use ops::scan::{Scan, ScanOp};
 
 // A composition of `scan` followed by `last`
-pub type ReduceOp<Source, BinaryOp, InputItem, OutputItem> =
-  LastOrOp<ScanOp<Source, BinaryOp, InputItem, OutputItem>, OutputItem>;
+pub type ReduceOp<Source, BinaryOp, OutputItem> =
+  LastOrOp<ScanOp<Source, BinaryOp, OutputItem>, OutputItem>;
 
 /// The [`Reduce`] operator applies a function to the first item emitted by the
 /// source observable and then feeds the result of the function back into the
@@ -41,7 +41,7 @@ pub trait Reduce<OutputItem> {
     self,
     initial: OutputItem,
     binary_op: BinaryOp,
-  ) -> ReduceOp<Self, BinaryOp, InputItem, OutputItem>
+  ) -> ReduceOp<Self, BinaryOp, OutputItem>
   where
     Self: Sized,
     BinaryOp: Fn(OutputItem, InputItem) -> OutputItem,
@@ -63,7 +63,7 @@ pub trait Reduce<OutputItem> {
   fn reduce<InputItem, BinaryOp>(
     self,
     binary_op: BinaryOp,
-  ) -> LastOrOp<ScanOp<Self, BinaryOp, InputItem, OutputItem>, OutputItem>
+  ) -> LastOrOp<ScanOp<Self, BinaryOp, OutputItem>, OutputItem>
   where
     Self: Sized,
     BinaryOp: Fn(OutputItem, InputItem) -> OutputItem,
@@ -143,11 +143,11 @@ mod test {
   fn reduce_fork_and_shared() {
     // type to type can fork
     let m = observable::from_iter(0..100).reduce(|acc: i32, v| acc + v);
-    m.fork()
+    m.clone()
       .reduce(|acc: i32, v| acc + v)
-      .fork()
+      .clone()
       .to_shared()
-      .fork()
+      .clone()
       .to_shared()
       .subscribe(|_| {});
   }

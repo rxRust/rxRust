@@ -39,7 +39,7 @@ pub trait SubscribeErr<N, E> {
 
 impl<'a, S, N, E> SubscribeErr<N, E> for S
 where
-  S: Observable<'a>,
+  S: Observable<'a, Unsub = LocalSubscription>,
   N: FnMut(S::Item) + 'a,
   E: FnMut(S::Err) + 'a,
 {
@@ -56,18 +56,18 @@ where
 
 impl<S, N, E> SubscribeErr<N, E> for Shared<S>
 where
-  S: SharedObservable + Send + Sync + 'static,
+  S: SharedObservable,
   N: FnMut(S::Item) + Send + Sync + 'static,
   E: FnMut(S::Err) + Send + Sync + 'static,
 {
-  type Unsub = SharedSubscription;
+  type Unsub = S::Unsub;
   fn subscribe_err(self, next: N, error: E) -> SubscriptionGuard<Self::Unsub>
   where
     Self: Sized,
   {
     let unsub = self
       .0
-      .shared_actual_subscribe(Subscriber::shared(ObserverErr { next, error }));
+      .actual_subscribe(Subscriber::shared(ObserverErr { next, error }));
     SubscriptionGuard(unsub)
   }
 }

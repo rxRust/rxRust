@@ -2,8 +2,7 @@ use crate::prelude::*;
 use ops::reduce::{Reduce, ReduceOp};
 use std::ops::Add;
 
-pub type SumOp<Source, Item> =
-  ReduceOp<Source, fn(Item, Item) -> Item, Item, Item>;
+pub type SumOp<Source, Item> = ReduceOp<Source, fn(Item, Item) -> Item, Item>;
 
 pub trait Sum<Item> {
   /// Calculates the sum of numbers emitted by an source observable and emits
@@ -77,11 +76,11 @@ mod test {
   fn sum_fork_and_shared() {
     // type to type can fork
     let m = observable::from_iter(0..100).sum();
-    m.fork()
+    m.clone()
       .sum()
-      .fork()
+      .clone()
       .to_shared()
-      .fork()
+      .clone()
       .to_shared()
       .subscribe(|_| {});
   }

@@ -1,22 +1,26 @@
 use crate::prelude::*;
 
+/// Shared wrap the Observable， subscribe and accept subscribe in a safe mode by
+/// SharedObservable.
 #[derive(Clone)]
-pub struct Shared<R: Send + Sync + 'static>(pub(crate) R);
+pub struct Shared<R>(pub(crate) R);
 
 pub trait SharedObservable {
   type Item;
   type Err;
-  fn shared_actual_subscribe<
+  type Unsub: SubscriptionLike;
+  fn actual_subscribe<
     O: Observer<Self::Item, Self::Err> + Sync + Send + 'static,
   >(
     self,
     subscriber: Subscriber<O, SharedSubscription>,
-  ) -> SharedSubscription;
+  ) -> Self::Unsub;
 
+  /// Convert to a thread-safe mode.
   #[inline]
-  fn shared(self) -> Shared<Self>
+  fn to_shared(self) -> Shared<Self>
   where
-    Self: Sized + Send + Sync + 'static,
+    Self: Sized,
   {
     Shared(self)
   }
@@ -25,64 +29,25 @@ pub trait SharedObservable {
 pub trait SharedEmitter {
   type Item;
   type Err;
-  fn shared_emit<O>(self, subscriber: Subscriber<O, SharedSubscription>)
+  fn emit<O>(self, subscriber: Subscriber<O, SharedSubscription>)
   where
     O: Observer<Self::Item, Self::Err> + Send + Sync + 'static;
 }
 
 impl<S> SharedObservable for Shared<S>
 where
-  S: SharedObservable + Send + Sync + 'static,
+  S: SharedObservable,
 {
   type Item = S::Item;
   type Err = S::Err;
-
+  type Unsub = S::Unsub;
   #[inline]
-  fn shared_actual_subscribe<
+  fn actual_subscribe<
     O: Observer<Self::Item, Self::Err> + Sync + Send + 'static,
   >(
     self,
     subscriber: Subscriber<O, SharedSubscription>,
-  ) -> SharedSubscription {
-    self.0.shared_actual_subscribe(subscriber)
-  }
-}
-
-pub(crate) macro auto_impl_shared_observable($t: ty,
-  <$($generics: ident  $(: $bound: tt)?),*>) {
-    impl<$($generics $(:$bound)?),*> SharedEmitter for $t
-  where
-    Self: SharedObservable<'static> + Send + Sync + 'static
-  {
-      type Item = <Self as Observable>::Item;
-      type Err = <Self as Observable>::Err;
-
-      #[inline(always)]
-      fn shared_actual_subscribe<
-        O: Observer<Self::Item, Self::Err> + Sync + Send + 'static>(
-    self,
-    subscriber: Subscriber<O, SharedSubscription>,
-  ) -> SharedSubscription {
-      self.actual_subscribe(subscriber)
-  }
-
-    }
-  }
-
-pub(crate) macro auto_impl_shared_emitter($t: ty
-  $(, <$($generics: ident  $(: $bound: tt)?),*>)?) {
-  impl$(<$($generics $(:$bound)?),*>)? SharedEmitter for $t
-  where
-    Self: Emitter<'static> + Send + Sync + 'static
-  {
-    type Item = <Self as Emitter<'static>>::Item;
-    type Err = <Self as Emitter<'static>>::Err;
-    #[inline(always)]
-    fn shared_emit<O>(self, subscriber: Subscriber<O, SharedSubscription>)
-    where
-      O: Observer<Self::Item, Self::Err> + Send + Sync + 'static,
-    {
-      self.emit(subscriber)
-    }
+  ) -> Self::Unsub {
+    self.0.actual_subscribe(subscriber)
   }
 }

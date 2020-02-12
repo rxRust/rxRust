@@ -39,10 +39,9 @@ where
 {
   type Item = Item;
   type Err = Err;
-  fn emit<O, U>(self, subscriber: Subscriber<O, U>)
+  fn emit<O>(self, subscriber: Subscriber<O, LocalSubscription>)
   where
     O: Observer<Self::Item, Self::Err> + 'a,
-    U: SubscriptionLike + 'a,
   {
     (self.0)(Subscriber {
       observer: Box::new(subscriber.observer),
@@ -62,7 +61,7 @@ where
 {
   type Item = Item;
   type Err = Err;
-  fn shared_emit<O>(self, subscriber: Subscriber<O, SharedSubscription>)
+  fn emit<O>(self, subscriber: Subscriber<O, SharedSubscription>)
   where
     O: Observer<Self::Item, Self::Err> + Send + Sync + 'static,
   {
@@ -100,7 +99,7 @@ mod test {
         subscriber.error("never dispatch error");
       },
     )
-    .shared()
+    .to_shared()
     .subscribe_all(
       move |_| *next.lock().unwrap() += 1,
       move |_: &str| *err.lock().unwrap() += 1,
@@ -133,10 +132,10 @@ mod test {
   #[test]
   fn fork_and_share() {
     let observable = observable::create(|_| {});
-    observable.clone().shared().subscribe(|v: i32| {});
-    observable.clone().shared().subscribe(|_| {});
+    observable.clone().to_shared().subscribe(|v: i32| {});
+    observable.clone().to_shared().subscribe(|_| {});
 
-    let observable = observable::create(|_| {}).shared();
+    let observable = observable::create(|_| {}).to_shared();
     observable.clone().subscribe(|_: i32| {});
     observable.clone().subscribe(|_| {});
   }
