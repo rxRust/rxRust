@@ -52,7 +52,7 @@ pub trait SubscribeComplete<N, C> {
     self,
     next: N,
     complete: C,
-  ) -> SubscriptionGuard<Self::Unsub>;
+  ) -> SubscriptionWrapper<Self::Unsub>;
 }
 
 impl<S, N, C> SubscribeComplete<N, C> for S
@@ -65,13 +65,13 @@ where
     self,
     next: N,
     complete: C,
-  ) -> SubscriptionGuard<Self::Unsub>
+  ) -> SubscriptionWrapper<Self::Unsub>
   where
     Self: Sized,
   {
     let unsub =
       self.actual_subscribe(Subscriber::local(ObserverComp { next, complete }));
-    SubscriptionGuard(unsub)
+    SubscriptionWrapper(unsub)
   }
 }
 
@@ -80,7 +80,7 @@ fn raii() {
   let mut times = 0;
   {
     let mut subject = Subject::local();
-    subject.fork().subscribe_complete(|_| times += 1, || {});
+    subject.fork().subscribe_complete(|_| times += 1, || {}).unsubscribe_when_dropped();
     subject.next(());
   }
   assert_eq!(times, 0);

@@ -189,22 +189,38 @@ impl<Item, Err> SubscriptionLike
   subscription_direct_impl_proxy!();
 }
 
-/// An RAII implementation of a "scoped subscribed" of a subscription.
-/// When this structure is dropped (falls out of scope), the subscription will
-/// be unsubscribed.
-pub struct SubscriptionGuard<T: SubscriptionLike>(pub(crate) T);
-impl<T: SubscriptionLike> Drop for SubscriptionGuard<T> {
-  #[inline]
-  fn drop(&mut self) { self.0.unsubscribe() }
+/// Wrapper around a subscription which provides the `unsubscribe_when_dropped()` method.
+pub struct SubscriptionWrapper<T: SubscriptionLike>(pub(crate) T);
+
+impl<T: SubscriptionLike> SubscriptionWrapper<T> {
+
+  /// Activates "RAII" behavior for this subscription. That means `unsubscribe()` will be called
+  /// automatically as soon as the returned value goes out of scope.
+  ///
+  /// **Attention:** If you don't assign the return value to a variable, `unsubscribe()` is called
+  /// immediately, which is probably not what you want!
+  pub fn unsubscribe_when_dropped(self) -> SubscriptionGuard<T> {
+    SubscriptionGuard(self.0)
+  }
 }
 
-impl<T: SubscriptionLike> SubscriptionLike for SubscriptionGuard<T> {
+impl<T: SubscriptionLike> SubscriptionLike for SubscriptionWrapper<T> {
   #[inline(always)]
   fn unsubscribe(&mut self) { self.0.unsubscribe(); }
   #[inline(always)]
   fn is_closed(&self) -> bool { self.0.is_closed() }
   #[inline(always)]
   fn inner_addr(&self) -> *const () { self.0.inner_addr() }
+}
+
+/// An RAII implementation of a "scoped subscribed" of a subscription.
+/// When this structure is dropped (falls out of scope), the subscription will
+/// be unsubscribed.
+pub struct SubscriptionGuard<T: SubscriptionLike>(pub(crate) T);
+
+impl<T: SubscriptionLike> Drop for SubscriptionGuard<T> {
+  #[inline]
+  fn drop(&mut self) { self.0.unsubscribe() }
 }
 
 #[cfg(test)]

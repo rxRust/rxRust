@@ -52,7 +52,7 @@ pub trait SubscribeErr<N, E> {
   /// * `error`: A handler for a terminal event resulting from an error.
   /// completion.
   ///
-  fn subscribe_err(self, next: N, error: E) -> SubscriptionGuard<Self::Unsub>;
+  fn subscribe_err(self, next: N, error: E) -> SubscriptionWrapper<Self::Unsub>;
 }
 
 impl<S, N, E> SubscribeErr<N, E> for S
@@ -60,13 +60,13 @@ where
   S: Observable<ObserverErr<N, E>, LocalSubscription>,
 {
   type Unsub = S::Unsub;
-  fn subscribe_err(self, next: N, error: E) -> SubscriptionGuard<Self::Unsub>
+  fn subscribe_err(self, next: N, error: E) -> SubscriptionWrapper<Self::Unsub>
   where
     Self: Sized,
   {
     let unsub =
       self.actual_subscribe(Subscriber::local(ObserverErr { next, error }));
-    SubscriptionGuard(unsub)
+    SubscriptionWrapper(unsub)
   }
 }
 
@@ -75,7 +75,7 @@ fn raii() {
   let mut times = 0;
   {
     let mut subject = Subject::local();
-    subject.fork().subscribe_err(|_| times += 1, |_| {});
+    subject.fork().subscribe_err(|_| times += 1, |_| {}).unsubscribe_when_dropped();
     subject.next(());
     subject.error(());
   }
