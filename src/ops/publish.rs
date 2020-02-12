@@ -24,8 +24,8 @@ fn smoke() {
   let p = observable::of(100).publish();
   let mut first = 0;
   let mut second = 0;
-  let _guard1 = p.fork().subscribe(|v| first = v);
-  let _guard2 = p.fork().subscribe(|v| second = v);
+  p.fork().subscribe(|v| first = v);
+  p.fork().subscribe(|v| second = v);
 
   p.connect();
   assert_eq!(first, 100);

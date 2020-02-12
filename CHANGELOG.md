@@ -2,6 +2,10 @@
 
 ### Features
 - **operator**: add `take_last` operator.
+- **subscription** The return value of `subscribe`, `subscribe_err`, `subscribe_complete` and `subscribe_all` now
+  provides a method `unsubscribe_when_dropped()` which activates "RAII" behavior for this subscription. That means
+  `unsubscribe()` will be called automatically as soon as the value returned by `unsubscribe_when_dropped()` goes out
+  of scope. If you don't assign the return value to a variable, `unsubscribe()` is called immediately!
 
 ### Refactor
 
@@ -9,7 +13,6 @@
 
 ### Breaking Changes
 
-- **subscription** Now `subscribe`, `subscribe_err`, `subscribe_complete` and `subscribe_all` return a RAII implementation of a "scoped subscribed" of a subscription, and their "scoped subscribed" is bind to the return value.
 - **observable** Redefine `RawSubscribable` as `Observable`. From
   ```rust
   pub trait RawSubscribable<Subscriber> {

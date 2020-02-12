@@ -113,7 +113,7 @@ mod test {
     let c_res = res.clone();
     let thread = Arc::new(Mutex::new(vec![]));
     let c_thread = thread.clone();
-    let _guard = observable::from_iter(1..5)
+    observable::from_iter(1..5)
       .subscribe_on(Schedulers::NewThread)
       .subscribe(move |v| {
         res.lock().unwrap().push(v);
