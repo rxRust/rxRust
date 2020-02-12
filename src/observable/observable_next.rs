@@ -37,7 +37,7 @@ pub trait SubscribeNext<N> {
 
   /// Invokes an execution of an Observable and registers Observer handlers for
   /// notifications it will emit.
-  fn subscribe(self, next: N) -> SubscriptionGuard<Self::Unsub>;
+  fn subscribe(self, next: N) -> SubscriptionWrapper<Self::Unsub>;
 }
 
 impl<S, N> SubscribeNext<N> for S
@@ -45,12 +45,12 @@ where
   S: Observable<ObserverN<N>, LocalSubscription>,
 {
   type Unsub = S::Unsub;
-  fn subscribe(self, next: N) -> SubscriptionGuard<Self::Unsub>
+  fn subscribe(self, next: N) -> SubscriptionWrapper<Self::Unsub>
   where
     Self: Sized,
   {
     let unsub = self.actual_subscribe(Subscriber::local(ObserverN(next)));
-    SubscriptionGuard(unsub)
+    SubscriptionWrapper(unsub)
   }
 }
 
@@ -61,7 +61,7 @@ fn raii() {
     let mut subject = Subject::local();
     subject.fork().subscribe(|_| {
       times += 1;
-    });
+    }).unsubscribe_when_dropped();
     subject.next(());
   }
   assert_eq!(times, 0);
