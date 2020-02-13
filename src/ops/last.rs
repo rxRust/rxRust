@@ -77,20 +77,11 @@ pub struct LastOrOp<S, Item> {
   last: Option<Item>,
 }
 
-impl<'a, Item, S> Observable<'a> for LastOrOp<S, Item>
-where
-  S: Observable<'a, Item = Item>,
-  Item: 'a,
-{
-  type Item = Item;
-  type Err = S::Err;
-  fn actual_subscribe<
-    O: Observer<Self::Item, Self::Err> + 'a,
-    U: SubscriptionLike + Clone + 'static,
-  >(
+macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
+  fn actual_subscribe<O: Observer<Self::Item, Self::Err> + $($marker +)* $lf>(
     self,
-    subscriber: Subscriber<O, U>,
-  ) -> U {
+    subscriber: Subscriber<O, $subscription>,
+  ) -> Self::Unsub {
     let subscriber = Subscriber {
       observer: LastOrObserver {
         observer: subscriber.observer,
@@ -103,7 +94,27 @@ where
   }
 }
 
-auto_impl_shared_observable!(LastOrOp<S, Item>, <S, Item>);
+impl<'a, Item, S> Observable<'a> for LastOrOp<S, Item>
+where
+  S: Observable<'a, Item = Item>,
+  Item: 'a,
+{
+  type Item = Item;
+  type Err = S::Err;
+  type Unsub = S::Unsub;
+  observable_impl!(LocalSubscription, 'a);
+}
+
+impl<Item, S> SharedObservable for LastOrOp<S, Item>
+where
+  S: SharedObservable<Item = Item>,
+  Item: Send + Sync + 'static,
+{
+  type Item = Item;
+  type Err = S::Err;
+  type Unsub = S::Unsub;
+  observable_impl!(SharedSubscription, Send + Sync + 'static);
+}
 
 pub struct LastOrObserver<S, T> {
   default: Option<T>,

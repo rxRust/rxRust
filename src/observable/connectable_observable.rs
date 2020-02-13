@@ -1,16 +1,18 @@
 use crate::prelude::*;
 use crate::subject::{LocalSubject, SharedSubject};
+use ops::ref_count::{LocalRefCount, SharedRefCount};
 
 #[derive(Clone)]
 pub struct ConnectableObservable<Source, Subject> {
-  source: Source,
-  subject: Subject,
+  pub(crate) source: Source,
+  pub(crate) subject: Subject,
 }
 
-pub trait Connect {
-  type Unsub;
-  fn connect(self) -> Self::Unsub;
-}
+pub type LocalConnectableObservable<'a, S, Item, Err> =
+  ConnectableObservable<S, LocalSubject<'a, Item, Err>>;
+
+pub type SharedConnectableObservable<S, Item, Err> =
+  ConnectableObservable<S, SharedSubject<Item, Err>>;
 
 macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
   type Unsub = $subscription;
@@ -24,7 +26,7 @@ macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
 }
 
 impl<'a, S, Item, Err> Observable<'a>
-  for ConnectableObservable<S, LocalSubject<'a, Item, Err>>
+  for LocalConnectableObservable<'a, S, Item, Err>
 where
   S: Observable<'a, Item = Item, Err = Err>,
   S: Observable<'a, Item = Item, Err = Err>,
@@ -35,7 +37,7 @@ where
 }
 
 impl<S, Item, Err> SharedObservable
-  for ConnectableObservable<S, SharedSubject<Item, Err>>
+  for SharedConnectableObservable<S, Item, Err>
 where
   S: SharedObservable<Item = Item, Err = Err>,
   S: SharedObservable<Item = Item, Err = Err>,
@@ -45,7 +47,7 @@ where
   observable_impl!(SharedSubscription, Send + Sync + 'static);
 }
 
-impl<'a, Item, Err, S> ConnectableObservable<S, LocalSubject<'a, Item, Err>>
+impl<'a, Item, Err, S> LocalConnectableObservable<'a, S, Item, Err>
 where
   S: Observable<'a, Item = Item, Err = Err>,
 {
@@ -55,29 +57,36 @@ where
       subject: Subject::local(),
     }
   }
+
+  #[inline]
+  pub fn ref_count(self) -> LocalRefCount<'a, S, Item, Err> {
+    LocalRefCount::new(self)
+  }
 }
 
-impl<Source, Item, Err> ConnectableObservable<Source, SharedSubject<Item, Err>>
+impl<S, Item, Err> ConnectableObservable<S, SharedSubject<Item, Err>>
 where
-  Source: SharedObservable<Item = Item, Err = Err>,
+  S: SharedObservable<Item = Item, Err = Err>,
 {
-  pub fn shared(observable: Source) -> Self {
+  pub fn shared(observable: S) -> Self {
     ConnectableObservable {
       source: observable,
       subject: Subject::shared(),
     }
   }
+  #[inline]
+  pub fn ref_count(self) -> SharedRefCount<S, Item, Err> {
+    SharedRefCount::new(self)
+  }
 }
 
-impl<'a, S, Item, Err> Connect
-  for ConnectableObservable<S, LocalSubject<'a, Item, Err>>
+impl<'a, S, Item, Err> LocalConnectableObservable<'a, S, Item, Err>
 where
   S: Observable<'a, Item = Item, Err = Err>,
   Item: Copy + 'a,
   Err: Copy + 'a,
 {
-  type Unsub = S::Unsub;
-  fn connect(self) -> Self::Unsub {
+  pub fn connect(self) -> S::Unsub {
     self.source.actual_subscribe(Subscriber {
       observer: self.subject.observers,
       subscription: self.subject.subscription,
@@ -85,15 +94,13 @@ where
   }
 }
 
-impl<S, Item, Err> Connect
-  for ConnectableObservable<S, SharedSubject<Item, Err>>
+impl<S, Item, Err> SharedConnectableObservable<S, Item, Err>
 where
   S: SharedObservable<Item = Item, Err = Err>,
   Item: Copy + Send + Sync + 'static,
   Err: Copy + Send + Sync + 'static,
 {
-  type Unsub = S::Unsub;
-  fn connect(self) -> Self::Unsub {
+  pub fn connect(self) -> S::Unsub {
     self.source.actual_subscribe(Subscriber {
       observer: self.subject.observers,
       subscription: self.subject.subscription,

@@ -184,7 +184,6 @@ fn mut_ref_item() {
 
 #[test]
 fn mut_ref_err() {
-  let a = 0;
   let mut test_code = 0;
   {
     let mut subject = Subject::local().mut_ref_err();

@@ -15,6 +15,7 @@ impl<'a, Item, Err> LocalSubject<'a, Item, Err> {
       subscription: LocalSubscription::default(),
     }
   }
+  pub fn is_subscribed(&self) -> bool { self.observers.borrow().is_empty() }
 }
 
 impl<'a, Item, Err> Observable<'a> for LocalSubject<'a, Item, Err> {

@@ -1,7 +1,6 @@
 use crate::observer::error_proxy_impl;
 use crate::prelude::*;
 use std::collections::VecDeque;
-use std::marker::PhantomData;
 
 /// Emits only the last `count` values emitted by the source Observable.
 ///
@@ -29,42 +28,31 @@ use std::marker::PhantomData;
 /// // 9
 /// ```
 ///
-pub trait TakeLast<Item> {
-  fn take_last(self, count: usize) -> TakeLastOp<Self, Item>
+pub trait TakeLast {
+  fn take_last(self, count: usize) -> TakeLastOp<Self>
   where
     Self: Sized,
   {
     TakeLastOp {
       source: self,
       count,
-      _p: PhantomData,
     }
   }
 }
 
-impl<O, Item> TakeLast<Item> for O {}
+impl<O> TakeLast for O {}
 
 #[derive(Clone)]
-pub struct TakeLastOp<S, Item> {
+pub struct TakeLastOp<S> {
   source: S,
   count: usize,
-  _p: PhantomData<Item>,
 }
 
-impl<'a, S, Item> Observable<'a> for TakeLastOp<S, Item>
-where
-  S: Observable<'a, Item = Item> + 'a,
-  Item: 'a,
-{
-  type Item = S::Item;
-  type Err = S::Err;
-  fn actual_subscribe<
-    O: Observer<Self::Item, Self::Err> + 'a,
-    U: SubscriptionLike + Clone + 'static,
-  >(
+macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
+  fn actual_subscribe<O: Observer<Self::Item, Self::Err> + $($marker +)* $lf>(
     self,
-    subscriber: Subscriber<O, U>,
-  ) -> U {
+    subscriber: Subscriber<O, $subscription>,
+  ) -> Self::Unsub {
     let subscriber = Subscriber {
       observer: TakeLastObserver {
         observer: subscriber.observer,
@@ -77,7 +65,26 @@ where
   }
 }
 
-auto_impl_shared_observable!(TakeLastOp<S, Item>, <S, Item>);
+impl<'a, S> Observable<'a> for TakeLastOp<S>
+where
+  S: Observable<'a> + 'a,
+{
+  type Item = S::Item;
+  type Err = S::Err;
+  type Unsub = S::Unsub;
+  observable_impl!(LocalSubscription, 'a);
+}
+
+impl<S> SharedObservable for TakeLastOp<S>
+where
+  S: SharedObservable,
+  S::Item: Send + Sync + 'static,
+{
+  type Item = S::Item;
+  type Err = S::Err;
+  type Unsub = S::Unsub;
+  observable_impl!(SharedSubscription, Send + Sync + 'static);
+}
 
 pub struct TakeLastObserver<O, Item> {
   observer: O,

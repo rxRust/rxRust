@@ -46,19 +46,11 @@ pub struct TakeOp<S> {
   count: u32,
 }
 
-impl<'a, S> Observable<'a> for TakeOp<S>
-where
-  S: Observable<'a>,
-{
-  type Item = S::Item;
-  type Err = S::Err;
-  fn actual_subscribe<
-    O: Observer<Self::Item, Self::Err> + 'a,
-    U: SubscriptionLike + Clone + 'static,
-  >(
+macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
+  fn actual_subscribe<O: Observer<Self::Item, Self::Err> + $($marker +)* $lf>(
     self,
-    subscriber: Subscriber<O, U>,
-  ) -> U {
+    subscriber: Subscriber<O, $subscription>,
+  ) -> Self::Unsub {
     let subscriber = Subscriber {
       observer: TakeObserver {
         observer: subscriber.observer,
@@ -72,7 +64,25 @@ where
   }
 }
 
-auto_impl_shared_observable!(TakeOp<S>, <S>);
+impl<'a, S> Observable<'a> for TakeOp<S>
+where
+  S: Observable<'a>,
+{
+  type Item = S::Item;
+  type Err = S::Err;
+  type Unsub = S::Unsub;
+  observable_impl!(LocalSubscription, 'a);
+}
+
+impl<S> SharedObservable for TakeOp<S>
+where
+  S: SharedObservable,
+{
+  type Item = S::Item;
+  type Err = S::Err;
+  type Unsub = S::Unsub;
+  observable_impl!(SharedSubscription, Send + Sync + 'static);
+}
 
 pub struct TakeObserver<O, S> {
   observer: O,

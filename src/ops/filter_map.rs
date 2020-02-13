@@ -49,20 +49,11 @@ pub struct FilterMapOp<S, F> {
   f: F,
 }
 
-impl<'a, Item, S, F> Observable<'a> for FilterMapOp<S, F>
-where
-  S: Observable<'a>,
-  F: FnMut(S::Item) -> Option<Item> + 'a,
-{
-  type Item = Item;
-  type Err = S::Err;
-  fn actual_subscribe<
-    O: Observer<Self::Item, Self::Err> + 'a,
-    U: SubscriptionLike + Clone + 'static,
-  >(
+macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
+  fn actual_subscribe<O: Observer<Self::Item, Self::Err> + $($marker +)* $lf>(
     self,
-    subscriber: Subscriber<O, U>,
-  ) -> U {
+    subscriber: Subscriber<O, $subscription>,
+  ) -> Self::Unsub {
     self.source.actual_subscribe(Subscriber {
       observer: FilterMapObserver {
         down_observer: subscriber.observer,
@@ -73,7 +64,27 @@ where
   }
 }
 
-auto_impl_shared_observable!(FilterMapOp<S, F>, <S, F>);
+impl<'a, Item, S, F> Observable<'a> for FilterMapOp<S, F>
+where
+  S: Observable<'a>,
+  F: FnMut(S::Item) -> Option<Item> + 'a,
+{
+  type Item = Item;
+  type Err = S::Err;
+  type Unsub = S::Unsub;
+  observable_impl!(LocalSubscription, 'a);
+}
+
+impl<Item, S, F> SharedObservable for FilterMapOp<S, F>
+where
+  S: SharedObservable,
+  F: FnMut(S::Item) -> Option<Item> + Send + Sync + 'static,
+{
+  type Item = Item;
+  type Err = S::Err;
+  type Unsub = S::Unsub;
+  observable_impl!(SharedSubscription, Send + Sync + 'static);
+}
 
 pub struct FilterMapObserver<O, F> {
   down_observer: O,

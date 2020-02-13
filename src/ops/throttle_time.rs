@@ -47,37 +47,37 @@ pub struct ThrottleTimeOp<S> {
 
 impl<S> ThrottleTime for S {}
 
-impl<Item, Err, S> SharedObservable for ThrottleTimeOp<S>
+impl<Item, Err, S, Unsub> SharedObservable for ThrottleTimeOp<S>
 where
-  S: for<'r> Observable<'r, Item = Item, Err = Err>,
+  S: for<'r> Observable<'r, Item = Item, Err = Err, Unsub = Unsub>,
   Item: Clone + Send + 'static,
+  Unsub: SubscriptionLike + 'static,
 {
   type Item = Item;
   type Err = Err;
-  fn shared_actual_subscribe<
-    O: Observer<Self::Item, Self::Err> + Sync + Send + 'static,
+  type Unsub = Unsub;
+  fn actual_subscribe<
+    O: Observer<Self::Item, Self::Err> + Send + Sync + 'static,
   >(
     self,
     subscriber: Subscriber<O, SharedSubscription>,
-  ) -> SharedSubscription {
+  ) -> Self::Unsub {
     let Self {
       source,
       duration,
       edge,
     } = self;
-    let Subscriber {
-      observer,
-      subscription,
-    } = subscriber;
+    let mut subscription = LocalSubscription::default();
+    subscription.add(subscriber.subscription.clone());
     source.actual_subscribe(Subscriber {
       observer: ThrottleTimeObserver(Arc::new(Mutex::new(
         InnerThrottleTimeObserver {
-          observer,
+          observer: subscriber.observer,
           edge,
           delay: duration,
           trailing_value: None,
           throttled: None,
-          subscription: subscription.clone(),
+          subscription: subscriber.subscription.clone(),
         },
       ))),
       subscription,
@@ -92,12 +92,13 @@ where
 {
   type Item = Item;
   type Err = Err;
-  fn shared_actual_subscribe<
+  type Unsub = S::Unsub;
+  fn actual_subscribe<
     O: Observer<Self::Item, Self::Err> + Sync + Send + 'static,
   >(
     self,
     subscriber: Subscriber<O, SharedSubscription>,
-  ) -> SharedSubscription {
+  ) -> S::Unsub {
     let Self {
       source,
       duration,
@@ -107,7 +108,7 @@ where
       observer,
       subscription,
     } = subscriber;
-    source.0.shared_actual_subscribe(Subscriber {
+    source.0.actual_subscribe(Subscriber {
       observer: ThrottleTimeObserver(Arc::new(Mutex::new(
         InnerThrottleTimeObserver {
           observer,

@@ -132,7 +132,7 @@ mod test {
   #[test]
   fn fork_and_share() {
     let observable = observable::create(|_| {});
-    observable.clone().to_shared().subscribe(|v: i32| {});
+    observable.clone().to_shared().subscribe(|_: i32| {});
     observable.clone().to_shared().subscribe(|_| {});
 
     let observable = observable::create(|_| {}).to_shared();

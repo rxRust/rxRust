@@ -15,7 +15,7 @@ where
   fn complete(&mut self) {}
 }
 
-pub trait SubscribeNext<N> {
+pub trait SubscribeNext<'a, N> {
   /// A type implementing [`SubscriptionLike`]
   type Unsub: SubscriptionLike;
 
@@ -24,19 +24,19 @@ pub trait SubscribeNext<N> {
   fn subscribe(self, next: N) -> SubscriptionGuard<Self::Unsub>;
 }
 
-impl<'a, S, N> SubscribeNext<N> for S
+impl<'a, S, N> SubscribeNext<'a, N> for S
 where
-  S: Observable<'a, Err = (), Unsub = LocalSubscription>,
+  S: Observable<'a, Err = ()>,
   N: FnMut(S::Item) + 'a,
 {
-  type Unsub = LocalSubscription;
+  type Unsub = S::Unsub;
   fn subscribe(self, next: N) -> SubscriptionGuard<Self::Unsub> {
     let unsub = self.actual_subscribe(Subscriber::local(ObserverN(next)));
     SubscriptionGuard(unsub)
   }
 }
 
-impl<S, N> SubscribeNext<N> for Shared<S>
+impl<'a, S, N> SubscribeNext<'a, N> for Shared<S>
 where
   S: SharedObservable<Err = ()>,
   N: FnMut(S::Item) + Send + Sync + 'static,

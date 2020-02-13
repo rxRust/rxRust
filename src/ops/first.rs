@@ -37,20 +37,11 @@ pub struct FirstOrOp<S, V> {
   default: V,
 }
 
-impl<'a, S, Item> Observable<'a> for FirstOrOp<S, Item>
-where
-  S: Observable<'a, Item = Item>,
-  Item: 'a,
-{
-  type Item = S::Item;
-  type Err = S::Err;
-  fn actual_subscribe<
-    O: Observer<Self::Item, Self::Err> + 'a,
-    U: SubscriptionLike + Clone + 'static,
-  >(
+macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
+  fn actual_subscribe<O: Observer<Self::Item, Self::Err> + $($marker +)* $lf>(
     self,
-    subscriber: Subscriber<O, U>,
-  ) -> U {
+    subscriber: Subscriber<O, $subscription>,
+  ) -> Self::Unsub {
     let subscriber = Subscriber {
       observer: FirstOrObserver {
         observer: subscriber.observer,
@@ -62,7 +53,27 @@ where
   }
 }
 
-auto_impl_shared_observable!(FirstOrOp<S, Item>, <S, Item>);
+impl<'a, S, Item> Observable<'a> for FirstOrOp<S, Item>
+where
+  S: Observable<'a, Item = Item>,
+  Item: 'a,
+{
+  type Item = S::Item;
+  type Err = S::Err;
+  type Unsub = S::Unsub;
+  observable_impl!(LocalSubscription, 'a);
+}
+
+impl<S, Item> SharedObservable for FirstOrOp<S, Item>
+where
+  S: SharedObservable<Item = Item>,
+  Item: Send + Sync + 'static,
+{
+  type Item = S::Item;
+  type Err = S::Err;
+  type Unsub = S::Unsub;
+  observable_impl!(SharedSubscription, Send + Sync + 'static);
+}
 
 pub struct FirstOrObserver<S, T> {
   default: Option<T>,

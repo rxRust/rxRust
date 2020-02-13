@@ -24,20 +24,11 @@ pub struct MapOp<S, M> {
   func: M,
 }
 
-impl<'a, Item, S, M> Observable<'a> for MapOp<S, M>
-where
-  S: Observable<'a>,
-  M: FnMut(S::Item) -> Item + 'a,
-{
-  type Item = Item;
-  type Err = S::Err;
-  fn actual_subscribe<
-    O: Observer<Self::Item, Self::Err> + 'a,
-    U: SubscriptionLike + Clone + 'static,
-  >(
+macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
+  fn actual_subscribe<O: Observer<Self::Item, Self::Err> + $($marker +)* $lf>(
     self,
-    subscriber: Subscriber<O, U>,
-  ) -> U {
+    subscriber: Subscriber<O, $subscription>,
+  ) -> Self::Unsub {
     let map = self.func;
     self.source.actual_subscribe(Subscriber {
       observer: MapObserver {
@@ -49,7 +40,27 @@ where
   }
 }
 
-auto_impl_shared_observable!(MapOp<S, M>, <S, M>);
+impl<'a, Item, S, M> Observable<'a> for MapOp<S, M>
+where
+  S: Observable<'a>,
+  M: FnMut(S::Item) -> Item + 'a,
+{
+  type Item = Item;
+  type Err = S::Err;
+  type Unsub = S::Unsub;
+  observable_impl!(LocalSubscription,'a);
+}
+
+impl<Item, S, M> SharedObservable for MapOp<S, M>
+where
+  S: SharedObservable,
+  M: FnMut(S::Item) -> Item + Send + Sync + 'static,
+{
+  type Item = Item;
+  type Err = S::Err;
+  type Unsub = S::Unsub;
+  observable_impl!(SharedSubscription, Send + Sync + 'static);
+}
 
 #[derive(Clone)]
 pub struct MapObserver<O, M> {

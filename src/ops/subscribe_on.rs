@@ -67,21 +67,22 @@ impl<T> SubscribeOn for T {}
 
 impl<'a, S, SD> SharedObservable for SubscribeOnOP<S, SD>
 where
-  S: SharedObservable + Send + 'static,
+  S: SharedObservable<Unsub = SharedSubscription> + Send + 'static,
   SD: Scheduler + Send + 'static,
 {
   type Item = S::Item;
   type Err = S::Err;
-  fn shared_actual_subscribe<
+  type Unsub = S::Unsub;
+  fn actual_subscribe<
     O: Observer<Self::Item, Self::Err> + Sync + Send + 'static,
   >(
     self,
     subscriber: Subscriber<O, SharedSubscription>,
-  ) -> SharedSubscription {
+  ) -> Self::Unsub {
     let source = self.source;
     self.scheduler.schedule(
       move |mut subscription, _| {
-        subscription.add(source.shared_actual_subscribe(subscriber))
+        subscription.add(source.actual_subscribe(subscriber))
       },
       None,
       (),

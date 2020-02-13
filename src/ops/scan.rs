@@ -94,6 +94,22 @@ pub struct ScanObserver<Observer, BinaryOp, OutputItem> {
   acc: OutputItem,
 }
 
+macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
+  fn actual_subscribe<O: Observer<Self::Item, Self::Err> + $($marker +)* $lf>(
+    self,
+    subscriber: Subscriber<O, $subscription>,
+  ) -> Self::Unsub {
+    self.source_observable.actual_subscribe(Subscriber {
+      observer: ScanObserver {
+        target_observer: subscriber.observer,
+        binary_op: self.binary_op,
+        acc: self.initial_value,
+      },
+      subscription: subscriber.subscription,
+    })
+  }
+}
+
 // We're making the `ScanOp` being an publisher - an object that
 // subscribers can subscribe to.
 // Doing so by implementing `Observable` trait for it.
@@ -109,26 +125,23 @@ where
 {
   type Item = OutputItem;
   type Err = Source::Err;
-  fn actual_subscribe<
-    O: Observer<Self::Item, Self::Err> + 'a,
-    U: SubscriptionLike + Clone + 'static,
-  >(
-    self,
-    subscriber: Subscriber<O, U>,
-  ) -> U {
-    self.source_observable.actual_subscribe(Subscriber {
-      observer: ScanObserver {
-        target_observer: subscriber.observer,
-        binary_op: self.binary_op,
-        acc: self.initial_value,
-      },
-      subscription: subscriber.subscription,
-    })
-  }
+  type Unsub = Source::Unsub;
+  observable_impl!(LocalSubscription, 'a);
 }
 
-auto_impl_shared_observable!(
-  ScanOp<Source, BinaryOp, OutputItem>, <Source, BinaryOp, OutputItem>);
+impl<OutputItem, Source, BinaryOp> SharedObservable
+  for ScanOp<Source, BinaryOp, OutputItem>
+where
+  Source: SharedObservable,
+  OutputItem: Clone + Send + Sync + 'static,
+  BinaryOp:
+    FnMut(OutputItem, Source::Item) -> OutputItem + Send + Sync + 'static,
+{
+  type Item = OutputItem;
+  type Err = Source::Err;
+  type Unsub = Source::Unsub;
+  observable_impl!(SharedSubscription, Send + Sync + 'static);
+}
 
 // We're making `ScanObserver` being able to be subscribed to other observables
 // by implementing `Observer` trait. Thanks to this, it is able to observe

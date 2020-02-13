@@ -31,6 +31,10 @@ impl<Item, Err> SharedSubject<Item, Err> {
       subscription: SharedSubscription::default(),
     }
   }
+
+  pub fn is_subscribed(&self) -> bool {
+    self.observers.lock().unwrap().is_empty()
+  }
 }
 
 #[test]
