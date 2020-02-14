@@ -32,7 +32,7 @@ where
   fn complete(&mut self) { (self.complete)(); }
 }
 
-pub trait SubscribeAll<N, E, C> {
+pub trait SubscribeAll<'a, N, E, C> {
   /// A type implementing [`SubscriptionLike`]
   type Unsub: SubscriptionLike;
 
@@ -51,14 +51,14 @@ pub trait SubscribeAll<N, E, C> {
   ) -> SubscriptionWrapper<Self::Unsub>;
 }
 
-impl<'a, S, N, E, C> SubscribeAll<N, E, C> for S
+impl<'a, S, N, E, C> SubscribeAll<'a, N, E, C> for S
 where
-  S: Observable<'a, Unsub = LocalSubscription>,
+  S: Observable<'a>,
   N: FnMut(S::Item) + 'a,
   E: FnMut(S::Err) + 'a,
   C: FnMut() + 'a,
 {
-  type Unsub = LocalSubscription;
+  type Unsub = S::Unsub;
   fn subscribe_all(
     self,
     next: N,
@@ -77,7 +77,7 @@ where
   }
 }
 
-impl<S, N, E, C> SubscribeAll<N, E, C> for Shared<S>
+impl<'a, S, N, E, C> SubscribeAll<'a, N, E, C> for Shared<S>
 where
   S: SharedObservable,
   N: FnMut(S::Item) + Send + Sync + 'static,
@@ -109,7 +109,7 @@ fn raii() {
   {
     let mut subject = Subject::local();
     subject
-      .fork()
+      .clone()
       .subscribe_all(|_| times += 1, |_| {}, || {})
       .unsubscribe_when_dropped();
     subject.next(());

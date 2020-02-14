@@ -1,11 +1,20 @@
 use crate::prelude::*;
 use crate::subject::{LocalSubject, SharedSubject};
-use ops::ref_count::{LocalRefCount, SharedRefCount};
+use ops::ref_count::{RefCount, RefCountCreator};
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct ConnectableObservable<Source, Subject> {
   pub(crate) source: Source,
   pub(crate) subject: Subject,
+}
+
+impl<Source, Subject: Default> ConnectableObservable<Source, Subject> {
+  pub fn new(source: Source) -> Self {
+    ConnectableObservable {
+      source,
+      subject: Subject::default(),
+    }
+  }
 }
 
 pub type LocalConnectableObservable<'a, S, Item, Err> =
@@ -46,6 +55,14 @@ where
   type Err = Err;
   observable_impl!(SharedSubscription, Send + Sync + 'static);
 }
+impl<Source, Subject> ConnectableObservable<Source, Subject> {
+  #[inline]
+  pub fn ref_count<Inner: RefCountCreator<Connectable = Self>>(
+    self,
+  ) -> RefCount<Inner, Self> {
+    Inner::new(self)
+  }
+}
 
 impl<'a, Item, Err, S> LocalConnectableObservable<'a, S, Item, Err>
 where
@@ -56,11 +73,6 @@ where
       source: observable,
       subject: Subject::local(),
     }
-  }
-
-  #[inline]
-  pub fn ref_count(self) -> LocalRefCount<'a, S, Item, Err> {
-    LocalRefCount::new(self)
   }
 }
 
@@ -74,12 +86,7 @@ where
       subject: Subject::shared(),
     }
   }
-  #[inline]
-  pub fn ref_count(self) -> SharedRefCount<S, Item, Err> {
-    SharedRefCount::new(self)
-  }
 }
-
 impl<'a, S, Item, Err> LocalConnectableObservable<'a, S, Item, Err>
 where
   S: Observable<'a, Item = Item, Err = Err>,

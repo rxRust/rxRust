@@ -15,7 +15,8 @@ pub use interval::{interval, interval_at};
 
 pub(crate) mod connectable_observable;
 pub use connectable_observable::{
-  LocalConnectableObservable, SharedConnectableObservable,
+  ConnectableObservable, LocalConnectableObservable,
+  SharedConnectableObservable,
 };
 
 mod base;
@@ -42,20 +43,4 @@ pub trait Observable<'a> {
     self,
     subscriber: Subscriber<O, LocalSubscription>,
   ) -> Self::Unsub;
-
-  /// Returns a ConnectableObservable. A ConnectableObservable Observable
-  /// resembles an ordinary Observable, except that it does not begin emitting
-  /// items when it is subscribed to, but only when the Connect operator is
-  /// applied to it. In this way you can wait for all intended observers to
-  /// subscribe to the Observable before the Observable begins emitting items.
-  ///
-  #[inline(always)]
-  fn publish(
-    self,
-  ) -> LocalConnectableObservable<'a, Self, Self::Item, Self::Err>
-  where
-    Self: Sized,
-  {
-    LocalConnectableObservable::local(self)
-  }
 }

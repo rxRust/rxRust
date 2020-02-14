@@ -1,5 +1,4 @@
 use crate::prelude::*;
-use observable::SharedConnectableObservable;
 
 /// Shared wrap the Observable， subscribe and accept subscribe in a safe mode by
 /// SharedObservable.
@@ -24,20 +23,6 @@ pub trait SharedObservable {
     Self: Sized,
   {
     Shared(self)
-  }
-
-  /// Returns a ConnectableObservable. A ConnectableObservable Observable
-  /// resembles an ordinary Observable, except that it does not begin emitting
-  /// items when it is subscribed to, but only when the Connect operator is
-  /// applied to it. In this way you can wait for all intended observers to
-  /// subscribe to the Observable before the Observable begins emitting items.
-  ///
-  #[inline(always)]
-  fn publish(self) -> SharedConnectableObservable<Self, Self::Item, Self::Err>
-  where
-    Self: Sized,
-  {
-    SharedConnectableObservable::shared(self)
   }
 }
 

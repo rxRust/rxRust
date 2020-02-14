@@ -34,5 +34,6 @@ pub mod throttle_time;
 pub use throttle_time::{ThrottleEdge, ThrottleTime};
 pub mod filter_map;
 pub mod publish;
+pub use publish::Publish;
 pub mod ref_count;
 pub use filter_map::FilterMap;

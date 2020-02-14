@@ -24,7 +24,7 @@ impl<N, E> ObserverErr<N, E> {
   pub fn new(next: N, error: E) -> Self { ObserverErr { next, error } }
 }
 
-pub trait SubscribeErr<N, E> {
+pub trait SubscribeErr<'a, N, E> {
   /// A type implementing [`SubscriptionLike`]
   type Unsub: SubscriptionLike;
 
@@ -38,13 +38,13 @@ pub trait SubscribeErr<N, E> {
   -> SubscriptionWrapper<Self::Unsub>;
 }
 
-impl<'a, S, N, E> SubscribeErr<N, E> for S
+impl<'a, S, N, E> SubscribeErr<'a, N, E> for S
 where
-  S: Observable<'a, Unsub = LocalSubscription>,
+  S: Observable<'a>,
   N: FnMut(S::Item) + 'a,
   E: FnMut(S::Err) + 'a,
 {
-  type Unsub = LocalSubscription;
+  type Unsub = S::Unsub;
   fn subscribe_err(
     self,
     next: N,
@@ -56,7 +56,7 @@ where
   }
 }
 
-impl<S, N, E> SubscribeErr<N, E> for Shared<S>
+impl<'a, S, N, E> SubscribeErr<'a, N, E> for Shared<S>
 where
   S: SharedObservable,
   N: FnMut(S::Item) + Send + Sync + 'static,

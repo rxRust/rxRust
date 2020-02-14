@@ -16,6 +16,7 @@ use crate::observable::{
 };
 use crate::prelude::*;
 use std::cell::RefCell;
+use std::marker::PhantomData;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
@@ -25,42 +26,65 @@ struct Inner<C, U> {
 }
 
 #[derive(Clone)]
-pub struct LocalRefCount<'a, S, Item, Err>(
+pub struct RefCount<T, C>(T, PhantomData<C>);
+
+#[derive(Clone)]
+struct InnerLocalRefCount<'a, S, Item, Err>(
   Rc<RefCell<Inner<LocalConnectableObservable<'a, S, Item, Err>, S::Unsub>>>,
 )
 where
   S: Observable<'a, Item = Item, Err = Err>;
 
+type LocalRefCount<'a, S, Item, Err> = RefCount<
+  InnerLocalRefCount<'a, S, Item, Err>,
+  LocalConnectableObservable<'a, S, Item, Err>,
+>;
+
 #[derive(Clone)]
-pub struct SharedRefCount<S, Item, Err>(
+struct InnerSharedRefCount<S, Item, Err>(
   Arc<Mutex<Inner<SharedConnectableObservable<S, Item, Err>, S::Unsub>>>,
 )
 where
   S: SharedObservable<Item = Item, Err = Err>;
+type SharedRefCount<S, Item, Err> = RefCount<
+  InnerSharedRefCount<S, Item, Err>,
+  SharedConnectableObservable<S, Item, Err>,
+>;
 
-impl<'a, S, Item, Err> LocalRefCount<'a, S, Item, Err>
+pub trait RefCountCreator: Sized {
+  type Connectable;
+  fn new(connectable: Self::Connectable) -> RefCount<Self, Self::Connectable>;
+}
+
+impl<'a, S, Item, Err> RefCountCreator for InnerLocalRefCount<'a, S, Item, Err>
 where
   S: Observable<'a, Item = Item, Err = Err>,
 {
-  pub fn new(
-    connectable: LocalConnectableObservable<'a, S, Item, Err>,
-  ) -> Self {
-    LocalRefCount(Rc::new(RefCell::new(Inner {
-      connectable,
-      connection: None,
-    })))
+  type Connectable = LocalConnectableObservable<'a, S, Item, Err>;
+  fn new(connectable: Self::Connectable) -> RefCount<Self, Self::Connectable> {
+    RefCount(
+      InnerLocalRefCount(Rc::new(RefCell::new(Inner {
+        connectable,
+        connection: None,
+      }))),
+      PhantomData,
+    )
   }
 }
 
-impl<S, Item, Err> SharedRefCount<S, Item, Err>
+impl<S, Item, Err> RefCountCreator for InnerSharedRefCount<S, Item, Err>
 where
   S: SharedObservable<Item = Item, Err = Err>,
 {
-  pub fn new(connectable: SharedConnectableObservable<S, Item, Err>) -> Self {
-    SharedRefCount(Arc::new(Mutex::new(Inner {
-      connectable,
-      connection: None,
-    })))
+  type Connectable = SharedConnectableObservable<S, Item, Err>;
+  fn new(connectable: Self::Connectable) -> RefCount<Self, Self::Connectable> {
+    RefCount(
+      InnerSharedRefCount(Arc::new(Mutex::new(Inner {
+        connectable,
+        connection: None,
+      }))),
+      PhantomData,
+    )
   }
 }
 
@@ -78,7 +102,7 @@ where
     self,
     subscriber: Subscriber<O, LocalSubscription>,
   ) -> Self::Unsub {
-    let mut inner = self.0.borrow_mut();
+    let mut inner = (self.0).0.borrow_mut();
     if !inner.connectable.subject.is_subscribed() {
       inner.connection = Some(inner.connectable.clone().connect());
     }
@@ -107,7 +131,7 @@ where
     self,
     subscriber: Subscriber<O, SharedSubscription>,
   ) -> Self::Unsub {
-    let mut inner = self.0.lock().unwrap();
+    let mut inner = (self.0).0.lock().unwrap();
     if !inner.connectable.subject.is_subscribed() {
       inner.connection = Some(inner.connectable.clone().connect());
     }
@@ -147,10 +171,11 @@ where
 
 #[test]
 fn smoke() {
+  use ops::Publish;
   let mut accept1 = 0;
   let mut accept2 = 0;
   {
-    let ref_count = Observable::publish(observable::of(1)).ref_count();
+    let ref_count = observable::of(1).publish().ref_count();
     ref_count.clone().subscribe(|v| accept1 = v);
     ref_count.clone().subscribe(|v| accept2 = v);
   }
@@ -161,6 +186,7 @@ fn smoke() {
 
 #[test]
 fn auto_unsubscribe() {
+  use ops::Publish;
   let mut accept1 = 0;
   let mut accept2 = 0;
   {
@@ -180,38 +206,32 @@ fn auto_unsubscribe() {
 
 #[test]
 fn fork_and_shared() {
+  use ops::Publish;
   observable::of(1).publish().ref_count().subscribe(|_| {});
 
-  LocalSubject::local()
+  Subject::shared()
     .publish()
     .ref_count()
     .to_shared()
     .subscribe(|_: i32| {});
 
   observable::of(1)
-    .to_shared()
     .publish()
     .ref_count()
+    .to_shared()
     .subscribe(|_| {});
 
   observable::of(1)
-    .publish()
     .to_shared()
+    .publish()
     .ref_count()
+    .to_shared()
     .subscribe(|_| {});
   observable::of(1)
-    .publish()
     .to_shared()
+    .publish()
     .ref_count()
     .to_shared()
     .to_shared()
     .subscribe(|_| {});
-}
-
-#[test]
-#[should_panic]
-fn convert_local_ref_count_to_shared_should_panic() {
-  let ref_count = Subject::local().clone().publish().ref_count();
-  ref_count.clone().subscribe(|_: i32| {});
-  ref_count.to_shared();
 }

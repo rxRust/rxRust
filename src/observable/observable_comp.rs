@@ -24,7 +24,7 @@ impl<N, C> ObserverComp<N, C> {
   pub fn new(next: N, complete: C) -> Self { ObserverComp { next, complete } }
 }
 
-pub trait SubscribeComplete<N, C> {
+pub trait SubscribeComplete<'a, N, C> {
   /// A type implementing [`SubscriptionLike`]
   type Unsub: SubscriptionLike;
 
@@ -37,13 +37,13 @@ pub trait SubscribeComplete<N, C> {
   ) -> SubscriptionWrapper<Self::Unsub>;
 }
 
-impl<'a, S, N, C> SubscribeComplete<N, C> for S
+impl<'a, S, N, C> SubscribeComplete<'a, N, C> for S
 where
-  S: Observable<'a, Err = (), Unsub = LocalSubscription>,
+  S: Observable<'a, Err = ()>,
   C: FnMut() + 'a,
   N: FnMut(S::Item) + 'a,
 {
-  type Unsub = LocalSubscription;
+  type Unsub = S::Unsub;
   fn subscribe_complete(
     self,
     next: N,
@@ -58,7 +58,7 @@ where
   }
 }
 
-impl<S, N, C> SubscribeComplete<N, C> for Shared<S>
+impl<'a, S, N, C> SubscribeComplete<'a, N, C> for Shared<S>
 where
   S: SharedObservable<Err = ()>,
   C: FnMut() + Send + Sync + 'static,
@@ -86,7 +86,7 @@ fn raii() {
   {
     let mut subject = Subject::local();
     subject
-      .fork()
+      .clone()
       .subscribe_complete(|_| times += 1, || {})
       .unsubscribe_when_dropped();
     subject.next(());

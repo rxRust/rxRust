@@ -5,10 +5,30 @@
 /// subscribe to the Observable before the Observable begins emitting items.
 ///
 pub use crate::prelude::*;
+use observable::ConnectableObservable;
 
+pub trait Publish {
+  /// Returns a ConnectableObservable. A ConnectableObservable Observable
+  /// resembles an ordinary Observable, except that it does not begin emitting
+  /// items when it is subscribed to, but only when the Connect operator is
+  /// applied to it. In this way you can wait for all intended observers to
+  /// subscribe to the Observable before the Observable begins emitting items.
+  ///
+  fn publish<Subject: Default>(self) -> ConnectableObservable<Self, Subject>
+  where
+    Self: Sized,
+  {
+    ConnectableObservable {
+      source: self,
+      subject: Subject::default(),
+    }
+  }
+}
+
+impl<O> Publish for O {}
 #[test]
 fn smoke() {
-  let p = Observable::publish(observable::of(100));
+  let p = observable::of(100).publish();
   let mut first = 0;
   let mut second = 0;
   let _guard1 = p.clone().subscribe(|v| first = v);
