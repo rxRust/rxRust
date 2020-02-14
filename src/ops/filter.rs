@@ -66,14 +66,13 @@ where
   observable_impl!(LocalSubscription, S, 'a);
 }
 
-impl< S, F> SharedObservable for FilterOp<S, F>
+impl<S, F> SharedObservable for FilterOp<S, F>
 where
   S: SharedObservable,
-  F: FnMut(&S::Item) -> bool + Send + Sync +'static,
+  F: FnMut(&S::Item) -> bool + Send + Sync + 'static,
 {
-  observable_impl!(SharedSubscription, S, Send + Sync +'static);
+  observable_impl!(SharedSubscription, S, Send + Sync + 'static);
 }
-
 
 pub struct FilterObserver<S, F> {
   observer: S,

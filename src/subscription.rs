@@ -191,7 +191,6 @@ impl<Item, Err> SubscriptionLike
 pub struct SubscriptionWrapper<T: SubscriptionLike>(pub(crate) T);
 
 impl<T: SubscriptionLike> SubscriptionWrapper<T> {
-
   /// Activates "RAII" behavior for this subscription. That means `unsubscribe()` will be called
   /// automatically as soon as the returned value goes out of scope.
   ///

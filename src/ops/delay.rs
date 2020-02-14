@@ -60,13 +60,13 @@ fn smoke() {
   use std::sync::{Arc, Mutex};
   let value = Arc::new(Mutex::new(0));
   let c_value = value.clone();
-  let _guard = observable::of(1)
+  observable::of(1)
     .delay(Duration::from_millis(50))
     .to_shared()
     .subscribe(move |v| {
       *value.lock().unwrap() = v;
     });
   assert_eq!(*c_value.lock().unwrap(), 0);
-  std::thread::sleep(Duration::from_millis(51));
+  std::thread::sleep(Duration::from_millis(60));
   assert_eq!(*c_value.lock().unwrap(), 1);
 }

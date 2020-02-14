@@ -35,10 +35,8 @@ macro of_emitter($subscription:ty, $($marker:ident +)* $lf: lifetime) {
   where
     O: Observer<Self::Item, Self::Err> + $($marker +)* $lf
   {
-    if !subscriber.is_closed() {
       subscriber.next(self.0);
       subscriber.complete();
-    }
   }
 }
 
@@ -83,13 +81,11 @@ macro of_result_emitter($subscription:ty, $($marker:ident +)* $lf: lifetime) {
   where
     O: Observer<Self::Item, Self::Err> + $($marker +)* $lf
   {
-    if !subscriber.is_closed() {
       match self.0 {
         Ok(v) => subscriber.next(v),
         Err(e) => subscriber.error(e),
       };
       subscriber.complete();
-    }
   }
 }
 
@@ -137,12 +133,10 @@ macro of_option_emitter($subscription:ty, $($marker:ident +)* $lf: lifetime) {
   where
     O: Observer<Self::Item, Self::Err> + $($marker +)* $lf
   {
-    if !subscriber.is_closed() {
       if let Some(v) = self.0 {
         subscriber.next(v)
       }
       subscriber.complete();
-    }
   }
 }
 
@@ -190,9 +184,8 @@ macro of_fn_emitter($subscription:ty, $($marker:ident +)* $lf: lifetime) {
   where
     O: Observer<Self::Item, Self::Err> + $($marker +)* $lf
   {
-    if !subscriber.is_closed() {
-      subscriber.next((self.0)())
-    }
+      subscriber.next((self.0)());
+      subscriber.complete();
   }
 }
 

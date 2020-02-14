@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 pub fn interval(dur: Duration) -> ObservableBase<IntervalEmitter> {
   ObservableBase::new(IntervalEmitter {
     dur,
-    at: Instant::now(),
+    at: Instant::now() + dur,
   })
 }
 

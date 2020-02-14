@@ -12,9 +12,9 @@ use std::sync::{Arc, Mutex};
 /// # use rxrust::{ ops::{Filter, Merge}, prelude::*};
 /// let numbers = Subject::local();
 /// // crate a even stream by filter
-/// let even = numbers.fork().filter(|v| *v % 2 == 0);
+/// let even = numbers.clone().filter(|v| *v % 2 == 0);
 /// // crate an odd stream by filter
-/// let odd = numbers.fork().filter(|v| *v % 2 != 0);
+/// let odd = numbers.clone().filter(|v| *v % 2 != 0);
 ///
 /// // merge odd and even stream again
 /// let merged = even.merge(odd);

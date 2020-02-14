@@ -11,7 +11,9 @@ use std::time::Duration;
 /// use std::time::Duration;
 ///
 /// observable::interval(Duration::from_millis(1))
+///   .to_shared()
 ///   .throttle_time(Duration::from_millis(9), ThrottleEdge::Leading)
+///   .to_shared()
 ///   .subscribe(move |v| println!("{}", v));
 /// ```
 pub trait ThrottleTime
@@ -85,6 +87,23 @@ where
   }
 }
 
+// Fix me. For now, rust generic specialization is not full finished. we can't
+// impl two SharedObservable for ThrottleTimeOp<S>, so we must wrap `S` with
+// Shared. And this mean's if any ThrottleTimeOp's upstream just support shared
+// subscribe, user must call `to_shared` before `throttle_time`. So,
+// ```rust ignore
+// observable::interval(Duration::from_millis(1))
+//   .throttle_time(Duration::from_millis(9), ThrottleEdge::Leading)
+//   .to_shared()
+//   .subscribe(move |v| println!("{}", v));
+// ```
+// this code will not work, must write like this:
+// ```rust
+// observable::interval(Duration::from_millis(1))
+//   .throttle_time(Duration::from_millis(9), ThrottleEdge::Leading)
+//   .to_shared()
+//   .subscribe(move |v| println!("{}", v));
+// ```
 impl<Item, Err, S> SharedObservable for ThrottleTimeOp<Shared<S>>
 where
   S: SharedObservable<Item = Item, Err = Err>,

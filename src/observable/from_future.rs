@@ -21,7 +21,8 @@ lazy_static! {
 /// let res = Arc::new(Mutex::new(0));
 /// let c_res = res.clone();
 /// use futures::future;
-/// let _guard = observable::from_future(future::ready(1))
+/// observable::from_future(future::ready(1))
+///   .to_shared()
 ///   .subscribe(move |v| {
 ///     *res.lock().unwrap() = v;
 ///   });

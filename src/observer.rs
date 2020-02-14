@@ -27,7 +27,7 @@ pub trait Observer<Item, Err> {
 /// )
 ///
 /// # Example
-/// ```rust
+/// ```rust ignore
 ///  observer_proxy_impl!(Arc<Mutex<S>>, {lock().unwrap()}, S, <S>);
 /// ```
 pub(crate) macro observer_proxy_impl(

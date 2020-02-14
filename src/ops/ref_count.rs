@@ -103,10 +103,10 @@ where
     subscriber: Subscriber<O, LocalSubscription>,
   ) -> Self::Unsub {
     let mut inner = (self.0).0.borrow_mut();
-    if !inner.connectable.subject.is_subscribed() {
+    inner.connectable.clone().actual_subscribe(subscriber);
+    if inner.connection.is_none() {
       inner.connection = Some(inner.connectable.clone().connect());
     }
-    inner.connectable.clone().actual_subscribe(subscriber);
     let connection = inner.connection.as_ref().unwrap().clone();
     RefCountSubscription {
       subscription: inner.connectable.subject.subscription.clone(),
@@ -132,10 +132,10 @@ where
     subscriber: Subscriber<O, SharedSubscription>,
   ) -> Self::Unsub {
     let mut inner = (self.0).0.lock().unwrap();
-    if !inner.connectable.subject.is_subscribed() {
+    inner.connectable.clone().actual_subscribe(subscriber);
+    if inner.connection.is_none() {
       inner.connection = Some(inner.connectable.clone().connect());
     }
-    inner.connectable.clone().actual_subscribe(subscriber);
     let connection = inner.connection.as_ref().unwrap().clone();
     RefCountSubscription {
       subscription: inner.connectable.subject.subscription.clone(),

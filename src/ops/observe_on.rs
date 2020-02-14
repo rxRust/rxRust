@@ -60,6 +60,10 @@ where
   }
 }
 
+// Fix me. For now, rust generic specialization is not full finished. we can't
+// impl two SharedObservable for ObserveOnOp<'a, S, SD>, so we must wrap `S`
+// with Shared. And this mean's if any ObserveOnOp's upstream just support
+// shared, subscribe, user must call `to_shared` before `throttle_time`.
 impl<'a, S, SD> SharedObservable for ObserveOnOp<'a, Shared<S>, SD>
 where
   S: SharedObservable,
