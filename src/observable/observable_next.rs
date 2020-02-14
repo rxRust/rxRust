@@ -21,7 +21,7 @@ pub trait SubscribeNext<'a, N> {
 
   /// Invokes an execution of an Observable and registers Observer handlers for
   /// notifications it will emit.
-  fn subscribe(self, next: N) -> SubscriptionGuard<Self::Unsub>;
+  fn subscribe(self, next: N) -> SubscriptionWrapper<Self::Unsub>;
 }
 
 impl<'a, S, N> SubscribeNext<'a, N> for S
@@ -30,9 +30,9 @@ where
   N: FnMut(S::Item) + 'a,
 {
   type Unsub = S::Unsub;
-  fn subscribe(self, next: N) -> SubscriptionGuard<Self::Unsub> {
+  fn subscribe(self, next: N) -> SubscriptionWrapper<Self::Unsub> {
     let unsub = self.actual_subscribe(Subscriber::local(ObserverN(next)));
-    SubscriptionGuard(unsub)
+    SubscriptionWrapper(unsub)
   }
 }
 
@@ -42,9 +42,9 @@ where
   N: FnMut(S::Item) + Send + Sync + 'static,
 {
   type Unsub = S::Unsub;
-  fn subscribe(self, next: N) -> SubscriptionGuard<Self::Unsub> {
+  fn subscribe(self, next: N) -> SubscriptionWrapper<Self::Unsub> {
     let unsub = self.0.actual_subscribe(Subscriber::shared(ObserverN(next)));
-    SubscriptionGuard(unsub)
+    SubscriptionWrapper(unsub)
   }
 }
 
@@ -53,9 +53,12 @@ fn raii() {
   let mut times = 0;
   {
     let mut subject = Subject::local();
-    subject.clone().subscribe(|_| {
-      times += 1;
-    });
+    subject
+      .clone()
+      .subscribe(|_| {
+        times += 1;
+      })
+      .unsubscribe_when_dropped();
     subject.next(());
   }
   assert_eq!(times, 0);

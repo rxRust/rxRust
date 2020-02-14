@@ -48,7 +48,7 @@ pub trait SubscribeAll<N, E, C> {
     next: N,
     error: E,
     complete: C,
-  ) -> SubscriptionGuard<Self::Unsub>;
+  ) -> SubscriptionWrapper<Self::Unsub>;
 }
 
 impl<'a, S, N, E, C> SubscribeAll<N, E, C> for S
@@ -64,7 +64,7 @@ where
     next: N,
     error: E,
     complete: C,
-  ) -> SubscriptionGuard<Self::Unsub>
+  ) -> SubscriptionWrapper<Self::Unsub>
   where
     Self: Sized,
   {
@@ -73,7 +73,7 @@ where
       error,
       complete,
     });
-    SubscriptionGuard(self.actual_subscribe(subscriber))
+    SubscriptionWrapper(self.actual_subscribe(subscriber))
   }
 }
 
@@ -90,7 +90,7 @@ where
     next: N,
     error: E,
     complete: C,
-  ) -> SubscriptionGuard<Self::Unsub>
+  ) -> SubscriptionWrapper<Self::Unsub>
   where
     Self: Sized,
   {
@@ -99,7 +99,7 @@ where
       error,
       complete,
     });
-    SubscriptionGuard(self.0.actual_subscribe(subscriber))
+    SubscriptionWrapper(self.0.actual_subscribe(subscriber))
   }
 }
 
@@ -108,7 +108,10 @@ fn raii() {
   let mut times = 0;
   {
     let mut subject = Subject::local();
-    subject.clone().subscribe_all(|_| times += 1, |_| {}, || {});
+    subject
+      .fork()
+      .subscribe_all(|_| times += 1, |_| {}, || {})
+      .unsubscribe_when_dropped();
     subject.next(());
     subject.error(());
   }

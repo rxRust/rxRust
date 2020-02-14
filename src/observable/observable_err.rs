@@ -34,7 +34,8 @@ pub trait SubscribeErr<N, E> {
   /// * `error`: A handler for a terminal event resulting from an error.
   /// completion.
   ///
-  fn subscribe_err(self, next: N, error: E) -> SubscriptionGuard<Self::Unsub>;
+  fn subscribe_err(self, next: N, error: E)
+  -> SubscriptionWrapper<Self::Unsub>;
 }
 
 impl<'a, S, N, E> SubscribeErr<N, E> for S
@@ -44,13 +45,14 @@ where
   E: FnMut(S::Err) + 'a,
 {
   type Unsub = LocalSubscription;
-  fn subscribe_err(self, next: N, error: E) -> SubscriptionGuard<Self::Unsub>
-  where
-    Self: Sized,
-  {
+  fn subscribe_err(
+    self,
+    next: N,
+    error: E,
+  ) -> SubscriptionWrapper<Self::Unsub> {
     let unsub =
       self.actual_subscribe(Subscriber::local(ObserverErr { next, error }));
-    SubscriptionGuard(unsub)
+    SubscriptionWrapper(unsub)
   }
 }
 
@@ -61,14 +63,14 @@ where
   E: FnMut(S::Err) + Send + Sync + 'static,
 {
   type Unsub = S::Unsub;
-  fn subscribe_err(self, next: N, error: E) -> SubscriptionGuard<Self::Unsub>
+  fn subscribe_err(self, next: N, error: E) -> SubscriptionWrapper<Self::Unsub>
   where
     Self: Sized,
   {
     let unsub = self
       .0
       .actual_subscribe(Subscriber::shared(ObserverErr { next, error }));
-    SubscriptionGuard(unsub)
+    SubscriptionWrapper(unsub)
   }
 }
 
@@ -77,7 +79,10 @@ fn raii() {
   let mut times = 0;
   {
     let mut subject = Subject::local();
-    subject.clone().subscribe_err(|_| times += 1, |_| {});
+    subject
+      .clone()
+      .subscribe_err(|_| times += 1, |_| {})
+      .unsubscribe_when_dropped();
     subject.next(());
     subject.error(());
   }
