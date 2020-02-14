@@ -232,7 +232,7 @@ fn smoke() {
 
   // leading throttle
   x_c.lock().unwrap().clear();
-  let _guard = throttle_subscribe(ThrottleEdge::Leading);
+  throttle_subscribe(ThrottleEdge::Leading);
   std::thread::sleep(Duration::from_millis(520));
   assert_eq!(
     x_c.lock().unwrap().clone(),
@@ -244,9 +244,7 @@ fn smoke() {
 fn fork_and_shared() {
   observable::of(0..10)
     .throttle_time(Duration::from_nanos(1), ThrottleEdge::Leading)
-    .clone()
     .to_shared()
-    .clone()
     .to_shared()
     .subscribe(|_| {});
 }

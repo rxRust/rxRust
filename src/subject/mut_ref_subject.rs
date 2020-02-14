@@ -27,16 +27,15 @@ fn value_as_mut_ref<'a, T>(v: MutRefValue<T>) -> &'a mut T {
 #[inline]
 fn none_map<T>(v: T) -> T { v }
 
+type MutRefItemSubject<'a, Item, Err> = MutRefSubject<
+  'a,
+  MutRefValue<Item>,
+  Err,
+  fn(MutRefValue<Item>) -> &'a mut Item,
+  fn(Err) -> Err,
+>;
 impl<'a, Item, Err> LocalSubject<'a, MutRefValue<Item>, Err> {
-  pub fn mut_ref_item(
-    self,
-  ) -> MutRefSubject<
-    'a,
-    MutRefValue<Item>,
-    Err,
-    fn(MutRefValue<Item>) -> &'a mut Item,
-    fn(Err) -> Err,
-  > {
+  pub fn mut_ref_item(self) -> MutRefItemSubject<'a, Item, Err> {
     MutRefSubject {
       subject: self,
       map_item: value_as_mut_ref,
@@ -45,16 +44,15 @@ impl<'a, Item, Err> LocalSubject<'a, MutRefValue<Item>, Err> {
   }
 }
 
+type MutRefErrSubject<'a, Item, Err> = MutRefSubject<
+  'a,
+  Item,
+  MutRefValue<Err>,
+  fn(Item) -> Item,
+  fn(MutRefValue<Err>) -> &'a mut Err,
+>;
 impl<'a, Item, Err> LocalSubject<'a, Item, MutRefValue<Err>> {
-  pub fn mut_ref_err(
-    self,
-  ) -> MutRefSubject<
-    'a,
-    Item,
-    MutRefValue<Err>,
-    fn(Item) -> Item,
-    fn(MutRefValue<Err>) -> &'a mut Err,
-  > {
+  pub fn mut_ref_err(self) -> MutRefErrSubject<'a, Item, Err> {
     MutRefSubject {
       subject: self,
       map_item: none_map,
@@ -63,16 +61,15 @@ impl<'a, Item, Err> LocalSubject<'a, Item, MutRefValue<Err>> {
   }
 }
 
+type MutRefAllSubject<'a, Item, Err> = MutRefSubject<
+  'a,
+  MutRefValue<Item>,
+  MutRefValue<Err>,
+  fn(MutRefValue<Err>) -> &'a mut Err,
+  fn(MutRefValue<Item>) -> &'a mut Item,
+>;
 impl<'a, Item, Err> LocalSubject<'a, MutRefValue<Item>, MutRefValue<Err>> {
-  pub fn mut_ref_all(
-    self,
-  ) -> MutRefSubject<
-    'a,
-    MutRefValue<Item>,
-    MutRefValue<Err>,
-    fn(MutRefValue<Err>) -> &'a mut Err,
-    fn(MutRefValue<Item>) -> &'a mut Item,
-  > {
+  pub fn mut_ref_all(self) -> MutRefAllSubject<'a, Item, Err> {
     MutRefSubject {
       subject: self,
       map_item: value_as_mut_ref,

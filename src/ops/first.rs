@@ -146,7 +146,7 @@ mod test {
     {
       let o = observable::from_iter(1..100).first();
       let o1 = o.clone().first();
-      let o2 = o.clone().first();
+      let o2 = o.first();
       o1.subscribe(|v| value = v);
       o2.subscribe(|v| value2 = v);
     }
@@ -167,26 +167,5 @@ mod test {
     o2.subscribe(|v| default2 = v);
     assert_eq!(default, 100);
     assert_eq!(default, 100);
-  }
-
-  #[test]
-  fn fork_and_shared() {
-    observable::of(0)
-      .first_or(0)
-      .clone()
-      .clone()
-      .to_shared()
-      .clone()
-      .to_shared()
-      .subscribe(|_| {});
-
-    observable::of(0)
-      .first()
-      .clone()
-      .clone()
-      .to_shared()
-      .clone()
-      .to_shared()
-      .subscribe(|_| {});
   }
 }

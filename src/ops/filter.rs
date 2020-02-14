@@ -39,7 +39,9 @@ pub struct FilterOp<S, F> {
   filter: F,
 }
 
-macro observable_impl($subscription:ty, $source:ident, $($marker:ident +)* $lf: lifetime) {
+macro observable_impl(
+  $subscription:ty, $source:ident, $($marker:ident +)* $lf: lifetime)
+{
   type Item = $source::Item;
   type Err = $source::Err;
   type Unsub = $source::Unsub;

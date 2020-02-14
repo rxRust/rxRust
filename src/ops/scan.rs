@@ -41,7 +41,6 @@ pub trait Scan<OutputItem> {
   /// // 104
   /// // 105
   /// ```
-  ///
   fn scan_initial<InputItem, BinaryOp>(
     self,
     initial_value: OutputItem,
@@ -65,7 +64,6 @@ pub trait Scan<OutputItem> {
   /// # Arguments
   ///
   /// * `binary_op` - A closure or function acting as a binary operator.
-  ///
   fn scan<InputItem, BinaryOp>(
     self,
     binary_op: BinaryOp,
@@ -217,11 +215,8 @@ mod test {
   fn scan_fork_and_shared_mixed_types() {
     // type to type can fork
     let m = observable::from_iter(vec!['a', 'b', 'c']).scan(|_acc, _v| 1i32);
-    m.clone()
-      .scan(|_acc, v| v as f32)
-      .clone()
+    m.scan(|_acc, v| v as f32)
       .to_shared()
-      .clone()
       .to_shared()
       .subscribe(|_| {});
   }
@@ -230,11 +225,8 @@ mod test {
   fn scan_fork_and_shared() {
     // type to type can fork
     let m = observable::from_iter(0..100).scan(|acc: i32, v| acc + v);
-    m.clone()
-      .scan(|acc: i32, v| acc + v)
-      .clone()
+    m.scan(|acc: i32, v| acc + v)
       .to_shared()
-      .clone()
       .to_shared()
       .subscribe(|_| {});
   }

@@ -22,10 +22,11 @@ pub struct LocalSubscription(Rc<RefCell<Inner<Box<dyn SubscriptionLike>>>>);
 /// subscription_proxy_impl!(
 ///   type          // give the type you want to implement for
 ///   , {path}      // the path to access to the actual observer
-///   , host_type?  // options, give the host type of the actual observer, if it's a generic type
-///   , <generics>? // options, give the generics type must use in the implement, except `Item` and `Err` and host type.
-///   , {where}?      // options, where bounds for the generics
-/// )
+///   , host_type?  // options, give the host type of the actual observer, if
+///                 // it's a generic type
+///   , <generics>? // options, give the generics type must use in the
+///                 // implement, except `Item` and `Err` and host type.
+///   , {where}?    // options, where bounds for the generics )
 pub(crate) macro subscription_proxy_impl(
     $ty: ty
   , {$($name:tt $($parentheses:tt)?) .+}
@@ -38,11 +39,17 @@ pub(crate) macro subscription_proxy_impl(
     $($($wty: $bound), *)?
   {
     #[inline(always)]
-    fn unsubscribe(&mut self) { self.$($name $($parentheses)? ).+.unsubscribe(); }
+    fn unsubscribe(&mut self) {
+      self.$($name $($parentheses)? ).+.unsubscribe();
+    }
     #[inline(always)]
-    fn is_closed(&self) -> bool { self.$($name $($parentheses)? ).+.is_closed() }
+    fn is_closed(&self) -> bool {
+      self.$($name $($parentheses)? ).+.is_closed()
+    }
     #[inline(always)]
-    fn inner_addr(&self) -> *const () { self.$($name $($parentheses)? ).+.inner_addr() }
+    fn inner_addr(&self) -> *const () {
+       self.$($name $($parentheses)? ).+.inner_addr()
+    }
   }
 }
 
@@ -187,15 +194,18 @@ impl<Item, Err> SubscriptionLike
   subscription_direct_impl_proxy!();
 }
 
-/// Wrapper around a subscription which provides the `unsubscribe_when_dropped()` method.
+/// Wrapper around a subscription which provides the
+/// `unsubscribe_when_dropped()` method.
 pub struct SubscriptionWrapper<T: SubscriptionLike>(pub(crate) T);
 
 impl<T: SubscriptionLike> SubscriptionWrapper<T> {
-  /// Activates "RAII" behavior for this subscription. That means `unsubscribe()` will be called
-  /// automatically as soon as the returned value goes out of scope.
+  /// Activates "RAII" behavior for this subscription. That means
+  /// `unsubscribe()` will be called automatically as soon as the returned
+  /// value goes out of scope.
   ///
-  /// **Attention:** If you don't assign the return value to a variable, `unsubscribe()` is called
-  /// immediately, which is probably not what you want!
+  /// **Attention:** If you don't assign the return value to a variable,
+  /// `unsubscribe()` is called immediately, which is probably not what you
+  /// want!
   pub fn unsubscribe_when_dropped(self) -> SubscriptionGuard<T> {
     SubscriptionGuard(self.0)
   }

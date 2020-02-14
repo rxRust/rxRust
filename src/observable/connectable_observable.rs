@@ -125,8 +125,8 @@ mod test {
     let connected = ConnectableObservable::local(o);
     let mut first = 0;
     let mut second = 0;
-    let _guard1 = connected.clone().subscribe(|v| first = v);
-    let _guard2 = connected.clone().subscribe(|v| second = v);
+    connected.clone().subscribe(|v| first = v);
+    connected.clone().subscribe(|v| second = v);
 
     connected.connect();
     assert_eq!(first, 100);

@@ -36,7 +36,6 @@ pub trait Reduce<OutputItem> {
   /// // print log:
   /// // 105
   /// ```
-  ///
   fn reduce_initial<InputItem, BinaryOp>(
     self,
     initial: OutputItem,
@@ -59,7 +58,6 @@ pub trait Reduce<OutputItem> {
   /// # Arguments
   ///
   /// * `binary_op` - A closure acting as a binary operator.
-  ///
   fn reduce<InputItem, BinaryOp>(
     self,
     binary_op: BinaryOp,
@@ -143,11 +141,8 @@ mod test {
   fn reduce_fork_and_shared() {
     // type to type can fork
     let m = observable::from_iter(0..100).reduce(|acc: i32, v| acc + v);
-    m.clone()
-      .reduce(|acc: i32, v| acc + v)
-      .clone()
+    m.reduce(|acc: i32, v| acc + v)
       .to_shared()
-      .clone()
       .to_shared()
       .subscribe(|_| {});
   }

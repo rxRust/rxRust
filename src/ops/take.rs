@@ -16,7 +16,6 @@ use crate::prelude::*;
 /// };
 ///
 /// observable::from_iter(0..10).take(5).subscribe(|v| println!("{}", v));
-///
 
 /// // print logs:
 /// // 0
@@ -135,10 +134,10 @@ mod test {
     {
       let take5 = observable::from_iter(0..100).take(5);
       let f1 = take5.clone();
-      let f2 = take5.clone();
+      let f2 = take5;
 
-      f1.take(5).clone().subscribe(|_| nc1 += 1);
-      f2.take(5).clone().subscribe(|_| nc2 += 1);
+      f1.take(5).subscribe(|_| nc1 += 1);
+      f2.take(5).subscribe(|_| nc2 += 1);
     }
     assert_eq!(nc1, 5);
     assert_eq!(nc2, 5);

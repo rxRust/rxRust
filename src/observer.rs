@@ -21,10 +21,11 @@ pub trait Observer<Item, Err> {
 ///   , {path}      // the path to access to the actual observer,
 ///   , item        // the generic Item name
 ///   , err         // the generic Err name
-///   , host_type?  // options, give the host type of the actual observer, if it's a generic type
-///   , <generics>? // options, give the generics type must use in the implement, except `Item` and `Err` and host type.
-///   , {where}?      // options, where bounds for the generics
-/// )
+///   , host_type?  // options, give the host type of the actual observer, if
+///                 // it's a generic type
+///   , <generics>? // options, give the generics type must use in the
+///                 // implement, except `Item` and `Err` and host type.
+///   , {where}?    // options, where bounds for the generics )
 ///
 /// # Example
 /// ```rust ignore
@@ -38,7 +39,8 @@ pub(crate) macro observer_proxy_impl(
   $(, $host_ty: ident)? $(, <$($generics: tt),*>)?
   $(, {where $($wty:ty : $bound: tt),*})?
 ) {
-    impl<$($($generics ,)*)? $item, $err, $($host_ty)? > Observer<$item, $err> for $ty
+    impl<$($($generics ,)*)? $item, $err, $($host_ty)? >
+      Observer<$item, $err> for $ty
     where
       $($host_ty: Observer<$item, $err>,)?
       $($($wty: $bound), *)?
@@ -49,14 +51,22 @@ pub(crate) macro observer_proxy_impl(
     }
 }
 
-pub(crate) macro next_proxy_impl($item: ident, $($name:tt $($parentheses:tt)?) .+) {
+pub(crate) macro next_proxy_impl(
+  $item: ident, $($name:tt $($parentheses:tt)?) .+)
+{
   #[inline]
-  fn next(&mut self, value: $item) { self.$($name$($parentheses)?).+.next(value); }
+  fn next(&mut self, value: $item) {
+    self.$($name$($parentheses)?).+.next(value);
+  }
 }
 
-pub(crate) macro error_proxy_impl($err: ident, $($name:tt $($parentheses:tt)?) .+) {
+pub(crate) macro error_proxy_impl(
+  $err: ident, $($name:tt $($parentheses:tt)?) .+)
+{
   #[inline]
-  fn error(&mut self, err: $err) { self.$($name$($parentheses)?).+.error(err); }
+  fn error(&mut self, err: $err) {
+    self.$($name$($parentheses)?).+.error(err);
+  }
 }
 
 pub(crate) macro complete_proxy_impl($($name:tt $($parentheses:tt)?) .+) {
@@ -64,7 +74,9 @@ pub(crate) macro complete_proxy_impl($($name:tt $($parentheses:tt)?) .+) {
   fn complete(&mut self) { self.$($name$($parentheses)?).+.complete(); }
 }
 
-macro observer_pointer_proxy_impl($ty: ty, $item: ident, $err:ident $(, <$($generics: tt),*>)?) {
+macro observer_pointer_proxy_impl(
+  $ty: ty, $item: ident, $err:ident $(, <$($generics: tt),*>)?)
+{
   impl<$($($generics ,)*)? $item, $err> Observer<$item, $err> for $ty {
 
     #[inline]
@@ -79,7 +91,8 @@ macro observer_pointer_proxy_impl($ty: ty, $item: ident, $err:ident $(, <$($gene
 }
 
 // implement `Observer` for Box<dyn Observer<Item, Err> + 'a>
-observer_pointer_proxy_impl!(Box<dyn Observer<Item, Err> + 'a>, Item, Err, <'a>);
+observer_pointer_proxy_impl!(
+  Box<dyn Observer<Item, Err> + 'a>, Item, Err, <'a>);
 
 // implement `Observer` for Box<dyn Observer<Item, Err> + Send + Sync>
 observer_pointer_proxy_impl!(

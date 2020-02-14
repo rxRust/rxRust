@@ -51,7 +51,6 @@ where
   /// // print log:
   /// // 7
   /// ```
-  ///
   fn max(self) -> MinMaxOp<Self, Item>
   where
     Self: Sized,
@@ -85,7 +84,6 @@ where
   /// // print log:
   /// // 3
   /// ```
-  ///
   fn min(self) -> MinMaxOp<Self, Item>
   where
     Self: Sized,
@@ -181,7 +179,7 @@ mod test {
   fn max_fork_and_shared() {
     // type to type can fork
     let m = observable::from_iter(vec![1., 2.]).max();
-    m.clone().to_shared().clone().to_shared().subscribe(|_| {});
+    m.to_shared().to_shared().subscribe(|_| {});
   }
 
   // -------------------------------------------------------------------
@@ -256,6 +254,6 @@ mod test {
   fn min_fork_and_shared() {
     // type to type can fork
     let m = observable::from_iter(vec![1., 2.]).min();
-    m.clone().to_shared().clone().to_shared().subscribe(|_| {});
+    m.to_shared().to_shared().subscribe(|_| {});
   }
 }

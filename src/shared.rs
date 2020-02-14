@@ -1,7 +1,7 @@
 use crate::prelude::*;
 
-/// Shared wrap the Observable， subscribe and accept subscribe in a safe mode by
-/// SharedObservable.
+/// Shared wrap the Observable， subscribe and accept subscribe in a safe mode
+/// by SharedObservable.
 #[derive(Clone)]
 pub struct Shared<R>(pub(crate) R);
 

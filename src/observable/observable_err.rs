@@ -33,7 +33,6 @@ pub trait SubscribeErr<'a, N, E> {
   ///
   /// * `error`: A handler for a terminal event resulting from an error.
   /// completion.
-  ///
   fn subscribe_err(self, next: N, error: E)
   -> SubscriptionWrapper<Self::Unsub>;
 }

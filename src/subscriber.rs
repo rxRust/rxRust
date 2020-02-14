@@ -4,7 +4,6 @@ use subscription::subscription_proxy_impl;
 /// Implements the Observer trait and Subscription trait. While the Observer is
 /// the public API for consuming the values of an Observable, all Observers get
 /// converted to a Subscriber, in order to provide Subscription capabilities.
-///
 #[derive(Clone)]
 pub struct Subscriber<O, U> {
   pub(crate) observer: O,

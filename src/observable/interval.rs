@@ -1,4 +1,3 @@
-#![allow(unused_imports)]
 use crate::observable::from_future::DEFAULT_RUNTIME;
 use crate::prelude::*;
 use futures::prelude::*;
@@ -8,7 +7,6 @@ use std::time::{Duration, Instant};
 
 /// Creates an observable which will fire at `dur` time into the future,
 /// and will repeat every `dur` interval after.
-///
 pub fn interval(dur: Duration) -> ObservableBase<IntervalEmitter> {
   ObservableBase::new(IntervalEmitter {
     dur,
@@ -18,7 +16,6 @@ pub fn interval(dur: Duration) -> ObservableBase<IntervalEmitter> {
 
 /// Creates an observable which will fire at the time specified by `at`,
 /// and then will repeat every `dur` interval after
-///
 pub fn interval_at(
   at: Instant,
   dur: Duration,
@@ -75,17 +72,25 @@ impl<T> SubscriptionLike for SpawnHandle<T> {
   fn inner_addr(&self) -> *const () { ((&self.0) as *const _) as *const () }
 }
 
+impl<T> Drop for SpawnHandle<T> {
+  fn drop(&mut self) {
+    if self.0.is_some() {
+      self.0.take().unwrap().forget()
+    }
+  }
+}
+
 #[test]
 fn smoke() {
   use std::sync::{Arc, Mutex};
   let seconds = Arc::new(Mutex::new(0));
   let c_seconds = seconds.clone();
-  let _guard =
-    interval(Duration::from_millis(20))
-      .to_shared()
-      .subscribe(move |_| {
-        *seconds.lock().unwrap() += 1;
-      });
+
+  interval(Duration::from_millis(20))
+    .to_shared()
+    .subscribe(move |_| {
+      *seconds.lock().unwrap() += 1;
+    });
   std::thread::sleep(Duration::from_millis(110));
   assert_eq!(*c_seconds.lock().unwrap(), 5);
 }
@@ -93,8 +98,6 @@ fn smoke() {
 #[test]
 fn smoke_fork() {
   interval(Duration::from_millis(10))
-    .clone()
-    .clone()
     .to_shared()
     .subscribe(|_| {});
 }

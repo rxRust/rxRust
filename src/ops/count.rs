@@ -26,7 +26,6 @@ pub trait Count {
   /// // print log:
   /// // 5
   /// ```
-  ///
   fn count<Item>(self) -> CountOp<Self, Item>
   where
     Self: Sized,
@@ -63,12 +62,6 @@ mod test {
   fn count_fork_and_shared() {
     // type to type can fork
     let m = observable::from_iter(0..100).count();
-    m.clone()
-      .count()
-      .clone()
-      .to_shared()
-      .clone()
-      .to_shared()
-      .subscribe(|_| {});
+    m.to_shared().to_shared().subscribe(|_| {});
   }
 }

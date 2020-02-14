@@ -6,7 +6,6 @@ use std::marker::PhantomData;
 /// # Arguments
 ///
 /// * `e` - An error to emit and terminate with
-///
 pub fn throw<Err>(e: Err) -> ObservableBase<ThrowEmitter<Err>> {
   ObservableBase::new(ThrowEmitter(e))
 }
@@ -49,7 +48,6 @@ impl<Err> SharedEmitter for ThrowEmitter<Err> {
 ///
 /// // Result: no thing printed
 /// ```
-///
 pub fn empty<Item>() -> ObservableBase<EmptyEmitter<Item>> {
   ObservableBase::new(EmptyEmitter(PhantomData))
 }
@@ -81,7 +79,6 @@ impl<Item> SharedEmitter for EmptyEmitter<Item> {
 /// Creates an observable that never emits anything.
 ///
 /// Neither emits a value, nor completes, nor emits an error.
-///
 pub fn never() -> ObservableBase<NeverEmitter> {
   ObservableBase::new(NeverEmitter())
 }

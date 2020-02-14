@@ -168,9 +168,9 @@ mod test {
       let merged = even.clone().merge(odd.clone());
 
       //  attach observers
-      let _guard = merged.subscribe(|v| numbers_store.push(v));
-      let _guard1 = odd.subscribe(|v| odd_store.push(v));
-      let _guard2 = even.subscribe(|v| even_store.push(v));
+      merged.subscribe(|v| numbers_store.push(v));
+      odd.subscribe(|v| odd_store.push(v));
+      even.subscribe(|v| even_store.push(v));
 
       (0..10).for_each(|v| {
         numbers.next(v);
@@ -204,7 +204,7 @@ mod test {
     let mut even = Subject::local();
     let mut odd = Subject::local();
 
-    let _guard = even.clone().merge(odd.clone()).subscribe_complete(
+    even.clone().merge(odd.clone()).subscribe_complete(
       |_: &()| {},
       move || completed.store(true, Ordering::Relaxed),
     );
@@ -227,7 +227,7 @@ mod test {
     let mut even = Subject::local();
     let mut odd = Subject::local();
 
-    let _guard = even.clone().merge(odd.clone()).subscribe_all(
+    even.clone().merge(odd.clone()).subscribe_all(
       |_: ()| {},
       move |_| *error.lock().unwrap() += 1,
       move || *completed.lock().unwrap() += 1,

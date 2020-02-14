@@ -31,7 +31,6 @@ lazy_static! {
 /// ```
 /// If your `Future` poll an `Result` type value, and you want dispatch the
 /// error by rxrust, you can use [`from_future_result`]
-///
 pub fn from_future<F, Item>(f: F) -> ObservableBase<FutureEmitter<F>>
 where
   F: Future<Output = Item> + Send + Clone + Sync + 'static,
@@ -103,18 +102,17 @@ fn smoke() {
   let res = Arc::new(Mutex::new(0));
   let c_res = res.clone();
   {
-    let _guard =
-      from_future_result(future::ok(1))
-        .to_shared()
-        .subscribe(move |v| {
-          *res.lock().unwrap() = v;
-        });
+    from_future_result(future::ok(1))
+      .to_shared()
+      .subscribe(move |v| {
+        *res.lock().unwrap() = v;
+      });
     std::thread::sleep(std::time::Duration::from_millis(10));
     assert_eq!(*c_res.lock().unwrap(), 1);
   }
   // from_future
   let res = c_res.clone();
-  let _guard = from_future(future::ready(2))
+  from_future(future::ready(2))
     .to_shared()
     .subscribe(move |v| {
       *res.lock().unwrap() = v;

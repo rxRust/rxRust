@@ -32,7 +32,6 @@ where
   ///
   /// assert_eq!(res, [1, 3, 5]);
   /// ```
-  ///
   fn filter_map<F, SourceItem, Item>(self, f: F) -> FilterMapOp<Self, F>
   where
     F: FnMut(SourceItem) -> Option<Item>,

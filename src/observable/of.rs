@@ -16,7 +16,6 @@ use crate::prelude::*;
 /// observable::of(123)
 ///   .subscribe(|v| {println!("{},", v)});
 /// ```
-///
 pub fn of<Item>(v: Item) -> ObservableBase<OfEmitter<Item>> {
   ObservableBase::new(OfEmitter(v))
 }
@@ -69,7 +68,6 @@ impl<Item> SharedEmitter for OfEmitter<Item> {
 /// observable::of_result(Err("An error"))
 ///   .subscribe_err(|v: &i32| {}, |e| {println!("Error:  {},", e)});
 /// ```
-///
 pub fn of_result<Item, Err>(
   r: Result<Item, Err>,
 ) -> ObservableBase<ResultEmitter<Item, Err>> {
@@ -120,7 +118,6 @@ impl<Item, Err> SharedEmitter for ResultEmitter<Item, Err> {
 /// observable::of_option(Some(1234))
 ///   .subscribe(|v| {println!("{},", v)});
 /// ```
-///
 pub fn of_option<Item>(o: Option<Item>) -> ObservableBase<OptionEmitter<Item>> {
   ObservableBase::new(OptionEmitter(o))
 }
@@ -168,7 +165,6 @@ impl<Item> SharedEmitter for OptionEmitter<Item> {
 /// observable::of_fn(|| {1234})
 ///   .subscribe(|v| {println!("{},", v)});
 /// ```
-///
 pub fn of_fn<F, Item>(f: F) -> ObservableBase<CallableEmitter<F>>
 where
   F: FnOnce() -> Item,
@@ -288,15 +284,5 @@ mod test {
 
     assert_eq!(value, 100);
     assert_eq!(completed, true);
-  }
-
-  #[test]
-  fn fork() {
-    observable::from_iter(vec![0; 100])
-      .clone()
-      .clone()
-      .subscribe(|_| {});
-
-    observable::of(0).clone().clone().subscribe(|_| {});
   }
 }

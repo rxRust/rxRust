@@ -1,16 +1,16 @@
-/// Make a ConnectableObservable behave like a ordinary observable and automates
-/// the way you can connect to it.
+/// Make a ConnectableObservable behave like a ordinary observable and
+/// automates the way you can connect to it.
 ///
 /// Internally it counts the subscriptions to the observable and subscribes
-/// (only once) to the source if the number of subscriptions is larger than 0.
-/// If the number of subscriptions is smaller than 1, it unsubscribes from the
-/// source. This way you can make sure that everything before the published
-/// refCount has only a single subscription independently of the number of
-/// subscribers to the target observable.
+/// (only once) to the source if the number of subscriptions is larger than
+/// 0. If the number of subscriptions is smaller than 1, it unsubscribes
+/// from the source. This way you can make sure that everything before the
+/// published refCount has only a single subscription independently of the
+/// number of subscribers to the target observable.
 ///
-/// Note that using the share operator is exactly the same as using the publish
-/// operator (making the observable hot) and the refCount operator in a
-/// sequence.
+/// Note that using the share operator is exactly the same as using the
+/// publish operator (making the observable hot) and the refCount operator
+/// in a sequence.
 use crate::observable::{
   LocalConnectableObservable, SharedConnectableObservable,
 };
@@ -28,9 +28,10 @@ struct Inner<C, U> {
 #[derive(Clone)]
 pub struct RefCount<T, C>(T, PhantomData<C>);
 
+type LocalRef<C, U> = Rc<RefCell<Inner<C, U>>>;
 #[derive(Clone)]
 struct InnerLocalRefCount<'a, S, Item, Err>(
-  Rc<RefCell<Inner<LocalConnectableObservable<'a, S, Item, Err>, S::Unsub>>>,
+  LocalRef<LocalConnectableObservable<'a, S, Item, Err>, S::Unsub>,
 )
 where
   S: Observable<'a, Item = Item, Err = Err>;
@@ -40,9 +41,10 @@ type LocalRefCount<'a, S, Item, Err> = RefCount<
   LocalConnectableObservable<'a, S, Item, Err>,
 >;
 
+type SharedRef<C, U> = Arc<Mutex<Inner<C, U>>>;
 #[derive(Clone)]
 struct InnerSharedRefCount<S, Item, Err>(
-  Arc<Mutex<Inner<SharedConnectableObservable<S, Item, Err>, S::Unsub>>>,
+  SharedRef<SharedConnectableObservable<S, Item, Err>, S::Unsub>,
 )
 where
   S: SharedObservable<Item = Item, Err = Err>;

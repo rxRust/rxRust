@@ -42,7 +42,6 @@ pub trait SubscribeAll<'a, N, E, C> {
   /// * `error`: A handler for a terminal event resulting from an error.
   /// * `complete`: A handler for a terminal event resulting from successful
   /// completion.
-  ///
   fn subscribe_all(
     self,
     next: N,

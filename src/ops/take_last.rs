@@ -18,7 +18,6 @@ use std::collections::VecDeque;
 /// };
 ///
 /// observable::from_iter(0..10).take_last(5).subscribe(|v| println!("{}", v));
-///
 
 /// // print logs:
 /// // 5
@@ -136,10 +135,10 @@ mod test {
     {
       let take_last5 = observable::from_iter(0..100).take_last(5);
       let f1 = take_last5.clone();
-      let f2 = take_last5.clone();
+      let f2 = take_last5;
 
-      f1.take_last(5).clone().subscribe(|_| nc1 += 1);
-      f2.take_last(5).clone().subscribe(|_| nc2 += 1);
+      f1.take_last(5).subscribe(|_| nc1 += 1);
+      f2.take_last(5).subscribe(|_| nc2 += 1);
     }
     assert_eq!(nc1, 5);
     assert_eq!(nc2, 5);

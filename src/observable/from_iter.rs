@@ -28,7 +28,6 @@ use std::iter::{Repeat, Take};
 /// observable::from_iter(vec![0,1,2,3])
 ///   .subscribe(|v| {println!("{},", v)});
 /// ```
-///
 pub fn from_iter<Iter, Item>(iter: Iter) -> ObservableBase<IterEmitter<Iter>>
 where
   Iter: IntoIterator<Item = Item>,
@@ -97,7 +96,6 @@ where
 /// // 123
 /// // 123
 /// ```
-///
 pub fn repeat<Item>(
   v: Item,
   n: usize,

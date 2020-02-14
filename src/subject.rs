@@ -30,7 +30,7 @@ mod test {
     let mut i = 0;
     {
       let mut broadcast = Subject::local();
-      let _guard = broadcast.clone().subscribe(|v| i = v * 2);
+      broadcast.clone().subscribe(|v| i = v * 2);
       broadcast.next(1);
     }
     assert_eq!(i, 2);
@@ -40,7 +40,7 @@ mod test {
   #[should_panic]
   fn error() {
     let mut broadcast = Subject::local();
-    let _guard = broadcast
+    broadcast
       .clone()
       .subscribe_err(|_: i32| {}, |e: _| panic!(e));
     broadcast.next(1);
@@ -68,7 +68,7 @@ mod test {
     let value = Arc::new(Mutex::new(0));
     let c_v = value.clone();
     let mut subject = Subject::shared();
-    let _guard = subject
+    subject
       .clone()
       .to_shared()
       .observe_on(Schedulers::NewThread)

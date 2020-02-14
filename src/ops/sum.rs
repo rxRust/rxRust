@@ -24,7 +24,6 @@ pub trait Sum<Item> {
   /// // print log:
   /// // 5
   /// ```
-  ///
   fn sum(self) -> SumOp<Self, Item>
   where
     Self: Sized,
@@ -76,12 +75,6 @@ mod test {
   fn sum_fork_and_shared() {
     // type to type can fork
     let m = observable::from_iter(0..100).sum();
-    m.clone()
-      .sum()
-      .clone()
-      .to_shared()
-      .clone()
-      .to_shared()
-      .subscribe(|_| {});
+    m.sum().to_shared().to_shared().subscribe(|_| {});
   }
 }

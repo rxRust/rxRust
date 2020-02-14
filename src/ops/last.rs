@@ -3,7 +3,6 @@ use crate::prelude::*;
 
 /// Emits a single last item emitted by the source observable.
 /// The item is emitted after source observable has completed.
-///
 pub trait Last<Item> {
   /// Emit only the last final item emitted by a source observable or a
   /// default item given.
@@ -24,7 +23,6 @@ pub trait Last<Item> {
   /// // print log:
   /// // 1234
   /// ```
-  ///
   fn last_or(self, default: Item) -> LastOrOp<Self, Item>
   where
     Self: Sized,
@@ -55,7 +53,6 @@ pub trait Last<Item> {
   /// // print log:
   /// // 99
   /// ```
-  ///
   fn last(self) -> LastOrOp<Self, Item>
   where
     Self: Sized,
@@ -216,7 +213,7 @@ mod test {
     {
       let o = observable::from_iter(1..100).last();
       let o1 = o.clone().last();
-      let o2 = o.clone().last();
+      let o2 = o.last();
       o1.subscribe(|v| value = v);
       o2.subscribe(|v| value2 = v);
     }
@@ -244,19 +241,13 @@ mod test {
   fn last_fork_and_shared() {
     observable::of(0)
       .last_or(0)
-      .clone()
-      .clone()
       .to_shared()
-      .clone()
       .to_shared()
       .subscribe(|_| {});
 
     observable::of(0)
       .last()
-      .clone()
-      .clone()
       .to_shared()
-      .clone()
       .to_shared()
       .subscribe(|_| {});
   }

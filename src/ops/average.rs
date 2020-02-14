@@ -66,7 +66,6 @@ where
   /// // print log:
   /// // 5
   /// ```
-  ///
   fn average(self) -> AverageOp<Self, Item>;
 }
 
@@ -167,6 +166,6 @@ mod test {
   fn average_fork_and_shared() {
     // type to type can fork
     let m = observable::from_iter(vec![1., 2.]).average();
-    m.clone().to_shared().clone().to_shared().subscribe(|_| {});
+    m.to_shared().to_shared().subscribe(|_| {});
   }
 }
