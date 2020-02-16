@@ -86,19 +86,14 @@ mod test {
     let c_err = err.clone();
     let c_complete = complete.clone();
 
-    observable::create(
-      |mut subscriber: Subscriber<
-        Box<dyn Observer<_, _> + Send + Sync + 'static>,
-        SharedSubscription,
-      >| {
-        subscriber.next(&1);
-        subscriber.next(&2);
-        subscriber.next(&3);
-        subscriber.complete();
-        subscriber.next(&3);
-        subscriber.error("never dispatch error");
-      },
-    )
+    observable::create(|mut subscriber| {
+      subscriber.next(&1);
+      subscriber.next(&2);
+      subscriber.next(&3);
+      subscriber.complete();
+      subscriber.next(&3);
+      subscriber.error("never dispatch error");
+    })
     .to_shared()
     .subscribe_all(
       move |_| *next.lock().unwrap() += 1,

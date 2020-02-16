@@ -170,7 +170,7 @@ where
 fn mut_ref_item() {
   let mut test_code = 0;
   {
-    let mut subject = Subject::local().mut_ref_item();
+    let mut subject = Subject::new().mut_ref_item();
     subject.clone().subscribe(|v: &mut i32| {
       *v = 100;
     });
@@ -183,7 +183,7 @@ fn mut_ref_item() {
 fn mut_ref_err() {
   let mut test_code = 0;
   {
-    let mut subject = Subject::local().mut_ref_err();
+    let mut subject = Subject::new().mut_ref_err();
     subject.clone().subscribe_err(
       |_: i32| {},
       |v: &mut i32| {

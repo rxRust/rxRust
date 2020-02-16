@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 ///
 /// ```
 /// # use rxrust::{ ops::{Filter, Merge}, prelude::*};
-/// let numbers = Subject::local();
+/// let numbers = Subject::new();
 /// // crate a even stream by filter
 /// let even = numbers.clone().filter(|v| *v % 2 == 0);
 /// // crate an odd stream by filter
@@ -158,7 +158,7 @@ mod test {
     let mut numbers_store = vec![];
 
     {
-      let mut numbers = Subject::local();
+      let mut numbers = Subject::new();
       // enabling multiple observers for even stream;
       let even = numbers.clone().filter(|v| *v % 2 == 0);
       // enabling multiple observers for odd stream;
@@ -183,7 +183,7 @@ mod test {
 
   #[test]
   fn merge_unsubscribe_work() {
-    let mut numbers = Subject::local();
+    let mut numbers = Subject::new();
     // enabling multiple observers for even stream;
     let even = numbers.clone().filter(|v| *v % 2 == 0);
     // enabling multiple observers for odd stream;
@@ -201,8 +201,8 @@ mod test {
   fn completed_test() {
     let completed = Arc::new(AtomicBool::new(false));
     let c_clone = completed.clone();
-    let mut even = Subject::local();
-    let mut odd = Subject::local();
+    let mut even = Subject::new();
+    let mut odd = Subject::new();
 
     even.clone().merge(odd.clone()).subscribe_complete(
       |_: &()| {},
@@ -224,8 +224,8 @@ mod test {
     let cc = completed.clone();
     let error = Arc::new(Mutex::new(0));
     let ec = error.clone();
-    let mut even = Subject::local();
-    let mut odd = Subject::local();
+    let mut even = Subject::new();
+    let mut odd = Subject::new();
 
     even.clone().merge(odd.clone()).subscribe_all(
       |_: ()| {},

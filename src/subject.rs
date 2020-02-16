@@ -17,6 +17,14 @@ pub struct Subject<O, S> {
   pub(crate) subscription: S,
 }
 
+impl<O, S> Subject<O, S>
+where
+  Self: Default,
+{
+  #[inline]
+  pub fn new() -> Self { Self::default() }
+}
+
 subscription_proxy_impl!(Subject<O, U>, {subscription}, U, <O>);
 observer_proxy_impl!(
   Subject<O, U>, {observers}, Item, Err, O, <U>, {where Item: Copy, Err: Copy});
@@ -29,7 +37,7 @@ mod test {
   fn base_data_flow() {
     let mut i = 0;
     {
-      let mut broadcast = Subject::local();
+      let mut broadcast = Subject::new();
       broadcast.clone().subscribe(|v| i = v * 2);
       broadcast.next(1);
     }
@@ -39,7 +47,7 @@ mod test {
   #[test]
   #[should_panic]
   fn error() {
-    let mut broadcast = Subject::local();
+    let mut broadcast = Subject::new();
     broadcast
       .clone()
       .subscribe_err(|_: i32| {}, |e: _| panic!(e));
@@ -53,7 +61,7 @@ mod test {
     let mut i = 0;
 
     {
-      let mut subject = Subject::local();
+      let mut subject = Subject::new();
       subject.clone().subscribe(|v| i = v).unsubscribe();
       subject.next(100);
     }
@@ -67,7 +75,7 @@ mod test {
     use std::sync::{Arc, Mutex};
     let value = Arc::new(Mutex::new(0));
     let c_v = value.clone();
-    let mut subject = Subject::shared();
+    let mut subject = Subject::new();
     subject
       .clone()
       .to_shared()
@@ -85,8 +93,8 @@ mod test {
 
   #[test]
   fn subject_subscribe_subject() {
-    let mut local = Subject::local();
-    let local2 = Subject::local();
+    let mut local = LocalSubject::new();
+    let local2 = LocalSubject::new();
     local.clone().actual_subscribe(Subscriber {
       observer: local2.observers,
       subscription: local2.subscription,

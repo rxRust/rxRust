@@ -8,16 +8,6 @@ type LocalPublishers<'a, Item, Err> =
 pub type LocalSubject<'a, Item, Err> =
   Subject<LocalPublishers<'a, Item, Err>, LocalSubscription>;
 
-impl<'a, Item, Err> LocalSubject<'a, Item, Err> {
-  pub fn local() -> Self {
-    LocalSubject {
-      observers: Rc::new(RefCell::new(vec![])),
-      subscription: LocalSubscription::default(),
-    }
-  }
-  pub fn is_subscribed(&self) -> bool { self.observers.borrow().is_empty() }
-}
-
 impl<'a, Item, Err> Observable<'a> for LocalSubject<'a, Item, Err> {
   type Item = Item;
   type Err = Err;
@@ -37,7 +27,7 @@ impl<'a, Item, Err> Observable<'a> for LocalSubject<'a, Item, Err> {
 fn smoke() {
   let mut test_code = 1;
   {
-    let mut subject = LocalSubject::local();
+    let mut subject = LocalSubject::new();
     subject.clone().subscribe(|v| {
       test_code = v;
     });

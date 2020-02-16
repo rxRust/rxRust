@@ -24,24 +24,11 @@ impl<Item, Err> SharedObservable for SharedSubject<Item, Err> {
   }
 }
 
-impl<Item, Err> SharedSubject<Item, Err> {
-  pub fn shared() -> Self {
-    SharedSubject {
-      observers: Arc::new(Mutex::new(vec![])),
-      subscription: SharedSubscription::default(),
-    }
-  }
-
-  pub fn is_subscribed(&self) -> bool {
-    self.observers.lock().unwrap().is_empty()
-  }
-}
-
 #[test]
 
 fn smoke() {
   let test_code = Arc::new(Mutex::new("".to_owned()));
-  let mut subject = SharedSubject::shared();
+  let mut subject = SharedSubject::new();
   let c_test_code = test_code.clone();
   subject.clone().to_shared().subscribe(move |v: &str| {
     *c_test_code.lock().unwrap() = v.to_owned();

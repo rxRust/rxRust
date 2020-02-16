@@ -192,7 +192,7 @@ fn auto_unsubscribe() {
   let mut accept1 = 0;
   let mut accept2 = 0;
   {
-    let mut subject = Subject::local();
+    let mut subject = Subject::new();
     let ref_count = subject.clone().publish().ref_count();
     let mut s1 = ref_count.clone().subscribe(|v| accept1 = v);
     let mut s2 = ref_count.clone().subscribe(|v| accept2 = v);
@@ -211,7 +211,7 @@ fn fork_and_shared() {
   use ops::Publish;
   observable::of(1).publish().ref_count().subscribe(|_| {});
 
-  Subject::shared()
+  Subject::new()
     .publish()
     .ref_count()
     .to_shared()

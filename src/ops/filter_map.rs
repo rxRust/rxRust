@@ -137,7 +137,7 @@ mod test {
   }
   #[test]
   fn filter_map_mut_ref() {
-    let mut subject = Subject::local().mut_ref_item();
+    let mut subject = Subject::new().mut_ref_item();
     subject
       .clone()
       .filter_map::<fn(&mut i32) -> Option<&mut i32>, _, _>(|v| Some(v))

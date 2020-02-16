@@ -1,9 +1,3 @@
-/// Returns a ConnectableObservable. A ConnectableObservable Observable
-/// resembles an ordinary Observable, except that it does not begin
-/// emitting items when it is subscribed to, but only when the Connect
-/// operator is applied to it. In this way you can wait for all intended
-/// observers to subscribe to the Observable before the Observable begins
-/// emitting items.
 pub use crate::prelude::*;
 use observable::ConnectableObservable;
 
@@ -42,7 +36,7 @@ fn smoke() {
 fn filter() {
   use crate::ops::FilterMap;
   use crate::subject::MutRefValue;
-  let mut subject = Subject::local();
+  let mut subject = Subject::new();
 
   subject
     .clone()

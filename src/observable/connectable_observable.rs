@@ -64,29 +64,6 @@ impl<Source, Subject> ConnectableObservable<Source, Subject> {
   }
 }
 
-impl<'a, Item, Err, S> LocalConnectableObservable<'a, S, Item, Err>
-where
-  S: Observable<'a, Item = Item, Err = Err>,
-{
-  pub fn local(observable: S) -> Self {
-    Self {
-      source: observable,
-      subject: Subject::local(),
-    }
-  }
-}
-
-impl<S, Item, Err> ConnectableObservable<S, SharedSubject<Item, Err>>
-where
-  S: SharedObservable<Item = Item, Err = Err>,
-{
-  pub fn shared(observable: S) -> Self {
-    ConnectableObservable {
-      source: observable,
-      subject: Subject::shared(),
-    }
-  }
-}
 impl<'a, S, Item, Err> LocalConnectableObservable<'a, S, Item, Err>
 where
   S: Observable<'a, Item = Item, Err = Err>,
@@ -122,7 +99,7 @@ mod test {
   #[test]
   fn smoke() {
     let o = observable::of(100);
-    let connected = ConnectableObservable::local(o);
+    let connected = ConnectableObservable::new(o);
     let mut first = 0;
     let mut second = 0;
     connected.clone().subscribe(|v| first = v);
@@ -136,7 +113,7 @@ mod test {
   #[test]
   fn fork_and_shared() {
     let o = observable::of(100);
-    let connected = ConnectableObservable::shared(o);
+    let connected = ConnectableObservable::new(o);
     connected.clone().to_shared().subscribe(|_| {});
     connected.clone().to_shared().subscribe(|_| {});
 

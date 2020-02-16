@@ -84,7 +84,7 @@ where
 fn raii() {
   let mut times = 0;
   {
-    let mut subject = Subject::local();
+    let mut subject = Subject::new();
     subject
       .clone()
       .subscribe_complete(|_| times += 1, || {})
