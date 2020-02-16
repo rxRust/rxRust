@@ -9,16 +9,21 @@
 
 ### Refactor
 
-- **observable**: Observable split into many concrete type, not only use a Observable struct to wrap all, every observable creating function has a concrete type.
+- **observable**: Every observable creating function has a concrete type, not only use a Observable struct to wrap all,
 - **observable** rename `RawSubscribable` to `Observable` 
 
 ### Breaking Changes
 
+- **operator**: Remove `IntoShared` trait.
 - **operator**: Use `Clone` replace `Fork`, now just call `observable.clone()` replace `observable.fork`.
-- **subject**: For now, LocalSubject emit value by mut ref must wrap with `subject::MutRefValue`. Use `subject.next(MutRefValue(&mut i))` replace `subject.next(&mut 1);`.
-- **subscription**: Now `subscribe`, `subscribe_err`, `subscribe_complete` and `subscribe_all` return a RAII implementation of a "scoped subscribed" of a subscription, and their "scoped subscribed" is bind to the return value.
-- **observable**: rename observable creating function `from_fn` to `of_fn`
-- **observable**: rename observable creating function `from_future_with_err` to `from_future_result`
+- **subject**: merge `Subject::local` and `Subject::new` into `Subject::new`.
+- **subject**: For now, LocalSubject emit value by mut ref must explicit call `mut_ref_all`, `mut_ref_item` and `mut_ref_err`. For example:
+    ```rust
+        let subject = Subject::new().mut_ref_item().subscribe(|_|{});
+        subject.next(&mut 1);
+    ```
+- **observable**: rename observable creation function `from_fn` to `of_fn`
+- **observable**: rename observable creation function `from_future_with_err` to `from_future_result`
 - **observable**: Redefine `RawSubscribable` as `Observable`. From
   ```rust
   pub trait RawSubscribable<Subscriber> {
@@ -28,10 +33,15 @@
   ```
   to
   ```rust
-  pub trait Observable<O, U: SubscriptionLike> {
-    type Unsub: SubscriptionLike + 'static;
-    fn actual_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub;
-  }
+  pub trait Observable<'a> {
+  type Item;
+  type Err;
+  type Unsub: SubscriptionLike + 'static;
+  fn actual_subscribe<O: Observer<Self::Item, Self::Err> + 'a>(
+    self,
+    subscriber: Subscriber<O, LocalSubscription>,
+  ) -> Self::Unsub;
+}
   ```
 - **observable**: remove `Observable::new`, and add a same `create` function in `observable` to replace it.
 - **observable**: Rename `Observable` to `ObservableFromFn`.
@@ -84,7 +94,7 @@
 
 ### Breaking Changes
 - **observable**: macros `of!`, `empty!`, `from_iter!`, `from_future!` and
-  `from_future_result!` replaced by functions.
+  `from_future_with_err!` replaced by functions.
 
 ## [0.4.0](https://github.com/rxRust/rxRust/releases/tag/v0.4.0)  (2019-11-07)
 
@@ -155,7 +165,7 @@ assert_eq!(res, 100);
 - **observable**: `observable::empty` function  to `observable::empty!` macro.
 - **observable**: `observable::of` function to `observable::of!` macro.
 - **observable**: `observable::from_future` function to `observable::from_future!` macro
-- **observable**: `observable::from_future_result` function to `observable::from_future_result!` macro
+- **observable**: `observable::from_future_with_err` function to `observable::from_future_with_err!` macro
 - **observable**: `observable::interval` function to `observable::interval!` macro
 
 ### Bug Fixes
@@ -168,7 +178,7 @@ assert_eq!(res, 100);
 ### Features
 - **observable**: add `observable::from_vec` and `observable::from_range`
 - **observable**: add `observable::empty` and `observable::of`
-- **observable**: add `observable::from_future` and `observable::from_future_result`
+- **observable**: add `observable::from_future` and `observable::from_future_with_err`
 - **observable**: add `observable::interval`
 - **operator**: add `delay` operator 
 - **operator**: add `filter` operator 

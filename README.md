@@ -43,7 +43,7 @@ In `rxrust` almost all extensions consume the upstream. So when you try to subsc
  o.subscribe(|_| { println!("consume in second")} );
 ```
 
-In this case, we must clone the stream. In
+In this case, we must clone the stream.
 
 ```rust
  # use rxrust::prelude::*;
