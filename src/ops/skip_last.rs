@@ -114,9 +114,7 @@ impl<Item, O, U> ObserverNext<Item> for SkipLastObserver<O, U, Item>
 where
   O: ObserverNext<Item>,
 {
-  fn next(&mut self, value: Item) {
-    self.queue.push_back(value);
-  }
+  fn next(&mut self, value: Item) { self.queue.push_back(value); }
 }
 
 impl<Item, O, U> ObserverComplete for SkipLastObserver<O, U, Item>
