@@ -49,8 +49,8 @@ Operators that selectively emit items from a source Observable.
 - [ ] IgnoreElements — do not emit any items from an Observable but mirror its termination notification
 - [x] Last — emit only the last item emitted by an Observable
 - [ ] Sample — emit the most recent item emitted by an Observable within periodic time intervals
-- [ ] Skip — suppress the first n items emitted by an Observable
-- [ ] SkipLast — suppress the last n items emitted by an Observable
+- [x] Skip — suppress the first n items emitted by an Observable
+- [x] SkipLast — suppress the last n items emitted by an Observable
 - [x] Take — emit only the first n items emitted by an Observable
 - [x] TakeLast — emit only the last n items emitted by an Observable
 
