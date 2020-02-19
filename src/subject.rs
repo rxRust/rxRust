@@ -103,7 +103,8 @@ macro local_subject_raw_subscribe_impl($o: ident,$u: ident) {
     self.subscription.add(subscription.clone());
     self
       .observers
-      .0.borrow_mut()
+      .0
+      .borrow_mut()
       .push(Box::new(LocalSubjectSubscriber(subscriber)));
     subscription
   }
