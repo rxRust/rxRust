@@ -1,6 +1,9 @@
 ## [Unreleased](https://github.com/rxRust/rxRust/compare/v0.7.3...HEAD)
 
 ### Features
+
+- **operator**: add `skip` operator.
+- **operator**: add `skip_last` operator.
 - **operator**: add `take_last` operator.
 - **subscription** The return value of `subscribe`, `subscribe_err`, `subscribe_complete` and `subscribe_all` now
   provides a method `unsubscribe_when_dropped()` which activates "RAII" behavior for this subscription. That means
@@ -14,6 +17,8 @@
 
 ### Breaking Changes
 
+- **observable**: remove `Observable::new`, and add a same `create` function in `observable` to replace it.
+- **observable**: Rename `Observable` to `ObservableFromFn`.
 - **operator**: Remove `IntoShared` trait.
 - **operator**: Use `Clone` replace `Fork`, now just call `observable.clone()` replace `observable.fork`.
 - **subject**: merge `Subject::local` and `Subject::new` into `Subject::new`.
@@ -32,19 +37,19 @@
   }
   ```
   to
+
   ```rust
   pub trait Observable<'a> {
-  type Item;
-  type Err;
-  type Unsub: SubscriptionLike + 'static;
-  fn actual_subscribe<O: Observer<Self::Item, Self::Err> + 'a>(
-    self,
-    subscriber: Subscriber<O, LocalSubscription>,
-  ) -> Self::Unsub;
-}
+    type Item;
+    type Err;
+    type Unsub: SubscriptionLike + 'static;
+    fn actual_subscribe<O: Observer<Self::Item, Self::Err> + 'a>
+    (
+      self,
+      subscriber: Subscriber<O, LocalSubscription>,
+    ) -> Self::Unsub;
+  }
   ```
-- **observable**: remove `Observable::new`, and add a same `create` function in `observable` to replace it.
-- **observable**: Rename `Observable` to `ObservableFromFn`.
 
 ## [0.7.2](https://github.com/rxRust/rxRust/releases/tag/v0.7.2)  (2020-01-09)
 
