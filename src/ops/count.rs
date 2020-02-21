@@ -2,7 +2,7 @@ use crate::prelude::*;
 use ops::reduce::{Reduce, ReduceOp};
 
 pub type CountOp<Source, Item> =
-  ReduceOp<Source, fn(usize, Item) -> usize, Item, usize>;
+  ReduceOp<Source, fn(usize, Item) -> usize, usize>;
 
 pub trait Count {
   /// Emits the number of items emitted by a source observable when this source
@@ -26,7 +26,6 @@ pub trait Count {
   /// // print log:
   /// // 5
   /// ```
-  ///
   fn count<Item>(self) -> CountOp<Self, Item>
   where
     Self: Sized,
@@ -63,12 +62,6 @@ mod test {
   fn count_fork_and_shared() {
     // type to type can fork
     let m = observable::from_iter(0..100).count();
-    m.fork()
-      .count()
-      .fork()
-      .to_shared()
-      .fork()
-      .to_shared()
-      .subscribe(|_| {});
+    m.to_shared().to_shared().subscribe(|_| {});
   }
 }

@@ -1,8 +1,6 @@
-use crate::observer::observer_error_proxy_impl;
-use crate::ops::SharedOp;
 use crate::prelude::*;
+use observer::error_proxy_impl;
 use std::collections::VecDeque;
-use std::marker::PhantomData;
 
 /// Ignore the last `count` values emitted by the source Observable.
 ///
@@ -20,7 +18,6 @@ use std::marker::PhantomData;
 /// };
 ///
 /// observable::from_iter(0..10).skip_last(5).subscribe(|v| println!("{}", v));
-///
 
 /// // print logs:
 /// // 0
@@ -30,97 +27,78 @@ use std::marker::PhantomData;
 /// // 4
 /// ```
 ///
-pub trait SkipLast<Item> {
-  fn skip_last(self, count: usize) -> SkipLastOp<Self, Item>
+pub trait SkipLast {
+  fn skip_last(self, count: usize) -> SkipLastOp<Self>
   where
     Self: Sized,
   {
     SkipLastOp {
       source: self,
       count,
-      _p: PhantomData,
     }
   }
 }
 
-impl<O, Item> SkipLast<Item> for O {}
+impl<O> SkipLast for O {}
 
-pub struct SkipLastOp<S, Item> {
+#[derive(Clone)]
+pub struct SkipLastOp<S> {
   source: S,
   count: usize,
-  _p: PhantomData<Item>,
 }
 
-impl<S, Item> IntoShared for SkipLastOp<S, Item>
-where
-  S: IntoShared,
-  Item: Send + Sync + 'static,
-{
-  type Shared = SharedOp<SkipLastOp<S::Shared, Item>>;
-  fn to_shared(self) -> Self::Shared {
-    SharedOp(SkipLastOp {
-      source: self.source.to_shared(),
-      count: self.count,
-      _p: PhantomData,
-    })
-  }
-}
-
-impl<O, U, S, Item> RawSubscribable<Subscriber<O, U>> for SkipLastOp<S, Item>
-where
-  S: RawSubscribable<Subscriber<SkipLastObserver<O, U, Item>, U>>,
-  U: SubscriptionLike + Clone + 'static,
-{
-  type Unsub = S::Unsub;
-  fn raw_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub {
+macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
+  fn actual_subscribe<O: Observer<Self::Item, Self::Err> + $($marker +)* $lf>(
+    self,
+    subscriber: Subscriber<O, $subscription>,
+  ) -> Self::Unsub {
     let subscriber = Subscriber {
       observer: SkipLastObserver {
         observer: subscriber.observer,
-        subscription: subscriber.subscription.clone(),
         count: self.count,
         queue: VecDeque::new(),
       },
       subscription: subscriber.subscription,
     };
-    self.source.raw_subscribe(subscriber)
+    self.source.actual_subscribe(subscriber)
   }
 }
 
-pub struct SkipLastObserver<O, S, Item> {
+impl<'a, Item, S> Observable<'a> for SkipLastOp<S>
+where
+  S: Observable<'a, Item = Item>,
+  Item: 'a,
+{
+  type Item = S::Item;
+  type Err = S::Err;
+  type Unsub = S::Unsub;
+  observable_impl!(LocalSubscription, 'a);
+}
+
+impl<S> SharedObservable for SkipLastOp<S>
+where
+  S: SharedObservable,
+  S::Item: Send + Sync + 'static,
+{
+  type Item = S::Item;
+  type Err = S::Err;
+  type Unsub = S::Unsub;
+  observable_impl!(SharedSubscription, Send + Sync + 'static);
+}
+
+pub struct SkipLastObserver<O, Item> {
   observer: O,
-  subscription: S,
   count: usize,
   queue: VecDeque<Item>,
 }
 
-impl<S, ST, Item> IntoShared for SkipLastObserver<S, ST, Item>
+impl<Item, Err, O> Observer<Item, Err> for SkipLastObserver<O, Item>
 where
-  S: IntoShared,
-  ST: IntoShared,
-  Item: Send + Sync + 'static,
-{
-  type Shared = SkipLastObserver<S::Shared, ST::Shared, Item>;
-  fn to_shared(self) -> Self::Shared {
-    SkipLastObserver {
-      observer: self.observer.to_shared(),
-      subscription: self.subscription.to_shared(),
-      count: self.count,
-      queue: VecDeque::new(),
-    }
-  }
-}
-
-impl<Item, O, U> ObserverNext<Item> for SkipLastObserver<O, U, Item>
-where
-  O: ObserverNext<Item>,
+  O: Observer<Item, Err>,
 {
   fn next(&mut self, value: Item) { self.queue.push_back(value); }
-}
 
-impl<Item, O, U> ObserverComplete for SkipLastObserver<O, U, Item>
-where
-  O: ObserverNext<Item> + ObserverComplete,
-{
+  error_proxy_impl!(Err, observer);
   fn complete(&mut self) {
     if self.count <= self.queue.len() {
       let skip_index = self.queue.len() - self.count;
@@ -129,24 +107,6 @@ where
       }
     }
     self.observer.complete();
-  }
-}
-
-observer_error_proxy_impl!(
-  SkipLastObserver<O, U, Item>, O, observer, <O, U, Item>
-);
-
-impl<S, Item> Fork for SkipLastOp<S, Item>
-where
-  S: Fork,
-{
-  type Output = SkipLastOp<S::Output, Item>;
-  fn fork(&self) -> Self::Output {
-    SkipLastOp {
-      source: self.source.fork(),
-      count: self.count,
-      _p: PhantomData,
-    }
   }
 }
 
@@ -187,11 +147,11 @@ mod test {
     let mut nc2 = 0;
     {
       let skip_last5 = observable::from_iter(0..100).skip_last(5);
-      let f1 = skip_last5.fork();
-      let f2 = skip_last5.fork();
+      let f1 = skip_last5.clone();
+      let f2 = skip_last5;
 
-      f1.skip_last(5).fork().subscribe(|_| nc1 += 1);
-      f2.skip_last(5).fork().subscribe(|_| nc2 += 1);
+      f1.skip_last(5).subscribe(|_| nc1 += 1);
+      f2.skip_last(5).subscribe(|_| nc2 += 1);
     }
     assert_eq!(nc1, 90);
     assert_eq!(nc2, 90);

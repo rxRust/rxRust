@@ -37,11 +37,10 @@ where
 /// Realised as chained composition of scan->last->map operators.
 pub type AverageOp<Source, Item> = MapOp<
   LastOrOp<
-    ScanOp<Source, fn(Accum<Item>, Item) -> Accum<Item>, Item, Accum<Item>>,
+    ScanOp<Source, fn(Accum<Item>, Item) -> Accum<Item>, Accum<Item>>,
     Accum<Item>,
   >,
   fn(Accum<Item>) -> Item,
-  Accum<Item>,
 >;
 
 pub trait Average<Item>
@@ -67,7 +66,6 @@ where
   /// // print log:
   /// // 5
   /// ```
-  ///
   fn average(self) -> AverageOp<Self, Item>;
 }
 
@@ -168,6 +166,6 @@ mod test {
   fn average_fork_and_shared() {
     // type to type can fork
     let m = observable::from_iter(vec![1., 2.]).average();
-    m.fork().to_shared().fork().to_shared().subscribe(|_| {});
+    m.to_shared().to_shared().subscribe(|_| {});
   }
 }

@@ -63,32 +63,26 @@ pub struct SubscribeOnOP<S, SD> {
   scheduler: SD,
 }
 
-impl<S, SD> IntoShared for SubscribeOnOP<S, SD>
-where
-  Self: Send + Sync + 'static,
-{
-  type Shared = Self;
-  #[inline(always)]
-  fn to_shared(self) -> Self::Shared { self }
-}
-
 impl<T> SubscribeOn for T {}
 
-impl<O, S, SD> RawSubscribable<O> for SubscribeOnOP<S, SD>
+impl<'a, S, SD> SharedObservable for SubscribeOnOP<S, SD>
 where
-  O: IntoShared,
-  S: IntoShared,
-  S::Shared: RawSubscribable<O::Shared, Unsub = SharedSubscription>,
-  SD: Scheduler,
+  S: SharedObservable<Unsub = SharedSubscription> + Send + 'static,
+  SD: Scheduler + Send + 'static,
 {
-  type Unsub = SharedSubscription;
-
-  fn raw_subscribe(self, subscriber: O) -> Self::Unsub {
-    let source = self.source.to_shared();
-    let subscriber = subscriber.to_shared();
+  type Item = S::Item;
+  type Err = S::Err;
+  type Unsub = S::Unsub;
+  fn actual_subscribe<
+    O: Observer<Self::Item, Self::Err> + Sync + Send + 'static,
+  >(
+    self,
+    subscriber: Subscriber<O, SharedSubscription>,
+  ) -> Self::Unsub {
+    let source = self.source;
     self.scheduler.schedule(
       move |mut subscription, _| {
-        subscription.add(source.raw_subscribe(subscriber))
+        subscription.add(source.actual_subscribe(subscriber))
       },
       None,
       (),
@@ -113,6 +107,7 @@ mod test {
     let c_thread = thread.clone();
     observable::from_iter(1..5)
       .subscribe_on(Schedulers::NewThread)
+      .to_shared()
       .subscribe(move |v| {
         res.lock().unwrap().push(v);
         let handle = thread::current();
@@ -139,6 +134,7 @@ mod test {
     observable::from_iter(0..10)
       .subscribe_on(scheduler)
       .delay(Duration::from_millis(10))
+      .to_shared()
       .subscribe(move |v| {
         emitted.lock().unwrap().push(v);
       })

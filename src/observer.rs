@@ -9,154 +9,132 @@ use std::sync::{Arc, Mutex};
 ///
 /// `Item` the type of the elements being emitted.
 /// `Err`the type of the error may propagating.
-pub trait Observer<Item, Err>:
-  ObserverNext<Item> + ObserverError<Err> + ObserverComplete
-{
-}
-
-/// ObserverNext can consume the items delivered by an Observable.
-pub trait ObserverNext<Item> {
+pub trait Observer<Item, Err> {
   fn next(&mut self, value: Item);
-}
-
-/// ObserverNext can consume the error delivered by an Observable.
-pub trait ObserverError<Err> {
   fn error(&mut self, err: Err);
-}
-
-/// ObserverNext can consume the complete notify delivered by an Observable.
-pub trait ObserverComplete {
   fn complete(&mut self);
 }
 
-impl<Item, Err, T> Observer<Item, Err> for T where
-  T: ObserverNext<Item> + ObserverError<Err> + ObserverComplete
+/// auto impl a proxy observer
+/// observer_proxy_impl!(
+///   type          // give the type you want to implement for
+///   , {path}      // the path to access to the actual observer,
+///   , item        // the generic Item name
+///   , err         // the generic Err name
+///   , host_type?  // options, give the host type of the actual observer, if
+///                 // it's a generic type
+///   , <generics>? // options, give the generics type must use in the
+///                 // implement, except `Item` and `Err` and host type.
+///   , {where}?    // options, where bounds for the generics )
+///
+/// # Example
+/// ```rust ignore
+///  observer_proxy_impl!(Arc<Mutex<S>>, {lock().unwrap()}, S, <S>);
+/// ```
+pub(crate) macro observer_proxy_impl(
+  $ty: ty
+  , {$($name:tt $($parentheses:tt)?) .+}
+  , $item: ident
+  , $err: ident
+  $(, $host_ty: ident)? $(, <$($generics: tt),*>)?
+  $(, {where $($wty:ty : $bound: tt),*})?
+) {
+    impl<$($($generics ,)*)? $item, $err, $($host_ty)? >
+      Observer<$item, $err> for $ty
+    where
+      $($host_ty: Observer<$item, $err>,)?
+      $($($wty: $bound), *)?
+    {
+      next_proxy_impl!($item, $($name$($parentheses)?).+);
+      error_proxy_impl!($err, $($name$($parentheses)?).+);
+      complete_proxy_impl!($($name$($parentheses)?).+);
+    }
+}
+
+pub(crate) macro next_proxy_impl(
+  $item: ident, $($name:tt $($parentheses:tt)?) .+)
 {
-}
-
-pub(crate) macro observer_next_proxy_impl(
-  $t: ty,  $host_ty: ident, $name:ident, <$($generics: tt),*>) {
-  impl<$($generics ,)* Item> ObserverNext<Item> for $t
-    where $host_ty: ObserverNext<Item> {
-    #[inline(always)]
-    fn next(&mut self, value: Item) { self.$name.next(value); }
+  #[inline]
+  fn next(&mut self, value: $item) {
+    self.$($name$($parentheses)?).+.next(value);
   }
 }
 
-pub(crate) macro observer_error_proxy_impl(
-  $t: ty,  $host_ty: ident, $name:ident, <$($generics: tt),*>) {
-  impl<$($generics ,)* Err> ObserverError<Err> for $t
-    where $host_ty: ObserverError<Err>
-  {
-    #[inline(always)]
-    fn error(&mut self, err: Err) { self.$name.error(err); }
+pub(crate) macro error_proxy_impl(
+  $err: ident, $($name:tt $($parentheses:tt)?) .+)
+{
+  #[inline]
+  fn error(&mut self, err: $err) {
+    self.$($name$($parentheses)?).+.error(err);
   }
 }
 
-pub(crate) macro observer_complete_proxy_impl(
-  $t: ty, $host_ty: ident, $name: tt, <$($generics: tt),*>) {
-  impl<$($generics),*> ObserverComplete for $t
-    where $host_ty: ObserverComplete
-  {
-    #[inline(always)]
-    fn complete(&mut self) { self.$name.complete(); }
-  }
+pub(crate) macro complete_proxy_impl($($name:tt $($parentheses:tt)?) .+) {
+  #[inline]
+  fn complete(&mut self) { self.$($name$($parentheses)?).+.complete(); }
 }
 
-macro observer_next_pointer_proxy_impl(
-  $item: ty,$ty: ty, <$($generics: tt),*>) {
-  impl<$($generics),*> ObserverNext<$item> for $ty {
-    #[inline(always)]
+macro observer_pointer_proxy_impl(
+  $ty: ty, $item: ident, $err:ident $(, <$($generics: tt),*>)?)
+{
+  impl<$($($generics ,)*)? $item, $err> Observer<$item, $err> for $ty {
+
+    #[inline]
     fn next(&mut self, value: $item) { (&mut **self).next(value); }
-  }
-}
 
-macro observer_error_pointer_proxy_impl(
-  $err: ty, $ty: ty, <$($generics: tt),*>) {
-  impl<$($generics),*> ObserverError<$err> for $ty {
-    #[inline(always)]
+    #[inline]
     fn error(&mut self, err: $err) { (&mut **self).error(err); }
-  }
-}
 
-macro observer_complete_pointer_proxy_impl(
-  $ty: ty, <$($generics: tt),*>) {
-  impl<$($generics),*> ObserverComplete for $ty {
-    #[inline(always)]
-  fn complete(&mut self) { (&mut **self).complete(); }
+    #[inline]
+    fn complete(&mut self) { (&mut **self).complete(); }
   }
 }
 
 // implement `Observer` for Box<dyn Observer<Item, Err> + 'a>
-observer_next_pointer_proxy_impl!(
-  Item, Box<dyn Observer<Item, Err> + 'a>, <'a, Item, Err>);
-observer_error_pointer_proxy_impl!(
-  Err, Box<dyn Observer<Item, Err> + 'a>, <'a, Item, Err>);
-observer_complete_pointer_proxy_impl!(
-  Box<dyn Observer<Item, Err> + 'a>, <'a, Item, Err>);
+observer_pointer_proxy_impl!(
+  Box<dyn Observer<Item, Err> + 'a>, Item, Err, <'a>);
 
 // implement `Observer` for Box<dyn Observer<Item, Err> + Send + Sync>
-observer_next_pointer_proxy_impl!(
-  Item, Box<dyn Observer<Item, Err> + Send + Sync>, <'a, Item, Err>);
-observer_error_pointer_proxy_impl!(
-  Err, Box<dyn Observer<Item, Err> + Send + Sync>, <'a, Item, Err>);
-observer_complete_pointer_proxy_impl!(
-  Box<dyn Observer<Item, Err> + Send + Sync>, <'a, Item, Err>);
+observer_pointer_proxy_impl!(
+  Box<dyn Observer<Item, Err> + Send + Sync>,
+  Item,
+  Err
+);
 
 // implement `Observer` for Box<dyn Publisher<Item, Err> + 'a>
-observer_next_pointer_proxy_impl!(
-  Item, Box<dyn Publisher<Item, Err> + 'a>, <'a, Item, Err>);
-observer_error_pointer_proxy_impl!(
-  Err, Box<dyn Publisher<Item, Err> + 'a>, <'a, Item, Err>);
-observer_complete_pointer_proxy_impl!(
-  Box<dyn Publisher<Item, Err> + 'a>, <'a, Item, Err>);
+observer_pointer_proxy_impl!(
+  Box<dyn Publisher<Item, Err> + 'a>, Item, Err, <'a>);
 
 // implement `Observer` for Box<dyn Publisher<Item, Err> + Send + Sync>
-observer_next_pointer_proxy_impl!(
-  Item, Box<dyn Publisher<Item, Err> + Send + Sync>, <'a, Item, Err>);
-observer_error_pointer_proxy_impl!(
-  Err, Box<dyn Publisher<Item, Err> + Send + Sync>, <'a, Item, Err>);
-observer_complete_pointer_proxy_impl!(
-  Box<dyn Publisher<Item, Err> + Send + Sync>, <'a, Item, Err>);
+observer_pointer_proxy_impl!(
+  Box<dyn Publisher<Item, Err> + Send + Sync>,
+  Item,
+  Err
+);
 
-impl<Item, S> ObserverNext<Item> for Arc<Mutex<S>>
-where
-  S: ObserverNext<Item>,
-{
-  fn next(&mut self, value: Item) { self.lock().unwrap().next(value); }
-}
+observer_proxy_impl!(Arc<Mutex<S>>, { lock().unwrap() }, Item, Err, S);
+observer_proxy_impl!(Rc<RefCell<S>>, { borrow_mut() }, Item, Err, S);
 
-impl<Err, S> ObserverError<Err> for Arc<Mutex<S>>
+impl<Item, Err, T> Observer<Item, Err> for Vec<T>
 where
-  S: ObserverError<Err>,
+  T: Publisher<Item, Err>,
+  Item: Copy,
+  Err: Copy,
 {
-  fn error(&mut self, err: Err) { self.lock().unwrap().error(err); }
-}
+  fn next(&mut self, value: Item) {
+    self.drain_filter(|subscriber| {
+      subscriber.next(value);
+      subscriber.is_closed()
+    });
+  }
 
-impl<S> ObserverComplete for Arc<Mutex<S>>
-where
-  S: ObserverComplete,
-{
-  fn complete(&mut self) { self.lock().unwrap().complete(); }
-}
+  fn error(&mut self, err: Err) {
+    self.iter_mut().for_each(|subscriber| subscriber.error(err));
+    self.clear();
+  }
 
-impl<Item, S> ObserverNext<Item> for Rc<RefCell<S>>
-where
-  S: ObserverNext<Item>,
-{
-  fn next(&mut self, value: Item) { self.borrow_mut().next(value); }
-}
-
-impl<Err, S> ObserverError<Err> for Rc<RefCell<S>>
-where
-  S: ObserverError<Err>,
-{
-  fn error(&mut self, err: Err) { self.borrow_mut().error(err); }
-}
-
-impl<S> ObserverComplete for Rc<RefCell<S>>
-where
-  S: ObserverComplete,
-{
-  fn complete(&mut self) { self.borrow_mut().complete(); }
+  fn complete(&mut self) {
+    self.iter_mut().for_each(|subscriber| subscriber.complete());
+    self.clear();
+  }
 }

@@ -1,87 +1,95 @@
 use crate::prelude::*;
 use crate::subject::{LocalSubject, SharedSubject};
+use ops::ref_count::{RefCount, RefCountCreator};
 
+#[derive(Clone, Default)]
 pub struct ConnectableObservable<Source, Subject> {
-  source: Source,
-  subject: Subject,
+  pub(crate) source: Source,
+  pub(crate) subject: Subject,
 }
 
-pub trait Connect {
-  type Unsub;
-  fn connect(self) -> Self::Unsub;
-}
-
-impl<S, O, U, Sub> RawSubscribable<Sub>
-  for ConnectableObservable<S, Subject<O, U>>
-where
-  S: RawSubscribable<Subscriber<O, U>>,
-  Subject<O, U>: RawSubscribable<Sub>,
-{
-  type Unsub = <Subject<O, U> as RawSubscribable<Sub>>::Unsub;
-
-  #[inline(always)]
-  fn raw_subscribe(self, subscriber: Sub) -> Self::Unsub {
-    self.subject.raw_subscribe(subscriber)
-  }
-}
-
-impl<'a, Item, Err, S> ConnectableObservable<S, LocalSubject<'a, Item, Err>> {
-  pub fn local(observable: S) -> Self {
-    Self {
-      source: observable,
-      subject: Subject::local(),
-    }
-  }
-}
-
-impl<Source, Item, Err> ConnectableObservable<Source, SharedSubject<Item, Err>>
-where
-  Source: IntoShared,
-{
-  pub fn shared(
-    observable: Source,
-  ) -> ConnectableObservable<Source::Shared, SharedSubject<Item, Err>> {
+impl<Source, Subject: Default> ConnectableObservable<Source, Subject> {
+  pub fn new(source: Source) -> Self {
     ConnectableObservable {
-      source: observable.to_shared(),
-      subject: Subject::shared(),
+      source,
+      subject: Subject::default(),
     }
   }
 }
 
-impl<Source, O, U> Connect for ConnectableObservable<Source, Subject<O, U>>
+pub type LocalConnectableObservable<'a, S, Item, Err> =
+  ConnectableObservable<S, LocalSubject<'a, Item, Err>>;
+
+pub type SharedConnectableObservable<S, Item, Err> =
+  ConnectableObservable<S, SharedSubject<Item, Err>>;
+
+macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
+  type Unsub = $subscription;
+  #[inline(always)]
+  fn actual_subscribe<O: Observer<Self::Item, Self::Err> + $($marker +)* $lf>(
+    self,
+    subscriber: Subscriber<O, $subscription>,
+  ) -> Self::Unsub {
+    self.subject.actual_subscribe(subscriber)
+  }
+}
+
+impl<'a, S, Item, Err> Observable<'a>
+  for LocalConnectableObservable<'a, S, Item, Err>
 where
-  Source: RawSubscribable<Subscriber<O, U>>,
+  S: Observable<'a, Item = Item, Err = Err>,
+  S: Observable<'a, Item = Item, Err = Err>,
 {
-  type Unsub = Source::Unsub;
-  fn connect(self) -> Self::Unsub {
-    self.source.raw_subscribe(Subscriber {
+  type Item = Item;
+  type Err = Err;
+  observable_impl!(LocalSubscription, 'a);
+}
+
+impl<S, Item, Err> SharedObservable
+  for SharedConnectableObservable<S, Item, Err>
+where
+  S: SharedObservable<Item = Item, Err = Err>,
+  S: SharedObservable<Item = Item, Err = Err>,
+{
+  type Item = Item;
+  type Err = Err;
+  observable_impl!(SharedSubscription, Send + Sync + 'static);
+}
+impl<Source, Subject> ConnectableObservable<Source, Subject> {
+  #[inline]
+  pub fn ref_count<Inner: RefCountCreator<Connectable = Self>>(
+    self,
+  ) -> RefCount<Inner, Self> {
+    Inner::new(self)
+  }
+}
+
+impl<'a, S, Item, Err> LocalConnectableObservable<'a, S, Item, Err>
+where
+  S: Observable<'a, Item = Item, Err = Err>,
+  Item: Copy + 'a,
+  Err: Copy + 'a,
+{
+  pub fn connect(self) -> S::Unsub {
+    self.source.actual_subscribe(Subscriber {
       observer: self.subject.observers,
       subscription: self.subject.subscription,
     })
   }
 }
 
-impl<Source, Subject> IntoShared for ConnectableObservable<Source, Subject>
+impl<S, Item, Err> SharedConnectableObservable<S, Item, Err>
 where
-  Source: IntoShared,
-  Subject: IntoShared,
+  S: SharedObservable<Item = Item, Err = Err>,
+  Item: Copy + Send + Sync + 'static,
+  Err: Copy + Send + Sync + 'static,
 {
-  type Shared = ConnectableObservable<Source::Shared, Subject::Shared>;
-  fn to_shared(self) -> Self::Shared {
-    ConnectableObservable {
-      source: self.source.to_shared(),
-      subject: self.subject.to_shared(),
-    }
+  pub fn connect(self) -> S::Unsub {
+    self.source.actual_subscribe(Subscriber {
+      observer: self.subject.observers,
+      subscription: self.subject.subscription,
+    })
   }
-}
-
-impl<Source, Subject> Fork for ConnectableObservable<Source, Subject>
-where
-  Subject: Fork,
-{
-  type Output = Subject::Output;
-  #[inline(always)]
-  fn fork(&self) -> Self::Output { self.subject.fork() }
 }
 
 #[cfg(test)]
@@ -91,11 +99,11 @@ mod test {
   #[test]
   fn smoke() {
     let o = observable::of(100);
-    let connected = ConnectableObservable::local(o);
+    let connected = ConnectableObservable::new(o);
     let mut first = 0;
     let mut second = 0;
-    connected.fork().subscribe(|v| first = v);
-    connected.fork().subscribe(|v| second = v);
+    connected.clone().subscribe(|v| first = v);
+    connected.clone().subscribe(|v| second = v);
 
     connected.connect();
     assert_eq!(first, 100);
@@ -105,9 +113,9 @@ mod test {
   #[test]
   fn fork_and_shared() {
     let o = observable::of(100);
-    let connected = ConnectableObservable::local(o).to_shared();
-    connected.fork().subscribe(|_| {});
-    connected.fork().subscribe(|_| {});
+    let connected = ConnectableObservable::new(o);
+    connected.clone().to_shared().subscribe(|_| {});
+    connected.clone().to_shared().subscribe(|_| {});
 
     connected.connect();
   }

@@ -1,127 +1,152 @@
-/// Make a ConnectableObservable behave like a ordinary observable and automates
-/// the way you can connect to it.
+/// Make a ConnectableObservable behave like a ordinary observable and
+/// automates the way you can connect to it.
 ///
 /// Internally it counts the subscriptions to the observable and subscribes
-/// (only once) to the source if the number of subscriptions is larger than 0.
-/// If the number of subscriptions is smaller than 1, it unsubscribes from the
-/// source. This way you can make sure that everything before the published
-/// refCount has only a single subscription independently of the number of
-/// subscribers to the target observable.
+/// (only once) to the source if the number of subscriptions is larger than
+/// 0. If the number of subscriptions is smaller than 1, it unsubscribes
+/// from the source. This way you can make sure that everything before the
+/// published refCount has only a single subscription independently of the
+/// number of subscribers to the target observable.
 ///
-/// Note that using the share operator is exactly the same as using the publish
-/// operator (making the observable hot) and the refCount operator in a
-/// sequence.
-use crate::observable::{Connect, ConnectableObservable};
+/// Note that using the share operator is exactly the same as using the
+/// publish operator (making the observable hot) and the refCount operator
+/// in a sequence.
+use crate::observable::{
+  LocalConnectableObservable, SharedConnectableObservable,
+};
 use crate::prelude::*;
-use crate::util::unwrap_rc_ref_cell;
 use std::cell::RefCell;
+use std::marker::PhantomData;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
-enum Source<C, S> {
-  Connectable(C),
-  Subject(S),
-}
-
-struct Inner<C, U>
-where
-  C: Fork,
-{
-  source: Source<C, C::Output>,
+struct Inner<C, U> {
+  connectable: C,
   connection: Option<U>,
 }
 
-type LocalRefConnectable<Source, Subject, U> =
-  Rc<RefCell<Inner<ConnectableObservable<Source, Subject>, U>>>;
-pub struct LocalRefCount<Source, Subject: Fork, U>(
-  LocalRefConnectable<Source, Subject, U>,
-);
+#[derive(Clone)]
+pub struct RefCount<T, C>(T, PhantomData<C>);
 
-type SharedRefConnectable<Source, Subject, U> =
-  Arc<Mutex<Inner<ConnectableObservable<Source, Subject>, U>>>;
-pub struct SharedRefCount<Source, Subject: Fork, U>(
-  SharedRefConnectable<Source, Subject, U>,
-);
-
-pub(crate) fn local<S, O, U>(
-  connectable: ConnectableObservable<S, Subject<O, U>>,
-) -> LocalRefCount<S, Subject<O, U>, S::Unsub>
+type LocalRef<C, U> = Rc<RefCell<Inner<C, U>>>;
+#[derive(Clone)]
+struct InnerLocalRefCount<'a, S, Item, Err>(
+  LocalRef<LocalConnectableObservable<'a, S, Item, Err>, S::Unsub>,
+)
 where
-  S: RawSubscribable<Subscriber<O, U>>,
-  Subject<O, U>: Fork,
+  S: Observable<'a, Item = Item, Err = Err>;
+
+type LocalRefCount<'a, S, Item, Err> = RefCount<
+  InnerLocalRefCount<'a, S, Item, Err>,
+  LocalConnectableObservable<'a, S, Item, Err>,
+>;
+
+type SharedRef<C, U> = Arc<Mutex<Inner<C, U>>>;
+#[derive(Clone)]
+struct InnerSharedRefCount<S, Item, Err>(
+  SharedRef<SharedConnectableObservable<S, Item, Err>, S::Unsub>,
+)
+where
+  S: SharedObservable<Item = Item, Err = Err>;
+type SharedRefCount<S, Item, Err> = RefCount<
+  InnerSharedRefCount<S, Item, Err>,
+  SharedConnectableObservable<S, Item, Err>,
+>;
+
+pub trait RefCountCreator: Sized {
+  type Connectable;
+  fn new(connectable: Self::Connectable) -> RefCount<Self, Self::Connectable>;
+}
+
+impl<'a, S, Item, Err> RefCountCreator for InnerLocalRefCount<'a, S, Item, Err>
+where
+  S: Observable<'a, Item = Item, Err = Err>,
 {
-  LocalRefCount(Rc::new(RefCell::new(Inner {
-    source: Source::Connectable(connectable),
-    connection: None,
-  })))
+  type Connectable = LocalConnectableObservable<'a, S, Item, Err>;
+  fn new(connectable: Self::Connectable) -> RefCount<Self, Self::Connectable> {
+    RefCount(
+      InnerLocalRefCount(Rc::new(RefCell::new(Inner {
+        connectable,
+        connection: None,
+      }))),
+      PhantomData,
+    )
+  }
 }
 
-impl<Source, Subject: Fork, U> Fork for LocalRefCount<Source, Subject, U> {
-  type Output = Self;
-  #[inline(always)]
-  fn fork(&self) -> Self::Output { LocalRefCount(self.0.clone()) }
+impl<S, Item, Err> RefCountCreator for InnerSharedRefCount<S, Item, Err>
+where
+  S: SharedObservable<Item = Item, Err = Err>,
+{
+  type Connectable = SharedConnectableObservable<S, Item, Err>;
+  fn new(connectable: Self::Connectable) -> RefCount<Self, Self::Connectable> {
+    RefCount(
+      InnerSharedRefCount(Arc::new(Mutex::new(Inner {
+        connectable,
+        connection: None,
+      }))),
+      PhantomData,
+    )
+  }
 }
 
-impl<Source, Subject: Fork, U> Fork for SharedRefCount<Source, Subject, U> {
-  type Output = Self;
-  #[inline(always)]
-  fn fork(&self) -> Self::Output { SharedRefCount(self.0.clone()) }
-}
-
-macro raw_subscribe($inner: ident, $subscriber: ident) {{
-  let source = &mut $inner.source;
-  let subscription = match source {
-    Source::Connectable(c) => {
-      let subject = c.fork();
-      let c = std::mem::replace(source, Source::Subject(subject.fork()));
-      let subscription = subject.raw_subscribe($subscriber);
-      if let Source::Connectable(c) = c {
-        $inner.connection = Some(c.connect());
-      }
-      subscription
+impl<'a, Item, Err, S> Observable<'a> for LocalRefCount<'a, S, Item, Err>
+where
+  S: Observable<'a, Item = Item, Err = Err> + Clone,
+  S::Unsub: Clone,
+  Item: Copy + 'a,
+  Err: Copy + 'a,
+{
+  type Item = Item;
+  type Err = Err;
+  type Unsub = RefCountSubscription<LocalSubscription, S::Unsub>;
+  fn actual_subscribe<O: Observer<Self::Item, Self::Err> + 'a>(
+    self,
+    subscriber: Subscriber<O, LocalSubscription>,
+  ) -> Self::Unsub {
+    let mut inner = (self.0).0.borrow_mut();
+    inner.connectable.clone().actual_subscribe(subscriber);
+    if inner.connection.is_none() {
+      inner.connection = Some(inner.connectable.clone().connect());
     }
-    Source::Subject(s) => s.fork().raw_subscribe($subscriber),
-  };
-  let connection = $inner.connection.as_ref().unwrap().clone();
-  RefCountSubscription {
-    subscription,
-    connection,
-  }
-}}
-
-impl<S, O, U, Sub> RawSubscribable<Sub>
-  for LocalRefCount<S, Subject<O, U>, S::Unsub>
-where
-  S: RawSubscribable<Subscriber<O, U>>,
-  Subject<O, U>: RawSubscribable<Sub, Unsub = U> + Fork<Output = Subject<O, U>>,
-  S::Unsub: Clone,
-  U: TearDownSize + 'static,
-{
-  type Unsub = RefCountSubscription<U, S::Unsub>;
-  fn raw_subscribe(self, subscriber: Sub) -> Self::Unsub {
-    let mut inner = self.0.borrow_mut();
-    raw_subscribe!(inner, subscriber)
+    let connection = inner.connection.as_ref().unwrap().clone();
+    RefCountSubscription {
+      subscription: inner.connectable.subject.subscription.clone(),
+      connection,
+    }
   }
 }
 
-impl<S, O, U, Sub> RawSubscribable<Sub>
-  for SharedRefCount<S, Subject<O, U>, S::Unsub>
+impl<Item, Err, S> SharedObservable for SharedRefCount<S, Item, Err>
 where
-  S: RawSubscribable<Subscriber<O, U>>,
-  Subject<O, U>:
-    RawSubscribable<Sub::Shared, Unsub = U> + Fork<Output = Subject<O, U>>,
-  U: TearDownSize + 'static,
+  S: SharedObservable<Item = Item, Err = Err> + Clone,
   S::Unsub: Clone,
-  Sub: IntoShared,
+  Item: Copy + Send + Sync + 'static,
+  Err: Copy + Send + Sync + 'static,
 {
-  type Unsub = RefCountSubscription<U, S::Unsub>;
-  fn raw_subscribe(self, subscriber: Sub) -> Self::Unsub {
-    let subscriber = subscriber.to_shared();
-    let mut inner = self.0.lock().unwrap();
-    raw_subscribe!(inner, subscriber)
+  type Item = Item;
+  type Err = Err;
+  type Unsub = RefCountSubscription<SharedSubscription, S::Unsub>;
+  fn actual_subscribe<
+    O: Observer<Self::Item, Self::Err> + Sync + Send + 'static,
+  >(
+    self,
+    subscriber: Subscriber<O, SharedSubscription>,
+  ) -> Self::Unsub {
+    let mut inner = (self.0).0.lock().unwrap();
+    inner.connectable.clone().actual_subscribe(subscriber);
+    if inner.connection.is_none() {
+      inner.connection = Some(inner.connectable.clone().connect());
+    }
+    let connection = inner.connection.as_ref().unwrap().clone();
+    RefCountSubscription {
+      subscription: inner.connectable.subject.subscription.clone(),
+      connection,
+    }
   }
 }
 
+#[derive(Clone)]
 pub struct RefCountSubscription<S, C> {
   subscription: S,
   connection: C,
@@ -146,66 +171,15 @@ where
   fn inner_addr(&self) -> *const () { self.subscription.inner_addr() }
 }
 
-impl<S, Subject, U> IntoShared for LocalRefCount<S, Subject, U>
-where
-  S: IntoShared,
-  Subject: IntoShared + Fork<Output = Subject>,
-  Subject::Shared: Fork<Output = Subject::Shared>,
-  U: IntoShared,
-{
-  type Shared = SharedRefCount<S::Shared, Subject::Shared, U::Shared>;
-  fn to_shared(self) -> Self::Shared {
-    let ref_count = unwrap_rc_ref_cell(
-      self.0,
-      "Cannot convert a `LocalRefCount` to `SharedRefCount` \
-       when it referenced by other.",
-    );
-    if ref_count.connection.is_some() {
-      panic!("Can not convert a connected RefCountOp into shared.");
-    }
-    let source = match ref_count.source {
-      Source::Connectable(c) => Source::Connectable(c.to_shared()),
-      Source::Subject(_) => {
-        panic!("Can not convert a connected RefCountOp into shared.")
-      }
-    };
-
-    SharedRefCount(Arc::new(Mutex::new(Inner {
-      source,
-      connection: None,
-    })))
-  }
-}
-
-impl<S, Subject, U> IntoShared for SharedRefCount<S, Subject, U>
-where
-  Self: Send + Sync + 'static,
-  Subject: Fork,
-{
-  type Shared = Self;
-  #[inline(always)]
-  fn to_shared(self) -> Self { self }
-}
-
-impl<Source, O, U> ConnectableObservable<Source, Subject<O, U>> {
-  pub fn ref_count(self) -> LocalRefCount<Source, Subject<O, U>, Source::Unsub>
-  where
-    Source: RawSubscribable<Subscriber<O, U>>,
-    Subject<O, U>: Fork,
-  {
-    local(self)
-  }
-}
-
 #[test]
 fn smoke() {
-  use crate::ops::Publish;
+  use ops::Publish;
   let mut accept1 = 0;
   let mut accept2 = 0;
   {
-    let ref_count = observable::of(1).fork().publish().ref_count();
-    ref_count.fork().subscribe(|v| accept1 = v);
-    ref_count.fork().subscribe(|v| accept2 = v);
+    let ref_count = observable::of(1).publish().ref_count();
+    ref_count.clone().subscribe(|v| accept1 = v);
+    ref_count.clone().subscribe(|v| accept2 = v);
   }
 
   assert_eq!(accept1, 1);
@@ -214,14 +188,14 @@ fn smoke() {
 
 #[test]
 fn auto_unsubscribe() {
-  use crate::ops::Publish;
+  use ops::Publish;
   let mut accept1 = 0;
   let mut accept2 = 0;
   {
-    let mut subject = Subject::local();
-    let ref_count = subject.fork().publish().ref_count();
-    let mut s1 = ref_count.fork().subscribe(|v| accept1 = v);
-    let mut s2 = ref_count.fork().subscribe(|v| accept2 = v);
+    let mut subject = Subject::new();
+    let ref_count = subject.clone().publish().ref_count();
+    let mut s1 = ref_count.clone().subscribe(|v| accept1 = v);
+    let mut s2 = ref_count.clone().subscribe(|v| accept2 = v);
     subject.next(1);
     s1.unsubscribe();
     s2.unsubscribe();
@@ -234,10 +208,10 @@ fn auto_unsubscribe() {
 
 #[test]
 fn fork_and_shared() {
-  use crate::ops::Publish;
+  use ops::Publish;
   observable::of(1).publish().ref_count().subscribe(|_| {});
 
-  LocalSubject::local()
+  Subject::new()
     .publish()
     .ref_count()
     .to_shared()
@@ -245,45 +219,21 @@ fn fork_and_shared() {
 
   observable::of(1)
     .publish()
-    .to_shared()
     .ref_count()
+    .to_shared()
     .subscribe(|_| {});
 
   observable::of(1)
-    .publish()
     .to_shared()
+    .publish()
     .ref_count()
+    .to_shared()
     .subscribe(|_| {});
   observable::of(1)
-    .publish()
     .to_shared()
+    .publish()
     .ref_count()
     .to_shared()
     .to_shared()
     .subscribe(|_| {});
-}
-
-#[test]
-fn filter() {
-  use crate::ops::{FilterMap, Publish};
-  let mut subject = Subject::local();
-
-  subject
-    .fork()
-    .filter_map::<fn(&mut i32) -> Option<&mut i32>, _, _>(|v| Some(v))
-    .publish()
-    .subscribe_err(|_: &mut _| {}, |_: &mut i32| {});
-
-  subject.next(&mut 1);
-  subject.error(&mut 2);
-}
-
-#[test]
-#[should_panic]
-fn convert_local_ref_count_to_shared_should_panic() {
-  use crate::ops::Publish;
-
-  let ref_count = Subject::local().fork().publish().ref_count();
-  ref_count.fork().subscribe(|_: i32| {});
-  ref_count.to_shared();
 }

@@ -1,9 +1,5 @@
-use crate::observer::{
-  observer_complete_proxy_impl, observer_error_proxy_impl,
-};
-use crate::ops::SharedOp;
+use crate::observer::{complete_proxy_impl, error_proxy_impl};
 use crate::prelude::*;
-use std::marker::PhantomData;
 
 /// `FilterMap` operator applies both `Filter` and `Map`.
 pub trait FilterMap
@@ -36,39 +32,28 @@ where
   ///
   /// assert_eq!(res, [1, 3, 5]);
   /// ```
-  ///
-  fn filter_map<F, SourceItem, Item>(
-    self,
-    f: F,
-  ) -> FilterMapOp<Self, F, SourceItem>
+  fn filter_map<F, SourceItem, Item>(self, f: F) -> FilterMapOp<Self, F>
   where
     F: FnMut(SourceItem) -> Option<Item>,
   {
-    FilterMapOp {
-      source: self,
-      f,
-      _p: PhantomData,
-    }
+    FilterMapOp { source: self, f }
   }
 }
 
 impl<T> FilterMap for T {}
 
-pub struct FilterMapOp<S, F, I> {
+#[derive(Clone)]
+pub struct FilterMapOp<S, F> {
   source: S,
   f: F,
-  _p: PhantomData<I>,
 }
 
-impl<Item, SourceItem, S, F, O, U> RawSubscribable<Subscriber<O, U>>
-  for FilterMapOp<S, F, SourceItem>
-where
-  S: RawSubscribable<Subscriber<FilterMapObserver<O, F>, U>>,
-  F: FnMut(SourceItem) -> Option<Item>,
-{
-  type Unsub = S::Unsub;
-  fn raw_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub {
-    self.source.raw_subscribe(Subscriber {
+macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
+  fn actual_subscribe<O: Observer<Self::Item, Self::Err> + $($marker +)* $lf>(
+    self,
+    subscriber: Subscriber<O, $subscription>,
+  ) -> Self::Unsub {
+    self.source.actual_subscribe(Subscriber {
       observer: FilterMapObserver {
         down_observer: subscriber.observer,
         f: self.f,
@@ -78,57 +63,37 @@ where
   }
 }
 
-unsafe impl<S, F, I> Send for FilterMapOp<S, F, I>
+impl<'a, Item, S, F> Observable<'a> for FilterMapOp<S, F>
 where
-  S: Send,
-  F: Send,
+  S: Observable<'a>,
+  F: FnMut(S::Item) -> Option<Item> + 'a,
 {
+  type Item = Item;
+  type Err = S::Err;
+  type Unsub = S::Unsub;
+  observable_impl!(LocalSubscription, 'a);
 }
 
-unsafe impl<S, F, I> Sync for FilterMapOp<S, F, I>
+impl<Item, S, F> SharedObservable for FilterMapOp<S, F>
 where
-  S: Sync,
-  F: Sync,
+  S: SharedObservable,
+  F: FnMut(S::Item) -> Option<Item> + Send + Sync + 'static,
 {
-}
-
-impl<S, F, I> Fork for FilterMapOp<S, F, I>
-where
-  S: Fork,
-  F: Clone,
-{
-  type Output = FilterMapOp<S::Output, F, I>;
-  fn fork(&self) -> Self::Output {
-    FilterMapOp {
-      source: self.source.fork(),
-      f: self.f.clone(),
-      _p: PhantomData,
-    }
-  }
-}
-impl<S, F, I> IntoShared for FilterMapOp<S, F, I>
-where
-  S: IntoShared,
-  F: Send + Sync + 'static,
-  I: 'static,
-{
-  type Shared = SharedOp<FilterMapOp<S::Shared, F, I>>;
-  fn to_shared(self) -> Self::Shared {
-    SharedOp(FilterMapOp {
-      source: self.source.to_shared(),
-      f: self.f,
-      _p: PhantomData,
-    })
-  }
+  type Item = Item;
+  type Err = S::Err;
+  type Unsub = S::Unsub;
+  observable_impl!(SharedSubscription, Send + Sync + 'static);
 }
 
 pub struct FilterMapObserver<O, F> {
   down_observer: O,
   f: F,
 }
-impl<O, F, Item, OutputItem> ObserverNext<Item> for FilterMapObserver<O, F>
+
+impl<O, F, Item, Err, OutputItem> Observer<Item, Err>
+  for FilterMapObserver<O, F>
 where
-  O: ObserverNext<OutputItem>,
+  O: Observer<OutputItem, Err>,
   F: FnMut(Item) -> Option<OutputItem>,
 {
   fn next(&mut self, value: Item) {
@@ -136,24 +101,8 @@ where
       self.down_observer.next(v)
     }
   }
-}
-
-observer_error_proxy_impl!(FilterMapObserver<O, F>, O, down_observer, <O, F>);
-observer_complete_proxy_impl!(
-  FilterMapObserver<O, F>, O, down_observer, <O, F>);
-
-impl<O, F> IntoShared for FilterMapObserver<O, F>
-where
-  O: IntoShared,
-  F: Send + Sync + 'static,
-{
-  type Shared = FilterMapObserver<O::Shared, F>;
-  fn to_shared(self) -> Self::Shared {
-    FilterMapObserver {
-      down_observer: self.down_observer.to_shared(),
-      f: self.f,
-    }
-  }
+  error_proxy_impl!(Err, down_observer);
+  complete_proxy_impl!(down_observer);
 }
 
 #[cfg(test)]
@@ -173,9 +122,7 @@ mod test {
   fn filter_map_shared_and_fork() {
     observable::of(1)
       .filter_map(|_| Some("str"))
-      .fork()
-      .to_shared()
-      .fork()
+      .clone()
       .to_shared()
       .subscribe(|_| {});
   }
@@ -184,17 +131,15 @@ mod test {
   fn filter_map_return_ref() {
     observable::of(&1)
       .filter_map(Some)
-      .fork()
-      .to_shared()
-      .fork()
+      .clone()
       .to_shared()
       .subscribe(|_| {});
   }
   #[test]
   fn filter_map_mut_ref() {
-    let mut subject = Subject::local();
+    let mut subject = Subject::new().mut_ref_item();
     subject
-      .fork()
+      .clone()
       .filter_map::<fn(&mut i32) -> Option<&mut i32>, _, _>(|v| Some(v))
       .subscribe(|_: &mut i32| {});
 

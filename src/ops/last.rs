@@ -1,9 +1,8 @@
-use crate::observer::observer_error_proxy_impl;
-use crate::{ops::SharedOp, prelude::*};
+use crate::observer::error_proxy_impl;
+use crate::prelude::*;
 
 /// Emits a single last item emitted by the source observable.
 /// The item is emitted after source observable has completed.
-///
 pub trait Last<Item> {
   /// Emit only the last final item emitted by a source observable or a
   /// default item given.
@@ -24,7 +23,6 @@ pub trait Last<Item> {
   /// // print log:
   /// // 1234
   /// ```
-  ///
   fn last_or(self, default: Item) -> LastOrOp<Self, Item>
   where
     Self: Sized,
@@ -55,7 +53,6 @@ pub trait Last<Item> {
   /// // print log:
   /// // 99
   /// ```
-  ///
   fn last(self) -> LastOrOp<Self, Item>
   where
     Self: Sized,
@@ -70,18 +67,18 @@ pub trait Last<Item> {
 
 impl<Item, O> Last<Item> for O {}
 
+#[derive(Clone)]
 pub struct LastOrOp<S, Item> {
   source: S,
   default: Option<Item>,
   last: Option<Item>,
 }
 
-impl<Item, O, U, S> RawSubscribable<Subscriber<O, U>> for LastOrOp<S, Item>
-where
-  S: RawSubscribable<Subscriber<LastOrObserver<O, Item>, U>>,
-{
-  type Unsub = S::Unsub;
-  fn raw_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub {
+macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
+  fn actual_subscribe<O: Observer<Self::Item, Self::Err> + $($marker +)* $lf>(
+    self,
+    subscriber: Subscriber<O, $subscription>,
+  ) -> Self::Unsub {
     let subscriber = Subscriber {
       observer: LastOrObserver {
         observer: subscriber.observer,
@@ -90,23 +87,30 @@ where
       },
       subscription: subscriber.subscription,
     };
-    self.source.raw_subscribe(subscriber)
+    self.source.actual_subscribe(subscriber)
   }
 }
 
-impl<S, V> IntoShared for LastOrOp<S, V>
+impl<'a, Item, S> Observable<'a> for LastOrOp<S, Item>
 where
-  S: IntoShared,
-  V: Send + Sync + 'static,
+  S: Observable<'a, Item = Item>,
+  Item: 'a,
 {
-  type Shared = SharedOp<LastOrOp<S::Shared, V>>;
-  fn to_shared(self) -> Self::Shared {
-    SharedOp(LastOrOp {
-      source: self.source.to_shared(),
-      default: self.default,
-      last: self.last,
-    })
-  }
+  type Item = Item;
+  type Err = S::Err;
+  type Unsub = S::Unsub;
+  observable_impl!(LocalSubscription, 'a);
+}
+
+impl<Item, S> SharedObservable for LastOrOp<S, Item>
+where
+  S: SharedObservable<Item = Item>,
+  Item: Send + Sync + 'static,
+{
+  type Item = Item;
+  type Err = S::Err;
+  type Unsub = S::Unsub;
+  observable_impl!(SharedSubscription, Send + Sync + 'static);
 }
 
 pub struct LastOrObserver<S, T> {
@@ -115,51 +119,17 @@ pub struct LastOrObserver<S, T> {
   last: Option<T>,
 }
 
-impl<O, Item> ObserverNext<Item> for LastOrObserver<O, Item> {
-  fn next(&mut self, value: Item) { self.last = Some(value); }
-}
-
-observer_error_proxy_impl!(LastOrObserver<O, Item>, O, observer, <O, Item>);
-
-impl<O, Item> ObserverComplete for LastOrObserver<O, Item>
+impl<O, Item, Err> Observer<Item, Err> for LastOrObserver<O, Item>
 where
-  O: ObserverNext<Item> + ObserverComplete,
+  O: Observer<Item, Err>,
 {
+  fn next(&mut self, value: Item) { self.last = Some(value); }
+  error_proxy_impl!(Err, observer);
   fn complete(&mut self) {
     if let Some(v) = self.last.take().or_else(|| self.default.take()) {
       self.observer.next(v)
     }
     self.observer.complete();
-  }
-}
-
-impl<S, V> IntoShared for LastOrObserver<S, V>
-where
-  S: IntoShared,
-  V: Send + Sync + 'static,
-{
-  type Shared = LastOrObserver<S::Shared, V>;
-  fn to_shared(self) -> Self::Shared {
-    LastOrObserver {
-      observer: self.observer.to_shared(),
-      default: self.default,
-      last: self.last,
-    }
-  }
-}
-
-impl<S, T> Fork for LastOrOp<S, T>
-where
-  S: Fork,
-  T: Clone,
-{
-  type Output = LastOrOp<S::Output, T>;
-  fn fork(&self) -> Self::Output {
-    LastOrOp {
-      source: self.source.fork(),
-      default: self.default.clone(),
-      last: self.last.clone(),
-    }
   }
 }
 
@@ -242,8 +212,8 @@ mod test {
     let mut value2 = 0;
     {
       let o = observable::from_iter(1..100).last();
-      let o1 = o.fork().last();
-      let o2 = o.fork().last();
+      let o1 = o.clone().last();
+      let o2 = o.last();
       o1.subscribe(|v| value = v);
       o2.subscribe(|v| value2 = v);
     }
@@ -255,12 +225,12 @@ mod test {
   fn last_or_support_fork() {
     let mut default = 0;
     let mut default2 = 0;
-    let o = Observable::new(|mut subscriber| {
+    let o = observable::create(|mut subscriber| {
       subscriber.complete();
     })
     .last_or(100);
-    let o1 = o.fork().last_or(0);
-    let o2 = o.fork().last_or(0);
+    let o1 = o.clone().last_or(0);
+    let o2 = o.clone().last_or(0);
     o1.subscribe(|v| default = v);
     o2.subscribe(|v| default2 = v);
     assert_eq!(default, 100);
@@ -271,19 +241,13 @@ mod test {
   fn last_fork_and_shared() {
     observable::of(0)
       .last_or(0)
-      .fork()
-      .fork()
       .to_shared()
-      .fork()
       .to_shared()
       .subscribe(|_| {});
 
     observable::of(0)
       .last()
-      .fork()
-      .fork()
       .to_shared()
-      .fork()
       .to_shared()
       .subscribe(|_| {});
   }

@@ -1,5 +1,4 @@
 use crate::prelude::*;
-use std::marker::PhantomData;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -12,10 +11,12 @@ use std::time::Duration;
 /// use std::time::Duration;
 ///
 /// observable::interval(Duration::from_millis(1))
+///   .to_shared()
 ///   .throttle_time(Duration::from_millis(9), ThrottleEdge::Leading)
+///   .to_shared()
 ///   .subscribe(move |v| println!("{}", v));
 /// ```
-pub trait ThrottleTime<Item>
+pub trait ThrottleTime
 where
   Self: Sized,
 {
@@ -23,12 +24,11 @@ where
     self,
     duration: Duration,
     edge: ThrottleEdge,
-  ) -> ThrottleTimeOp<Self, Item> {
+  ) -> ThrottleTimeOp<Self> {
     ThrottleTimeOp {
       source: self,
       duration,
       edge,
-      _p: PhantomData,
     }
   }
 }
@@ -40,71 +40,97 @@ pub enum ThrottleEdge {
   Leading,
 }
 
-pub struct ThrottleTimeOp<S, Item> {
+#[derive(Clone)]
+pub struct ThrottleTimeOp<S> {
   source: S,
   duration: Duration,
   edge: ThrottleEdge,
-  _p: PhantomData<Item>,
 }
 
-unsafe impl<S, Item> Sync for ThrottleTimeOp<S, Item> where S: Sync {}
-unsafe impl<S, Item> Send for ThrottleTimeOp<S, Item> where S: Send {}
+impl<S> ThrottleTime for S {}
 
-impl<S, Item> Fork for ThrottleTimeOp<S, Item>
+impl<Item, Err, S, Unsub> SharedObservable for ThrottleTimeOp<S>
 where
-  S: Fork,
+  S: for<'r> Observable<'r, Item = Item, Err = Err, Unsub = Unsub>,
+  Item: Clone + Send + 'static,
+  Unsub: SubscriptionLike + 'static,
 {
-  type Output = ThrottleTimeOp<S::Output, Item>;
-  fn fork(&self) -> Self::Output {
-    ThrottleTimeOp {
-      source: self.source.fork(),
-      edge: self.edge,
-      duration: self.duration,
-      _p: PhantomData,
-    }
-  }
-}
-
-impl<S, Item> IntoShared for ThrottleTimeOp<S, Item>
-where
-  S: IntoShared,
-  Item: 'static,
-{
-  type Shared = ThrottleTimeOp<S::Shared, Item>;
-  fn to_shared(self) -> Self::Shared {
-    ThrottleTimeOp {
-      source: self.source.to_shared(),
-      edge: self.edge,
-      duration: self.duration,
-      _p: PhantomData,
-    }
-  }
-}
-
-impl<S, Item> ThrottleTime<Item> for S {}
-
-impl<Item, O, U, S> RawSubscribable<Subscriber<O, U>>
-  for ThrottleTimeOp<S, Item>
-where
-  S: RawSubscribable<
-    Subscriber<ThrottleTimeObserver<O::Shared, Item>, SharedSubscription>,
-  >,
-  O: IntoShared,
-  U: IntoShared<Shared = SharedSubscription>,
-{
-  type Unsub = S::Unsub;
-  fn raw_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub {
+  type Item = Item;
+  type Err = Err;
+  type Unsub = Unsub;
+  fn actual_subscribe<
+    O: Observer<Self::Item, Self::Err> + Send + Sync + 'static,
+  >(
+    self,
+    subscriber: Subscriber<O, SharedSubscription>,
+  ) -> Self::Unsub {
     let Self {
       source,
       duration,
       edge,
-      _p,
     } = self;
-    let subscription = subscriber.subscription.to_shared();
-    source.raw_subscribe(Subscriber {
+    let mut subscription = LocalSubscription::default();
+    subscription.add(subscriber.subscription.clone());
+    source.actual_subscribe(Subscriber {
       observer: ThrottleTimeObserver(Arc::new(Mutex::new(
         InnerThrottleTimeObserver {
-          observer: subscriber.observer.to_shared(),
+          observer: subscriber.observer,
+          edge,
+          delay: duration,
+          trailing_value: None,
+          throttled: None,
+          subscription: subscriber.subscription.clone(),
+        },
+      ))),
+      subscription,
+    })
+  }
+}
+
+// Fix me. For now, rust generic specialization is not full finished. we can't
+// impl two SharedObservable for ThrottleTimeOp<S>, so we must wrap `S` with
+// Shared. And this mean's if any ThrottleTimeOp's upstream just support shared
+// subscribe, user must call `to_shared` before `throttle_time`. So,
+// ```rust ignore
+// observable::interval(Duration::from_millis(1))
+//   .throttle_time(Duration::from_millis(9), ThrottleEdge::Leading)
+//   .to_shared()
+//   .subscribe(move |v| println!("{}", v));
+// ```
+// this code will not work, must write like this:
+// ```rust
+// observable::interval(Duration::from_millis(1))
+//   .throttle_time(Duration::from_millis(9), ThrottleEdge::Leading)
+//   .to_shared()
+//   .subscribe(move |v| println!("{}", v));
+// ```
+impl<Item, Err, S> SharedObservable for ThrottleTimeOp<Shared<S>>
+where
+  S: SharedObservable<Item = Item, Err = Err>,
+  Item: Clone + Send + 'static,
+{
+  type Item = Item;
+  type Err = Err;
+  type Unsub = S::Unsub;
+  fn actual_subscribe<
+    O: Observer<Self::Item, Self::Err> + Sync + Send + 'static,
+  >(
+    self,
+    subscriber: Subscriber<O, SharedSubscription>,
+  ) -> S::Unsub {
+    let Self {
+      source,
+      duration,
+      edge,
+    } = self;
+    let Subscriber {
+      observer,
+      subscription,
+    } = subscriber;
+    source.0.actual_subscribe(Subscriber {
+      observer: ThrottleTimeObserver(Arc::new(Mutex::new(
+        InnerThrottleTimeObserver {
+          observer,
           edge,
           delay: duration,
           trailing_value: None,
@@ -130,19 +156,9 @@ pub struct ThrottleTimeObserver<O, Item>(
   Arc<Mutex<InnerThrottleTimeObserver<O, Item>>>,
 );
 
-impl<O, Item> IntoShared for ThrottleTimeObserver<O, Item>
+impl<O, Item, Err> Observer<Item, Err> for ThrottleTimeObserver<O, Item>
 where
-  O: Send + Sync + 'static,
-  Item: Send + Sync + 'static,
-{
-  type Shared = Self;
-  #[inline(always)]
-  fn to_shared(self) -> Self::Shared { self }
-}
-
-impl<O, Item> ObserverNext<Item> for ThrottleTimeObserver<O, Item>
-where
-  O: ObserverNext<Item> + Send + 'static,
+  O: Observer<Item, Err> + Send + 'static,
   Item: Clone + Send + 'static,
 {
   fn next(&mut self, value: Item) {
@@ -174,22 +190,12 @@ where
       }
     }
   }
-}
 
-impl<O, Item, Err> ObserverError<Err> for ThrottleTimeObserver<O, Item>
-where
-  O: ObserverError<Err>,
-{
   fn error(&mut self, err: Err) {
     let mut inner = self.0.lock().unwrap();
     inner.observer.error(err)
   }
-}
 
-impl<O, Item> ObserverComplete for ThrottleTimeObserver<O, Item>
-where
-  O: ObserverComplete + ObserverNext<Item>,
-{
   fn complete(&mut self) {
     let mut inner = self.0.lock().unwrap();
     if let Some(value) = inner.trailing_value.take() {
@@ -208,9 +214,10 @@ fn smoke() {
   let throttle_subscribe = |edge| {
     let x = x.clone();
     interval
-      .fork()
+      .clone()
       .to_shared()
       .throttle_time(Duration::from_millis(48), edge)
+      .to_shared()
       .subscribe(move |v| x.lock().unwrap().push(v))
   };
 
@@ -237,9 +244,7 @@ fn smoke() {
 fn fork_and_shared() {
   observable::of(0..10)
     .throttle_time(Duration::from_nanos(1), ThrottleEdge::Leading)
-    .fork()
     .to_shared()
-    .fork()
     .to_shared()
     .subscribe(|_| {});
 }

@@ -1,5 +1,4 @@
 use crate::prelude::*;
-use crate::util;
 use smallvec::SmallVec;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -20,6 +19,40 @@ pub trait SubscriptionLike {
 #[derive(Clone, Default)]
 pub struct LocalSubscription(Rc<RefCell<Inner<Box<dyn SubscriptionLike>>>>);
 
+/// subscription_proxy_impl!(
+///   type          // give the type you want to implement for
+///   , {path}      // the path to access to the actual observer
+///   , host_type?  // options, give the host type of the actual observer, if
+///                 // it's a generic type
+///   , <generics>? // options, give the generics type must use in the
+///                 // implement, except `Item` and `Err` and host type.
+///   , {where}?    // options, where bounds for the generics )
+pub(crate) macro subscription_proxy_impl(
+    $ty: ty
+  , {$($name:tt $($parentheses:tt)?) .+}
+  $(, $host_ty: ident)? $(, <$($generics: tt),*>)?
+  $(, {where $($wty:ty : $bound: tt),*})?
+  ) {
+  impl<$($($generics ,)*)? $($host_ty)?> SubscriptionLike for $ty
+  where
+    $($host_ty: SubscriptionLike,)?
+    $($($wty: $bound), *)?
+  {
+    #[inline(always)]
+    fn unsubscribe(&mut self) {
+      self.$($name $($parentheses)? ).+.unsubscribe();
+    }
+    #[inline(always)]
+    fn is_closed(&self) -> bool {
+      self.$($name $($parentheses)? ).+.is_closed()
+    }
+    #[inline(always)]
+    fn inner_addr(&self) -> *const () {
+       self.$($name $($parentheses)? ).+.inner_addr()
+    }
+  }
+}
+
 impl LocalSubscription {
   pub fn add<S: SubscriptionLike + 'static>(&mut self, subscription: S) {
     if self.inner_addr() != subscription.inner_addr() {
@@ -38,28 +71,6 @@ impl TearDownSize for LocalSubscription {
 
 pub trait TearDownSize: SubscriptionLike {
   fn teardown_size(&self) -> usize;
-}
-
-impl IntoShared for LocalSubscription {
-  type Shared = SharedSubscription;
-  fn to_shared(self) -> SharedSubscription {
-    let inner = util::unwrap_rc_ref_cell(
-      self.0,
-      "Cannot convert a `LocalSubscription` to `SharedSubscription` \
-       when it referenced by other.",
-    );
-
-    if !inner.teardown.is_empty() {
-      panic!(
-        "LocalSubscription already has some teardown work to do,
-         can not covert to SharedSubscription "
-      );
-    }
-    SharedSubscription(Arc::new(Mutex::new(Inner {
-      teardown: SmallVec::new(),
-      closed: inner.closed,
-    })))
-  }
 }
 
 impl SubscriptionLike for LocalSubscription {
@@ -110,12 +121,6 @@ impl SubscriptionLike for SharedSubscription {
     let pointer = &*inner as *const _;
     pointer as *const ()
   }
-}
-
-impl IntoShared for SharedSubscription {
-  type Shared = SharedSubscription;
-  #[inline(always)]
-  fn to_shared(self) -> SharedSubscription { self }
 }
 
 pub trait Publisher<Item, Err>: Observer<Item, Err> + SubscriptionLike {}
@@ -179,21 +184,6 @@ impl<'a> SubscriptionLike for Box<dyn SubscriptionLike + 'a> {
 impl<'a, Item, Err> SubscriptionLike for Box<dyn Publisher<Item, Err> + 'a> {
   subscription_direct_impl_proxy!();
 }
-impl<'a, Item, Err> SubscriptionLike
-  for Box<dyn for<'r> Publisher<&'r mut Item, Err> + 'a>
-{
-  subscription_direct_impl_proxy!();
-}
-impl<'a, Item, Err> SubscriptionLike
-  for Box<dyn for<'r> Publisher<Item, &'r mut Err> + 'a>
-{
-  subscription_direct_impl_proxy!();
-}
-impl<'a, Item, Err> SubscriptionLike
-  for Box<dyn for<'r> Publisher<&'r mut Item, &'r mut Err> + 'a>
-{
-  subscription_direct_impl_proxy!();
-}
 
 impl SubscriptionLike for Box<dyn SubscriptionLike + Send + Sync> {
   subscription_direct_impl_proxy!();
@@ -202,6 +192,34 @@ impl<Item, Err> SubscriptionLike
   for Box<dyn Publisher<Item, Err> + Send + Sync>
 {
   subscription_direct_impl_proxy!();
+}
+
+/// Wrapper around a subscription which provides the
+/// `unsubscribe_when_dropped()` method.
+pub struct SubscriptionWrapper<T: SubscriptionLike>(pub(crate) T);
+
+impl<T: SubscriptionLike> SubscriptionWrapper<T> {
+  /// Activates "RAII" behavior for this subscription. That means
+  /// `unsubscribe()` will be called automatically as soon as the returned
+  /// value goes out of scope.
+  ///
+  /// **Attention:** If you don't assign the return value to a variable,
+  /// `unsubscribe()` is called immediately, which is probably not what you
+  /// want!
+  pub fn unsubscribe_when_dropped(self) -> SubscriptionGuard<T> {
+    SubscriptionGuard(self.0)
+  }
+}
+
+subscription_proxy_impl!(SubscriptionWrapper<T>, { 0 }, T);
+
+/// An RAII implementation of a "scoped subscribed" of a subscription.
+/// When this structure is dropped (falls out of scope), the subscription will
+/// be unsubscribed.
+pub struct SubscriptionGuard<T: SubscriptionLike>(pub(crate) T);
+impl<T: SubscriptionLike> Drop for SubscriptionGuard<T> {
+  #[inline]
+  fn drop(&mut self) { self.0.unsubscribe() }
 }
 
 #[cfg(test)]
