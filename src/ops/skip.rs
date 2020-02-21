@@ -1,7 +1,4 @@
-use crate::observer::{
-  observer_complete_proxy_impl, observer_error_proxy_impl,
-};
-use crate::ops::SharedOp;
+use crate::observer::{complete_proxy_impl, error_proxy_impl};
 use crate::prelude::*;
 /// Ignore the first `count` values emitted by the source Observable.
 ///
@@ -19,7 +16,6 @@ use crate::prelude::*;
 /// };
 ///
 /// observable::from_iter(0..10).skip(5).subscribe(|v| println!("{}", v));
-///
 
 /// // print logs:
 /// // 6
@@ -43,31 +39,17 @@ pub trait Skip {
 
 impl<O> Skip for O {}
 
+#[derive(Clone)]
 pub struct SkipOp<S> {
   source: S,
   count: u32,
 }
 
-impl<S> IntoShared for SkipOp<S>
-where
-  S: IntoShared,
-{
-  type Shared = SharedOp<SkipOp<S::Shared>>;
-  fn to_shared(self) -> Self::Shared {
-    SharedOp(SkipOp {
-      source: self.source.to_shared(),
-      count: self.count,
-    })
-  }
-}
-
-impl<O, U, S> RawSubscribable<Subscriber<O, U>> for SkipOp<S>
-where
-  S: RawSubscribable<Subscriber<SkipObserver<O, U>, U>>,
-  U: SubscriptionLike + Clone + 'static,
-{
-  type Unsub = S::Unsub;
-  fn raw_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub {
+macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
+  fn actual_subscribe<O: Observer<Self::Item, Self::Err> + $($marker +)* $lf>(
+    self,
+    subscriber: Subscriber<O, $subscription>,
+  ) -> Self::Unsub {
     let subscriber = Subscriber {
       observer: SkipObserver {
         observer: subscriber.observer,
@@ -77,8 +59,28 @@ where
       },
       subscription: subscriber.subscription,
     };
-    self.source.raw_subscribe(subscriber)
+    self.source.actual_subscribe(subscriber)
   }
+}
+
+impl<'a, S> Observable<'a> for SkipOp<S>
+where
+  S: Observable<'a>,
+{
+  type Item = S::Item;
+  type Err = S::Err;
+  type Unsub = S::Unsub;
+  observable_impl!(LocalSubscription, 'a);
+}
+
+impl<S> SharedObservable for SkipOp<S>
+where
+  S: SharedObservable,
+{
+  type Item = S::Item;
+  type Err = S::Err;
+  type Unsub = S::Unsub;
+  observable_impl!(SharedSubscription, Send + Sync + 'static);
 }
 
 pub struct SkipObserver<O, S> {
@@ -88,25 +90,9 @@ pub struct SkipObserver<O, S> {
   hits: u32,
 }
 
-impl<S, ST> IntoShared for SkipObserver<S, ST>
+impl<Item, Err, O, U> Observer<Item, Err> for SkipObserver<O, U>
 where
-  S: IntoShared,
-  ST: IntoShared,
-{
-  type Shared = SkipObserver<S::Shared, ST::Shared>;
-  fn to_shared(self) -> Self::Shared {
-    SkipObserver {
-      observer: self.observer.to_shared(),
-      subscription: self.subscription.to_shared(),
-      count: self.count,
-      hits: self.hits,
-    }
-  }
-}
-
-impl<Item, O, U> ObserverNext<Item> for SkipObserver<O, U>
-where
-  O: ObserverNext<Item> + ObserverComplete,
+  O: Observer<Item, Err>,
   U: SubscriptionLike,
 {
   fn next(&mut self, value: Item) {
@@ -119,22 +105,9 @@ where
       }
     }
   }
-}
 
-observer_error_proxy_impl!(SkipObserver<O, U>, O, observer, <O,U>);
-observer_complete_proxy_impl!(SkipObserver<O, U>, O,  observer, <O,U>);
-
-impl<S> Fork for SkipOp<S>
-where
-  S: Fork,
-{
-  type Output = SkipOp<S::Output>;
-  fn fork(&self) -> Self::Output {
-    SkipOp {
-      source: self.source.fork(),
-      count: self.count,
-    }
-  }
+  error_proxy_impl!(Err, observer);
+  complete_proxy_impl!(observer);
 }
 
 #[cfg(test)]
@@ -174,11 +147,11 @@ mod test {
     let mut nc2 = 0;
     {
       let skip5 = observable::from_iter(0..100).skip(5);
-      let f1 = skip5.fork();
-      let f2 = skip5.fork();
+      let f1 = skip5.clone();
+      let f2 = skip5;
 
-      f1.skip(5).fork().subscribe(|_| nc1 += 1);
-      f2.skip(5).fork().subscribe(|_| nc2 += 1);
+      f1.skip(5).subscribe(|_| nc1 += 1);
+      f2.skip(5).subscribe(|_| nc2 += 1);
     }
     assert_eq!(nc1, 90);
     assert_eq!(nc2, 90);
