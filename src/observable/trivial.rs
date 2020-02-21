@@ -1,29 +1,43 @@
 use crate::prelude::*;
-use observable::ObservableFromFn;
+use std::marker::PhantomData;
 
-/// Creates an observable that emitts no items, just terminates with an error.
+/// Creates an observable that emits no items, just terminates with an error.
 ///
 /// # Arguments
 ///
-/// * `e` - An error to emitt and terminate with
-///
-pub fn throw<O, U, Item, Err>(
-  e: Err,
-) -> ObservableFromFn<impl FnOnce(Subscriber<O, U>) + Clone, Item, Err>
-where
-  O: Observer<Item, Err>,
-  U: SubscriptionLike,
-  Err: Clone,
-  Item: Clone,
-{
-  observable::create(move |mut subscriber| {
-    subscriber.error(e);
-  })
+/// * `e` - An error to emit and terminate with
+pub fn throw<Err>(e: Err) -> ObservableBase<ThrowEmitter<Err>> {
+  ObservableBase::new(ThrowEmitter(e))
+}
+
+#[derive(Clone)]
+pub struct ThrowEmitter<Err>(Err);
+
+macro throw_emitter($subscription:ty, $($marker:ident +)* $lf: lifetime) {
+  #[inline]
+  fn emit<O>(self, mut subscriber: Subscriber<O, $subscription>)
+  where
+    O: Observer<Self::Item, Self::Err> + $($marker +)* $lf
+  {
+    subscriber.error(self.0);
+  }
+}
+
+impl<'a, Err> Emitter<'a> for ThrowEmitter<Err> {
+  type Item = ();
+  type Err = Err;
+  throw_emitter!(LocalSubscription, 'a);
+}
+
+impl<Err> SharedEmitter for ThrowEmitter<Err> {
+  type Item = ();
+  type Err = Err;
+  throw_emitter!(SharedSubscription, Send + Sync + 'static);
 }
 
 /// Creates an observable that produces no values.
 ///
-/// Completes immediatelly. Never emits an error.
+/// Completes immediately. Never emits an error.
 ///
 /// # Examples
 /// ```
@@ -34,34 +48,65 @@ where
 ///
 /// // Result: no thing printed
 /// ```
-///
-pub fn empty<O, U, Item>()
--> ObservableFromFn<impl FnOnce(Subscriber<O, U>) + Clone, Item, ()>
-where
-  O: Observer<Item, ()>,
-  U: SubscriptionLike,
-{
-  observable::create(move |mut subscriber: Subscriber<O, U>| {
-    subscriber.complete();
-  })
+pub fn empty<Item>() -> ObservableBase<EmptyEmitter<Item>> {
+  ObservableBase::new(EmptyEmitter(PhantomData))
 }
 
-/// Creates an observable that never emitts anything.
+#[derive(Clone)]
+pub struct EmptyEmitter<Item>(PhantomData<Item>);
+
+macro empty_emitter($subscription:ty, $($marker:ident +)* $lf: lifetime) {
+  #[inline]
+  fn emit<O>(self, mut subscriber: Subscriber<O, $subscription>)
+  where
+    O: Observer<Self::Item, Self::Err> + $($marker +)* $lf
+  {
+    subscriber.complete();
+  }
+}
+
+impl<'a, Item> Emitter<'a> for EmptyEmitter<Item> {
+  type Item = Item;
+  type Err = ();
+  empty_emitter!(LocalSubscription, 'a);
+}
+
+impl<Item> SharedEmitter for EmptyEmitter<Item> {
+  type Item = Item;
+  type Err = ();
+  empty_emitter!(SharedSubscription, Send + Sync + 'static);
+}
+/// Creates an observable that never emits anything.
 ///
-/// Neither emitts a value, nor completes, nor emitts an error.
-///
-pub fn never<O, U, Item>()
--> ObservableFromFn<impl FnOnce(Subscriber<O, U>) + Clone, Item, ()>
-where
-  O: Observer<Item, ()>,
-  U: SubscriptionLike,
-{
-  observable::create(move |_subscriber: Subscriber<O, U>| {
-    loop {
-      // will not complete
-      std::thread::sleep(std::time::Duration::from_secs(1));
-    }
-  })
+/// Neither emits a value, nor completes, nor emits an error.
+pub fn never() -> ObservableBase<NeverEmitter> {
+  ObservableBase::new(NeverEmitter())
+}
+
+#[derive(Clone)]
+pub struct NeverEmitter();
+
+macro never_emitter($subscription:ty, $($marker:ident +)* $lf: lifetime) {
+  #[inline]
+  fn emit<O>(self, subscriber: Subscriber<O, $subscription>)
+  where
+    O: Observer<Self::Item, Self::Err> + $($marker +)* $lf
+  {
+  }
+}
+
+impl<'a> Emitter<'a> for NeverEmitter {
+  type Item = ();
+  type Err = ();
+  #[inline]
+  never_emitter!(LocalSubscription, 'a);
+}
+
+impl SharedEmitter for NeverEmitter {
+  type Item = ();
+  type Err = ();
+  #[inline]
+  never_emitter!(SharedSubscription, Send + Sync + 'static);
 }
 
 #[cfg(test)]
@@ -75,8 +120,8 @@ mod test {
     let mut error_emitted = String::new();
     observable::throw(String::from("error")).subscribe_all(
       // helping with type inference
-      |_: i32| value_emitted = true,
-      |e: String| error_emitted = e,
+      |_| value_emitted = true,
+      |e| error_emitted = e,
       || completed = true,
     );
     assert!(!value_emitted);
@@ -88,8 +133,7 @@ mod test {
   fn empty() {
     let mut hits = 0;
     let mut completed = false;
-    observable::empty()
-      .subscribe_complete(|_: &()| hits += 1, || completed = true);
+    observable::empty().subscribe_complete(|()| hits += 1, || completed = true);
 
     assert_eq!(hits, 0);
     assert_eq!(completed, true);

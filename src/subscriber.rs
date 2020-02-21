@@ -1,9 +1,9 @@
 use crate::prelude::*;
+use subscription::subscription_proxy_impl;
 
 /// Implements the Observer trait and Subscription trait. While the Observer is
 /// the public API for consuming the values of an Observable, all Observers get
 /// converted to a Subscriber, in order to provide Subscription capabilities.
-///
 #[derive(Clone)]
 pub struct Subscriber<O, U> {
   pub(crate) observer: O,
@@ -28,23 +28,9 @@ impl<O> Subscriber<O, SharedSubscription> {
   }
 }
 
-impl<S, U> IntoShared for Subscriber<S, U>
+impl<Item, Err, O, U> Observer<Item, Err> for Subscriber<O, U>
 where
-  S: IntoShared,
-  U: IntoShared,
-{
-  type Shared = Subscriber<S::Shared, U::Shared>;
-  fn to_shared(self) -> Self::Shared {
-    Subscriber {
-      subscription: self.subscription.to_shared(),
-      observer: self.observer.to_shared(),
-    }
-  }
-}
-
-impl<Item, O, U> ObserverNext<Item> for Subscriber<O, U>
-where
-  O: ObserverNext<Item>,
+  O: Observer<Item, Err>,
   U: SubscriptionLike,
 {
   fn next(&mut self, v: Item) {
@@ -52,26 +38,14 @@ where
       self.observer.next(v)
     }
   }
-}
 
-impl<Err, O, U> ObserverError<Err> for Subscriber<O, U>
-where
-  O: ObserverError<Err>,
-  U: SubscriptionLike,
-{
   fn error(&mut self, err: Err) {
     if !self.subscription.is_closed() {
       self.observer.error(err);
       self.subscription.unsubscribe();
     }
   }
-}
 
-impl<O, U> ObserverComplete for Subscriber<O, U>
-where
-  O: ObserverComplete,
-  U: SubscriptionLike,
-{
   fn complete(&mut self) {
     if !self.subscription.is_closed() {
       self.observer.complete();
@@ -80,19 +54,7 @@ where
   }
 }
 
-impl<O, U> SubscriptionLike for Subscriber<O, U>
-where
-  U: SubscriptionLike,
-{
-  #[inline(always)]
-  fn unsubscribe(&mut self) { self.subscription.unsubscribe(); }
-
-  #[inline(always)]
-  fn is_closed(&self) -> bool { self.subscription.is_closed() }
-
-  #[inline(always)]
-  fn inner_addr(&self) -> *const () { self.subscription.inner_addr() }
-}
+subscription_proxy_impl!(Subscriber<O, U>, {subscription}, U, <O>);
 
 #[cfg(test)]
 mod test {
@@ -139,8 +101,7 @@ mod test {
         move |_| *next.lock().unwrap() += 1,
         move |_| *err.lock().unwrap() += 1,
         move || *complete.lock().unwrap() += 1,
-      ))
-      .to_shared(),
+      )),
     )
   }
 

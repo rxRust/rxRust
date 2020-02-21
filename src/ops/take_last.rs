@@ -1,8 +1,6 @@
-use crate::observer::observer_error_proxy_impl;
-use crate::ops::SharedOp;
+use crate::observer::error_proxy_impl;
 use crate::prelude::*;
 use std::collections::VecDeque;
-use std::marker::PhantomData;
 
 /// Emits only the last `count` values emitted by the source Observable.
 ///
@@ -20,7 +18,6 @@ use std::marker::PhantomData;
 /// };
 ///
 /// observable::from_iter(0..10).take_last(5).subscribe(|v| println!("{}", v));
-///
 
 /// // print logs:
 /// // 5
@@ -30,53 +27,34 @@ use std::marker::PhantomData;
 /// // 9
 /// ```
 ///
-pub trait TakeLast<Item> {
-  fn take_last(self, count: usize) -> TakeLastOp<Self, Item>
+pub trait TakeLast {
+  fn take_last(self, count: usize) -> TakeLastOp<Self>
   where
     Self: Sized,
   {
     TakeLastOp {
       source: self,
       count,
-      _p: PhantomData,
     }
   }
 }
 
-impl<O, Item> TakeLast<Item> for O {}
+impl<O> TakeLast for O {}
 
-pub struct TakeLastOp<S, Item> {
+#[derive(Clone)]
+pub struct TakeLastOp<S> {
   source: S,
   count: usize,
-  _p: PhantomData<Item>,
 }
 
-impl<S, Item> IntoShared for TakeLastOp<S, Item>
-where
-  S: IntoShared,
-  Item: Send + Sync + 'static,
-{
-  type Shared = SharedOp<TakeLastOp<S::Shared, Item>>;
-  fn to_shared(self) -> Self::Shared {
-    SharedOp(TakeLastOp {
-      source: self.source.to_shared(),
-      count: self.count,
-      _p: PhantomData,
-    })
-  }
-}
-
-impl<O, U, S, Item> Observable<O, U> for TakeLastOp<S, Item>
-where
-  S: Observable<TakeLastObserver<O, U, Item>, U>,
-  U: SubscriptionLike + Clone + 'static,
-{
-  type Unsub = S::Unsub;
-  fn actual_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub {
+macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
+  fn actual_subscribe<O: Observer<Self::Item, Self::Err> + $($marker +)* $lf>(
+    self,
+    subscriber: Subscriber<O, $subscription>,
+  ) -> Self::Unsub {
     let subscriber = Subscriber {
       observer: TakeLastObserver {
         observer: subscriber.observer,
-        subscription: subscriber.subscription.clone(),
         count: self.count,
         queue: VecDeque::new(),
       },
@@ -86,33 +64,36 @@ where
   }
 }
 
-pub struct TakeLastObserver<O, S, Item> {
+impl<'a, S> Observable<'a> for TakeLastOp<S>
+where
+  S: Observable<'a> + 'a,
+{
+  type Item = S::Item;
+  type Err = S::Err;
+  type Unsub = S::Unsub;
+  observable_impl!(LocalSubscription, 'a);
+}
+
+impl<S> SharedObservable for TakeLastOp<S>
+where
+  S: SharedObservable,
+  S::Item: Send + Sync + 'static,
+{
+  type Item = S::Item;
+  type Err = S::Err;
+  type Unsub = S::Unsub;
+  observable_impl!(SharedSubscription, Send + Sync + 'static);
+}
+
+pub struct TakeLastObserver<O, Item> {
   observer: O,
-  subscription: S,
   count: usize,
   queue: VecDeque<Item>, // TODO: replace VecDeque with RingBuf
 }
 
-impl<S, ST, Item> IntoShared for TakeLastObserver<S, ST, Item>
+impl<Item, Err, O> Observer<Item, Err> for TakeLastObserver<O, Item>
 where
-  S: IntoShared,
-  ST: IntoShared,
-  Item: Send + Sync + 'static,
-{
-  type Shared = TakeLastObserver<S::Shared, ST::Shared, Item>;
-  fn to_shared(self) -> Self::Shared {
-    TakeLastObserver {
-      observer: self.observer.to_shared(),
-      subscription: self.subscription.to_shared(),
-      count: self.count,
-      queue: VecDeque::new(),
-    }
-  }
-}
-
-impl<Item, O, U> ObserverNext<Item> for TakeLastObserver<O, U, Item>
-where
-  O: ObserverNext<Item>,
+  O: Observer<Item, Err>,
 {
   fn next(&mut self, value: Item) {
     self.queue.push_back(value);
@@ -120,35 +101,12 @@ where
       self.queue.pop_front();
     }
   }
-}
-
-impl<Item, O, U> ObserverComplete for TakeLastObserver<O, U, Item>
-where
-  O: ObserverNext<Item> + ObserverComplete,
-{
+  error_proxy_impl!(Err, observer);
   fn complete(&mut self) {
     for value in self.queue.drain(..) {
       self.observer.next(value);
     }
     self.observer.complete();
-  }
-}
-
-observer_error_proxy_impl!(
-  TakeLastObserver<O, U, Item>, O, observer, <O, U, Item>
-);
-
-impl<S, Item> Fork for TakeLastOp<S, Item>
-where
-  S: Fork,
-{
-  type Output = TakeLastOp<S::Output, Item>;
-  fn fork(&self) -> Self::Output {
-    TakeLastOp {
-      source: self.source.fork(),
-      count: self.count,
-      _p: PhantomData,
-    }
   }
 }
 
@@ -176,11 +134,11 @@ mod test {
     let mut nc2 = 0;
     {
       let take_last5 = observable::from_iter(0..100).take_last(5);
-      let f1 = take_last5.fork();
-      let f2 = take_last5.fork();
+      let f1 = take_last5.clone();
+      let f2 = take_last5;
 
-      f1.take_last(5).fork().subscribe(|_| nc1 += 1);
-      f2.take_last(5).fork().subscribe(|_| nc2 += 1);
+      f1.take_last(5).subscribe(|_| nc1 += 1);
+      f2.take_last(5).subscribe(|_| nc2 += 1);
     }
     assert_eq!(nc1, 5);
     assert_eq!(nc2, 5);

@@ -1,8 +1,5 @@
-use crate::observer::{
-  observer_complete_proxy_impl, observer_error_proxy_impl,
-};
+use crate::observer::{complete_proxy_impl, error_proxy_impl};
 use crate::prelude::*;
-use ops::SharedOp;
 
 /// Emit only those items from an Observable that pass a predicate test
 /// # Example
@@ -36,19 +33,22 @@ pub trait Filter<T> {
 
 impl<'a, T, O> Filter<T> for O {}
 
+#[derive(Clone)]
 pub struct FilterOp<S, F> {
   source: S,
   filter: F,
 }
 
-impl<O, U, S, F> Observable<O, U> for FilterOp<S, F>
-where
-  S: Observable<FilterObserver<O, F>, U>,
-  U: SubscriptionLike,
+macro observable_impl(
+  $subscription:ty, $source:ident, $($marker:ident +)* $lf: lifetime)
 {
-  type Unsub = S::Unsub;
-
-  fn actual_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub {
+  type Item = $source::Item;
+  type Err = $source::Err;
+  type Unsub = $source::Unsub;
+  fn actual_subscribe<O: Observer<Self::Item, Self::Err> + $($marker +)* $lf>(
+    self,
+    subscriber: Subscriber<O, $subscription>,
+  ) -> Self::Unsub {
     let filter = self.filter;
     self.source.actual_subscribe(Subscriber {
       observer: FilterObserver {
@@ -60,14 +60,30 @@ where
   }
 }
 
+impl<'a, S, F> Observable<'a> for FilterOp<S, F>
+where
+  S: Observable<'a>,
+  F: FnMut(&S::Item) -> bool + 'a,
+{
+  observable_impl!(LocalSubscription, S, 'a);
+}
+
+impl<S, F> SharedObservable for FilterOp<S, F>
+where
+  S: SharedObservable,
+  F: FnMut(&S::Item) -> bool + Send + Sync + 'static,
+{
+  observable_impl!(SharedSubscription, S, Send + Sync + 'static);
+}
+
 pub struct FilterObserver<S, F> {
   observer: S,
   filter: F,
 }
 
-impl<Item, O, F> ObserverNext<Item> for FilterObserver<O, F>
+impl<Item, Err, O, F> Observer<Item, Err> for FilterObserver<O, F>
 where
-  O: ObserverNext<Item>,
+  O: Observer<Item, Err>,
   F: FnMut(&Item) -> bool,
 {
   fn next(&mut self, value: Item) {
@@ -75,51 +91,8 @@ where
       self.observer.next(value)
     }
   }
-}
-
-observer_error_proxy_impl!(FilterObserver<O, F>, O, observer, <O, F>);
-observer_complete_proxy_impl!(FilterObserver<O, F>, O, observer, <O, F>);
-
-impl<S, F> Fork for FilterOp<S, F>
-where
-  S: Fork,
-  F: Clone,
-{
-  type Output = FilterOp<S::Output, F>;
-  fn fork(&self) -> Self::Output {
-    FilterOp {
-      source: self.source.fork(),
-      filter: self.filter.clone(),
-    }
-  }
-}
-
-impl<S, F> IntoShared for FilterOp<S, F>
-where
-  S: IntoShared,
-  F: Send + Sync + 'static,
-{
-  type Shared = SharedOp<FilterOp<S::Shared, F>>;
-  fn to_shared(self) -> Self::Shared {
-    SharedOp(FilterOp {
-      source: self.source.to_shared(),
-      filter: self.filter,
-    })
-  }
-}
-
-impl<S, F> IntoShared for FilterObserver<S, F>
-where
-  S: IntoShared,
-  F: Send + Sync + 'static,
-{
-  type Shared = FilterObserver<S::Shared, F>;
-  fn to_shared(self) -> Self::Shared {
-    FilterObserver {
-      observer: self.observer.to_shared(),
-      filter: self.filter,
-    }
-  }
+  error_proxy_impl!(Err, observer);
+  complete_proxy_impl!(observer);
 }
 
 #[cfg(test)]
@@ -130,10 +103,9 @@ mod test {
   fn fork_and_shared() {
     observable::from_iter(0..10)
       .filter(|v| v % 2 == 0)
-      .fork()
-      .to_shared()
+      .clone()
       .filter(|_| true)
-      .fork()
+      .clone()
       .to_shared()
       .subscribe(|_| {});
   }

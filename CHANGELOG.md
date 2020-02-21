@@ -1,6 +1,9 @@
 ## [Unreleased](https://github.com/rxRust/rxRust/compare/v0.7.3...HEAD)
 
 ### Features
+
+- **operator**: add `skip` operator.
+- **operator**: add `skip_last` operator.
 - **operator**: add `take_last` operator.
 - **subscription** The return value of `subscribe`, `subscribe_err`, `subscribe_complete` and `subscribe_all` now
   provides a method `unsubscribe_when_dropped()` which activates "RAII" behavior for this subscription. That means
@@ -9,11 +12,24 @@
 
 ### Refactor
 
-- **observable**: Observable split into many concrete type, not only use a Observable struct to wrap all, every observable creating function has a concrete type.
+- **observable**: Every observable creating function has a concrete type, not only use a Observable struct to wrap all,
+- **observable** rename `RawSubscribable` to `Observable` 
 
 ### Breaking Changes
 
-- **observable** Redefine `RawSubscribable` as `Observable`. From
+- **observable**: remove `Observable::new`, and add a same `create` function in `observable` to replace it.
+- **observable**: Rename `Observable` to `ObservableFromFn`.
+- **operator**: Remove `IntoShared` trait.
+- **operator**: Use `Clone` replace `Fork`, now just call `observable.clone()` replace `observable.fork`.
+- **subject**: merge `Subject::local` and `Subject::new` into `Subject::new`.
+- **subject**: For now, LocalSubject emit value by mut ref must explicit call `mut_ref_all`, `mut_ref_item` and `mut_ref_err`. For example:
+    ```rust
+        let subject = Subject::new().mut_ref_item().subscribe(|_|{});
+        subject.next(&mut 1);
+    ```
+- **observable**: rename observable creation function `from_fn` to `of_fn`
+- **observable**: rename observable creation function `from_future_with_err` to `from_future_result`
+- **observable**: Redefine `RawSubscribable` as `Observable`. From
   ```rust
   pub trait RawSubscribable<Subscriber> {
     type Unsub: SubscriptionLike + 'static;
@@ -21,14 +37,19 @@
   }
   ```
   to
+
   ```rust
-  pub trait Observable<O, U: SubscriptionLike> {
+  pub trait Observable<'a> {
+    type Item;
+    type Err;
     type Unsub: SubscriptionLike + 'static;
-    fn actual_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub;
+    fn actual_subscribe<O: Observer<Self::Item, Self::Err> + 'a>
+    (
+      self,
+      subscriber: Subscriber<O, LocalSubscription>,
+    ) -> Self::Unsub;
   }
   ```
-- **observable**: remove `Observable::new`, and add a same `create` function in `observable` to replace it.
-- **observable**: Rename `Observable` to `ObservableFromFn`.
 
 ## [0.7.2](https://github.com/rxRust/rxRust/releases/tag/v0.7.2)  (2020-01-09)
 
@@ -78,7 +99,7 @@
 
 ### Breaking Changes
 - **observable**: macros `of!`, `empty!`, `from_iter!`, `from_future!` and
-  `from_future_with_errors!` replaced by functions.
+  `from_future_with_err!` replaced by functions.
 
 ## [0.4.0](https://github.com/rxRust/rxRust/releases/tag/v0.4.0)  (2019-11-07)
 

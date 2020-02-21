@@ -1,4 +1,3 @@
-use crate::observer::{ObserverComplete, ObserverError, ObserverNext};
 use crate::prelude::*;
 
 #[derive(Clone)]
@@ -19,40 +18,21 @@ impl<N, E, C> ObserverAll<N, E, C> {
   }
 }
 
-impl<N, E, C> IntoShared for ObserverAll<N, E, C>
-where
-  Self: Send + Sync + 'static,
-{
-  type Shared = Self;
-  #[inline(always)]
-  fn to_shared(self) -> Self::Shared { self }
-}
-
-impl<N, E, C> ObserverComplete for ObserverAll<N, E, C>
+impl<Item, Err, N, E, C> Observer<Item, Err> for ObserverAll<N, E, C>
 where
   C: FnMut(),
+  N: FnMut(Item),
+  E: FnMut(Err),
 {
+  #[inline(always)]
+  fn next(&mut self, value: Item) { (self.next)(value); }
+  #[inline(always)]
+  fn error(&mut self, err: Err) { (self.error)(err); }
   #[inline(always)]
   fn complete(&mut self) { (self.complete)(); }
 }
 
-impl<N, E, C, Err> ObserverError<Err> for ObserverAll<N, E, C>
-where
-  E: FnMut(Err),
-{
-  #[inline(always)]
-  fn error(&mut self, err: Err) { (self.error)(err); }
-}
-
-impl<N, E, C, Item> ObserverNext<Item> for ObserverAll<N, E, C>
-where
-  N: FnMut(Item),
-{
-  #[inline(always)]
-  fn next(&mut self, value: Item) { (self.next)(value); }
-}
-
-pub trait SubscribeAll<N, E, C> {
+pub trait SubscribeAll<'a, N, E, C> {
   /// A type implementing [`SubscriptionLike`]
   type Unsub: SubscriptionLike;
 
@@ -62,7 +42,6 @@ pub trait SubscribeAll<N, E, C> {
   /// * `error`: A handler for a terminal event resulting from an error.
   /// * `complete`: A handler for a terminal event resulting from successful
   /// completion.
-  ///
   fn subscribe_all(
     self,
     next: N,
@@ -71,9 +50,12 @@ pub trait SubscribeAll<N, E, C> {
   ) -> SubscriptionWrapper<Self::Unsub>;
 }
 
-impl<S, N, E, C> SubscribeAll<N, E, C> for S
+impl<'a, S, N, E, C> SubscribeAll<'a, N, E, C> for S
 where
-  S: Observable<ObserverAll<N, E, C>, LocalSubscription>,
+  S: Observable<'a>,
+  N: FnMut(S::Item) + 'a,
+  E: FnMut(S::Err) + 'a,
+  C: FnMut() + 'a,
 {
   type Unsub = S::Unsub;
   fn subscribe_all(
@@ -94,12 +76,41 @@ where
   }
 }
 
+impl<'a, S, N, E, C> SubscribeAll<'a, N, E, C> for Shared<S>
+where
+  S: SharedObservable,
+  N: FnMut(S::Item) + Send + Sync + 'static,
+  E: FnMut(S::Err) + Send + Sync + 'static,
+  C: FnMut() + Send + Sync + 'static,
+{
+  type Unsub = S::Unsub;
+  fn subscribe_all(
+    self,
+    next: N,
+    error: E,
+    complete: C,
+  ) -> SubscriptionWrapper<Self::Unsub>
+  where
+    Self: Sized,
+  {
+    let subscriber = Subscriber::shared(ObserverAll {
+      next,
+      error,
+      complete,
+    });
+    SubscriptionWrapper(self.0.actual_subscribe(subscriber))
+  }
+}
+
 #[test]
 fn raii() {
   let mut times = 0;
   {
-    let mut subject = Subject::local();
-    subject.fork().subscribe_all(|_| times += 1, |_| {}, || {}).unsubscribe_when_dropped();
+    let mut subject = Subject::new();
+    subject
+      .clone()
+      .subscribe_all(|_| times += 1, |_| {}, || {})
+      .unsubscribe_when_dropped();
     subject.next(());
     subject.error(());
   }

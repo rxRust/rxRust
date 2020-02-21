@@ -1,9 +1,5 @@
-use crate::observer::{
-  observer_complete_proxy_impl, observer_error_proxy_impl,
-};
+use crate::observer::{complete_proxy_impl, error_proxy_impl};
 use crate::prelude::*;
-use ops::SharedOp;
-use std::marker::PhantomData;
 
 /// The Scan operator applies a function to the first item emitted by the
 /// source observable and then emits the result of that function as its
@@ -45,12 +41,11 @@ pub trait Scan<OutputItem> {
   /// // 104
   /// // 105
   /// ```
-  ///
   fn scan_initial<InputItem, BinaryOp>(
     self,
     initial_value: OutputItem,
     binary_op: BinaryOp,
-  ) -> ScanOp<Self, BinaryOp, InputItem, OutputItem>
+  ) -> ScanOp<Self, BinaryOp, OutputItem>
   where
     Self: Sized,
     BinaryOp: Fn(OutputItem, InputItem) -> OutputItem,
@@ -59,7 +54,6 @@ pub trait Scan<OutputItem> {
       source_observable: self,
       binary_op,
       initial_value,
-      _p: PhantomData,
     }
   }
 
@@ -70,11 +64,10 @@ pub trait Scan<OutputItem> {
   /// # Arguments
   ///
   /// * `binary_op` - A closure or function acting as a binary operator.
-  ///
   fn scan<InputItem, BinaryOp>(
     self,
     binary_op: BinaryOp,
-  ) -> ScanOp<Self, BinaryOp, InputItem, OutputItem>
+  ) -> ScanOp<Self, BinaryOp, OutputItem>
   where
     Self: Sized,
     BinaryOp: Fn(OutputItem, InputItem) -> OutputItem,
@@ -86,11 +79,11 @@ pub trait Scan<OutputItem> {
 
 impl<O, OutputItem> Scan<OutputItem> for O {}
 
-pub struct ScanOp<Source, BinaryOp, InputItem, OutputItem> {
+#[derive(Clone)]
+pub struct ScanOp<Source, BinaryOp, OutputItem> {
   source_observable: Source,
   binary_op: BinaryOp,
   initial_value: OutputItem,
-  _p: PhantomData<InputItem>,
 }
 
 pub struct ScanObserver<Observer, BinaryOp, OutputItem> {
@@ -99,25 +92,10 @@ pub struct ScanObserver<Observer, BinaryOp, OutputItem> {
   acc: OutputItem,
 }
 
-// We're making the `ScanOp` being an publisher - an object that
-// subscribers can subscribe to.
-// Doing so by implementing `Observable` trait for it.
-// Once instantiated, it will have a `actual_subscribe` method in it.
-// Note: we're accepting such subscribers that accept `Output` as their
-// `Item` type.
-impl<OutputItem, InputItem, Observer, Subscription, Source, BinaryOp>
-  Observable<Observer, Subscription>
-  for ScanOp<Source, BinaryOp, InputItem, OutputItem>
-where
-  Source:
-    Observable<ScanObserver<Observer, BinaryOp, OutputItem>, Subscription>,
-  BinaryOp: FnMut(OutputItem, InputItem) -> OutputItem,
-  Subscription: SubscriptionLike,
-{
-  type Unsub = Source::Unsub;
-  fn actual_subscribe(
+macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
+  fn actual_subscribe<O: Observer<Self::Item, Self::Err> + $($marker +)* $lf>(
     self,
-    subscriber: Subscriber<Observer, Subscription>,
+    subscriber: Subscriber<O, $subscription>,
   ) -> Self::Unsub {
     self.source_observable.actual_subscribe(Subscriber {
       observer: ScanObserver {
@@ -130,14 +108,47 @@ where
   }
 }
 
+// We're making the `ScanOp` being an publisher - an object that
+// subscribers can subscribe to.
+// Doing so by implementing `Observable` trait for it.
+// Once instantiated, it will have a `actual_subscribe` method in it.
+// Note: we're accepting such subscribers that accept `Output` as their
+// `Item` type.
+impl<'a, OutputItem, Source, BinaryOp> Observable<'a>
+  for ScanOp<Source, BinaryOp, OutputItem>
+where
+  Source: Observable<'a>,
+  OutputItem: Clone + 'a,
+  BinaryOp: FnMut(OutputItem, Source::Item) -> OutputItem + 'a,
+{
+  type Item = OutputItem;
+  type Err = Source::Err;
+  type Unsub = Source::Unsub;
+  observable_impl!(LocalSubscription, 'a);
+}
+
+impl<OutputItem, Source, BinaryOp> SharedObservable
+  for ScanOp<Source, BinaryOp, OutputItem>
+where
+  Source: SharedObservable,
+  OutputItem: Clone + Send + Sync + 'static,
+  BinaryOp:
+    FnMut(OutputItem, Source::Item) -> OutputItem + Send + Sync + 'static,
+{
+  type Item = OutputItem;
+  type Err = Source::Err;
+  type Unsub = Source::Unsub;
+  observable_impl!(SharedSubscription, Send + Sync + 'static);
+}
+
 // We're making `ScanObserver` being able to be subscribed to other observables
 // by implementing `Observer` trait. Thanks to this, it is able to observe
 // sources having `Item` type as its `InputItem` type.
 
-impl<InputItem, Source, BinaryOp, OutputItem> ObserverNext<InputItem>
+impl<InputItem, Err, Source, BinaryOp, OutputItem> Observer<InputItem, Err>
   for ScanObserver<Source, BinaryOp, OutputItem>
 where
-  Source: ObserverNext<OutputItem>,
+  Source: Observer<OutputItem, Err>,
   BinaryOp: FnMut(OutputItem, InputItem) -> OutputItem,
   OutputItem: Clone,
 {
@@ -146,66 +157,9 @@ where
     self.acc = (self.binary_op)(self.acc.clone(), value);
     self.target_observer.next(self.acc.clone())
   }
-}
 
-observer_error_proxy_impl!(ScanObserver<Source, BinaryOp, OutputItem>,
-  Source, target_observer, <Source, BinaryOp, OutputItem>);
-observer_complete_proxy_impl!(ScanObserver<Source, BinaryOp, OutputItem>,
-  Source, target_observer, <Source, BinaryOp, OutputItem>);
-
-impl<Source, BinaryOp, InputItem, OutputItem> Fork
-  for ScanOp<Source, BinaryOp, InputItem, OutputItem>
-where
-  Source: Fork,
-  BinaryOp: Clone,
-  OutputItem: Clone,
-{
-  type Output = ScanOp<Source::Output, BinaryOp, InputItem, OutputItem>;
-  fn fork(&self) -> Self::Output {
-    ScanOp {
-      source_observable: self.source_observable.fork(),
-      binary_op: self.binary_op.clone(),
-      initial_value: self.initial_value.clone(),
-      _p: self._p,
-    }
-  }
-}
-
-impl<Source, BinaryOp, OutputItem> IntoShared
-  for ScanObserver<Source, BinaryOp, OutputItem>
-where
-  Source: IntoShared,
-  BinaryOp: Send + Sync + 'static,
-  OutputItem: Send + Sync + 'static,
-{
-  type Shared = ScanObserver<Source::Shared, BinaryOp, OutputItem>;
-  fn to_shared(self) -> Self::Shared {
-    ScanObserver {
-      target_observer: self.target_observer.to_shared(),
-      binary_op: self.binary_op,
-      acc: self.acc,
-    }
-  }
-}
-
-impl<Source, BinaryOp, InputItem, OutputItem> IntoShared
-  for ScanOp<Source, BinaryOp, InputItem, OutputItem>
-where
-  Source: IntoShared,
-  BinaryOp: Send + Sync + 'static,
-  InputItem: Send + Sync + 'static,
-  OutputItem: Send + Sync + 'static,
-{
-  type Shared =
-    SharedOp<ScanOp<Source::Shared, BinaryOp, InputItem, OutputItem>>;
-  fn to_shared(self) -> Self::Shared {
-    SharedOp(ScanOp {
-      source_observable: self.source_observable.to_shared(),
-      binary_op: self.binary_op,
-      initial_value: self.initial_value,
-      _p: self._p,
-    })
-  }
+  error_proxy_impl!(Err, target_observer);
+  complete_proxy_impl!(target_observer);
 }
 
 #[cfg(test)]
@@ -261,11 +215,8 @@ mod test {
   fn scan_fork_and_shared_mixed_types() {
     // type to type can fork
     let m = observable::from_iter(vec!['a', 'b', 'c']).scan(|_acc, _v| 1i32);
-    m.fork()
-      .scan(|_acc, v| v as f32)
-      .fork()
+    m.scan(|_acc, v| v as f32)
       .to_shared()
-      .fork()
       .to_shared()
       .subscribe(|_| {});
   }
@@ -274,11 +225,8 @@ mod test {
   fn scan_fork_and_shared() {
     // type to type can fork
     let m = observable::from_iter(0..100).scan(|acc: i32, v| acc + v);
-    m.fork()
-      .scan(|acc: i32, v| acc + v)
-      .fork()
+    m.scan(|acc: i32, v| acc + v)
       .to_shared()
-      .fork()
       .to_shared()
       .subscribe(|_| {});
   }

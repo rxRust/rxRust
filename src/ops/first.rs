@@ -1,6 +1,6 @@
 use crate::{
-  observer::observer_error_proxy_impl,
-  ops::{take::TakeOp, SharedOp, Take},
+  observer::error_proxy_impl,
+  ops::{take::TakeOp, Take},
   prelude::*,
 };
 
@@ -31,18 +31,17 @@ pub trait FirstOr<Item> {
 
 impl<Item, O> FirstOr<Item> for O {}
 
+#[derive(Clone)]
 pub struct FirstOrOp<S, V> {
   source: S,
   default: V,
 }
 
-impl<O, U, S, T> Observable<O, U> for FirstOrOp<S, T>
-where
-  S: Observable<FirstOrObserver<O, T>, U>,
-  U: SubscriptionLike,
-{
-  type Unsub = S::Unsub;
-  fn actual_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub {
+macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
+  fn actual_subscribe<O: Observer<Self::Item, Self::Err> + $($marker +)* $lf>(
+    self,
+    subscriber: Subscriber<O, $subscription>,
+  ) -> Self::Unsub {
     let subscriber = Subscriber {
       observer: FirstOrObserver {
         observer: subscriber.observer,
@@ -54,18 +53,26 @@ where
   }
 }
 
-impl<S, V> IntoShared for FirstOrOp<S, V>
+impl<'a, S, Item> Observable<'a> for FirstOrOp<S, Item>
 where
-  S: IntoShared,
-  V: Send + Sync + 'static,
+  S: Observable<'a, Item = Item>,
+  Item: 'a,
 {
-  type Shared = SharedOp<FirstOrOp<S::Shared, V>>;
-  fn to_shared(self) -> Self::Shared {
-    SharedOp(FirstOrOp {
-      source: self.source.to_shared(),
-      default: self.default,
-    })
-  }
+  type Item = S::Item;
+  type Err = S::Err;
+  type Unsub = S::Unsub;
+  observable_impl!(LocalSubscription, 'a);
+}
+
+impl<S, Item> SharedObservable for FirstOrOp<S, Item>
+where
+  S: SharedObservable<Item = Item>,
+  Item: Send + Sync + 'static,
+{
+  type Item = S::Item;
+  type Err = S::Err;
+  type Unsub = S::Unsub;
+  observable_impl!(SharedSubscription, Send + Sync + 'static);
 }
 
 pub struct FirstOrObserver<S, T> {
@@ -73,55 +80,22 @@ pub struct FirstOrObserver<S, T> {
   observer: S,
 }
 
-impl<O, Item> ObserverNext<Item> for FirstOrObserver<O, Item>
+impl<O, Item, Err> Observer<Item, Err> for FirstOrObserver<O, Item>
 where
-  O: ObserverNext<Item>,
+  O: Observer<Item, Err>,
 {
   fn next(&mut self, value: Item) {
     self.observer.next(value);
     self.default = None;
   }
-}
 
-observer_error_proxy_impl!(FirstOrObserver<O, Item>, O, observer, <O, Item>);
+  error_proxy_impl!(Err, observer);
 
-impl<O, Item> ObserverComplete for FirstOrObserver<O, Item>
-where
-  O: ObserverComplete + ObserverNext<Item>,
-{
   fn complete(&mut self) {
     if let Some(v) = Option::take(&mut self.default) {
       self.observer.next(v)
     }
     self.observer.complete();
-  }
-}
-
-impl<S, V> IntoShared for FirstOrObserver<S, V>
-where
-  S: IntoShared,
-  V: Send + Sync + 'static,
-{
-  type Shared = FirstOrObserver<S::Shared, V>;
-  fn to_shared(self) -> Self::Shared {
-    FirstOrObserver {
-      observer: self.observer.to_shared(),
-      default: self.default,
-    }
-  }
-}
-
-impl<S, T> Fork for FirstOrOp<S, T>
-where
-  S: Fork,
-  T: Clone,
-{
-  type Output = FirstOrOp<S::Output, T>;
-  fn fork(&self) -> Self::Output {
-    FirstOrOp {
-      source: self.source.fork(),
-      default: self.default.clone(),
-    }
   }
 }
 
@@ -171,8 +145,8 @@ mod test {
     let mut value2 = 0;
     {
       let o = observable::from_iter(1..100).first();
-      let o1 = o.fork().first();
-      let o2 = o.fork().first();
+      let o1 = o.clone().first();
+      let o2 = o.first();
       o1.subscribe(|v| value = v);
       o2.subscribe(|v| value2 = v);
     }
@@ -187,32 +161,11 @@ mod test {
       subscriber.complete();
     })
     .first_or(100);
-    let o1 = o.fork().first_or(0);
-    let o2 = o.fork().first_or(0);
+    let o1 = o.clone().first_or(0);
+    let o2 = o.clone().first_or(0);
     o1.subscribe(|v| default = v);
     o2.subscribe(|v| default2 = v);
     assert_eq!(default, 100);
     assert_eq!(default, 100);
-  }
-
-  #[test]
-  fn fork_and_shared() {
-    observable::of(0)
-      .first_or(0)
-      .fork()
-      .fork()
-      .to_shared()
-      .fork()
-      .to_shared()
-      .subscribe(|_| {});
-
-    observable::of(0)
-      .first()
-      .fork()
-      .fork()
-      .to_shared()
-      .fork()
-      .to_shared()
-      .subscribe(|_| {});
   }
 }

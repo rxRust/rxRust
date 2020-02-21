@@ -1,4 +1,3 @@
-use crate::observer::{ObserverComplete, ObserverError, ObserverNext};
 use crate::prelude::*;
 
 #[derive(Clone)]
@@ -7,25 +6,17 @@ pub struct ObserverComp<N, C> {
   complete: C,
 }
 
-impl<N, C> ObserverComplete for ObserverComp<N, C>
+impl<N, C, Item> Observer<Item, ()> for ObserverComp<N, C>
 where
   C: FnMut(),
-{
-  #[inline(always)]
-  fn complete(&mut self) { (self.complete)(); }
-}
-
-impl<N, C> ObserverError<()> for ObserverComp<N, C> {
-  #[inline(always)]
-  fn error(&mut self, _err: ()) {}
-}
-
-impl<N, C, Item> ObserverNext<Item> for ObserverComp<N, C>
-where
   N: FnMut(Item),
 {
   #[inline(always)]
   fn next(&mut self, value: Item) { (self.next)(value); }
+  #[inline(always)]
+  fn error(&mut self, _err: ()) {}
+  #[inline(always)]
+  fn complete(&mut self) { (self.complete)(); }
 }
 
 impl<N, C> ObserverComp<N, C> {
@@ -33,16 +24,7 @@ impl<N, C> ObserverComp<N, C> {
   pub fn new(next: N, complete: C) -> Self { ObserverComp { next, complete } }
 }
 
-impl<N, C> IntoShared for ObserverComp<N, C>
-where
-  Self: Send + Sync + 'static,
-{
-  type Shared = Self;
-  #[inline(always)]
-  fn to_shared(self) -> Self::Shared { self }
-}
-
-pub trait SubscribeComplete<N, C> {
+pub trait SubscribeComplete<'a, N, C> {
   /// A type implementing [`SubscriptionLike`]
   type Unsub: SubscriptionLike;
 
@@ -55,10 +37,11 @@ pub trait SubscribeComplete<N, C> {
   ) -> SubscriptionWrapper<Self::Unsub>;
 }
 
-impl<S, N, C> SubscribeComplete<N, C> for S
+impl<'a, S, N, C> SubscribeComplete<'a, N, C> for S
 where
-  S: Observable<ObserverComp<N, C>, LocalSubscription>,
-  C: FnMut(),
+  S: Observable<'a, Err = ()>,
+  C: FnMut() + 'a,
+  N: FnMut(S::Item) + 'a,
 {
   type Unsub = S::Unsub;
   fn subscribe_complete(
@@ -75,12 +58,37 @@ where
   }
 }
 
+impl<'a, S, N, C> SubscribeComplete<'a, N, C> for Shared<S>
+where
+  S: SharedObservable<Err = ()>,
+  C: FnMut() + Send + Sync + 'static,
+  N: FnMut(S::Item) + Send + Sync + 'static,
+{
+  type Unsub = S::Unsub;
+  fn subscribe_complete(
+    self,
+    next: N,
+    complete: C,
+  ) -> SubscriptionWrapper<Self::Unsub>
+  where
+    Self: Sized,
+  {
+    let unsub = self
+      .0
+      .actual_subscribe(Subscriber::shared(ObserverComp { next, complete }));
+    SubscriptionWrapper(unsub)
+  }
+}
+
 #[test]
 fn raii() {
   let mut times = 0;
   {
-    let mut subject = Subject::local();
-    subject.fork().subscribe_complete(|_| times += 1, || {}).unsubscribe_when_dropped();
+    let mut subject = Subject::new();
+    subject
+      .clone()
+      .subscribe_complete(|_| times += 1, || {})
+      .unsubscribe_when_dropped();
     subject.next(());
   }
   assert_eq!(times, 0);

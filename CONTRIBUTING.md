@@ -7,6 +7,8 @@ We love your input! We want to make contributing to this project as easy and tra
 - Proposing new features
 - Becoming a maintainer
 
+If you are interested in contributing some code， there is a small guide that should be of some help to you.
+ 
 ## We Develop with Github
 We use github to host code, to track issues and feature requests, as well as accept pull requests.
 

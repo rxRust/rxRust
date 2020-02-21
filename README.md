@@ -17,14 +17,14 @@ rxrust = "0.7.1"
 
 ```rust
 use rxrust::{
-  ops::{ Filter, Merge, Fork }, prelude::*, 
+  ops::{ Filter, Merge }, prelude::*, 
 };
 
 let mut numbers = observable::from_iter(0..10);
 // crate a even stream by filter
-let even = numbers.fork().filter(|v| v % 2 == 0);
+let even = numbers.clone().filter(|v| v % 2 == 0);
 // crate an odd stream by filter
-let odd = numbers.fork().filter(|v| v % 2 != 0);
+let odd = numbers.clone().filter(|v| v % 2 != 0);
 
 // merge odd and even stream again
 even.merge(odd).subscribe(|v| print!("{} ", v, ));
@@ -32,25 +32,24 @@ even.merge(odd).subscribe(|v| print!("{} ", v, ));
 
 ```
 
-## Fork Stream
+## Clone Stream
 
 In `rxrust` almost all extensions consume the upstream. So when you try to subscribe a stream twice, the compiler will complain. 
 
 ```rust ignore
  # use rxrust::prelude::*;
  let o = observable::from_iter(0..10);
- o.subscribe(|_| {println!("consume in first")});
- o.subscribe(|_| {println!("consume in second")});
+ o.subscribe(|_| { println!("consume in first")} );
+ o.subscribe(|_| { println!("consume in second")} );
 ```
 
-In this case, we can use `Fork` to fork a stream. In general, `Fork` has same mean with `Clone`, this will not change a cold stream to hot stream. If you want convert a stream from  unicast to multicast, from **cold** to **hot** use `Publish` and `RefCount`.
+In this case, we must clone the stream.
 
 ```rust
  # use rxrust::prelude::*;
- # use rxrust::ops::Fork;
  let o = observable::from_iter(0..10);
- o.fork().subscribe(|_| {println!("consume in first")});
- o.fork().subscribe(|_| {println!("consume in second")});
+ o.clone().subscribe(|_| {println!("consume in first")});
+ o.clone().subscribe(|_| {println!("consume in second")});
 ```
 
 ## Scheduler
@@ -62,7 +61,9 @@ use rxrust::{ops::{ ObserveOn, SubscribeOn, Map }, scheduler::Schedulers };
 observable::from_iter(0..10)
   .subscribe_on(Schedulers::NewThread)
   .map(|v| v*2)
+  .to_shared()
   .observe_on(Schedulers::NewThread)
+  .to_shared()
   .subscribe(|v| {println!("{},", v)});
 ```
 
@@ -75,6 +76,7 @@ use rxrust::prelude::*;
 use futures::future;
 
 observable::from_future(future::ready(1))
+  .to_shared()
   .subscribe(move |v| println!("subscribed with {}", v));
 
 // because all future in rxrust are execute async, so we wait a second to see
@@ -82,7 +84,7 @@ observable::from_future(future::ready(1))
 std::thread::sleep(std::time::Duration::new(1, 0));
 ```
 
-A `from_future_with_err` function also provided to propagating error from `Future`.
+A `from_future_result` function also provided to propagating error from `Future`.
 
 ## Missing Features List
 See [missing features](missing_features.md) to know what rxRust not have for now.

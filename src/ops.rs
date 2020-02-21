@@ -20,12 +20,14 @@ pub mod merge;
 pub use merge::Merge;
 pub mod take;
 pub use take::Take;
+pub mod skip;
+pub use skip::Skip;
 pub mod take_last;
 pub use take_last::TakeLast;
+pub mod skip_last;
+pub use skip_last::SkipLast;
 pub mod first;
 pub use first::{First, FirstOr};
-pub mod fork;
-pub use fork::Fork;
 pub mod subscribe_on;
 pub use subscribe_on::SubscribeOn;
 pub mod observe_on;
@@ -34,41 +36,8 @@ pub mod delay;
 pub use delay::Delay;
 pub mod throttle_time;
 pub use throttle_time::{ThrottleEdge, ThrottleTime};
+pub mod filter_map;
 pub mod publish;
 pub use publish::Publish;
-pub mod filter_map;
 pub mod ref_count;
 pub use filter_map::FilterMap;
-
-use crate::prelude::*;
-pub struct SharedOp<T>(pub(crate) T);
-
-impl<O, U, OP> Observable<O, U> for SharedOp<OP>
-where
-  O: IntoShared,
-  U: SubscriptionLike + IntoShared,
-  U::Shared: SubscriptionLike,
-  OP: Observable<O::Shared, U::Shared>,
-{
-  type Unsub = OP::Unsub;
-  fn actual_subscribe(self, subscriber: Subscriber<O, U>) -> Self::Unsub {
-    self.0.actual_subscribe(subscriber.to_shared())
-  }
-}
-
-impl<OP> Fork for SharedOp<OP>
-where
-  OP: Fork,
-{
-  type Output = SharedOp<OP::Output>;
-  fn fork(&self) -> Self::Output { SharedOp(self.0.fork()) }
-}
-
-impl<S> IntoShared for SharedOp<S>
-where
-  S: IntoShared + Send + Sync + 'static,
-{
-  type Shared = SharedOp<S::Shared>;
-  #[inline(always)]
-  fn to_shared(self) -> Self::Shared { SharedOp(self.0.to_shared()) }
-}

@@ -1,4 +1,3 @@
-use crate::observer::{ObserverComplete, ObserverError, ObserverNext};
 use crate::prelude::*;
 
 #[derive(Clone)]
@@ -7,25 +6,17 @@ pub struct ObserverErr<N, E> {
   error: E,
 }
 
-impl<N, E> ObserverComplete for ObserverErr<N, E> {
-  #[inline(always)]
-  fn complete(&mut self) {}
-}
-
-impl<N, E, Item> ObserverNext<Item> for ObserverErr<N, E>
+impl<Item, Err, N, E> Observer<Item, Err> for ObserverErr<N, E>
 where
   N: FnMut(Item),
-{
-  #[inline(always)]
-  fn next(&mut self, err: Item) { (self.next)(err); }
-}
-
-impl<N, E, Err> ObserverError<Err> for ObserverErr<N, E>
-where
   E: FnMut(Err),
 {
   #[inline(always)]
+  fn next(&mut self, err: Item) { (self.next)(err); }
+  #[inline(always)]
   fn error(&mut self, err: Err) { (self.error)(err); }
+  #[inline(always)]
+  fn complete(&mut self) {}
 }
 
 impl<N, E> ObserverErr<N, E> {
@@ -33,16 +24,7 @@ impl<N, E> ObserverErr<N, E> {
   pub fn new(next: N, error: E) -> Self { ObserverErr { next, error } }
 }
 
-impl<N, E> IntoShared for ObserverErr<N, E>
-where
-  Self: Send + Sync + 'static,
-{
-  type Shared = Self;
-  #[inline(always)]
-  fn to_shared(self) -> Self::Shared { self }
-}
-
-pub trait SubscribeErr<N, E> {
+pub trait SubscribeErr<'a, N, E> {
   /// A type implementing [`SubscriptionLike`]
   type Unsub: SubscriptionLike;
 
@@ -51,21 +33,42 @@ pub trait SubscribeErr<N, E> {
   ///
   /// * `error`: A handler for a terminal event resulting from an error.
   /// completion.
-  ///
-  fn subscribe_err(self, next: N, error: E) -> SubscriptionWrapper<Self::Unsub>;
+  fn subscribe_err(self, next: N, error: E)
+  -> SubscriptionWrapper<Self::Unsub>;
 }
 
-impl<S, N, E> SubscribeErr<N, E> for S
+impl<'a, S, N, E> SubscribeErr<'a, N, E> for S
 where
-  S: Observable<ObserverErr<N, E>, LocalSubscription>,
+  S: Observable<'a>,
+  N: FnMut(S::Item) + 'a,
+  E: FnMut(S::Err) + 'a,
+{
+  type Unsub = S::Unsub;
+  fn subscribe_err(
+    self,
+    next: N,
+    error: E,
+  ) -> SubscriptionWrapper<Self::Unsub> {
+    let unsub =
+      self.actual_subscribe(Subscriber::local(ObserverErr { next, error }));
+    SubscriptionWrapper(unsub)
+  }
+}
+
+impl<'a, S, N, E> SubscribeErr<'a, N, E> for Shared<S>
+where
+  S: SharedObservable,
+  N: FnMut(S::Item) + Send + Sync + 'static,
+  E: FnMut(S::Err) + Send + Sync + 'static,
 {
   type Unsub = S::Unsub;
   fn subscribe_err(self, next: N, error: E) -> SubscriptionWrapper<Self::Unsub>
   where
     Self: Sized,
   {
-    let unsub =
-      self.actual_subscribe(Subscriber::local(ObserverErr { next, error }));
+    let unsub = self
+      .0
+      .actual_subscribe(Subscriber::shared(ObserverErr { next, error }));
     SubscriptionWrapper(unsub)
   }
 }
@@ -74,8 +77,11 @@ where
 fn raii() {
   let mut times = 0;
   {
-    let mut subject = Subject::local();
-    subject.fork().subscribe_err(|_| times += 1, |_| {}).unsubscribe_when_dropped();
+    let mut subject = Subject::new();
+    subject
+      .clone()
+      .subscribe_err(|_| times += 1, |_| {})
+      .unsubscribe_when_dropped();
     subject.next(());
     subject.error(());
   }

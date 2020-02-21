@@ -1,46 +1,46 @@
 use crate::observer::{complete_proxy_impl, error_proxy_impl};
 use crate::prelude::*;
-/// Emits only the first `count` values emitted by the source Observable.
+/// Ignore the first `count` values emitted by the source Observable.
 ///
-/// `take` returns an Observable that emits only the first `count` values
+/// `skip` returns an Observable that ignore the first `count` values
 /// emitted by the source Observable. If the source emits fewer than `count`
-/// values then all of its values are emitted. After that, it completes,
+/// values then 0 of its values are emitted. After that, it completes,
 /// regardless if the source completes.
 ///
 /// # Example
-/// Take the first 5 seconds of an infinite 1-second interval Observable
+/// Ignore the first 5 seconds of an infinite 1-second interval Observable
 ///
 /// ```
 /// # use rxrust::{
-///   ops::{Take}, prelude::*,
+///   ops::{Skip}, prelude::*,
 /// };
 ///
-/// observable::from_iter(0..10).take(5).subscribe(|v| println!("{}", v));
+/// observable::from_iter(0..10).skip(5).subscribe(|v| println!("{}", v));
 
 /// // print logs:
-/// // 0
-/// // 1
-/// // 2
-/// // 3
-/// // 4
+/// // 6
+/// // 7
+/// // 8
+/// // 9
+/// // 10
 /// ```
 ///
-pub trait Take {
-  fn take(self, count: u32) -> TakeOp<Self>
+pub trait Skip {
+  fn skip(self, count: u32) -> SkipOp<Self>
   where
     Self: Sized,
   {
-    TakeOp {
+    SkipOp {
       source: self,
       count,
     }
   }
 }
 
-impl<O> Take for O {}
+impl<O> Skip for O {}
 
 #[derive(Clone)]
-pub struct TakeOp<S> {
+pub struct SkipOp<S> {
   source: S,
   count: u32,
 }
@@ -51,7 +51,7 @@ macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
     subscriber: Subscriber<O, $subscription>,
   ) -> Self::Unsub {
     let subscriber = Subscriber {
-      observer: TakeObserver {
+      observer: SkipObserver {
         observer: subscriber.observer,
         subscription: subscriber.subscription.clone(),
         count: self.count,
@@ -63,7 +63,7 @@ macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
   }
 }
 
-impl<'a, S> Observable<'a> for TakeOp<S>
+impl<'a, S> Observable<'a> for SkipOp<S>
 where
   S: Observable<'a>,
 {
@@ -73,7 +73,7 @@ where
   observable_impl!(LocalSubscription, 'a);
 }
 
-impl<S> SharedObservable for TakeOp<S>
+impl<S> SharedObservable for SkipOp<S>
 where
   S: SharedObservable,
 {
@@ -83,21 +83,21 @@ where
   observable_impl!(SharedSubscription, Send + Sync + 'static);
 }
 
-pub struct TakeObserver<O, S> {
+pub struct SkipObserver<O, S> {
   observer: O,
   subscription: S,
   count: u32,
   hits: u32,
 }
 
-impl<O, U, Item, Err> Observer<Item, Err> for TakeObserver<O, U>
+impl<Item, Err, O, U> Observer<Item, Err> for SkipObserver<O, U>
 where
   O: Observer<Item, Err>,
   U: SubscriptionLike,
 {
   fn next(&mut self, value: Item) {
-    if self.hits < self.count {
-      self.hits += 1;
+    self.hits += 1;
+    if self.hits > self.count {
       self.observer.next(value);
       if self.hits == self.count {
         self.complete();
@@ -105,13 +105,14 @@ where
       }
     }
   }
+
   error_proxy_impl!(Err, observer);
   complete_proxy_impl!(observer);
 }
 
 #[cfg(test)]
 mod test {
-  use super::Take;
+  use super::Skip;
   use crate::prelude::*;
 
   #[test]
@@ -120,34 +121,47 @@ mod test {
     let mut next_count = 0;
 
     observable::from_iter(0..100)
-      .take(5)
+      .skip(5)
       .subscribe_complete(|_| next_count += 1, || completed = true);
 
-    assert_eq!(next_count, 5);
+    assert_eq!(next_count, 95);
     assert_eq!(completed, true);
   }
 
   #[test]
-  fn take_support_fork() {
+  fn base_empty_function() {
+    let mut completed = false;
+    let mut next_count = 0;
+
+    observable::from_iter(0..100)
+      .skip(101)
+      .subscribe_complete(|_| next_count += 1, || completed = true);
+
+    assert_eq!(next_count, 0);
+    assert_eq!(completed, true);
+  }
+
+  #[test]
+  fn skip_support_fork() {
     let mut nc1 = 0;
     let mut nc2 = 0;
     {
-      let take5 = observable::from_iter(0..100).take(5);
-      let f1 = take5.clone();
-      let f2 = take5;
+      let skip5 = observable::from_iter(0..100).skip(5);
+      let f1 = skip5.clone();
+      let f2 = skip5;
 
-      f1.take(5).subscribe(|_| nc1 += 1);
-      f2.take(5).subscribe(|_| nc2 += 1);
+      f1.skip(5).subscribe(|_| nc1 += 1);
+      f2.skip(5).subscribe(|_| nc2 += 1);
     }
-    assert_eq!(nc1, 5);
-    assert_eq!(nc2, 5);
+    assert_eq!(nc1, 90);
+    assert_eq!(nc2, 90);
   }
 
   #[test]
   fn into_shared() {
     observable::from_iter(0..100)
-      .take(5)
-      .take(5)
+      .skip(5)
+      .skip(5)
       .to_shared()
       .subscribe(|_| {});
   }
