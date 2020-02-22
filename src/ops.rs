@@ -41,3 +41,5 @@ pub mod publish;
 pub use publish::Publish;
 pub mod ref_count;
 pub use filter_map::FilterMap;
+pub mod box_it;
+pub use box_it::BoxIt;

@@ -32,7 +32,8 @@ pub struct DelayOp<S> {
 
 impl<S> SharedObservable for DelayOp<S>
 where
-  S: SharedObservable<Unsub = SharedSubscription> + Send + Sync + 'static,
+  S: SharedObservable + Send + Sync + 'static,
+  S::Unsub: Send + Sync,
 {
   type Item = S::Item;
   type Err = S::Err;

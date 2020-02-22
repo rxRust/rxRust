@@ -77,12 +77,9 @@ where
 
 impl<S1, S2> SharedObservable for MergeOp<S1, S2>
 where
-  S1: SharedObservable<Unsub = SharedSubscription>,
-  S2: SharedObservable<
-    Item = S1::Item,
-    Err = S1::Err,
-    Unsub = SharedSubscription,
-  >,
+  S1: SharedObservable,
+  S2: SharedObservable<Item = S1::Item, Err = S1::Err, Unsub = S1::Unsub>,
+  S1::Unsub: Send + Sync,
 {
   type Item = S1::Item;
   type Err = S1::Err;
