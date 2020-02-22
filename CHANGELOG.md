@@ -2,6 +2,7 @@
 
 ### Features
 
+- **operator**: add `box_it` operator to box observable.
 - **operator**: add `skip` operator.
 - **operator**: add `skip_last` operator.
 - **operator**: add `take_last` operator.

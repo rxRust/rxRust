@@ -8,7 +8,7 @@ pub struct Shared<R>(pub(crate) R);
 pub trait SharedObservable {
   type Item;
   type Err;
-  type Unsub: SubscriptionLike;
+  type Unsub: SubscriptionLike + 'static;
   fn actual_subscribe<
     O: Observer<Self::Item, Self::Err> + Sync + Send + 'static,
   >(
