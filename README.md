@@ -16,9 +16,7 @@ rxrust = "0.7.1"
 ## Example 
 
 ```rust
-use rxrust::{
-  ops::{ Filter, Merge }, prelude::*, 
-};
+use rxrust:: prelude::*;
 
 let mut numbers = observable::from_iter(0..10);
 // crate a even stream by filter
@@ -56,7 +54,6 @@ In this case, we must clone the stream.
 
 ```rust 
 use rxrust::prelude::*;
-use rxrust::{ops::{ ObserveOn, SubscribeOn, Map }, scheduler::Schedulers };
 
 observable::from_iter(0..10)
   .subscribe_on(Schedulers::NewThread)

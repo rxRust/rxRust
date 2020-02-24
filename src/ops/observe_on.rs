@@ -1,43 +1,25 @@
 use crate::prelude::*;
 use crate::scheduler::Scheduler;
+use observable::observable_proxy_impl;
 use std::marker::PhantomData;
 use std::sync::{Arc, Mutex};
 
-/// Re-emits all notifications from source Observable with specified scheduler.
-///
-/// `ObserveOn` is an operator that accepts a scheduler as the parameter,
-/// which will be used to reschedule notifications emitted by the source
-/// Observable.
-pub trait ObserveOn<'a> {
-  fn observe_on<SD>(self, scheduler: SD) -> ObserveOnOp<'a, Self, SD>
-  where
-    Self: Sized,
-  {
-    ObserveOnOp {
-      source: self,
-      scheduler,
-      _p: PhantomData,
-    }
-  }
-}
-
+#[derive(Clone)]
 pub struct ObserveOnOp<'a, S, SD> {
-  source: S,
-  scheduler: SD,
-  _p: PhantomData<&'a ()>,
+  pub(crate) source: S,
+  pub(crate) scheduler: SD,
+  pub(crate) _p: PhantomData<&'a ()>,
 }
 
-impl<'a, S> ObserveOn<'a> for S {}
+observable_proxy_impl!(ObserveOnOp, S, 'a, SD);
 
-impl<'a, Item, Err, S, SD> SharedObservable for ObserveOnOp<'a, S, SD>
+impl<'a, S, SD> SharedObservable for ObserveOnOp<'a, S, SD>
 where
-  S: Observable<'a, Item = Item, Err = Err>,
-  Item: Clone + Send + Sync + 'static,
-  Err: Clone + Send + Sync + 'static,
+  S: LocalObservable<'a>,
+  S::Item: Clone + Send + Sync + 'static,
+  S::Err: Clone + Send + Sync + 'static,
   SD: Scheduler + 'static,
 {
-  type Item = Item;
-  type Err = Err;
   type Unsub = S::Unsub;
   fn actual_subscribe<
     O: Observer<Self::Item, Self::Err> + Sync + Send + 'static,
@@ -71,8 +53,6 @@ where
   S::Err: Clone + Send + 'static,
   SD: Scheduler + Send + Sync + 'static,
 {
-  type Item = S::Item;
-  type Err = S::Err;
   type Unsub = S::Unsub;
   fn actual_subscribe<
     O: Observer<Self::Item, Self::Err> + Sync + Send + 'static,
@@ -168,10 +148,7 @@ where
 #[cfg(test)]
 mod test {
   use crate::prelude::*;
-  use crate::{
-    ops::{Delay, ObserveOn},
-    scheduler::Schedulers,
-  };
+  use crate::scheduler::Schedulers;
   use std::sync::{Arc, Mutex};
   use std::thread;
   use std::time::Duration;

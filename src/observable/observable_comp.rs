@@ -39,7 +39,7 @@ pub trait SubscribeComplete<'a, N, C> {
 
 impl<'a, S, N, C> SubscribeComplete<'a, N, C> for S
 where
-  S: Observable<'a, Err = ()>,
+  S: LocalObservable<'a, Err = ()>,
   C: FnMut() + 'a,
   N: FnMut(S::Item) + 'a,
 {

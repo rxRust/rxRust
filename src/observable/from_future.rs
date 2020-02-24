@@ -41,12 +41,18 @@ where
 #[derive(Clone)]
 pub struct FutureEmitter<F>(F);
 
-impl<Item, F> SharedEmitter for FutureEmitter<F>
+impl<Item, F> Emitter for FutureEmitter<F>
 where
   F: Future<Output = Item> + Send + Sync + 'static,
 {
   type Item = Item;
   type Err = ();
+}
+
+impl<Item, F> SharedEmitter for FutureEmitter<F>
+where
+  F: Future<Output = Item> + Send + Sync + 'static,
+{
   fn emit<O>(self, subscriber: Subscriber<O, SharedSubscription>)
   where
     O: Observer<Self::Item, Self::Err> + Send + Sync + 'static,
@@ -75,6 +81,11 @@ where
 #[derive(Clone)]
 pub struct FutureResultEmitter<F, Item, Err>(F, PhantomData<(Item, Err)>);
 
+impl<Item, Err, F> Emitter for FutureResultEmitter<F, Item, Err> {
+  type Item = Item;
+  type Err = Err;
+}
+
 impl<Item, Err, F> SharedEmitter for FutureResultEmitter<F, Item, Err>
 where
   Item: Send + Sync + 'static,
@@ -82,8 +93,6 @@ where
   F: Future + Send + Clone + Sync + 'static,
   <F as Future>::Output: Into<Result<Item, Err>>,
 {
-  type Item = Item;
-  type Err = Err;
   fn emit<O>(self, subscriber: Subscriber<O, SharedSubscription>)
   where
     O: Observer<Self::Item, Self::Err> + Send + Sync + 'static,

@@ -1,49 +1,15 @@
 use crate::observer::{complete_proxy_impl, error_proxy_impl};
 use crate::prelude::*;
 
-/// Emit only those items from an Observable that pass a predicate test
-/// # Example
-///
-/// ```
-/// use rxrust::{ops::Filter, prelude::*};
-///
-/// let mut coll = vec![];
-/// let coll_clone = coll.clone();
-///
-/// observable::from_iter(0..10)
-///   .filter(|v| *v % 2 == 0)
-///   .subscribe(|v| { coll.push(v); });
-
-/// // only even numbers received.
-/// assert_eq!(coll, vec![0, 2, 4, 6, 8]);
-/// ```
-
-pub trait Filter<T> {
-  fn filter<F>(self, filter: F) -> FilterOp<Self, F>
-  where
-    Self: Sized,
-    F: Fn(&T) -> bool,
-  {
-    FilterOp {
-      source: self,
-      filter,
-    }
-  }
-}
-
-impl<'a, T, O> Filter<T> for O {}
-
 #[derive(Clone)]
 pub struct FilterOp<S, F> {
-  source: S,
-  filter: F,
+  pub(crate) source: S,
+  pub(crate) filter: F,
 }
 
 macro observable_impl(
   $subscription:ty, $source:ident, $($marker:ident +)* $lf: lifetime)
 {
-  type Item = $source::Item;
-  type Err = $source::Err;
   type Unsub = $source::Unsub;
   fn actual_subscribe<O: Observer<Self::Item, Self::Err> + $($marker +)* $lf>(
     self,
@@ -60,9 +26,18 @@ macro observable_impl(
   }
 }
 
-impl<'a, S, F> Observable<'a> for FilterOp<S, F>
+impl<S, F> Observable for FilterOp<S, F>
 where
-  S: Observable<'a>,
+  S: Observable,
+  F: FnMut(&S::Item) -> bool,
+{
+  type Item = S::Item;
+  type Err = S::Err;
+}
+
+impl<'a, S, F> LocalObservable<'a> for FilterOp<S, F>
+where
+  S: LocalObservable<'a>,
   F: FnMut(&S::Item) -> bool + 'a,
 {
   observable_impl!(LocalSubscription, S, 'a);
@@ -97,7 +72,7 @@ where
 
 #[cfg(test)]
 mod test {
-  use crate::{ops::Filter, prelude::*};
+  use crate::prelude::*;
 
   #[test]
   fn fork_and_shared() {

@@ -1,48 +1,11 @@
 use crate::observer::{complete_proxy_impl, error_proxy_impl};
 use crate::prelude::*;
-/// Ignore the first `count` values emitted by the source Observable.
-///
-/// `skip` returns an Observable that ignore the first `count` values
-/// emitted by the source Observable. If the source emits fewer than `count`
-/// values then 0 of its values are emitted. After that, it completes,
-/// regardless if the source completes.
-///
-/// # Example
-/// Ignore the first 5 seconds of an infinite 1-second interval Observable
-///
-/// ```
-/// # use rxrust::{
-///   ops::{Skip}, prelude::*,
-/// };
-///
-/// observable::from_iter(0..10).skip(5).subscribe(|v| println!("{}", v));
-
-/// // print logs:
-/// // 6
-/// // 7
-/// // 8
-/// // 9
-/// // 10
-/// ```
-///
-pub trait Skip {
-  fn skip(self, count: u32) -> SkipOp<Self>
-  where
-    Self: Sized,
-  {
-    SkipOp {
-      source: self,
-      count,
-    }
-  }
-}
-
-impl<O> Skip for O {}
+use observable::observable_proxy_impl;
 
 #[derive(Clone)]
 pub struct SkipOp<S> {
-  source: S,
-  count: u32,
+  pub(crate) source: S,
+  pub(crate) count: u32,
 }
 
 macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
@@ -63,12 +26,12 @@ macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
   }
 }
 
-impl<'a, S> Observable<'a> for SkipOp<S>
+observable_proxy_impl!(SkipOp, S);
+
+impl<'a, S> LocalObservable<'a> for SkipOp<S>
 where
-  S: Observable<'a>,
+  S: LocalObservable<'a>,
 {
-  type Item = S::Item;
-  type Err = S::Err;
   type Unsub = S::Unsub;
   observable_impl!(LocalSubscription, 'a);
 }
@@ -77,8 +40,6 @@ impl<S> SharedObservable for SkipOp<S>
 where
   S: SharedObservable,
 {
-  type Item = S::Item;
-  type Err = S::Err;
   type Unsub = S::Unsub;
   observable_impl!(SharedSubscription, Send + Sync + 'static);
 }
@@ -112,7 +73,6 @@ where
 
 #[cfg(test)]
 mod test {
-  use super::Skip;
   use crate::prelude::*;
 
   #[test]

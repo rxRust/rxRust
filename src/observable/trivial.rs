@@ -22,16 +22,16 @@ macro throw_emitter($subscription:ty, $($marker:ident +)* $lf: lifetime) {
     subscriber.error(self.0);
   }
 }
-
-impl<'a, Err> Emitter<'a> for ThrowEmitter<Err> {
+impl<Err> Emitter for ThrowEmitter<Err> {
   type Item = ();
   type Err = Err;
+}
+
+impl<'a, Err> LocalEmitter<'a> for ThrowEmitter<Err> {
   throw_emitter!(LocalSubscription, 'a);
 }
 
 impl<Err> SharedEmitter for ThrowEmitter<Err> {
-  type Item = ();
-  type Err = Err;
   throw_emitter!(SharedSubscription, Send + Sync + 'static);
 }
 
@@ -65,15 +65,16 @@ macro empty_emitter($subscription:ty, $($marker:ident +)* $lf: lifetime) {
   }
 }
 
-impl<'a, Item> Emitter<'a> for EmptyEmitter<Item> {
+impl<Item> Emitter for EmptyEmitter<Item> {
   type Item = Item;
   type Err = ();
+}
+
+impl<'a, Item> LocalEmitter<'a> for EmptyEmitter<Item> {
   empty_emitter!(LocalSubscription, 'a);
 }
 
 impl<Item> SharedEmitter for EmptyEmitter<Item> {
-  type Item = Item;
-  type Err = ();
   empty_emitter!(SharedSubscription, Send + Sync + 'static);
 }
 /// Creates an observable that never emits anything.
@@ -95,16 +96,17 @@ macro never_emitter($subscription:ty, $($marker:ident +)* $lf: lifetime) {
   }
 }
 
-impl<'a> Emitter<'a> for NeverEmitter {
+impl Emitter for NeverEmitter {
   type Item = ();
   type Err = ();
+}
+
+impl<'a> LocalEmitter<'a> for NeverEmitter {
   #[inline]
   never_emitter!(LocalSubscription, 'a);
 }
 
 impl SharedEmitter for NeverEmitter {
-  type Item = ();
-  type Err = ();
   #[inline]
   never_emitter!(SharedSubscription, Send + Sync + 'static);
 }

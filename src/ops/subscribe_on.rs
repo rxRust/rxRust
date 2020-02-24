@@ -1,69 +1,14 @@
 use crate::prelude::*;
 use crate::scheduler::Scheduler;
+use observable::observable_proxy_impl;
 
-/// Specify the Scheduler on which an Observable will operate
-///
-/// With `SubscribeON` you can decide what type of scheduler a specific
-/// Observable will be using when it is subscribed to.
-///
-/// Schedulers control the speed and order of emissions to observers from an
-/// Observable stream.
-///
-/// # Example
-/// Given the following code:
-/// ```rust
-/// use rxrust::prelude::*;
-/// use rxrust::ops::{ Merge };
-///
-/// let a = observable::from_iter(1..5);
-/// let b = observable::from_iter(5..10);
-/// a.merge(b).subscribe(|v| print!("{} ", v));
-/// ```
-///
-/// Both Observable `a` and `b` will emit their values directly and
-/// synchronously once they are subscribed to.
-/// This will result in the output of `1 2 3 4 5 6 7 8 9`.
-///
-/// But if we instead use the `subscribe_on` operator declaring that we want to
-/// use the new thread scheduler for values emitted by Observable `a`:
-/// ```rust
-/// use rxrust::prelude::*;
-/// use rxrust::scheduler::Schedulers;
-/// use rxrust::ops::{ Merge, SubscribeOn };
-/// use std::thread;
-///
-/// let a = observable::from_iter(1..5).subscribe_on(Schedulers::NewThread);
-/// let b = observable::from_iter(5..10);
-/// a.merge(b).to_shared().subscribe(|v|{
-///   let handle = thread::current();
-///   print!("{}({:?}) ", v, handle.id())
-/// });
-/// ```
-///
-/// The output will instead by `1(thread 1) 2(thread 1) 3(thread 1) 4(thread 1)
-///  5(thread 2) 6(thread 2) 7(thread 2) 8(thread 2) 9(thread id2)`.
-/// The reason for this is that Observable `b` emits its values directly like
-/// before, but the emissions from `a` are scheduled on a new thread because we
-/// are now using the `NewThread` Scheduler for that specific Observable.
-
-pub trait SubscribeOn {
-  fn subscribe_on<SD>(self, scheduler: SD) -> SubscribeOnOP<Self, SD>
-  where
-    Self: Sized,
-  {
-    SubscribeOnOP {
-      source: self,
-      scheduler,
-    }
-  }
-}
-
+#[derive(Clone)]
 pub struct SubscribeOnOP<S, SD> {
-  source: S,
-  scheduler: SD,
+  pub(crate) source: S,
+  pub(crate) scheduler: SD,
 }
 
-impl<T> SubscribeOn for T {}
+observable_proxy_impl!(SubscribeOnOP, S, SD);
 
 impl<'a, S, SD> SharedObservable for SubscribeOnOP<S, SD>
 where
@@ -71,8 +16,6 @@ where
   SD: Scheduler + Send + 'static,
   S::Unsub: Send + Sync,
 {
-  type Item = S::Item;
-  type Err = S::Err;
   type Unsub = SharedSubscription;
   fn actual_subscribe<
     O: Observer<Self::Item, Self::Err> + Sync + Send + 'static,
@@ -93,7 +36,6 @@ where
 
 #[cfg(test)]
 mod test {
-  use crate::ops::{Delay, SubscribeOn};
   use crate::prelude::*;
   use crate::scheduler::Schedulers;
   use std::sync::{Arc, Mutex};

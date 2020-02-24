@@ -28,10 +28,12 @@ pub struct IntervalEmitter {
   dur: Duration,
   at: Instant,
 }
-
-impl SharedEmitter for IntervalEmitter {
+impl Emitter for IntervalEmitter {
   type Item = usize;
   type Err = ();
+}
+
+impl SharedEmitter for IntervalEmitter {
   fn emit<O>(self, subscriber: Subscriber<O, SharedSubscription>)
   where
     O: Observer<Self::Item, Self::Err> + Send + Sync + 'static,

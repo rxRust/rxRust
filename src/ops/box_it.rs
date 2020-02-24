@@ -42,7 +42,7 @@ macro box_observable_impl(
 
 impl<'a, T> BoxObservable<'a> for T
 where
-  T: Observable<'a> + 'a,
+  T: LocalObservable<'a> + 'a,
 {
   box_observable_impl!(LocalSubscription, T, 'a);
 }
@@ -77,20 +77,20 @@ macro observable_impl(  $subscription:ty, $($marker:ident +)* $lf: lifetime)
   }
 }
 
-impl<'a, Item, Err> Observable<'a> for LocalBoxOp<'a, Item, Err>
-where
-  Item: 'a,
-  Err: 'a,
-{
+impl<'a, Item: 'a, Err: 'a> Observable for LocalBoxOp<'a, Item, Err> {
   type Item = Item;
   type Err = Err;
+}
+impl<'a, Item: 'a, Err: 'a> LocalObservable<'a> for LocalBoxOp<'a, Item, Err> {
   type Unsub = Box<dyn SubscriptionLike>;
   observable_impl!(LocalSubscription, 'a);
 }
 
-impl<Item, Err> SharedObservable for SharedBoxOp<Item, Err> {
+impl<Item, Err> Observable for SharedBoxOp<Item, Err> {
   type Item = Item;
   type Err = Err;
+}
+impl<Item, Err> SharedObservable for SharedBoxOp<Item, Err> {
   type Unsub = Box<dyn SubscriptionLike + Send + Sync>;
   observable_impl!(SharedSubscription, Send + Sync + 'static);
 }
@@ -104,7 +104,7 @@ pub trait IntoBox<T> {
 impl<'a, T> IntoBox<T>
   for Box<dyn BoxObservable<'a, Item = T::Item, Err = T::Err> + 'a>
 where
-  T: Observable<'a> + 'a,
+  T: LocalObservable<'a> + 'a,
 {
   fn box_it(origin: T) -> BoxOp<Self> { BoxOp(Box::new(origin)) }
 }
@@ -120,51 +120,26 @@ where
   fn box_it(origin: T) -> BoxOp<Self> { BoxOp(Box::new(origin)) }
 }
 
-pub trait BoxIt {
-  /// box an observable to a safety object and convert it to a simple type
-  /// `BoxOp`, which only care `Item` and `Err` Observable emitted.
-  ///
-  /// # Example
-  /// ```
-  /// use rxrust::prelude::*;
-  /// use ops::{box_it::LocalBoxOp, Map, BoxIt};
-  ///
-  /// let mut boxed: LocalBoxOp<'_, i32, ()> = observable::of(1)
-  ///   .map(|v| v).box_it();
-  ///
-  /// // BoxOp can box any observable type
-  /// boxed = observable::empty().box_it();
-  ///
-  /// boxed.subscribe(|_| {});
-  /// ```
-  fn box_it<O: IntoBox<Self>>(self) -> BoxOp<O>
-  where
-    Self: Sized,
-  {
-    O::box_it(self)
-  }
-}
-
-impl<T> BoxIt for T {}
-
 #[cfg(test)]
 mod test {
   use crate::prelude::*;
-  use ops::box_it::{BoxIt, LocalBoxOp, SharedBoxOp};
-
+  use ops::box_it::{LocalBoxOp, SharedBoxOp};
   #[test]
   fn box_observable() {
     let mut test = 0;
     let mut boxed: LocalBoxOp<'_, i32, ()> = observable::of(100).box_it();
     boxed.subscribe(|v| test = v);
+
     boxed = observable::empty().box_it();
     boxed.subscribe(|_| unreachable!());
     assert_eq!(test, 100);
   }
+
   #[test]
   fn shared_box_observable() {
     let mut boxed: SharedBoxOp<i32, ()> = observable::of(100).box_it();
     boxed.to_shared().subscribe(|_| {});
+
     boxed = observable::empty().box_it();
     boxed.to_shared().subscribe(|_| unreachable!());
   }

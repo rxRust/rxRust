@@ -1,40 +1,9 @@
-use crate::{
-  observer::error_proxy_impl,
-  ops::{take::TakeOp, Take},
-  prelude::*,
-};
-
-/// emit only the first item emitted by an Observable
-pub trait First {
-  fn first(self) -> TakeOp<Self>
-  where
-    Self: Sized + Take,
-  {
-    self.take(1)
-  }
-}
-
-impl<O> First for O {}
-
-/// emit only the first item (or a default item) emitted by an Observable
-pub trait FirstOr<Item> {
-  fn first_or(self, default: Item) -> FirstOrOp<TakeOp<Self>, Item>
-  where
-    Self: Sized,
-  {
-    FirstOrOp {
-      source: self.first(),
-      default,
-    }
-  }
-}
-
-impl<Item, O> FirstOr<Item> for O {}
+use crate::{observer::error_proxy_impl, prelude::*};
 
 #[derive(Clone)]
 pub struct FirstOrOp<S, V> {
-  source: S,
-  default: V,
+  pub(crate) source: S,
+  pub(crate) default: V,
 }
 
 macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
@@ -53,13 +22,19 @@ macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
   }
 }
 
-impl<'a, S, Item> Observable<'a> for FirstOrOp<S, Item>
+impl<S, Item> Observable for FirstOrOp<S, Item>
 where
-  S: Observable<'a, Item = Item>,
+  S: Observable<Item = Item>,
+{
+  type Item = Item;
+  type Err = S::Err;
+}
+
+impl<'a, S, Item> LocalObservable<'a> for FirstOrOp<S, Item>
+where
+  S: LocalObservable<'a, Item = Item>,
   Item: 'a,
 {
-  type Item = S::Item;
-  type Err = S::Err;
   type Unsub = S::Unsub;
   observable_impl!(LocalSubscription, 'a);
 }
@@ -69,8 +44,6 @@ where
   S: SharedObservable<Item = Item>,
   Item: Send + Sync + 'static,
 {
-  type Item = S::Item;
-  type Err = S::Err;
   type Unsub = S::Unsub;
   observable_impl!(SharedSubscription, Send + Sync + 'static);
 }
@@ -101,7 +74,6 @@ where
 
 #[cfg(test)]
 mod test {
-  use super::{First, FirstOr};
   use crate::prelude::*;
 
   #[test]

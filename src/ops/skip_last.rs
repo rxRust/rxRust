@@ -1,50 +1,12 @@
 use crate::prelude::*;
+use observable::observable_proxy_impl;
 use observer::error_proxy_impl;
 use std::collections::VecDeque;
 
-/// Ignore the last `count` values emitted by the source Observable.
-///
-/// `skip_last` returns an Observable that ignore the last `count` values
-/// emitted by the source Observable. If the source emits fewer than `count`
-/// values then 0 of its values are emitted.
-/// It will not emit values until source Observable complete.
-///
-/// # Example
-/// Skip the last 5 seconds of an infinite 1-second interval Observable
-///
-/// ```
-/// # use rxrust::{
-///   ops::{SkipLast}, prelude::*,
-/// };
-///
-/// observable::from_iter(0..10).skip_last(5).subscribe(|v| println!("{}", v));
-
-/// // print logs:
-/// // 0
-/// // 1
-/// // 2
-/// // 3
-/// // 4
-/// ```
-///
-pub trait SkipLast {
-  fn skip_last(self, count: usize) -> SkipLastOp<Self>
-  where
-    Self: Sized,
-  {
-    SkipLastOp {
-      source: self,
-      count,
-    }
-  }
-}
-
-impl<O> SkipLast for O {}
-
 #[derive(Clone)]
 pub struct SkipLastOp<S> {
-  source: S,
-  count: usize,
+  pub(crate) source: S,
+  pub(crate) count: usize,
 }
 
 macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
@@ -64,13 +26,12 @@ macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
   }
 }
 
-impl<'a, Item, S> Observable<'a> for SkipLastOp<S>
+observable_proxy_impl!(SkipLastOp, S);
+
+impl<'a, Item: 'a, S> LocalObservable<'a> for SkipLastOp<S>
 where
-  S: Observable<'a, Item = Item>,
-  Item: 'a,
+  S: LocalObservable<'a, Item = Item>,
 {
-  type Item = S::Item;
-  type Err = S::Err;
   type Unsub = S::Unsub;
   observable_impl!(LocalSubscription, 'a);
 }
@@ -80,8 +41,6 @@ where
   S: SharedObservable,
   S::Item: Send + Sync + 'static,
 {
-  type Item = S::Item;
-  type Err = S::Err;
   type Unsub = S::Unsub;
   observable_impl!(SharedSubscription, Send + Sync + 'static);
 }
@@ -112,7 +71,6 @@ where
 
 #[cfg(test)]
 mod test {
-  use super::SkipLast;
   use crate::prelude::*;
 
   #[test]

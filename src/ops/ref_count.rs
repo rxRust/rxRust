@@ -34,7 +34,7 @@ struct InnerLocalRefCount<'a, S, Item, Err>(
   LocalRef<LocalConnectableObservable<'a, S, Item, Err>, S::Unsub>,
 )
 where
-  S: Observable<'a, Item = Item, Err = Err>;
+  S: LocalObservable<'a, Item = Item, Err = Err>;
 
 type LocalRefCount<'a, S, Item, Err> = RefCount<
   InnerLocalRefCount<'a, S, Item, Err>,
@@ -60,7 +60,7 @@ pub trait RefCountCreator: Sized {
 
 impl<'a, S, Item, Err> RefCountCreator for InnerLocalRefCount<'a, S, Item, Err>
 where
-  S: Observable<'a, Item = Item, Err = Err>,
+  S: LocalObservable<'a, Item = Item, Err = Err>,
 {
   type Connectable = LocalConnectableObservable<'a, S, Item, Err>;
   fn new(connectable: Self::Connectable) -> RefCount<Self, Self::Connectable> {
@@ -90,15 +90,21 @@ where
   }
 }
 
-impl<'a, Item, Err, S> Observable<'a> for LocalRefCount<'a, S, Item, Err>
+impl<'a, Item, Err, S> Observable for LocalRefCount<'a, S, Item, Err>
 where
-  S: Observable<'a, Item = Item, Err = Err> + Clone,
+  S: LocalObservable<'a, Item = Item, Err = Err>,
+{
+  type Item = Item;
+  type Err = Err;
+}
+
+impl<'a, Item, Err, S> LocalObservable<'a> for LocalRefCount<'a, S, Item, Err>
+where
+  S: LocalObservable<'a, Item = Item, Err = Err> + Clone,
   S::Unsub: Clone,
   Item: Copy + 'a,
   Err: Copy + 'a,
 {
-  type Item = Item;
-  type Err = Err;
   type Unsub = RefCountSubscription<LocalSubscription, S::Unsub>;
   fn actual_subscribe<O: Observer<Self::Item, Self::Err> + 'a>(
     self,
@@ -117,6 +123,14 @@ where
   }
 }
 
+impl<Item, Err, S> Observable for SharedRefCount<S, Item, Err>
+where
+  S: SharedObservable<Item = Item, Err = Err>,
+{
+  type Item = Item;
+  type Err = Err;
+}
+
 impl<Item, Err, S> SharedObservable for SharedRefCount<S, Item, Err>
 where
   S: SharedObservable<Item = Item, Err = Err> + Clone,
@@ -124,8 +138,6 @@ where
   Item: Copy + Send + Sync + 'static,
   Err: Copy + Send + Sync + 'static,
 {
-  type Item = Item;
-  type Err = Err;
   type Unsub = RefCountSubscription<SharedSubscription, S::Unsub>;
   fn actual_subscribe<
     O: Observer<Self::Item, Self::Err> + Sync + Send + 'static,
@@ -173,7 +185,6 @@ where
 
 #[test]
 fn smoke() {
-  use ops::Publish;
   let mut accept1 = 0;
   let mut accept2 = 0;
   {
@@ -188,7 +199,6 @@ fn smoke() {
 
 #[test]
 fn auto_unsubscribe() {
-  use ops::Publish;
   let mut accept1 = 0;
   let mut accept2 = 0;
   {
@@ -208,7 +218,6 @@ fn auto_unsubscribe() {
 
 #[test]
 fn fork_and_shared() {
-  use ops::Publish;
   observable::of(1).publish().ref_count().subscribe(|_| {});
 
   Subject::new()

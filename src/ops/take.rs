@@ -1,48 +1,11 @@
 use crate::observer::{complete_proxy_impl, error_proxy_impl};
 use crate::prelude::*;
-/// Emits only the first `count` values emitted by the source Observable.
-///
-/// `take` returns an Observable that emits only the first `count` values
-/// emitted by the source Observable. If the source emits fewer than `count`
-/// values then all of its values are emitted. After that, it completes,
-/// regardless if the source completes.
-///
-/// # Example
-/// Take the first 5 seconds of an infinite 1-second interval Observable
-///
-/// ```
-/// # use rxrust::{
-///   ops::{Take}, prelude::*,
-/// };
-///
-/// observable::from_iter(0..10).take(5).subscribe(|v| println!("{}", v));
-
-/// // print logs:
-/// // 0
-/// // 1
-/// // 2
-/// // 3
-/// // 4
-/// ```
-///
-pub trait Take {
-  fn take(self, count: u32) -> TakeOp<Self>
-  where
-    Self: Sized,
-  {
-    TakeOp {
-      source: self,
-      count,
-    }
-  }
-}
-
-impl<O> Take for O {}
+use observable::observable_proxy_impl;
 
 #[derive(Clone)]
 pub struct TakeOp<S> {
-  source: S,
-  count: u32,
+  pub(crate) source: S,
+  pub(crate) count: u32,
 }
 
 macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
@@ -63,12 +26,12 @@ macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
   }
 }
 
-impl<'a, S> Observable<'a> for TakeOp<S>
+observable_proxy_impl!(TakeOp, S);
+
+impl<'a, S> LocalObservable<'a> for TakeOp<S>
 where
-  S: Observable<'a>,
+  S: LocalObservable<'a>,
 {
-  type Item = S::Item;
-  type Err = S::Err;
   type Unsub = S::Unsub;
   observable_impl!(LocalSubscription, 'a);
 }
@@ -77,8 +40,6 @@ impl<S> SharedObservable for TakeOp<S>
 where
   S: SharedObservable,
 {
-  type Item = S::Item;
-  type Err = S::Err;
   type Unsub = S::Unsub;
   observable_impl!(SharedSubscription, Send + Sync + 'static);
 }
@@ -111,7 +72,6 @@ where
 
 #[cfg(test)]
 mod test {
-  use super::Take;
   use crate::prelude::*;
 
   #[test]

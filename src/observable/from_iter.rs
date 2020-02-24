@@ -56,12 +56,18 @@ macro iter_emitter($subscription:ty, $($marker:ident +)* $lf: lifetime) {
   }
 }
 
-impl<'a, Iter, Item> Emitter<'a> for IterEmitter<Iter>
+impl<Iter, Item> Emitter for IterEmitter<Iter>
 where
   Iter: IntoIterator<Item = Item>,
 {
   type Item = Item;
   type Err = ();
+}
+
+impl<'a, Iter, Item> LocalEmitter<'a> for IterEmitter<Iter>
+where
+  Iter: IntoIterator<Item = Item>,
+{
   iter_emitter!(LocalSubscription, 'a);
 }
 
@@ -69,8 +75,6 @@ impl<Iter, Item> SharedEmitter for IterEmitter<Iter>
 where
   Iter: IntoIterator<Item = Item>,
 {
-  type Item = Item;
-  type Err = ();
   iter_emitter!(SharedSubscription, Send + Sync + 'static);
 }
 

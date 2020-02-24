@@ -1,6 +1,6 @@
 //! Reactive extensions library for Rust: a library for
-//! [Reactive Programming](http://reactivex.io/) using Observables, to make it
-//! easier to compose asynchronous or callback-based code.
+//! [Reactive Programming](http://reactivex.io/) using LocalObservables, to make
+//! it easier to compose asynchronous or callback-based code.
 //!
 //! There are two core abstractions that are unique to RxRust:
 //! * **[IntoShared](prelude::IntoShared):** By default, RxRust always provides
@@ -12,14 +12,7 @@
 //! upstream except `Fork`, so operators always combine a single-chain and can
 //! only subscribe once. We use `Fork` to fork the stream.
 
-#![feature(
-  external_doc,
-  specialization,
-  drain_filter,
-  trait_alias,
-  test,
-  decl_macro
-)]
+#![feature(external_doc, specialization, drain_filter, test, decl_macro)]
 #[doc(include = "../README.md")]
 #[macro_use]
 extern crate lazy_static;

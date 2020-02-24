@@ -1,77 +1,19 @@
 use crate::observer::error_proxy_impl;
 use crate::prelude::*;
 
-/// Emits a single last item emitted by the source observable.
-/// The item is emitted after source observable has completed.
-pub trait Last<Item> {
-  /// Emit only the last final item emitted by a source observable or a
-  /// default item given.
-  ///
-  /// Completes right after emitting the single item. Emits error when
-  /// source observable emits it.
-  ///
-  /// # Examples
-  ///
-  /// ```
-  /// use rxrust::prelude::*;
-  /// use rxrust::ops::Last;
-  ///
-  /// observable::empty()
-  ///   .last_or(1234)
-  ///   .subscribe(|v| println!("{}", v));
-  ///
-  /// // print log:
-  /// // 1234
-  /// ```
-  fn last_or(self, default: Item) -> LastOrOp<Self, Item>
-  where
-    Self: Sized,
-  {
-    LastOrOp {
-      source: self,
-      default: Some(default),
-      last: None,
-    }
-  }
-
-  /// Emits only last final item emitted by a source observable.
-  ///
-  /// Completes right after emitting the single last item, or when source
-  /// observable completed, being an empty one. Emits error when source
-  /// observable emits it.
-  ///
-  /// # Examples
-  ///
-  /// ```
-  /// use rxrust::prelude::*;
-  /// use rxrust::ops::Last;
-  ///
-  /// observable::from_iter(0..100)
-  ///   .last()
-  ///   .subscribe(|v| println!("{}", v));
-  ///
-  /// // print log:
-  /// // 99
-  /// ```
-  fn last(self) -> LastOrOp<Self, Item>
-  where
-    Self: Sized,
-  {
-    LastOrOp {
-      source: self,
-      default: None,
-      last: None,
-    }
-  }
-}
-
-impl<Item, O> Last<Item> for O {}
-
 #[derive(Clone)]
 pub struct LastOrOp<S, Item> {
-  source: S,
-  default: Option<Item>,
-  last: Option<Item>,
+  pub(crate) source: S,
+  pub(crate) default: Option<Item>,
+  pub(crate) last: Option<Item>,
+}
+
+impl<Item, S> Observable for LastOrOp<S, Item>
+where
+  S: Observable<Item = Item>,
+{
+  type Item = Item;
+  type Err = S::Err;
 }
 
 macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
@@ -91,13 +33,11 @@ macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
   }
 }
 
-impl<'a, Item, S> Observable<'a> for LastOrOp<S, Item>
+impl<'a, Item, S> LocalObservable<'a> for LastOrOp<S, Item>
 where
-  S: Observable<'a, Item = Item>,
+  S: LocalObservable<'a, Item = Item>,
   Item: 'a,
 {
-  type Item = Item;
-  type Err = S::Err;
   type Unsub = S::Unsub;
   observable_impl!(LocalSubscription, 'a);
 }
@@ -107,8 +47,6 @@ where
   S: SharedObservable<Item = Item>,
   Item: Send + Sync + 'static,
 {
-  type Item = Item;
-  type Err = S::Err;
   type Unsub = S::Unsub;
   observable_impl!(SharedSubscription, Send + Sync + 'static);
 }
@@ -135,7 +73,6 @@ where
 
 #[cfg(test)]
 mod test {
-  use super::Last;
   use crate::prelude::*;
 
   #[test]

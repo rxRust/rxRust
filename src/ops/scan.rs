@@ -1,89 +1,11 @@
 use crate::observer::{complete_proxy_impl, error_proxy_impl};
 use crate::prelude::*;
 
-/// The Scan operator applies a function to the first item emitted by the
-/// source observable and then emits the result of that function as its
-/// own first emission. It also feeds the result of the function back into
-/// the function along with the second item emitted by the source observable
-/// in order to generate its second emission. It continues to feed back its
-/// own subsequent emissions along with the subsequent emissions from the
-/// source Observable in order to create the rest of its sequence.
-pub trait Scan<OutputItem> {
-  /// Applies a binary operator closure to each item emitted from source
-  /// observable and emits successive values.
-  ///
-  /// Completes when source observable completes.
-  /// Emits error when source observable emits it.
-  ///
-  /// This version starts with an user-specified initial value for when the
-  /// binary operator is called with the first item processed.
-  ///
-  /// # Arguments
-  ///
-  /// * `initial_value` - An initial value to start the successive accumulations
-  ///   from.
-  /// * `binary_op` - A closure or function acting as a binary operator.
-  ///
-  /// # Examples
-  ///
-  /// ```
-  /// use rxrust::prelude::*;
-  /// use rxrust::ops::Scan;
-  ///
-  /// observable::from_iter(vec![1, 1, 1, 1, 1])
-  ///   .scan_initial(100, |acc, v| acc + v)
-  ///   .subscribe(|v| println!("{}", v));
-  ///
-  /// // print log:
-  /// // 101
-  /// // 102
-  /// // 103
-  /// // 104
-  /// // 105
-  /// ```
-  fn scan_initial<InputItem, BinaryOp>(
-    self,
-    initial_value: OutputItem,
-    binary_op: BinaryOp,
-  ) -> ScanOp<Self, BinaryOp, OutputItem>
-  where
-    Self: Sized,
-    BinaryOp: Fn(OutputItem, InputItem) -> OutputItem,
-  {
-    ScanOp {
-      source_observable: self,
-      binary_op,
-      initial_value,
-    }
-  }
-
-  /// Works like [`scan_initial`] but starts with a value defined by a
-  /// [`Default`] trait for the first argument `binary_op` operator
-  /// operates on.
-  ///
-  /// # Arguments
-  ///
-  /// * `binary_op` - A closure or function acting as a binary operator.
-  fn scan<InputItem, BinaryOp>(
-    self,
-    binary_op: BinaryOp,
-  ) -> ScanOp<Self, BinaryOp, OutputItem>
-  where
-    Self: Sized,
-    BinaryOp: Fn(OutputItem, InputItem) -> OutputItem,
-    OutputItem: Default,
-  {
-    self.scan_initial(OutputItem::default(), binary_op)
-  }
-}
-
-impl<O, OutputItem> Scan<OutputItem> for O {}
-
 #[derive(Clone)]
 pub struct ScanOp<Source, BinaryOp, OutputItem> {
-  source_observable: Source,
-  binary_op: BinaryOp,
-  initial_value: OutputItem,
+  pub(crate) source_observable: Source,
+  pub(crate) binary_op: BinaryOp,
+  pub(crate) initial_value: OutputItem,
 }
 
 pub struct ScanObserver<Observer, BinaryOp, OutputItem> {
@@ -108,21 +30,30 @@ macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
   }
 }
 
+impl<OutputItem, Source, BinaryOp> Observable
+  for ScanOp<Source, BinaryOp, OutputItem>
+where
+  Source: Observable,
+  OutputItem: Clone,
+  BinaryOp: FnMut(OutputItem, Source::Item) -> OutputItem,
+{
+  type Item = OutputItem;
+  type Err = Source::Err;
+}
+
 // We're making the `ScanOp` being an publisher - an object that
 // subscribers can subscribe to.
 // Doing so by implementing `Observable` trait for it.
 // Once instantiated, it will have a `actual_subscribe` method in it.
 // Note: we're accepting such subscribers that accept `Output` as their
 // `Item` type.
-impl<'a, OutputItem, Source, BinaryOp> Observable<'a>
+impl<'a, OutputItem, Source, BinaryOp> LocalObservable<'a>
   for ScanOp<Source, BinaryOp, OutputItem>
 where
-  Source: Observable<'a>,
+  Source: LocalObservable<'a>,
   OutputItem: Clone + 'a,
   BinaryOp: FnMut(OutputItem, Source::Item) -> OutputItem + 'a,
 {
-  type Item = OutputItem;
-  type Err = Source::Err;
   type Unsub = Source::Unsub;
   observable_impl!(LocalSubscription, 'a);
 }
@@ -135,8 +66,6 @@ where
   BinaryOp:
     FnMut(OutputItem, Source::Item) -> OutputItem + Send + Sync + 'static,
 {
-  type Item = OutputItem;
-  type Err = Source::Err;
   type Unsub = Source::Unsub;
   observable_impl!(SharedSubscription, Send + Sync + 'static);
 }
@@ -144,7 +73,6 @@ where
 // We're making `ScanObserver` being able to be subscribed to other observables
 // by implementing `Observer` trait. Thanks to this, it is able to observe
 // sources having `Item` type as its `InputItem` type.
-
 impl<InputItem, Err, Source, BinaryOp, OutputItem> Observer<InputItem, Err>
   for ScanObserver<Source, BinaryOp, OutputItem>
 where
@@ -164,7 +92,7 @@ where
 
 #[cfg(test)]
 mod test {
-  use crate::{ops::Scan, prelude::*};
+  use crate::prelude::*;
 
   #[test]
   fn scan_initial() {

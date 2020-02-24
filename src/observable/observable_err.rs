@@ -39,7 +39,7 @@ pub trait SubscribeErr<'a, N, E> {
 
 impl<'a, S, N, E> SubscribeErr<'a, N, E> for S
 where
-  S: Observable<'a>,
+  S: LocalObservable<'a>,
   N: FnMut(S::Item) + 'a,
   E: FnMut(S::Err) + 'a,
 {
