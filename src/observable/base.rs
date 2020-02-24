@@ -1,8 +1,11 @@
 use crate::prelude::*;
 
-pub trait Emitter<'a> {
+pub trait Emitter {
   type Item;
   type Err;
+}
+
+pub trait LocalEmitter<'a>: Emitter {
   fn emit<O>(self, subscriber: Subscriber<O, LocalSubscription>)
   where
     O: Observer<Self::Item, Self::Err> + 'a;
@@ -26,12 +29,18 @@ macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
   }
 }
 
-impl<'a, Emit> Observable<'a> for ObservableBase<Emit>
+impl<Emit> Observable for ObservableBase<Emit>
 where
-  Emit: Emitter<'a>,
+  Emit: Emitter,
 {
   type Item = Emit::Item;
   type Err = Emit::Err;
+}
+
+impl<'a, Emit> LocalObservable<'a> for ObservableBase<Emit>
+where
+  Emit: LocalEmitter<'a>,
+{
   type Unsub = LocalSubscription;
   observable_impl!(LocalSubscription, 'a);
 }
@@ -40,8 +49,6 @@ impl<Emit> SharedObservable for ObservableBase<Emit>
 where
   Emit: SharedEmitter,
 {
-  type Item = Emit::Item;
-  type Err = Emit::Err;
   type Unsub = SharedSubscription;
   observable_impl!(SharedSubscription, Send + Sync + 'static);
 }

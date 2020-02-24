@@ -52,7 +52,7 @@ pub trait SubscribeAll<'a, N, E, C> {
 
 impl<'a, S, N, E, C> SubscribeAll<'a, N, E, C> for S
 where
-  S: Observable<'a>,
+  S: LocalObservable<'a>,
   N: FnMut(S::Item) + 'a,
   E: FnMut(S::Err) + 'a,
   C: FnMut() + 'a,

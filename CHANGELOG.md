@@ -13,11 +13,13 @@
 
 ### Refactor
 
-- **observable**: Every observable creating function has a concrete type, not only use a Observable struct to wrap all,
-- **observable** rename `RawSubscribable` to `Observable` 
+- **observable**: Operators as provided methods on Observable instead of extension traits.
+- **observable**: Every observable creation function has a concrete type, not only use a LocalObservable struct to wrap all,
+- **observable** rename `RawSubscribable` to `LocalObservable` 
 
 ### Breaking Changes
 
+- **operator**: all operator extension traits are removed.
 - **observable**: remove `Observable::new`, and add a same `create` function in `observable` to replace it.
 - **observable**: Rename `Observable` to `ObservableFromFn`.
 - **operator**: Remove `IntoShared` trait.
@@ -30,7 +32,7 @@
     ```
 - **observable**: rename observable creation function `from_fn` to `of_fn`
 - **observable**: rename observable creation function `from_future_with_err` to `from_future_result`
-- **observable**: Redefine `RawSubscribable` as `Observable`. From
+- **observable**: Redefine `RawSubscribable` as `LocalObservable`. From
   ```rust
   pub trait RawSubscribable<Subscriber> {
     type Unsub: SubscriptionLike + 'static;
@@ -40,7 +42,7 @@
   to
 
   ```rust
-  pub trait Observable<'a> {
+  pub trait LocalObservable<'a> {
     type Item;
     type Err;
     type Unsub: SubscriptionLike + 'static;

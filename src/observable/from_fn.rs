@@ -28,7 +28,12 @@ where
 
 pub struct FnEmitter<F, Item, Err>(F, PhantomData<(Item, Err)>);
 
-impl<'a, F, Item, Err> Emitter<'a> for FnEmitter<F, Item, Err>
+impl<F, Item, Err> Emitter for FnEmitter<F, Item, Err> {
+  type Item = Item;
+  type Err = Err;
+}
+
+impl<'a, F, Item, Err> LocalEmitter<'a> for FnEmitter<F, Item, Err>
 where
   F: FnOnce(
     Subscriber<
@@ -37,8 +42,6 @@ where
     >,
   ),
 {
-  type Item = Item;
-  type Err = Err;
   fn emit<O>(self, subscriber: Subscriber<O, LocalSubscription>)
   where
     O: Observer<Self::Item, Self::Err> + 'a,
@@ -59,8 +62,6 @@ where
     >,
   ),
 {
-  type Item = Item;
-  type Err = Err;
   fn emit<O>(self, subscriber: Subscriber<O, SharedSubscription>)
   where
     O: Observer<Self::Item, Self::Err> + Send + Sync + 'static,

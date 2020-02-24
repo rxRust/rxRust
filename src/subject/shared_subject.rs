@@ -7,9 +7,12 @@ type SharedPublishers<Item, Err> =
 pub type SharedSubject<Item, Err> =
   Subject<SharedPublishers<Item, Err>, SharedSubscription>;
 
-impl<Item, Err> SharedObservable for SharedSubject<Item, Err> {
+impl<Item, Err> Observable for SharedSubject<Item, Err> {
   type Item = Item;
   type Err = Err;
+}
+
+impl<Item, Err> SharedObservable for SharedSubject<Item, Err> {
   type Unsub = SharedSubscription;
   fn actual_subscribe<
     O: Observer<Self::Item, Self::Err> + Sync + Send + 'static,

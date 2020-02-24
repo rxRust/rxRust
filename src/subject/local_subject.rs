@@ -8,9 +8,11 @@ type LocalPublishers<'a, Item, Err> =
 pub type LocalSubject<'a, Item, Err> =
   Subject<LocalPublishers<'a, Item, Err>, LocalSubscription>;
 
-impl<'a, Item, Err> Observable<'a> for LocalSubject<'a, Item, Err> {
+impl<'a, Item, Err> Observable for LocalSubject<'a, Item, Err> {
   type Item = Item;
   type Err = Err;
+}
+impl<'a, Item, Err> LocalObservable<'a> for LocalSubject<'a, Item, Err> {
   type Unsub = LocalSubscription;
   fn actual_subscribe<O: Observer<Self::Item, Self::Err> + 'a>(
     mut self,

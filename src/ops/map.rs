@@ -1,27 +1,10 @@
 use crate::observer::{complete_proxy_impl, error_proxy_impl};
 use crate::prelude::*;
 
-pub trait Map {
-  /// Creates a new stream which calls a closure on each element and uses
-  /// its return as the value.
-  fn map<B, Item, F>(self, f: F) -> MapOp<Self, F>
-  where
-    Self: Sized,
-    F: Fn(B) -> Item,
-  {
-    MapOp {
-      source: self,
-      func: f,
-    }
-  }
-}
-
-impl<O> Map for O {}
-
 #[derive(Clone)]
 pub struct MapOp<S, M> {
-  source: S,
-  func: M,
+  pub(crate) source: S,
+  pub(crate) func: M,
 }
 
 macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
@@ -40,13 +23,20 @@ macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
   }
 }
 
-impl<'a, Item, S, M> Observable<'a> for MapOp<S, M>
+impl<Item, S, M> Observable for MapOp<S, M>
 where
-  S: Observable<'a>,
-  M: FnMut(S::Item) -> Item + 'a,
+  S: Observable,
+  M: FnMut(S::Item) -> Item,
 {
   type Item = Item;
   type Err = S::Err;
+}
+
+impl<'a, Item, S, M> LocalObservable<'a> for MapOp<S, M>
+where
+  S: LocalObservable<'a>,
+  M: FnMut(S::Item) -> Item + 'a,
+{
   type Unsub = S::Unsub;
   observable_impl!(LocalSubscription,'a);
 }
@@ -56,8 +46,6 @@ where
   S: SharedObservable,
   M: FnMut(S::Item) -> Item + Send + Sync + 'static,
 {
-  type Item = Item;
-  type Err = S::Err;
   type Unsub = S::Unsub;
   observable_impl!(SharedSubscription, Send + Sync + 'static);
 }
@@ -80,7 +68,7 @@ where
 
 #[cfg(test)]
 mod test {
-  use crate::{ops::Map, prelude::*};
+  use crate::prelude::*;
 
   #[test]
   fn primitive_type() {

@@ -27,7 +27,7 @@ fn value_as_mut_ref<'a, T>(v: MutRefValue<T>) -> &'a mut T {
 #[inline]
 fn none_map<T>(v: T) -> T { v }
 
-type MutRefItemSubject<'a, Item, Err> = MutRefSubject<
+pub type MutRefItemSubject<'a, Item, Err> = MutRefSubject<
   'a,
   MutRefValue<Item>,
   Err,
@@ -44,7 +44,7 @@ impl<'a, Item, Err> LocalSubject<'a, MutRefValue<Item>, Err> {
   }
 }
 
-type MutRefErrSubject<'a, Item, Err> = MutRefSubject<
+pub type MutRefErrSubject<'a, Item, Err> = MutRefSubject<
   'a,
   Item,
   MutRefValue<Err>,
@@ -61,7 +61,7 @@ impl<'a, Item, Err> LocalSubject<'a, Item, MutRefValue<Err>> {
   }
 }
 
-type MutRefAllSubject<'a, Item, Err> = MutRefSubject<
+pub type MutRefAllSubject<'a, Item, Err> = MutRefSubject<
   'a,
   MutRefValue<Item>,
   MutRefValue<Err>,
@@ -130,7 +130,7 @@ struct MutRefObserver<O, MI, ME> {
   map_err: ME,
 }
 
-impl<'a, MI, ME, Item, Err, MapItem, MapErr> Observable<'a>
+impl<'a, MI, ME, Item, Err, MapItem, MapErr> Observable
   for MutRefSubject<'a, Item, Err, MI, ME>
 where
   MI: Fn(Item) -> MapItem + 'a,
@@ -138,6 +138,14 @@ where
 {
   type Item = MapItem;
   type Err = MapErr;
+}
+
+impl<'a, MI, ME, Item, Err, MapItem, MapErr> LocalObservable<'a>
+  for MutRefSubject<'a, Item, Err, MI, ME>
+where
+  MI: Fn(Item) -> MapItem + 'a,
+  ME: Fn(Err) -> MapErr + 'a,
+{
   type Unsub = LocalSubscription;
   fn actual_subscribe<O: Observer<Self::Item, Self::Err> + 'a>(
     self,

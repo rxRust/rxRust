@@ -26,7 +26,7 @@ pub trait SubscribeNext<'a, N> {
 
 impl<'a, S, N> SubscribeNext<'a, N> for S
 where
-  S: Observable<'a, Err = ()>,
+  S: LocalObservable<'a, Err = ()>,
   N: FnMut(S::Item) + 'a,
 {
   type Unsub = S::Unsub;

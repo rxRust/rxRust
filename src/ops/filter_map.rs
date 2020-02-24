@@ -63,13 +63,20 @@ macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
   }
 }
 
-impl<'a, Item, S, F> Observable<'a> for FilterMapOp<S, F>
+impl<'a, Item, S, F> Observable for FilterMapOp<S, F>
 where
-  S: Observable<'a>,
-  F: FnMut(S::Item) -> Option<Item> + 'a,
+  S: Observable,
+  F: FnMut(S::Item) -> Option<Item>,
 {
   type Item = Item;
   type Err = S::Err;
+}
+
+impl<'a, Item, S, F> LocalObservable<'a> for FilterMapOp<S, F>
+where
+  S: LocalObservable<'a>,
+  F: FnMut(S::Item) -> Option<Item> + 'a,
+{
   type Unsub = S::Unsub;
   observable_impl!(LocalSubscription, 'a);
 }
@@ -79,8 +86,6 @@ where
   S: SharedObservable,
   F: FnMut(S::Item) -> Option<Item> + Send + Sync + 'static,
 {
-  type Item = Item;
-  type Err = S::Err;
   type Unsub = S::Unsub;
   observable_impl!(SharedSubscription, Send + Sync + 'static);
 }

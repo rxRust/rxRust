@@ -1,5 +1,6 @@
 use crate::prelude::*;
 use crate::subject::{LocalSubject, SharedSubject};
+use observable::observable_proxy_impl;
 use ops::ref_count::{RefCount, RefCountCreator};
 
 #[derive(Clone, Default)]
@@ -16,6 +17,7 @@ impl<Source, Subject: Default> ConnectableObservable<Source, Subject> {
     }
   }
 }
+observable_proxy_impl!(ConnectableObservable, Source, Subject);
 
 pub type LocalConnectableObservable<'a, S, Item, Err> =
   ConnectableObservable<S, LocalSubject<'a, Item, Err>>;
@@ -34,14 +36,11 @@ macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
   }
 }
 
-impl<'a, S, Item, Err> Observable<'a>
+impl<'a, S, Item, Err> LocalObservable<'a>
   for LocalConnectableObservable<'a, S, Item, Err>
 where
-  S: Observable<'a, Item = Item, Err = Err>,
-  S: Observable<'a, Item = Item, Err = Err>,
+  S: LocalObservable<'a, Item = Item, Err = Err>,
 {
-  type Item = Item;
-  type Err = Err;
   observable_impl!(LocalSubscription, 'a);
 }
 
@@ -51,10 +50,9 @@ where
   S: SharedObservable<Item = Item, Err = Err>,
   S: SharedObservable<Item = Item, Err = Err>,
 {
-  type Item = Item;
-  type Err = Err;
   observable_impl!(SharedSubscription, Send + Sync + 'static);
 }
+
 impl<Source, Subject> ConnectableObservable<Source, Subject> {
   #[inline]
   pub fn ref_count<Inner: RefCountCreator<Connectable = Self>>(
@@ -66,7 +64,7 @@ impl<Source, Subject> ConnectableObservable<Source, Subject> {
 
 impl<'a, S, Item, Err> LocalConnectableObservable<'a, S, Item, Err>
 where
-  S: Observable<'a, Item = Item, Err = Err>,
+  S: LocalObservable<'a, Item = Item, Err = Err>,
   Item: Copy + 'a,
   Err: Copy + 'a,
 {
@@ -119,4 +117,34 @@ mod test {
 
     connected.connect();
   }
+}
+
+#[test]
+fn publish_smoke() {
+  let p = observable::of(100).publish();
+  let mut first = 0;
+  let mut second = 0;
+  p.clone().subscribe(|v| first = v);
+  p.clone().subscribe(|v| second = v);
+
+  p.connect();
+  assert_eq!(first, 100);
+  assert_eq!(second, 100);
+}
+
+#[test]
+fn filter() {
+  use crate::ops::FilterMap;
+  use crate::subject::MutRefValue;
+  let mut subject = Subject::new();
+
+  subject
+    .clone()
+    .mut_ref_all()
+    .filter_map::<fn(&mut i32) -> Option<&mut i32>, _, _>(|v| Some(v))
+    .publish()
+    .subscribe_err(|_: &mut _| {}, |_: &mut i32| {});
+
+  subject.next(MutRefValue(&mut 1));
+  subject.error(MutRefValue(&mut 2));
 }

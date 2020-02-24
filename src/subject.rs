@@ -71,7 +71,7 @@ mod test {
 
   #[test]
   fn empty_local_subject_can_convert_to_shared() {
-    use crate::{ops::ObserveOn, scheduler::Schedulers};
+    use crate::scheduler::Schedulers;
     use std::sync::{Arc, Mutex};
     let value = Arc::new(Mutex::new(0));
     let c_v = value.clone();

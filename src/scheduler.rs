@@ -58,7 +58,6 @@ pub fn delay_task(
 #[cfg(test)]
 mod test {
   extern crate test;
-  use crate::ops::ObserveOn;
   use crate::prelude::*;
   use crate::scheduler::Schedulers;
   use std::f32;

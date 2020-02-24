@@ -1,50 +1,12 @@
 use crate::observer::error_proxy_impl;
 use crate::prelude::*;
+use observable::observable_proxy_impl;
 use std::collections::VecDeque;
-
-/// Emits only the last `count` values emitted by the source Observable.
-///
-/// `take_last` returns an Observable that emits only the last `count` values
-/// emitted by the source Observable. If the source emits fewer than `count`
-/// values then all of its values are emitted.
-/// It will not emit values until source Observable complete.
-///
-/// # Example
-/// Take the last 5 seconds of an infinite 1-second interval Observable
-///
-/// ```
-/// # use rxrust::{
-///   ops::{TakeLast}, prelude::*,
-/// };
-///
-/// observable::from_iter(0..10).take_last(5).subscribe(|v| println!("{}", v));
-
-/// // print logs:
-/// // 5
-/// // 6
-/// // 7
-/// // 8
-/// // 9
-/// ```
-///
-pub trait TakeLast {
-  fn take_last(self, count: usize) -> TakeLastOp<Self>
-  where
-    Self: Sized,
-  {
-    TakeLastOp {
-      source: self,
-      count,
-    }
-  }
-}
-
-impl<O> TakeLast for O {}
 
 #[derive(Clone)]
 pub struct TakeLastOp<S> {
-  source: S,
-  count: usize,
+  pub(crate) source: S,
+  pub(crate) count: usize,
 }
 
 macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
@@ -64,12 +26,12 @@ macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
   }
 }
 
-impl<'a, S> Observable<'a> for TakeLastOp<S>
+observable_proxy_impl!(TakeLastOp, S);
+
+impl<'a, S> LocalObservable<'a> for TakeLastOp<S>
 where
-  S: Observable<'a> + 'a,
+  S: LocalObservable<'a> + 'a,
 {
-  type Item = S::Item;
-  type Err = S::Err;
   type Unsub = S::Unsub;
   observable_impl!(LocalSubscription, 'a);
 }
@@ -79,8 +41,6 @@ where
   S: SharedObservable,
   S::Item: Send + Sync + 'static,
 {
-  type Item = S::Item;
-  type Err = S::Err;
   type Unsub = S::Unsub;
   observable_impl!(SharedSubscription, Send + Sync + 'static);
 }
@@ -112,7 +72,6 @@ where
 
 #[cfg(test)]
 mod test {
-  use super::TakeLast;
   use crate::prelude::*;
 
   #[test]

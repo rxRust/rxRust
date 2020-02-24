@@ -23,12 +23,6 @@ pub fn of<Item>(v: Item) -> ObservableBase<OfEmitter<Item>> {
 #[derive(Clone)]
 pub struct OfEmitter<Item>(pub(crate) Item);
 
-impl<'a, Item> Emitter<'a> for OfEmitter<Item> {
-  type Item = Item;
-  type Err = ();
-  of_emitter!(LocalSubscription, 'a);
-}
-
 macro of_emitter($subscription:ty, $($marker:ident +)* $lf: lifetime) {
   fn emit<O>(self, mut subscriber: Subscriber<O, $subscription>)
   where
@@ -39,9 +33,16 @@ macro of_emitter($subscription:ty, $($marker:ident +)* $lf: lifetime) {
   }
 }
 
-impl<Item> SharedEmitter for OfEmitter<Item> {
+impl<Item> Emitter for OfEmitter<Item> {
   type Item = Item;
   type Err = ();
+}
+
+impl<'a, Item> LocalEmitter<'a> for OfEmitter<Item> {
+  of_emitter!(LocalSubscription, 'a);
+}
+
+impl<Item> SharedEmitter for OfEmitter<Item> {
   of_emitter!(SharedSubscription, Send + Sync + 'static);
 }
 
@@ -89,15 +90,17 @@ macro of_result_emitter($subscription:ty, $($marker:ident +)* $lf: lifetime) {
 
 #[derive(Clone)]
 pub struct ResultEmitter<Item, Err>(pub(crate) Result<Item, Err>);
-impl<'a, Item, Err> Emitter<'a> for ResultEmitter<Item, Err> {
+
+impl<Item, Err> Emitter for ResultEmitter<Item, Err> {
   type Item = Item;
   type Err = Err;
+}
+
+impl<'a, Item, Err> LocalEmitter<'a> for ResultEmitter<Item, Err> {
   of_result_emitter!(LocalSubscription, 'a);
 }
 
 impl<Item, Err> SharedEmitter for ResultEmitter<Item, Err> {
-  type Item = Item;
-  type Err = Err;
   of_result_emitter!(SharedSubscription, Send + Sync + 'static);
 }
 
@@ -137,15 +140,16 @@ macro of_option_emitter($subscription:ty, $($marker:ident +)* $lf: lifetime) {
   }
 }
 
-impl<'a, Item> Emitter<'a> for OptionEmitter<Item> {
+impl<Item> Emitter for OptionEmitter<Item> {
   type Item = Item;
   type Err = ();
+}
+
+impl<'a, Item> LocalEmitter<'a> for OptionEmitter<Item> {
   of_option_emitter!(LocalSubscription, 'a);
 }
 
 impl<Item> SharedEmitter for OptionEmitter<Item> {
-  type Item = Item;
-  type Err = ();
   of_option_emitter!(SharedSubscription, Send + Sync + 'static);
 }
 
@@ -185,12 +189,18 @@ macro of_fn_emitter($subscription:ty, $($marker:ident +)* $lf: lifetime) {
   }
 }
 
-impl<'a, Item, F> Emitter<'a> for CallableEmitter<F>
+impl<Item, F> Emitter for CallableEmitter<F>
 where
   F: FnOnce() -> Item,
 {
   type Item = Item;
   type Err = ();
+}
+
+impl<'a, Item, F> LocalEmitter<'a> for CallableEmitter<F>
+where
+  F: FnOnce() -> Item,
+{
   of_fn_emitter!(LocalSubscription, 'a);
 }
 
@@ -198,8 +208,6 @@ impl<Item, F> SharedEmitter for CallableEmitter<F>
 where
   F: FnOnce() -> Item,
 {
-  type Item = Item;
-  type Err = ();
   of_fn_emitter!(SharedSubscription, Send + Sync + 'static);
 }
 

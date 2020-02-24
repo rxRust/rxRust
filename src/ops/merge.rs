@@ -4,53 +4,28 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
-/// combine two Observables into one by merging their emissions
-///
-/// # Example
-///
-/// ```
-/// # use rxrust::{ ops::{Filter, Merge}, prelude::*};
-/// let numbers = Subject::new();
-/// // crate a even stream by filter
-/// let even = numbers.clone().filter(|v| *v % 2 == 0);
-/// // crate an odd stream by filter
-/// let odd = numbers.clone().filter(|v| *v % 2 != 0);
-///
-/// // merge odd and even stream again
-/// let merged = even.merge(odd);
-///
-/// // attach observers
-/// merged.subscribe(|v: &i32| println!("{} ", v));
-/// ```
-pub trait Merge {
-  fn merge<S>(self, o: S) -> MergeOp<Self, S>
-  where
-    Self: Sized,
-  {
-    MergeOp {
-      source1: self,
-      source2: o,
-    }
-  }
-}
-
-impl<O> Merge for O {}
-
 #[derive(Clone)]
 pub struct MergeOp<S1, S2> {
-  source1: S1,
-  source2: S2,
+  pub(crate) source1: S1,
+  pub(crate) source2: S2,
 }
 
 pub struct SharedMergeOp<S1, S2>(MergeOp<S1, S2>);
 
-impl<'a, S1, S2> Observable<'a> for MergeOp<S1, S2>
+impl<S1, S2> Observable for MergeOp<S1, S2>
 where
-  S1: Observable<'a>,
-  S2: Observable<'a, Item = S1::Item, Err = S1::Err>,
+  S1: Observable,
+  S2: Observable<Item = S1::Item, Err = S1::Err>,
 {
   type Item = S1::Item;
   type Err = S1::Err;
+}
+
+impl<'a, S1, S2> LocalObservable<'a> for MergeOp<S1, S2>
+where
+  S1: LocalObservable<'a>,
+  S2: LocalObservable<'a, Item = S1::Item, Err = S1::Err>,
+{
   type Unsub = LocalSubscription;
 
   fn actual_subscribe<O: Observer<Self::Item, Self::Err> + 'a>(
@@ -81,8 +56,6 @@ where
   S2: SharedObservable<Item = S1::Item, Err = S1::Err, Unsub = S1::Unsub>,
   S1::Unsub: Send + Sync,
 {
-  type Item = S1::Item;
-  type Err = S1::Err;
   type Unsub = SharedSubscription;
   fn actual_subscribe<
     O: Observer<Self::Item, Self::Err> + Sync + Send + 'static,
@@ -138,10 +111,7 @@ where
 
 #[cfg(test)]
 mod test {
-  use crate::{
-    ops::{Filter, Merge},
-    prelude::*,
-  };
+  use crate::prelude::*;
   use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc, Mutex,

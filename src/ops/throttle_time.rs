@@ -1,37 +1,7 @@
 use crate::prelude::*;
+use observable::observable_proxy_impl;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-
-/// Emits a value from the source Observable, then ignores subsequent source
-/// values for duration milliseconds, then repeats this process.
-///
-/// #Example
-/// ```
-/// use rxrust::{ prelude::*, ops::{ ThrottleTime, ThrottleEdge }};
-/// use std::time::Duration;
-///
-/// observable::interval(Duration::from_millis(1))
-///   .to_shared()
-///   .throttle_time(Duration::from_millis(9), ThrottleEdge::Leading)
-///   .to_shared()
-///   .subscribe(move |v| println!("{}", v));
-/// ```
-pub trait ThrottleTime
-where
-  Self: Sized,
-{
-  fn throttle_time(
-    self,
-    duration: Duration,
-    edge: ThrottleEdge,
-  ) -> ThrottleTimeOp<Self> {
-    ThrottleTimeOp {
-      source: self,
-      duration,
-      edge,
-    }
-  }
-}
 
 /// Config to define leading and trailing behavior for throttle
 #[derive(PartialEq, Clone, Copy)]
@@ -42,21 +12,19 @@ pub enum ThrottleEdge {
 
 #[derive(Clone)]
 pub struct ThrottleTimeOp<S> {
-  source: S,
-  duration: Duration,
-  edge: ThrottleEdge,
+  pub(crate) source: S,
+  pub(crate) duration: Duration,
+  pub(crate) edge: ThrottleEdge,
 }
 
-impl<S> ThrottleTime for S {}
+observable_proxy_impl!(ThrottleTimeOp, S);
 
 impl<Item, Err, S, Unsub> SharedObservable for ThrottleTimeOp<S>
 where
-  S: for<'r> Observable<'r, Item = Item, Err = Err, Unsub = Unsub>,
+  S: for<'r> LocalObservable<'r, Item = Item, Err = Err, Unsub = Unsub>,
   Item: Clone + Send + 'static,
   Unsub: SubscriptionLike + 'static,
 {
-  type Item = Item;
-  type Err = Err;
   type Unsub = Unsub;
   fn actual_subscribe<
     O: Observer<Self::Item, Self::Err> + Send + Sync + 'static,
@@ -104,13 +72,11 @@ where
 //   .to_shared()
 //   .subscribe(move |v| println!("{}", v));
 // ```
-impl<Item, Err, S> SharedObservable for ThrottleTimeOp<Shared<S>>
+impl<S> SharedObservable for ThrottleTimeOp<Shared<S>>
 where
-  S: SharedObservable<Item = Item, Err = Err>,
-  Item: Clone + Send + 'static,
+  S: SharedObservable,
+  S::Item: Clone + Send + 'static,
 {
-  type Item = Item;
-  type Err = Err;
   type Unsub = S::Unsub;
   fn actual_subscribe<
     O: Observer<Self::Item, Self::Err> + Sync + Send + 'static,
