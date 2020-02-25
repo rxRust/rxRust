@@ -147,22 +147,25 @@ pub trait BoxIt {
 
 impl<T> BoxIt for T {}
 
-#[test]
-fn box_observable() {
-  let mut test = 0;
-  let mut boxed: LocalBoxOp<'_, i32, ()> = observable::of(100).box_it();
-  boxed.subscribe(|v| test = v);
+#[cfg(test)]
+mod test {
+  use crate::prelude::*;
+  use ops::box_it::{BoxIt, LocalBoxOp, SharedBoxOp};
 
-  boxed = observable::empty().box_it();
-  boxed.subscribe(|_| unreachable!());
-  assert_eq!(test, 100);
-}
-
-#[test]
-fn shared_box_observable() {
-  let mut boxed: SharedBoxOp<i32, ()> = observable::of(100).box_it();
-  boxed.to_shared().subscribe(|_| {});
-
-  boxed = observable::empty().box_it();
-  boxed.to_shared().subscribe(|_| unreachable!());
+  #[test]
+  fn box_observable() {
+    let mut test = 0;
+    let mut boxed: LocalBoxOp<'_, i32, ()> = observable::of(100).box_it();
+    boxed.subscribe(|v| test = v);
+    boxed = observable::empty().box_it();
+    boxed.subscribe(|_| unreachable!());
+    assert_eq!(test, 100);
+  }
+  #[test]
+  fn shared_box_observable() {
+    let mut boxed: SharedBoxOp<i32, ()> = observable::of(100).box_it();
+    boxed.to_shared().subscribe(|_| {});
+    boxed = observable::empty().box_it();
+    boxed.to_shared().subscribe(|_| unreachable!());
+  }
 }
