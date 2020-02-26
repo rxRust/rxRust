@@ -1,21 +1,21 @@
 # A small guide for developer
 
-## To implement a operator tip?
+## How To implement a operator type?
 
 - Add a method in `Observable` to construct your operator type.
 - Implement `Observable` for your operator type.
-- implement `LocalObservable` for your operator type to subscribe upstream and not care thread safe.
-- implement `SharedObservable` for your operator type to subscribe upstream and keep thread safe.
+- Implement `LocalObservable` for your operator type in order to handle a subscription (upstream) for single-threaded use.
+- Implement `SharedObservable` for your operator type in order to handle a subscription (upstream) for multi-threaded use
 
 ## How to implement a creation operator?
 
-Creation operators are functions that can be used to create an Observable with some common predefined behavior. `rxRust` already have a generic struct named ObservableBase<LocalEmitter> for implement creation operators.
+Creation operators are functions that can be used to create an Observable with some common predefined behavior. `rxRust` already has a generic struct named `ObservableBase<LocalEmitter>` for implementing creation operators.
 
-ObservableBase<LocalEmitter> assume those Observables are accept a `Subscriber`  to emit values. So a easy way to implement a creation operator is :
+`ObservableBase<LocalEmitter>` assume those Observables accept a `Subscriber`  to emit values. So an easy way to implement a creation operator is :
 
-- first, implement a `XxxEmitter` type which implement a `LocalEmitter` trait.
-- second, implement the function you want, this function just return a concrete type `ObservableBase<XxxEmitter>`.
-- third, like `LocalObservable`, `LocalEmitter` has thread safe version named `SharedEmitter`, remember implement it for your `XxxEmitter`.
+- First, implement an `XxxEmitter` type which implements a `LocalEmitter` trait.
+- Second, implement the function you want, It should return a concrete type `ObservableBase<XxxEmitter>`.
+- Third, like `LocalObservable`, `LocalEmitter` has a thread-safe version named `SharedEmitter`, remember to implement it for your `XxxEmitter`.
 
 
 
