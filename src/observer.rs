@@ -15,6 +15,7 @@ pub trait Observer<Item, Err> {
   fn complete(&mut self);
 }
 
+#[doc(hidden)]
 /// auto impl a proxy observer
 /// observer_proxy_impl!(
 ///   type          // give the type you want to implement for
@@ -51,6 +52,7 @@ pub(crate) macro observer_proxy_impl(
     }
 }
 
+#[doc(hidden)]
 pub(crate) macro next_proxy_impl(
   $item: ident, $($name:tt $($parentheses:tt)?) .+)
 {
@@ -60,6 +62,7 @@ pub(crate) macro next_proxy_impl(
   }
 }
 
+#[doc(hidden)]
 pub(crate) macro error_proxy_impl(
   $err: ident, $($name:tt $($parentheses:tt)?) .+)
 {
@@ -69,11 +72,13 @@ pub(crate) macro error_proxy_impl(
   }
 }
 
+#[doc(hidden)]
 pub(crate) macro complete_proxy_impl($($name:tt $($parentheses:tt)?) .+) {
   #[inline]
   fn complete(&mut self) { self.$($name$($parentheses)?).+.complete(); }
 }
 
+#[doc(hidden)]
 macro observer_pointer_proxy_impl(
   $ty: ty, $item: ident, $err:ident $(, <$($generics: tt),*>)?)
 {

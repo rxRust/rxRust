@@ -37,8 +37,8 @@ pub type MinMaxOp<Source, Item> = MapOp<
   fn(Option<Item>) -> Item,
 >;
 
-/// Holds intermediate computations of accumulated values for [`Average`]
-/// operator, as nominator and denominator respectively.
+/// Holds intermediate computations of accumulated values for
+/// [`Observable@Average`] operator, as nominator and denominator respectively.
 pub type Accum<Item> = (Item, usize);
 
 /// Realised as chained composition of scan->last->map operators.

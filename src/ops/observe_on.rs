@@ -79,6 +79,7 @@ pub struct ObserveOnObserver<O, SD, U> {
   scheduler: SD,
 }
 
+#[doc(hidden)]
 macro impl_observer($item: ident, $err: ident) {
   fn next(&mut self, value: $item) {
     let s = self.scheduler.schedule(

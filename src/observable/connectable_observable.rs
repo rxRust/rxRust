@@ -25,6 +25,7 @@ pub type LocalConnectableObservable<'a, S, Item, Err> =
 pub type SharedConnectableObservable<S, Item, Err> =
   ConnectableObservable<S, SharedSubject<Item, Err>>;
 
+#[doc(hidden)]
 macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
   type Unsub = $subscription;
   #[inline(always)]

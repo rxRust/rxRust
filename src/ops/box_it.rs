@@ -24,6 +24,7 @@ pub trait SharedBoxObservable {
   ) -> Box<dyn SubscriptionLike + Send + Sync>;
 }
 
+#[doc(hidden)]
 macro box_observable_impl(
   $subscription:ty, $source:ident, $($marker:ident +)* $lf: lifetime)
 {
@@ -64,6 +65,7 @@ pub type LocalBoxOp<'a, Item, Err> =
 pub type SharedBoxOp<Item, Err> =
   BoxOp<Box<dyn SharedBoxObservable<Item = Item, Err = Err> + Send + Sync>>;
 
+#[doc(hidden)]
 macro observable_impl(  $subscription:ty, $($marker:ident +)* $lf: lifetime)
 {
   fn actual_subscribe<O: Observer<Self::Item, Self::Err> + $($marker +)* $lf>(

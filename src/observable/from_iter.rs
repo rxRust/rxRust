@@ -38,6 +38,7 @@ where
 #[derive(Clone)]
 pub struct IterEmitter<Iter>(Iter);
 
+#[doc(hidden)]
 macro iter_emitter($subscription:ty, $($marker:ident +)* $lf: lifetime) {
   fn emit<O>(self, mut subscriber: Subscriber<O, $subscription>)
   where

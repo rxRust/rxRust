@@ -4,6 +4,9 @@ version = "0.8.0"
 authors = ["adoo <Adoo@outlook.com>"]
 edition = "2018"
 description = "A Rust implementation of Reactive Extensions."
+repository = "https://github.com/rxRust/rxRust"
+
+
 keywords = ["reactivex", "rx", "frp"]
 license = "MIT"
 

@@ -19,6 +19,7 @@ pub trait SubscriptionLike {
 #[derive(Clone, Default)]
 pub struct LocalSubscription(Rc<RefCell<Inner<Box<dyn SubscriptionLike>>>>);
 
+#[doc(hidden)]
 /// subscription_proxy_impl!(
 ///   type          // give the type you want to implement for
 ///   , {path}      // the path to access to the actual observer
@@ -169,6 +170,7 @@ impl<T> Default for Inner<T> {
   }
 }
 
+#[doc(hidden)]
 macro subscription_direct_impl_proxy() {
   #[inline(always)]
   fn unsubscribe(&mut self) { (&mut **self).unsubscribe(); }

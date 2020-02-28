@@ -18,6 +18,7 @@ impl<Emit> ObservableBase<Emit> {
   pub fn new(emitter: Emit) -> Self { ObservableBase(emitter) }
 }
 
+#[doc(hidden)]
 macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
   fn actual_subscribe<O: Observer<Self::Item, Self::Err> + $($marker +)* $lf>(
     self,

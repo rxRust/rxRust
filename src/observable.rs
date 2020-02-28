@@ -429,9 +429,9 @@ pub trait Observable {
     }
   }
 
-  /// Works like [`scan_initial`] but starts with a value defined by a
-  /// [`Default`] trait for the first argument `binary_op` operator
-  /// operates on.
+  /// Works like [`scan_initial`](Observable::scan_initial) but starts with a
+  /// value defined by a [`Default`] trait for the first argument `binary_op`
+  /// operator operates on.
   ///
   /// # Arguments
   ///
@@ -449,13 +449,6 @@ pub trait Observable {
     self.scan_initial(OutputItem::default(), binary_op)
   }
 
-  /// The [`Reduce`] operator applies a function to the first item emitted by
-  /// the source observable and then feeds the result of the function back
-  /// into the function along with the second item emitted by the source
-  /// observable, continuing this process until the source observable emits
-  /// its final item and completes, whereupon the observable returned from
-  /// [`Reduce`] emits the final value returned from the function.
-  ///
   /// Apply a function to each item emitted by an observable, sequentially,
   /// and emit the final value, after source observable completes.
   ///
@@ -494,8 +487,9 @@ pub trait Observable {
       .last_or(initial)
   }
 
-  /// Works like [`reduce_initial`] but starts with a value defined by a
-  /// [`Default`] trait for the first argument `f` operator operates on.
+  /// Works like [`reduce_initial`](Observable::reduce_initial) but starts with
+  /// a value defined by a [`Default`] trait for the first argument `f`
+  /// operator operates on.
   ///
   /// # Arguments
   ///
@@ -849,6 +843,7 @@ pub trait LocalObservable<'a>: Observable {
   ) -> Self::Unsub;
 }
 
+#[doc(hidden)]
 pub(crate) macro observable_proxy_impl(
   $ty: ident
   , $host: ident

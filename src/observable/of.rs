@@ -23,6 +23,7 @@ pub fn of<Item>(v: Item) -> ObservableBase<OfEmitter<Item>> {
 #[derive(Clone)]
 pub struct OfEmitter<Item>(pub(crate) Item);
 
+#[doc(hidden)]
 macro of_emitter($subscription:ty, $($marker:ident +)* $lf: lifetime) {
   fn emit<O>(self, mut subscriber: Subscriber<O, $subscription>)
   where
@@ -75,6 +76,7 @@ pub fn of_result<Item, Err>(
   ObservableBase::new(ResultEmitter(r))
 }
 
+#[doc(hidden)]
 macro of_result_emitter($subscription:ty, $($marker:ident +)* $lf: lifetime) {
   fn emit<O>(self, mut subscriber: Subscriber<O, $subscription>)
   where
@@ -128,6 +130,7 @@ pub fn of_option<Item>(o: Option<Item>) -> ObservableBase<OptionEmitter<Item>> {
 #[derive(Clone)]
 pub struct OptionEmitter<Item>(pub(crate) Option<Item>);
 
+#[doc(hidden)]
 macro of_option_emitter($subscription:ty, $($marker:ident +)* $lf: lifetime) {
   fn emit<O>(self, mut subscriber: Subscriber<O, $subscription>)
   where
@@ -179,6 +182,7 @@ where
 #[derive(Clone)]
 pub struct CallableEmitter<F>(F);
 
+#[doc(hidden)]
 macro of_fn_emitter($subscription:ty, $($marker:ident +)* $lf: lifetime) {
   fn emit<O>(self, mut subscriber: Subscriber<O, $subscription>)
   where

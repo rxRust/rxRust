@@ -1,4 +1,8 @@
-## [Unreleased](https://github.com/rxRust/rxRust/compare/v0.8.0...HEAD)
+## [Unreleased](https://github.com/rxRust/rxRust/compare/v0.8.1...HEAD)
+
+## [0.8.1](https://github.com/rxRust/rxRust/releases/tag/v0.8.1)  (2020-02-28)
+
+- **docs**: fix docs link and remove inner macro from docs.
 
 ## [0.8.0](https://github.com/rxRust/rxRust/releases/tag/v0.8.0)  (2020-02-28)
 

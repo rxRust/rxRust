@@ -7,6 +7,7 @@ pub struct FilterOp<S, F> {
   pub(crate) filter: F,
 }
 
+#[doc(hidden)]
 macro observable_impl(
   $subscription:ty, $source:ident, $($marker:ident +)* $lf: lifetime)
 {

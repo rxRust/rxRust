@@ -63,9 +63,10 @@ where
   }
 }
 
-/// Converts a `Future` to an observable sequence like [`from_future`].
-/// But only work for which `Future::Output` is `Result` type, and `Result::Ok`
-/// emit to next handle, and `Result::Err` as an error to handle.
+/// Converts a `Future` to an observable sequence like
+/// [`from_future@from_future`]. But only work for which `Future::Output` is
+/// `Result` type, and `Result::Ok` emit to next handle, and `Result::Err` as an
+/// error to handle.
 pub fn from_future_result<F, Item, Err>(
   f: F,
 ) -> ObservableBase<FutureResultEmitter<F, Item, Err>>

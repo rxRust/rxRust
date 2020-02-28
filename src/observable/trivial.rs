@@ -13,6 +13,7 @@ pub fn throw<Err>(e: Err) -> ObservableBase<ThrowEmitter<Err>> {
 #[derive(Clone)]
 pub struct ThrowEmitter<Err>(Err);
 
+#[doc(hidden)]
 macro throw_emitter($subscription:ty, $($marker:ident +)* $lf: lifetime) {
   #[inline]
   fn emit<O>(self, mut subscriber: Subscriber<O, $subscription>)
@@ -55,6 +56,7 @@ pub fn empty<Item>() -> ObservableBase<EmptyEmitter<Item>> {
 #[derive(Clone)]
 pub struct EmptyEmitter<Item>(PhantomData<Item>);
 
+#[doc(hidden)]
 macro empty_emitter($subscription:ty, $($marker:ident +)* $lf: lifetime) {
   #[inline]
   fn emit<O>(self, mut subscriber: Subscriber<O, $subscription>)
@@ -87,6 +89,7 @@ pub fn never() -> ObservableBase<NeverEmitter> {
 #[derive(Clone)]
 pub struct NeverEmitter();
 
+#[doc(hidden)]
 macro never_emitter($subscription:ty, $($marker:ident +)* $lf: lifetime) {
   #[inline]
   fn emit<O>(self, subscriber: Subscriber<O, $subscription>)

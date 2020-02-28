@@ -48,6 +48,7 @@ pub struct FilterMapOp<S, F> {
   f: F,
 }
 
+#[doc(hidden)]
 macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
   fn actual_subscribe<O: Observer<Self::Item, Self::Err> + $($marker +)* $lf>(
     self,
