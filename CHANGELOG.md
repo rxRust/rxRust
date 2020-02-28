@@ -1,4 +1,6 @@
-## [Unreleased](https://github.com/rxRust/rxRust/compare/v0.7.3...HEAD)
+## [Unreleased](https://github.com/rxRust/rxRust/compare/v0.8.0...HEAD)
+
+## [0.8.0](https://github.com/rxRust/rxRust/releases/tag/v0.8.0)  (2020-02-28)
 
 ### Features
 

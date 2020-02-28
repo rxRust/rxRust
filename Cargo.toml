@@ -8,7 +8,7 @@ keywords = ["reactivex", "rx", "frp"]
 license = "MIT"
 
 [package.metadata.release]
-no-dev-version = false
+no-dev-version = true
 
 [dependencies]
 futures-preview = "=0.3.0-alpha.18"
