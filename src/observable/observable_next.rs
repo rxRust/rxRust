@@ -53,12 +53,14 @@ fn raii() {
   let mut times = 0;
   {
     let mut subject = Subject::new();
-    subject
-      .clone()
-      .subscribe(|_| {
-        times += 1;
-      })
-      .unsubscribe_when_dropped();
+    {
+      let _ = subject
+        .clone()
+        .subscribe(|_| {
+          times += 1;
+        })
+        .unsubscribe_when_dropped();
+    } // <-- guard is dropped here!
     subject.next(());
   }
   assert_eq!(times, 0);

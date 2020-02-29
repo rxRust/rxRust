@@ -1,5 +1,7 @@
 ## [Unreleased](https://github.com/rxRust/rxRust/compare/v0.8.1...HEAD)
 
+- **subscription** The guard returned by `unsubscribe_when_dropped()` has the [must_use](https://doc.rust-lang.org/reference/attributes/diagnostics.html#the-must_use-attribute) attribute
+
 ## [0.8.1](https://github.com/rxRust/rxRust/releases/tag/v0.8.1)  (2020-02-28)
 
 - **docs**: fix docs link and remove inner macro from docs.

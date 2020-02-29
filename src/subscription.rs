@@ -218,6 +218,14 @@ subscription_proxy_impl!(SubscriptionWrapper<T>, { 0 }, T);
 /// An RAII implementation of a "scoped subscribed" of a subscription.
 /// When this structure is dropped (falls out of scope), the subscription will
 /// be unsubscribed.
+///
+/// Implements the [must_use](
+/// https://doc.rust-lang.org/reference/attributes/diagnostics.html
+/// #the-must_use-attribute)
+/// attribute
+///
+/// If you want to drop it immediately, wrap it in it's own scope
+#[must_use]
 pub struct SubscriptionGuard<T: SubscriptionLike>(pub(crate) T);
 impl<T: SubscriptionLike> Drop for SubscriptionGuard<T> {
   #[inline]
