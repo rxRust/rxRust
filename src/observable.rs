@@ -50,6 +50,7 @@ use ops::{
   subscribe_on::SubscribeOnOP,
   take::TakeOp,
   take_last::TakeLastOp,
+  take_until::TakeUntilOp,
   throttle_time::{ThrottleEdge, ThrottleTimeOp},
   Accum, AverageOp, CountOp, MinMaxOp, ReduceOp, SumOp,
 };
@@ -334,6 +335,25 @@ pub trait Observable {
     TakeOp {
       source: self,
       count,
+    }
+  }
+
+  /// Emits the values emitted by the source Observable until a `notifier`
+  /// Observable emits a value.
+  ///
+  /// `take_until` subscribes and begins mirroring the source Observable. It
+  /// also monitors a second Observable, `notifier` that you provide. If the
+  /// `notifier` emits a value, the output Observable stops mirroring the source
+  /// Observable and completes. If the `notifier` doesn't emit any value and
+  /// completes then `take_until` will pass all values.
+  #[inline]
+  fn take_until<T>(self, notifier: T) -> TakeUntilOp<Self, T>
+  where
+    Self: Sized,
+  {
+    TakeUntilOp {
+      source: self,
+      notifier,
     }
   }
 

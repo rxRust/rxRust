@@ -13,6 +13,7 @@ pub mod skip_last;
 pub mod subscribe_on;
 pub mod take;
 pub mod take_last;
+pub mod take_until;
 pub mod throttle_time;
 pub use filter_map::FilterMap;
 pub mod box_it;
