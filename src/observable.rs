@@ -51,6 +51,7 @@ use ops::{
   take::TakeOp,
   take_last::TakeLastOp,
   throttle_time::{ThrottleEdge, ThrottleTimeOp},
+  zip::ZipOp,
   Accum, AverageOp, CountOp, MinMaxOp, ReduceOp, SumOp,
 };
 use std::marker::PhantomData;
@@ -71,7 +72,6 @@ pub trait Observable {
   }
 
   /// emit only the first item emitted by an Observable
-  #[inline]
   #[inline]
   fn first_or(self, default: Self::Item) -> FirstOrOp<TakeOp<Self>, Self::Item>
   where
@@ -101,6 +101,7 @@ pub trait Observable {
   /// // print log:
   /// // 1234
   /// ```
+  #[inline]
   fn last_or(self, default: Self::Item) -> LastOrOp<Self, Self::Item>
   where
     Self: Sized,
@@ -173,6 +174,7 @@ pub trait Observable {
   /// // attach observers
   /// merged.subscribe(|v: &i32| println!("{} ", v));
   /// ```
+  #[inline]
   fn merge<S>(self, o: S) -> MergeOp<Self, S>
   where
     Self: Sized,
@@ -494,6 +496,7 @@ pub trait Observable {
   /// # Arguments
   ///
   /// * `binary_op` - A closure acting as a binary operator.
+  #[inline]
   fn reduce<OutputItem, BinaryOp>(
     self,
     binary_op: BinaryOp,
@@ -601,6 +604,7 @@ pub trait Observable {
   /// // p rint log:
   /// // 5
   /// ```
+  #[inline]
   fn sum(self) -> SumOp<Self, Self::Item>
   where
     Self: Sized,
@@ -629,6 +633,7 @@ pub trait Observable {
   /// // print log:
   /// // 5
   /// ```
+  #[inline]
   fn count(self) -> CountOp<Self, Self::Item>
   where
     Self: Sized,
@@ -704,6 +709,7 @@ pub trait Observable {
   /// items when it is subscribed to, but only when the Connect operator is
   /// applied to it. In this way you can wait for all intended observers to
   /// subscribe to the Observable before the Observable begins emitting items.
+  #[inline]
   fn publish<Subject: Default>(self) -> ConnectableObservable<Self, Subject>
   where
     Self: Sized,
@@ -716,6 +722,7 @@ pub trait Observable {
 
   /// Delays the emission of items from the source Observable by a given timeout
   /// or until a given `Instant`.
+  #[inline]
   fn delay(self, dur: Duration) -> DelayOp<Self>
   where
     Self: Sized,
@@ -726,6 +733,7 @@ pub trait Observable {
     }
   }
 
+  #[inline]
   fn delay_at(self, at: Instant) -> DelayOp<Self>
   where
     Self: Sized,
@@ -778,6 +786,7 @@ pub trait Observable {
   /// The reason for this is that Observable `b` emits its values directly like
   /// before, but the emissions from `a` are scheduled on a new thread because
   /// we are now using the `NewThread` Scheduler for that specific Observable.
+  #[inline]
   fn subscribe_on<SD>(self, scheduler: SD) -> SubscribeOnOP<Self, SD>
   where
     Self: Sized,
@@ -794,6 +803,7 @@ pub trait Observable {
   /// `ObserveOn` is an operator that accepts a scheduler as the parameter,
   /// which will be used to reschedule notifications emitted by the source
   /// Observable.
+  #[inline]
   fn observe_on<'a, SD>(self, scheduler: SD) -> ObserveOnOp<'a, Self, SD>
   where
     Self: Sized,
@@ -819,6 +829,7 @@ pub trait Observable {
   ///   .to_shared()
   ///   .subscribe(move |v| println!("{}", v));
   /// ```
+  #[inline]
   fn throttle_time(
     self,
     duration: Duration,
@@ -832,6 +843,23 @@ pub trait Observable {
       duration,
       edge,
     }
+  }
+
+  /// 'Zips up' two observable into a single observable of pairs.
+  ///
+  /// zip() returns a new observable that will emit over two other
+  /// observables,  returning a tuple where the first element comes from the
+  /// first observable, and  the second element comes from the second
+  /// observable.
+  ///
+  ///  In other words, it zips two observables together, into a single one.
+  #[inline]
+  fn zip<U>(self, other: U) -> ZipOp<Self, U>
+  where
+    Self: Sized,
+    U: Observable,
+  {
+    ZipOp { a: self, b: other }
   }
 }
 
