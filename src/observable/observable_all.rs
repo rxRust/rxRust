@@ -107,10 +107,12 @@ fn raii() {
   let mut times = 0;
   {
     let mut subject = Subject::new();
-    subject
-      .clone()
-      .subscribe_all(|_| times += 1, |_| {}, || {})
-      .unsubscribe_when_dropped();
+    {
+      let _ = subject
+        .clone()
+        .subscribe_all(|_| times += 1, |_| {}, || {})
+        .unsubscribe_when_dropped();
+    } // <-- guard is dropped here!
     subject.next(());
     subject.error(());
   }
