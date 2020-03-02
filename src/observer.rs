@@ -150,19 +150,22 @@ where
 /// when you use subjects or cloned observables. All items/errors which are
 /// copyable (= implement `Copy`) work in such situations out of the box.
 /// Items/errors which implement just `Clone` but not `Copy` *don't* work out of
-/// the box (because rxRust wants to prevent you from
-/// accidentally introducing poorly performing observable chains). If you have
-/// such items/errors, you might want to implement `PayloadCopy` for them. You
-/// can use it just like a marker trait because there's a default method
-/// definition which simply calls `clone()` to make the copy.
+/// the box (because rxRust wants to prevent you from accidentally introducing
+/// poorly performing observable chains). If you have such items/errors, you
+/// might want to implement `PayloadCopy` for them. You can use it just like a
+/// marker trait because there's a default method definition which simply calls
+/// `clone()` to make the copy. However, take care to only implement it for
+/// types that are cheap to clone! In multi-observer scenarios (e.g. when using
+/// subjects), `payload_copy()` will be called for each single observer!
 ///
 /// # Example
 /// ```rust
 /// use rxrust::prelude::*;
+/// use std::rc::Rc;
 ///
 /// #[derive(Clone)]
 /// struct MyCloneableItem {
-///   text: String,
+///   text: Rc<String>,
 /// }
 ///
 /// impl PayloadCopy for MyCloneableItem {}
@@ -170,8 +173,7 @@ where
 pub trait PayloadCopy: Clone {
   /// Should return a copy of the value. Unlike `Copy`, this can be more than
   /// just a bitwise copy. Unlike `Clone`, this should still be a cheap
-  /// operation. In multi-observer scenarios (e.g. when using subjects) it
-  /// will be called for each single observer!
+  /// operation.
   #[must_use]
   fn payload_copy(&self) -> Self { self.clone() }
 }
