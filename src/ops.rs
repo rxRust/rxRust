@@ -17,6 +17,7 @@ pub mod take_until;
 pub mod throttle_time;
 pub use filter_map::FilterMap;
 pub mod box_it;
+pub mod zip;
 
 use last::LastOrOp;
 use map::MapOp;
