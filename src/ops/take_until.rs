@@ -13,7 +13,8 @@ pub struct TakeUntilOp<S, N> {
 }
 
 #[doc(hidden)]
-macro observable_impl($subscription:ty, $sharer:path, $mutability_enabler:path, $($marker:ident +)* $lf: lifetime) {
+macro observable_impl($subscription:ty, $sharer:path, $mutability_enabler:path,
+                      $($marker:ident +)* $lf: lifetime) {
   fn actual_subscribe<O: Observer<Self::Item, Self::Err> + $($marker +)* $lf>(
     self,
     subscriber: Subscriber<O, $subscription>,
@@ -61,7 +62,12 @@ where
   N::Unsub: Send + Sync,
 {
   type Unsub = SharedSubscription;
-  observable_impl!(SharedSubscription, Arc::new, Mutex::new, Send + Sync + 'static);
+  observable_impl!(
+    SharedSubscription,
+    Arc::new,
+    Mutex::new,
+    Send + Sync + 'static
+  );
 }
 
 pub struct TakeUntilObserver<O> {
