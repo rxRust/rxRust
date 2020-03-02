@@ -3,7 +3,6 @@ use std::marker::PhantomData;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
-use crate::observer::observer_proxy_impl;
 use crate::prelude::*;
 
 #[derive(Clone)]
@@ -23,9 +22,7 @@ macro observable_impl($subscription:ty, $sharer:path, $mutability_enabler:path,
     // We need to keep a reference to the observer from two places
     let shared_observer = $sharer($mutability_enabler(subscriber.observer));
     let main_subscriber = Subscriber {
-      observer: TakeUntilObserver {
-        observer: shared_observer.clone(),
-      },
+      observer: shared_observer.clone(),
       subscription: subscription.clone(),
     };
     let notifier_subscriber = Subscriber {
@@ -70,10 +67,6 @@ where
   );
 }
 
-pub struct TakeUntilObserver<O> {
-  observer: O,
-}
-
 pub struct TakeUntilNotifierObserver<O, U, Item> {
   // We need access to main observer in order to call `complete` on it as soon
   // as notifier fired
@@ -103,8 +96,6 @@ where
     // Do nothing
   }
 }
-
-observer_proxy_impl!(TakeUntilObserver<O>, { observer }, Item, Err, O);
 
 #[cfg(test)]
 mod test {
