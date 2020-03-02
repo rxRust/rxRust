@@ -78,7 +78,7 @@ impl<'a, Item, Err> LocalSubject<'a, MutRefValue<Item>, MutRefValue<Err>> {
   }
 }
 
-impl<'a, Item, Err: Copy> Observer<&mut Item, Err>
+impl<'a, Item, Err: PayloadCopy> Observer<&mut Item, Err>
   for MutRefSubject<
     'a,
     MutRefValue<Item>,
@@ -93,7 +93,7 @@ impl<'a, Item, Err: Copy> Observer<&mut Item, Err>
   complete_proxy_impl!(subject);
 }
 
-impl<'a, Item: Copy, Err> Observer<Item, &mut Err>
+impl<'a, Item: PayloadCopy, Err> Observer<Item, &mut Err>
   for MutRefSubject<
     'a,
     Item,

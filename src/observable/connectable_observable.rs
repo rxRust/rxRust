@@ -66,8 +66,8 @@ impl<Source, Subject> ConnectableObservable<Source, Subject> {
 impl<'a, S, Item, Err> LocalConnectableObservable<'a, S, Item, Err>
 where
   S: LocalObservable<'a, Item = Item, Err = Err>,
-  Item: Copy + 'a,
-  Err: Copy + 'a,
+  Item: PayloadCopy + 'a,
+  Err: PayloadCopy + 'a,
 {
   pub fn connect(self) -> S::Unsub {
     self.source.actual_subscribe(Subscriber {
@@ -80,8 +80,8 @@ where
 impl<S, Item, Err> SharedConnectableObservable<S, Item, Err>
 where
   S: SharedObservable<Item = Item, Err = Err>,
-  Item: Copy + Send + Sync + 'static,
-  Err: Copy + Send + Sync + 'static,
+  Item: PayloadCopy + Send + Sync + 'static,
+  Err: PayloadCopy + Send + Sync + 'static,
 {
   pub fn connect(self) -> S::Unsub {
     self.source.actual_subscribe(Subscriber {

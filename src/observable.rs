@@ -548,13 +548,14 @@ pub trait Observable {
   fn max(self) -> MinMaxOp<Self, Self::Item>
   where
     Self: Sized,
-    Self::Item: Copy + Send + PartialOrd<Self::Item>,
+    Self::Item: PayloadCopy + Send + PartialOrd<Self::Item>,
   {
     fn get_greater<Item>(i: Option<Item>, v: Item) -> Option<Item>
     where
-      Item: Copy + PartialOrd<Item>,
+      Item: PayloadCopy + PartialOrd<Item>,
     {
-      i.map(|vv| if vv < v { v } else { vv }).or(Some(v))
+      i.map(|vv| if vv < v { v.payload_copy() } else { vv })
+        .or(Some(v))
     }
     let get_greater_func =
       get_greater as fn(Option<Self::Item>, Self::Item) -> Option<Self::Item>;
@@ -586,13 +587,14 @@ pub trait Observable {
   fn min(self) -> MinMaxOp<Self, Self::Item>
   where
     Self: Sized,
-    Self::Item: Copy + Send + PartialOrd<Self::Item>,
+    Self::Item: PayloadCopy + Send + PartialOrd<Self::Item>,
   {
     fn get_lesser<Item>(i: Option<Item>, v: Item) -> Option<Item>
     where
-      Item: Copy + PartialOrd<Item>,
+      Item: PayloadCopy + PartialOrd<Item>,
     {
-      i.map(|vv| if vv > v { v } else { vv }).or(Some(v))
+      i.map(|vv| if vv > v { v.payload_copy() } else { vv })
+        .or(Some(v))
     }
 
     let get_lesser_func =
@@ -628,7 +630,7 @@ pub trait Observable {
   fn sum(self) -> SumOp<Self, Self::Item>
   where
     Self: Sized,
-    Self::Item: Copy + Default + Add<Self::Item, Output = Self::Item>,
+    Self::Item: PayloadCopy + Default + Add<Self::Item, Output = Self::Item>,
   {
     self.reduce(|acc, v| acc + v)
   }
@@ -682,7 +684,7 @@ pub trait Observable {
   fn average(self) -> AverageOp<Self, Self::Item>
   where
     Self: Sized,
-    Self::Item: Copy
+    Self::Item: PayloadCopy
       + Send
       + Default
       + Add<Self::Item, Output = Self::Item>
@@ -694,7 +696,7 @@ pub trait Observable {
     /// averaged (e.g. vectors)
     fn average_floats<T>(acc: Accum<T>) -> T
     where
-      T: Default + Copy + Send + Mul<f64, Output = T>,
+      T: Default + PayloadCopy + Send + Mul<f64, Output = T>,
     {
       // Note: we will never be dividing by zero here, as
       // the acc.1 will be always >= 1.
@@ -707,7 +709,7 @@ pub trait Observable {
 
     fn accumulate_item<T>(acc: Accum<T>, v: T) -> Accum<T>
     where
-      T: Copy + Add<T, Output = T>,
+      T: PayloadCopy + Add<T, Output = T>,
     {
       let newacc = acc.0 + v;
       let newcount = acc.1 + 1;
