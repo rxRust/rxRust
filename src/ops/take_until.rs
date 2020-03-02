@@ -7,9 +7,9 @@ use crate::observer::observer_proxy_impl;
 use crate::prelude::*;
 
 #[derive(Clone)]
-pub struct TakeUntilOp<S, T> {
+pub struct TakeUntilOp<S, N> {
   pub(crate) source: S,
-  pub(crate) notifier: T,
+  pub(crate) notifier: N,
 }
 
 #[doc(hidden)]
@@ -40,22 +40,21 @@ macro observable_impl($subscription:ty, $sharer:path, $mutability_enabler:path, 
   }
 }
 
-observable_proxy_impl!(TakeUntilOp, S, T);
+observable_proxy_impl!(TakeUntilOp, S, N);
 
-// TODO Replace T with N (abbreviation for notifier)
-impl<'a, S, T> LocalObservable<'a> for TakeUntilOp<S, T>
+impl<'a, S, N> LocalObservable<'a> for TakeUntilOp<S, N>
 where
   S: LocalObservable<'a> + 'a,
-  T: LocalObservable<'a, Err = S::Err> + 'a,
+  N: LocalObservable<'a, Err = S::Err> + 'a,
 {
   type Unsub = S::Unsub;
   observable_impl!(LocalSubscription, Rc::new, RefCell::new, 'a);
 }
 
-impl<S, T> SharedObservable for TakeUntilOp<S, T>
+impl<S, N> SharedObservable for TakeUntilOp<S, N>
 where
   S: SharedObservable,
-  T: SharedObservable<Err = S::Err>,
+  N: SharedObservable<Err = S::Err>,
   S::Item: Send + Sync + 'static,
 {
   type Unsub = S::Unsub;
