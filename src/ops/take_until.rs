@@ -18,25 +18,26 @@ macro observable_impl($subscription:ty, $sharer:path, $mutability_enabler:path, 
     self,
     subscriber: Subscriber<O, $subscription>,
   ) -> Self::Unsub {
+    let mut subscription = subscriber.subscription;
     // We need to keep a reference to the observer from two places
     let shared_observer = $sharer($mutability_enabler(subscriber.observer));
-    // TODO Composite subscription
     let main_subscriber = Subscriber {
       observer: TakeUntilObserver {
         observer: shared_observer.clone(),
       },
-      subscription: subscriber.subscription.clone(),
+      subscription: subscription.clone(),
     };
     let notifier_subscriber = Subscriber {
       observer: TakeUntilNotifierObserver {
-        main_subscription: subscriber.subscription.clone(),
+        subscription: subscription.clone(),
         main_observer: shared_observer,
         _p: PhantomData,
       },
-      subscription: subscriber.subscription,
+      subscription: subscription.clone(),
     };
-    self.notifier.actual_subscribe(notifier_subscriber);
-    self.source.actual_subscribe(main_subscriber)
+    subscription.add(self.notifier.actual_subscribe(notifier_subscriber));
+    subscription.add(self.source.actual_subscribe(main_subscriber));
+    subscription
   }
 }
 
@@ -47,7 +48,7 @@ where
   S: LocalObservable<'a> + 'a,
   N: LocalObservable<'a, Err = S::Err> + 'a,
 {
-  type Unsub = S::Unsub;
+  type Unsub = LocalSubscription;
   observable_impl!(LocalSubscription, Rc::new, RefCell::new, 'a);
 }
 
@@ -56,8 +57,10 @@ where
   S: SharedObservable,
   N: SharedObservable<Err = S::Err>,
   S::Item: Send + Sync + 'static,
+  S::Unsub: Send + Sync,
+  N::Unsub: Send + Sync,
 {
-  type Unsub = S::Unsub;
+  type Unsub = SharedSubscription;
   observable_impl!(SharedSubscription, Arc::new, Mutex::new, Send + Sync + 'static);
 }
 
@@ -69,8 +72,8 @@ pub struct TakeUntilNotifierObserver<O, U, Item> {
   // We need access to main observer in order to call `complete` on it as soon
   // as notifier fired
   main_observer: O,
-  // We need to cancel main subscription as soon as notifier fired
-  main_subscription: U,
+  // We need to unsubscribe everything as soon as notifier fired
+  subscription: U,
   _p: PhantomData<Item>,
 }
 
@@ -82,12 +85,12 @@ where
 {
   fn next(&mut self, _: NotifierItem) {
     self.main_observer.complete();
-    self.main_subscription.unsubscribe();
+    self.subscription.unsubscribe();
   }
 
   fn error(&mut self, err: Err) {
     self.main_observer.error(err);
-    self.main_subscription.unsubscribe();
+    self.subscription.unsubscribe();
   }
 
   fn complete(&mut self) {
