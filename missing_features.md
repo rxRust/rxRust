@@ -97,7 +97,7 @@ Operators that evaluate one or more Observables or items emitted by Observables
 - [ ] SkipUntil — discard items emitted by an Observable until a second Observable emits an item
 - [ ] SkipWhile — discard items emitted by an Observable until a specified condition becomes false
 - [ ] TakeUntil — discard items emitted by an Observable after a second Observable emits an item or terminates
-- [ ] TakeWhile — discard items emitted by an Observable after a specified condition becomes false
+- [x] TakeWhile — discard items emitted by an Observable after a specified condition becomes false
 
 ### Mathematical and Aggregate Operators
 Operators that operate on the entire sequence of items emitted by an Observable

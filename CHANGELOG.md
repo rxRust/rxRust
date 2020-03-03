@@ -4,6 +4,7 @@
 - **subscription** The guard returned by `unsubscribe_when_dropped()` has the [must_use](https://doc.rust-lang.org/reference/attributes/diagnostics.html#the-must_use-attribute) attribute
 - **operator**: add `zip` operator.
 - **operator**: add `take_until` operator.
+- **operator**: add `take_while` operator.
 - **observer**: add support for items/errors that don't implement `Copy` (by implementing `PayloadCopy`) 
 
 ## [0.8.1](https://github.com/rxRust/rxRust/releases/tag/v0.8.1)  (2020-02-28)

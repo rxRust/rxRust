@@ -49,6 +49,7 @@ use ops::{
   skip_last::SkipLastOp,
   subscribe_on::SubscribeOnOP,
   take::TakeOp,
+  take_while::TakeWhileOp,
   take_last::TakeLastOp,
   take_until::TakeUntilOp,
   throttle_time::{ThrottleEdge, ThrottleTimeOp},
@@ -356,6 +357,41 @@ pub trait Observable {
     TakeUntilOp {
       source: self,
       notifier,
+    }
+  }
+
+  /// Emits values while result of an callback is true.
+  ///
+  /// `take_while` returns an Observable that emits values while result of an callback is true
+  /// emitted by the source Observable.
+  /// It will not emit values until source Observable complete.
+  ///
+  /// # Example
+  /// Take the first 5 seconds of an infinite 1-second interval Observable
+  ///
+  /// ```
+  /// # use rxrust::prelude::*;
+  ///
+  /// observable::from_iter(0..10)
+  ///   .take_while::<i32>(|v| v < &5)
+  /// .subscribe(|v| println!("{}", v));
+
+  /// // print logs:
+  /// // 0
+  /// // 1
+  /// // 2
+  /// // 3
+  /// // 4
+  /// ```
+  ///
+  #[inline]
+  fn take_while<Item>(self, callback: fn(&Item) -> bool) -> TakeWhileOp<Self, Item>
+  where
+    Self: Sized,
+  {
+    TakeWhileOp{
+      source: self,
+      callback,
     }
   }
 
