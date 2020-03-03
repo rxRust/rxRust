@@ -38,9 +38,9 @@ where
 }
 
 impl<'a, S> SharedObservable for TakeWhileOp<S, S::Item>
-  where
-      S: SharedObservable,
-      S::Item: Send + Sync + 'static,
+where
+  S: SharedObservable,
+  S::Item: Send + Sync + 'static,
 {
   type Unsub = S::Unsub;
   observable_impl!(SharedSubscription, Send + Sync + 'static);

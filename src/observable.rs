@@ -49,9 +49,9 @@ use ops::{
   skip_last::SkipLastOp,
   subscribe_on::SubscribeOnOP,
   take::TakeOp,
-  take_while::TakeWhileOp,
   take_last::TakeLastOp,
   take_until::TakeUntilOp,
+  take_while::TakeWhileOp,
   throttle_time::{ThrottleEdge, ThrottleTimeOp},
   zip::ZipOp,
   Accum, AverageOp, CountOp, MinMaxOp, ReduceOp, SumOp,
@@ -385,11 +385,14 @@ pub trait Observable {
   /// ```
   ///
   #[inline]
-  fn take_while<Item>(self, callback: fn(&Item) -> bool) -> TakeWhileOp<Self, Item>
+  fn take_while<Item>(
+    self,
+    callback: fn(&Item) -> bool,
+  ) -> TakeWhileOp<Self, Item>
   where
     Self: Sized,
   {
-    TakeWhileOp{
+    TakeWhileOp {
       source: self,
       callback,
     }
