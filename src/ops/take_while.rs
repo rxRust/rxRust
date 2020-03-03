@@ -9,7 +9,7 @@ pub struct TakeWhileOp<S, Item> {
 }
 
 #[doc(hidden)]
-macro observable_impl($ subscription: ty, $ ($ marker: ident +) * $ lf: lifetime){
+macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
   fn actual_subscribe<O: Observer<Self::Item, Self::Err> + $($marker +)* $lf>(
     self,
     subscriber: Subscriber<O, $subscription>,
