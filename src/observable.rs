@@ -362,8 +362,8 @@ pub trait Observable {
 
   /// Emits values while result of an callback is true.
   ///
-  /// `take_while` returns an Observable that emits values while result of an callback is true
-  /// emitted by the source Observable.
+  /// `take_while` returns an Observable that emits values while result of an
+  /// callback is true emitted by the source Observable.
   /// It will not emit values until source Observable complete.
   ///
   /// # Example
