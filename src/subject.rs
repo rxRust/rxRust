@@ -26,8 +26,8 @@ where
 }
 
 subscription_proxy_impl!(Subject<O, U>, {subscription}, U, <O>);
-observer_proxy_impl!(
-  Subject<O, U>, {observers}, Item, Err, O, <U>, {where Item: PayloadCopy, Err: PayloadCopy});
+observer_proxy_impl!(Subject<O, U>, {observers}, Item, Err, O, <U>, 
+  {where Item: PayloadCopy, Err: PayloadCopy});
 
 #[cfg(test)]
 mod test {
