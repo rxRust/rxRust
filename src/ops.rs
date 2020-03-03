@@ -12,6 +12,7 @@ pub mod skip;
 pub mod skip_last;
 pub mod subscribe_on;
 pub mod take;
+pub mod take_while;
 pub mod take_last;
 pub mod take_until;
 pub mod throttle_time;
