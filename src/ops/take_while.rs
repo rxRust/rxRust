@@ -1,15 +1,17 @@
 use crate::observer::{complete_proxy_impl, error_proxy_impl};
 use crate::prelude::*;
-use observable::observable_proxy_impl;
 
 #[derive(Clone)]
-pub struct TakeWhileOp<S, Item> {
+pub struct TakeWhileOp<S, F> {
   pub(crate) source: S,
-  pub(crate) callback: fn(&Item) -> bool,
+  pub(crate) callback: F,
 }
 
 #[doc(hidden)]
-macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
+macro observable_impl(
+  $subscription:ty, $source:ident, $($marker:ident +)* $lf: lifetime)
+{
+  type Unsub = $source::Unsub;
   fn actual_subscribe<O: Observer<Self::Item, Self::Err> + $($marker +)* $lf>(
     self,
     subscriber: Subscriber<O, $subscription>,
@@ -26,36 +28,42 @@ macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
   }
 }
 
-observable_proxy_impl!(TakeWhileOp, S, Item);
+impl<S, F> Observable for TakeWhileOp<S, F>
+where
+  S: Observable,
+  F: FnMut(&S::Item) -> bool,
+{
+  type Item = S::Item;
+  type Err = S::Err;
+}
 
-impl<'a, S> LocalObservable<'a> for TakeWhileOp<S, S::Item>
+impl<'a, S, F> LocalObservable<'a> for TakeWhileOp<S, F>
 where
   S: LocalObservable<'a>,
-  S::Item: 'static,
+  F: FnMut(&S::Item) -> bool + 'a,
 {
-  type Unsub = S::Unsub;
-  observable_impl!(LocalSubscription, 'a);
+  observable_impl!(LocalSubscription, S, 'a);
 }
 
-impl<'a, S> SharedObservable for TakeWhileOp<S, S::Item>
+impl<S, F> SharedObservable for TakeWhileOp<S, F>
 where
   S: SharedObservable,
-  S::Item: Send + Sync + 'static,
+  F: FnMut(&S::Item) -> bool + Send + Sync + 'static,
 {
-  type Unsub = S::Unsub;
-  observable_impl!(SharedSubscription, Send + Sync + 'static);
+  observable_impl!(SharedSubscription, S, Send + Sync + 'static);
 }
 
-pub struct TakeWhileObserver<O, S, Item> {
+pub struct TakeWhileObserver<O, S, F> {
   observer: O,
   subscription: S,
-  callback: fn(&Item) -> bool,
+  callback: F,
 }
 
-impl<O, U, Item, Err> Observer<Item, Err> for TakeWhileObserver<O, U, Item>
+impl<O, U, Item, Err, F> Observer<Item, Err> for TakeWhileObserver<O, U, F>
 where
   O: Observer<Item, Err>,
   U: SubscriptionLike,
+  F: FnMut(&Item) -> bool,
 {
   fn next(&mut self, value: Item) {
     if (self.callback)(&value) {
@@ -79,7 +87,7 @@ mod test {
     let mut next_count = 0;
 
     observable::from_iter(0..100)
-      .take_while::<i32>(|v| v < &5)
+      .take_while(|v| v < &5)
       .subscribe_complete(|_| next_count += 1, || completed = true);
 
     assert_eq!(next_count, 5);
