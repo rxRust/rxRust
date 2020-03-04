@@ -25,30 +25,50 @@ struct Inner<C, U> {
   connection: Option<U>,
 }
 
-#[derive(Clone)]
 pub struct RefCount<T, C>(T, PhantomData<C>);
 
+impl<T: Clone, C> Clone for RefCount<T, C> {
+  fn clone(&self) -> Self { RefCount(self.0.clone(), PhantomData) }
+}
+
 type LocalRef<C, U> = Rc<RefCell<Inner<C, U>>>;
-#[derive(Clone)]
-struct InnerLocalRefCount<'a, S, Item, Err>(
+
+pub struct InnerLocalRefCount<'a, S, Item, Err>(
   LocalRef<LocalConnectableObservable<'a, S, Item, Err>, S::Unsub>,
 )
 where
   S: LocalObservable<'a, Item = Item, Err = Err>;
 
-type LocalRefCount<'a, S, Item, Err> = RefCount<
+pub type LocalRefCount<'a, S, Item, Err> = RefCount<
   InnerLocalRefCount<'a, S, Item, Err>,
   LocalConnectableObservable<'a, S, Item, Err>,
 >;
 
+impl<'a, S, Item, Err> Clone for InnerLocalRefCount<'a, S, Item, Err>
+where
+  S: LocalObservable<'a, Item = Item, Err = Err>,
+{
+  #[inline]
+  fn clone(&self) -> Self { InnerLocalRefCount(self.0.clone()) }
+}
+
 type SharedRef<C, U> = Arc<Mutex<Inner<C, U>>>;
-#[derive(Clone)]
-struct InnerSharedRefCount<S, Item, Err>(
+
+pub struct InnerSharedRefCount<S, Item, Err>(
   SharedRef<SharedConnectableObservable<S, Item, Err>, S::Unsub>,
 )
 where
   S: SharedObservable<Item = Item, Err = Err>;
-type SharedRefCount<S, Item, Err> = RefCount<
+
+impl<S, Item, Err> Clone for InnerSharedRefCount<S, Item, Err>
+where
+  S: SharedObservable<Item = Item, Err = Err>,
+{
+  #[inline]
+  fn clone(&self) -> Self { InnerSharedRefCount(self.0.clone()) }
+}
+
+pub type SharedRefCount<S, Item, Err> = RefCount<
   InnerSharedRefCount<S, Item, Err>,
   SharedConnectableObservable<S, Item, Err>,
 >;
