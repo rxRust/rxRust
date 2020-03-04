@@ -147,10 +147,10 @@ pub trait Observable {
   /// Creates a new stream which calls a closure on each element and uses
   /// its return as the value.
   #[inline]
-  fn map<B, Item, F>(self, f: F) -> MapOp<Self, F>
+  fn map<B, F>(self, f: F) -> MapOp<Self, F>
   where
     Self: Sized,
-    F: Fn(B) -> Item,
+    F: Fn(Self::Item) -> B,
   {
     MapOp {
       source: self,
@@ -180,6 +180,7 @@ pub trait Observable {
   fn merge<S>(self, o: S) -> MergeOp<Self, S>
   where
     Self: Sized,
+    S: Observable<Item = Self::Item, Err = Self::Err>,
   {
     MergeOp {
       source1: self,
@@ -235,6 +236,7 @@ pub trait Observable {
   fn box_it<O: IntoBox<Self>>(self) -> BoxOp<O>
   where
     Self: Sized,
+    BoxOp<O>: Observable<Item = Self::Item, Err = Self::Err>,
   {
     O::box_it(self)
   }
@@ -480,6 +482,7 @@ pub trait Observable {
   where
     Self: Sized,
     BinaryOp: Fn(OutputItem, Self::Item) -> OutputItem,
+    OutputItem: Clone,
   {
     ScanOp {
       source_observable: self,
@@ -503,7 +506,7 @@ pub trait Observable {
   where
     Self: Sized,
     BinaryOp: Fn(OutputItem, Self::Item) -> OutputItem,
-    OutputItem: Default,
+    OutputItem: Default + Clone,
   {
     self.scan_initial(OutputItem::default(), binary_op)
   }

@@ -54,7 +54,10 @@ where
   observable_impl!(SharedSubscription, Send + Sync + 'static);
 }
 
-impl<Source, Subject> ConnectableObservable<Source, Subject> {
+impl<Source, Subject> ConnectableObservable<Source, Subject>
+where
+  Source: Clone,
+{
   #[inline]
   pub fn ref_count<Inner: RefCountCreator<Connectable = Self>>(
     self,
