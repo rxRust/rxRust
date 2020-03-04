@@ -373,7 +373,7 @@ pub trait Observable {
   /// # use rxrust::prelude::*;
   ///
   /// observable::from_iter(0..10)
-  ///   .take_while::<i32>(|v| v < &5)
+  ///   .take_while(|v| v < &5)
   /// .subscribe(|v| println!("{}", v));
 
   /// // print logs:
@@ -385,12 +385,13 @@ pub trait Observable {
   /// ```
   ///
   #[inline]
-  fn take_while<Item>(
+  fn take_while<F>(
     self,
-    callback: fn(&Item) -> bool,
-  ) -> TakeWhileOp<Self, Item>
+    callback: F,
+  ) -> TakeWhileOp<Self, F>
   where
     Self: Sized,
+    F: FnMut(&Self::Item)-> bool,
   {
     TakeWhileOp {
       source: self,
