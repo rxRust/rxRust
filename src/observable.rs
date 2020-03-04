@@ -385,13 +385,10 @@ pub trait Observable {
   /// ```
   ///
   #[inline]
-  fn take_while<F>(
-    self,
-    callback: F,
-  ) -> TakeWhileOp<Self, F>
+  fn take_while<F>(self, callback: F) -> TakeWhileOp<Self, F>
   where
     Self: Sized,
-    F: FnMut(&Self::Item)-> bool,
+    F: FnMut(&Self::Item) -> bool,
   {
     TakeWhileOp {
       source: self,
