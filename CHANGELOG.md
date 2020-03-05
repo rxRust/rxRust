@@ -9,6 +9,7 @@
 - **operator**: add `zip` operator.
 - **operator**: add `take_until` operator.
 - **operator**: add `take_while` operator.
+- **operator**: add `share` operator.
 - **observer**: add support for items/errors that don't implement `Copy` (by implementing `PayloadCopy`) 
 
 ## [0.8.1](https://github.com/rxRust/rxRust/releases/tag/v0.8.1)  (2020-02-28)
