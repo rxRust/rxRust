@@ -6,16 +6,14 @@ pull_request_rules:
       - status-success=['Check', 'Test Suite', 'rust code format style check', 'clippy_check']
     actions:
       merge:
-        method: merge
+        method: rebase
 
-pull_request_rules:
   - name: delete head branch after merge
     conditions:
       - merged
     actions:
       delete_head_branch: {}
 
-pull_request_rules:
   - name: ask to format code
     conditions:
       - status-failure=rust code format style check
@@ -23,7 +21,6 @@ pull_request_rules:
         comment:
           message: This pull request is now not keep same code style as this project. Could you fix it? 🙏 Just run `cargo fmt` to get more details.
 
-pull_request_rules:
   - name: clippy check hint
     conditions:
       - status-failure=clippy_check
@@ -31,15 +28,13 @@ pull_request_rules:
         comment:
           message: Clippy help us to improve our Rust code. Could you fix it? 🙏 Run `cargo clippy --all-targets --all-features -- -D warnings` to get more details.
 
-pull_request_rules:
   - name: ask to resolve conflict
     conditions:
-      - conflicts
+      - conflict
     actions:
         comment:
           message: This pull request is now in conflicts. Could you fix it? 🙏
       
-pull_request_rules:
   - name: say hi on new contribution
     conditions:
       - author!=@rxRust/core-developers
