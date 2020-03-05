@@ -44,6 +44,7 @@ use ops::{
   map::MapOp,
   merge::MergeOp,
   observe_on::ObserveOnOp,
+  ref_count::{RefCount, RefCountCreator},
   scan::ScanOp,
   skip::SkipOp,
   skip_last::SkipLastOp,
@@ -780,6 +781,24 @@ pub trait Observable {
       source: self,
       subject: Subject::default(),
     }
+  }
+
+  /// Returns a new Observable that multicast (shares) the original
+  /// Observable. As long as there is at least one Subscriber this
+  /// Observable will be subscribed and emitting data. When all subscribers
+  /// have unsubscribed it will unsubscribe from the source Observable.
+  /// Because the Observable is multicasting it makes the stream `hot`.
+  /// This is an alias for `publish().ref_count()`
+  #[inline]
+  fn share<Subject, Inner>(
+    self,
+  ) -> RefCount<Inner, ConnectableObservable<Self, Subject>>
+  where
+    Inner: RefCountCreator<Connectable = ConnectableObservable<Self, Subject>>,
+    Subject: Default,
+    Self: Sized + Clone,
+  {
+    self.publish::<Subject>().ref_count::<Inner>()
   }
 
   /// Delays the emission of items from the source Observable by a given timeout
