@@ -11,6 +11,7 @@
 - **operator**: add `take_while` operator.
 - **operator**: add `share` operator.
 - **observer**: add support for items/errors that don't implement `Copy` (by implementing `PayloadCopy`) 
+- **observable**: add macros `of_sequence` that producing values from a custom sequence. 
 
 ## [0.8.1](https://github.com/rxRust/rxRust/releases/tag/v0.8.1)  (2020-02-28)
 
