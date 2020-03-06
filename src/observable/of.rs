@@ -1,5 +1,37 @@
 use crate::prelude::*;
 
+/// Creates an observable producing a multiple values.
+///
+/// Completes immediately after emitting the values given. Never emits an error.
+///
+/// # Arguments
+///
+/// * `v` - A value to emits.
+///
+/// # Examples
+///
+/// ```
+/// use rxrust::prelude::*;
+///
+/// observable::of_sequence!(1, 2, 3)
+///   .subscribe(|v| {println!("{},", v)});
+///
+/// // print log:
+/// // 1
+/// // 2
+/// // 3
+/// ```
+pub macro of_sequence( $( $item:expr ),* ) {
+  {
+    $crate::observable::create(|mut s| {
+      $(
+        s.next($item);
+      )*
+      s.complete();
+    })
+  }
+}
+
 /// Creates an observable producing a single value.
 ///
 /// Completes immediately after emitting the value given. Never emits an error.
@@ -296,5 +328,13 @@ mod test {
 
     assert_eq!(value, 100);
     assert_eq!(completed, true);
+  }
+
+  #[test]
+  fn of_macros() {
+    let mut value = 0;
+    observable::of_sequence!(1, 2, 3).subscribe(|v| value += v);
+
+    assert_eq!(value, 6);
   }
 }

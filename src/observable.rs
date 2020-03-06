@@ -5,7 +5,7 @@ mod from_iter;
 pub use from_iter::{from_iter, repeat};
 
 mod of;
-pub use of::{of, of_fn, of_option, of_result};
+pub use of::{of, of_fn, of_option, of_result, of_sequence};
 
 pub(crate) mod from_future;
 pub use from_future::{from_future, from_future_result};
