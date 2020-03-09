@@ -25,6 +25,11 @@ impl<'a, Item, Err> LocalObservable<'a> for LocalSubject<'a, Item, Err> {
   }
 }
 
+impl<'a, Item, Err> LocalSubject<'a, Item, Err> {
+  pub fn subscribed_size(&mut self) -> usize {
+    self.observers.borrow_mut().len()
+  }
+}
 #[test]
 fn smoke() {
   let mut test_code = 1;
@@ -34,6 +39,8 @@ fn smoke() {
       test_code = v;
     });
     subject.next(2);
+
+    assert_eq!(subject.subscribed_size(), 1);
   }
   assert_eq!(test_code, 2);
 }
