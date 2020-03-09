@@ -27,6 +27,11 @@ impl<Item, Err> SharedObservable for SharedSubject<Item, Err> {
   }
 }
 
+impl<Item, Err> SharedSubject<Item, Err> {
+  pub fn subscribed_size(&mut self) -> usize {
+    self.observers.lock().unwrap().len()
+  }
+}
 #[test]
 
 fn smoke() {
@@ -38,4 +43,5 @@ fn smoke() {
   });
   subject.next("test shared subject");
   assert_eq!(*test_code.lock().unwrap(), "test shared subject");
+  assert_eq!(subject.subscribed_size(), 1);
 }
