@@ -28,7 +28,7 @@ impl<Item, Err> SharedObservable for SharedSubject<Item, Err> {
 }
 
 impl<Item, Err> SharedSubject<Item, Err> {
-  pub fn subscribed_size(&mut self) -> usize {
+  pub fn subscribed_size(&self) -> usize {
     self.observers.lock().unwrap().len()
   }
 }
