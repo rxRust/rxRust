@@ -21,7 +21,6 @@ macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
     let subscriber = Subscriber {
       observer: DefaultIfEmptyObserver {
         observer: subscriber.observer,
-        subscription: subscriber.subscription.clone(),
         is_empty: self.is_empty,
         default_value: self.default_value,
       },
@@ -51,17 +50,15 @@ where
   observable_impl!(SharedSubscription, Send + Sync + 'static);
 }
 
-pub struct DefaultIfEmptyObserver<O, S, Item> {
+pub struct DefaultIfEmptyObserver<O, Item> {
   observer: O,
-  subscription: S,
   is_empty: bool,
   default_value: Item,
 }
 
-impl<Item, Err, O, U> Observer<Item, Err> for DefaultIfEmptyObserver<O, U, Item>
+impl<Item, Err, O> Observer<Item, Err> for DefaultIfEmptyObserver<O, Item>
 where
   O: Observer<Item, Err>,
-  U: SubscriptionLike,
   Item: Clone,
 {
   fn next(&mut self, value: Item) {
