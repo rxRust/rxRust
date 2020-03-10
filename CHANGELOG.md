@@ -10,6 +10,7 @@
 - **operator**: add `take_until` operator.
 - **operator**: add `take_while` operator.
 - **operator**: add `share` operator.
+- **operator**: add `default_if_empty` operator.
 - **observer**: add support for items/errors that don't implement `Copy` (by implementing `PayloadCopy`) 
 - **observable**: add macros `of_sequence` that producing values from a custom sequence. 
 - **subject**: add `subscribed_size` method on Subject. 

@@ -92,7 +92,7 @@ Operators that evaluate one or more Observables or items emitted by Observables
 - [ ] All — determine whether all items emitted by an Observable meet some criteria
 - [ ] Amb — given two or more source Observables, emit all of the items from only the first of these Observables to emit an item
 - [ ] Contains — determine whether an Observable emits a particular item or not
-- [ ] DefaultIfEmpty — emit items from the source Observable, or a default item if the source Observable emits nothing
+- [x] DefaultIfEmpty — emit items from the source Observable, or a default item if the source Observable emits nothing
 - [ ] SequenceEqual — determine whether two Observables emit the same sequence of items
 - [ ] SkipUntil — discard items emitted by an Observable until a second Observable emits an item
 - [ ] SkipWhile — discard items emitted by an Observable until a specified condition becomes false
