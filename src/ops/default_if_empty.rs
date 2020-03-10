@@ -107,4 +107,20 @@ mod test {
     assert_eq!(value, 5);
     assert_eq!(completed, true);
   }
+
+  #[test]
+  fn into_shared() {
+    observable::from_iter(0..100)
+      .default_if_empty(5)
+      .to_shared()
+      .subscribe(|_| {});
+  }
+
+  #[test]
+  fn into_shared_empty() {
+    observable::empty()
+      .default_if_empty(5)
+      .to_shared()
+      .subscribe(|_| {});
+  }
 }
