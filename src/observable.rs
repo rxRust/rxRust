@@ -35,6 +35,7 @@ mod observable_comp;
 use crate::prelude::*;
 pub use observable_comp::*;
 
+use crate::ops::default_if_empty::DefaultIfEmptyOp;
 use ops::{
   box_it::{BoxOp, IntoBox},
   delay::DelayOp,
@@ -941,6 +942,31 @@ pub trait Observable {
     U: Observable,
   {
     ZipOp { a: self, b: other }
+  }
+
+  /// Emits default value if Observable completed with empty result
+  ///
+  /// #Example
+  /// ```
+  /// use rxrust::prelude::*;
+  ///
+  /// observable::empty()
+  ///   .default_if_empty(5)
+  ///   .subscribe(|v| println!("{}", v));
+  ///
+  /// // Prints:
+  /// // 5
+  /// ```
+  #[inline]
+  fn default_if_empty(self, default_value: Self::Item) -> DefaultIfEmptyOp<Self>
+  where
+    Self: Sized,
+  {
+    DefaultIfEmptyOp {
+      source: self,
+      is_empty: true,
+      default_value,
+    }
   }
 }
 
