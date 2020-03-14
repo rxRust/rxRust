@@ -142,12 +142,14 @@ fn filter() {
   use crate::subject::MutRefValue;
   let mut subject = Subject::new();
 
-  subject
-    .clone()
-    .mut_ref_all()
-    .filter_map::<fn(&mut i32) -> Option<&mut i32>, _, _>(|v| Some(v))
-    .publish()
-    .subscribe_err(|_: &mut _| {}, |_: &mut i32| {});
+  unsafe {
+    subject
+      .clone()
+      .mut_ref_all()
+      .filter_map::<fn(&mut i32) -> Option<&mut i32>, _, _>(|v| Some(v))
+      .publish()
+      .subscribe_err(|_: &mut _| {}, |_: &mut i32| {});
+  }
 
   subject.next(MutRefValue(&mut 1));
   subject.error(MutRefValue(&mut 2));

@@ -35,7 +35,10 @@ pub type MutRefItemSubject<'a, Item, Err> = MutRefSubject<
   fn(Err) -> Err,
 >;
 impl<'a, Item, Err> LocalSubject<'a, MutRefValue<Item>, Err> {
-  pub fn mut_ref_item(self) -> MutRefItemSubject<'a, Item, Err> {
+  /// # Safety
+  /// You should know MutRefSubject will be erased the life time of your mut
+  /// ref value.
+  pub unsafe fn mut_ref_item(self) -> MutRefItemSubject<'a, Item, Err> {
     MutRefSubject {
       subject: self,
       map_item: value_as_mut_ref,
@@ -52,7 +55,10 @@ pub type MutRefErrSubject<'a, Item, Err> = MutRefSubject<
   fn(MutRefValue<Err>) -> &'a mut Err,
 >;
 impl<'a, Item, Err> LocalSubject<'a, Item, MutRefValue<Err>> {
-  pub fn mut_ref_err(self) -> MutRefErrSubject<'a, Item, Err> {
+  /// # Safety
+  /// You should know MutRefSubject will be erased the life time of your mut ref
+  /// error.
+  pub unsafe fn mut_ref_err(self) -> MutRefErrSubject<'a, Item, Err> {
     MutRefSubject {
       subject: self,
       map_item: none_map,
@@ -69,7 +75,10 @@ pub type MutRefAllSubject<'a, Item, Err> = MutRefSubject<
   fn(MutRefValue<Item>) -> &'a mut Item,
 >;
 impl<'a, Item, Err> LocalSubject<'a, MutRefValue<Item>, MutRefValue<Err>> {
-  pub fn mut_ref_all(self) -> MutRefAllSubject<'a, Item, Err> {
+  /// # Safety
+  /// You should know MutRefSubject will be erased the life time of your mut ref
+  /// value and error.
+  pub unsafe fn mut_ref_all(self) -> MutRefAllSubject<'a, Item, Err> {
     MutRefSubject {
       subject: self,
       map_item: value_as_mut_ref,
@@ -178,7 +187,7 @@ where
 fn mut_ref_item() {
   let mut test_code = 0;
   {
-    let mut subject = Subject::new().mut_ref_item();
+    let mut subject = unsafe { Subject::new().mut_ref_item() };
     subject.clone().subscribe(|v: &mut i32| {
       *v = 100;
     });
@@ -191,7 +200,7 @@ fn mut_ref_item() {
 fn mut_ref_err() {
   let mut test_code = 0;
   {
-    let mut subject = Subject::new().mut_ref_err();
+    let mut subject = unsafe { Subject::new().mut_ref_err() };
     subject.clone().subscribe_err(
       |_: i32| {},
       |v: &mut i32| {
