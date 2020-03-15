@@ -3,6 +3,7 @@
 ### Breaking Changes
 
 **operator**: add some explicit bounds on operators method to improve type infer, and some code use `map` may not compile, if it's just `map` and never subscribe. 
+**Subject**: MutRefSubject now mark as unsafe.
 
 ### Features
 - **subscription** The guard returned by `unsubscribe_when_dropped()` has the [must_use](https://doc.rust-lang.org/reference/attributes/diagnostics.html#the-must_use-attribute) attribute
