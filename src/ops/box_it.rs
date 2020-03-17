@@ -88,11 +88,11 @@ macro observable_impl(  $subscription:ty, $($marker:ident +)* $lf: lifetime)
   }
 }
 
-impl<'a, Item: 'a, Err: 'a> Observable for LocalBoxOp<'a, Item, Err> {
+impl<'a, Item, Err> Observable for LocalBoxOp<'a, Item, Err> {
   type Item = Item;
   type Err = Err;
 }
-impl<'a, Item: 'a, Err: 'a> LocalObservable<'a> for LocalBoxOp<'a, Item, Err> {
+impl<'a, Item, Err> LocalObservable<'a> for LocalBoxOp<'a, Item, Err> {
   type Unsub = Box<dyn SubscriptionLike>;
   observable_impl!(LocalSubscription, 'a);
 }
@@ -107,13 +107,11 @@ impl<Item, Err> SharedObservable for SharedBoxOp<Item, Err> {
   observable_impl!(SharedSubscription, Send + Sync + 'static);
 }
 
-impl<'a, Item: 'a, Err: 'a> Observable for LocalCloneBoxOp<'a, Item, Err> {
+impl<'a, Item, Err> Observable for LocalCloneBoxOp<'a, Item, Err> {
   type Item = Item;
   type Err = Err;
 }
-impl<'a, Item: 'a, Err: 'a> LocalObservable<'a>
-  for LocalCloneBoxOp<'a, Item, Err>
-{
+impl<'a, Item, Err> LocalObservable<'a> for LocalCloneBoxOp<'a, Item, Err> {
   type Unsub = Box<dyn SubscriptionLike>;
   observable_impl!(LocalSubscription, 'a);
 }
