@@ -170,7 +170,7 @@ By default, RxRust always use single thread version to get the best performance,
 
 **Before**:
 ```rust
-let res = Arc::new(Mutex(0));w
+let res = Arc::new(Mutex(0));
 let c_res = res.clone();
 observable::of(100).subscribe(|v| { *res.lock().unwrap() = *v });
 

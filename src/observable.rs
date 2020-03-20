@@ -46,6 +46,7 @@ use ops::{
   merge::MergeOp,
   observe_on::ObserveOnOp,
   ref_count::{RefCount, RefCountCreator},
+  sample::SampleOp,
   scan::ScanOp,
   skip::SkipOp,
   skip_last::SkipLastOp,
@@ -433,6 +434,41 @@ pub trait Observable {
     TakeLastOp {
       source: self,
       count,
+    }
+  }
+
+  /// Emits item it has most recently emitted since the previous sampling
+  ///
+  ///
+  /// It will emit values when sampling observable complete.
+  ///
+  /// #Example
+  /// Sampling every  5ms of an infinite 1ms interval Observable
+  /// ```
+  /// use rxrust::prelude::*;
+  /// use std::time::Duration;
+  ///
+  /// observable::interval(Duration::from_millis(2))
+  ///   .sample(observable::interval(Duration::from_millis(5)))
+  ///   .to_shared()
+  ///   .subscribe(move |v| println!("{}", v));
+  ///
+  /// // print logs:
+  /// // 1
+  /// // 4
+  /// // 6
+  /// // 9
+  /// // ...
+  /// ```
+  #[inline]
+  fn sample<O>(self, sampling: O) -> SampleOp<Self, O>
+  where
+    Self: Sized,
+    O: Observable,
+  {
+    SampleOp {
+      source: self,
+      sampling: sampling,
     }
   }
 

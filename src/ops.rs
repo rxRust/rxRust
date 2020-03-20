@@ -8,6 +8,7 @@ pub mod map;
 pub mod merge;
 pub mod observe_on;
 pub mod ref_count;
+pub mod sample;
 pub mod scan;
 pub mod skip;
 pub mod skip_last;
