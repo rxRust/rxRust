@@ -93,6 +93,19 @@ struct SampleObserver<Item, O, Unsub> {
   done: bool,
 }
 
+impl<Item, O, Unsub> SampleObserver<Item, O, Unsub> {
+  fn drain_value<Err>(&mut self)
+  where
+    O: Observer<Item, Err>,
+  {
+    if self.done || self.value.is_none() {
+      return;
+    }
+    let value = self.value.take().unwrap();
+    self.observer.next(value);
+  }
+}
+
 impl<Item, Err, O, Unsub> Observer<Item, Err> for SampleObserver<Item, O, Unsub>
 where
   O: Observer<Item, Err>,
@@ -121,11 +134,7 @@ where
 {
   fn drain_value(&mut self) {
     let mut val = self.borrow_mut();
-    if val.done || val.value.is_none() {
-      return;
-    }
-    let value = val.value.take().unwrap();
-    val.observer.next(value);
+    val.drain_value();
   }
 }
 
@@ -136,14 +145,9 @@ where
 {
   fn drain_value(&mut self) {
     let mut val = self.lock().unwrap();
-    if val.done || val.value.is_none() {
-      return;
-    }
-    let value = val.value.take().unwrap();
-    val.observer.next(value);
+    val.drain_value();
   }
 }
-
 struct SamplingObserver<Item, O>(O, PhantomData<Item>);
 
 impl<Item, Item2, Err, O> Observer<Item2, Err> for SamplingObserver<Item, O>
