@@ -1,4 +1,6 @@
-## [Unreleased](https://github.com/rxRust/rxRust/compare/v0.8.1...HEAD)
+## [Unreleased](https://github.com/rxRust/rxRust/compare/v0.8.2...HEAD)
+
+## [0.8.2](https://github.com/rxRust/rxRust/releases/tag/v0.8.2)  (2020-03-25)
 
 ### Breaking Changes
 

@@ -92,7 +92,7 @@ pub struct NeverEmitter();
 #[doc(hidden)]
 macro never_emitter($subscription:ty, $($marker:ident +)* $lf: lifetime) {
   #[inline]
-  fn emit<O>(self, subscriber: Subscriber<O, $subscription>)
+  fn emit<O>(self, _subscriber: Subscriber<O, $subscription>)
   where
     O: Observer<Self::Item, Self::Err> + $($marker +)* $lf
   {

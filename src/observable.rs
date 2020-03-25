@@ -468,7 +468,7 @@ pub trait Observable {
   {
     SampleOp {
       source: self,
-      sampling: sampling,
+      sampling,
     }
   }
 
