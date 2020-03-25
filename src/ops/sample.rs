@@ -41,11 +41,10 @@ where
       value: Option::None,
       subscription: subscription.clone(),
       done: false,
-      _marker: PhantomData,
     }));
 
     subscription.add(self.sampling.actual_subscribe(Subscriber {
-      observer: SamplingObserverShared(source_observer.clone()),
+      observer: SamplingObserver(source_observer.clone(), PhantomData),
       subscription: SharedSubscription::default(),
     }));
     subscription.add(self.source.actual_subscribe(Subscriber {
@@ -72,11 +71,10 @@ where
       value: Option::None,
       subscription: subscription.clone(),
       done: false,
-      _marker: PhantomData,
     }));
 
     subscription.add(self.sampling.actual_subscribe(Subscriber {
-      observer: SamplingObserverLocal(source_observer.clone()),
+      observer: SamplingObserver(source_observer.clone(), PhantomData),
       subscription: LocalSubscription::default(),
     }));
     subscription.add(self.source.actual_subscribe(Subscriber {
@@ -88,20 +86,14 @@ where
 }
 
 #[derive(Clone)]
-struct SampleObserver<Item, Err, O, Unsub>
-where
-  O: Observer<Item, Err>,
-{
+struct SampleObserver<Item, O, Unsub> {
   observer: O,
   value: Option<Item>,
   subscription: Unsub,
   done: bool,
-
-  _marker: PhantomData<Err>,
 }
 
-impl<Item, Err, O, Unsub> Observer<Item, Err>
-  for SampleObserver<Item, Err, O, Unsub>
+impl<Item, Err, O, Unsub> Observer<Item, Err> for SampleObserver<Item, O, Unsub>
 where
   O: Observer<Item, Err>,
   Unsub: SubscriptionLike,
@@ -110,93 +102,61 @@ where
 
   error_proxy_impl!(Err, observer);
 
-  fn complete(&mut self) { self.subscription.unsubscribe(); }
+  fn complete(&mut self) {
+    if !self.done {
+      self.subscription.unsubscribe();
+      self.done = true;
+    }
+  }
 }
 
-pub struct SamplingObserverShared<Item, Err, O, Unsub>(
-  Arc<Mutex<SampleObserver<Item, Err, O, Unsub>>>,
-)
-where
-  O: Observer<Item, Err>;
+trait DrainValue<Item, Err> {
+  fn drain_value(&mut self);
+}
 
-impl<Item, Err, O, Unsub> SamplingObserverShared<Item, Err, O, Unsub>
+impl<Item, Err, O, Unsub> DrainValue<Item, Err>
+  for Rc<RefCell<SampleObserver<Item, O, Unsub>>>
 where
   O: Observer<Item, Err>,
 {
-  fn emit(&mut self) {
-    let mut val = self.0.lock().unwrap();
+  fn drain_value(&mut self) {
+    let mut val = self.borrow_mut();
     if val.done || val.value.is_none() {
       return;
     }
-    let value = val.value.take();
-    val.observer.next(value.unwrap());
+    let value = val.value.take().unwrap();
+    val.observer.next(value);
   }
 }
 
-impl<Item, Item2, Err, O, Unsub> Observer<Item2, Err>
-  for SamplingObserverShared<Item, Err, O, Unsub>
-where
-  O: Observer<Item, Err>,
-  Unsub: SubscriptionLike,
-  Item: Clone,
-{
-  fn next(&mut self, _: Item2) { self.emit(); }
-
-  fn error(&mut self, err: Err) {
-    let mut val = self.0.lock().unwrap();
-    val.observer.error(err);
-  }
-
-  fn complete(&mut self) {
-    self.emit();
-    let mut val = self.0.lock().unwrap();
-    if !val.done {
-      val.subscription.unsubscribe();
-    }
-    val.done = true;
-  }
-}
-
-pub struct SamplingObserverLocal<Item, Err, O, Unsub>(
-  Rc<RefCell<SampleObserver<Item, Err, O, Unsub>>>,
-)
-where
-  O: Observer<Item, Err>;
-
-impl<Item, Err, O, Unsub> SamplingObserverLocal<Item, Err, O, Unsub>
+impl<Item, Err, O, Unsub> DrainValue<Item, Err>
+  for Arc<Mutex<SampleObserver<Item, O, Unsub>>>
 where
   O: Observer<Item, Err>,
 {
-  fn emit(&mut self) {
-    let mut val = self.0.borrow_mut();
+  fn drain_value(&mut self) {
+    let mut val = self.lock().unwrap();
     if val.done || val.value.is_none() {
       return;
     }
-    let value = val.value.take();
-    val.observer.next(value.unwrap());
+    let value = val.value.take().unwrap();
+    val.observer.next(value);
   }
 }
 
-impl<Item, Item2, Err, O, Unsub> Observer<Item2, Err>
-  for SamplingObserverLocal<Item, Err, O, Unsub>
-where
-  O: Observer<Item, Err>,
-  Unsub: SubscriptionLike,
-{
-  fn next(&mut self, _: Item2) { self.emit(); }
+struct SamplingObserver<Item, O>(O, PhantomData<Item>);
 
-  fn error(&mut self, err: Err) {
-    let mut val = self.0.borrow_mut();
-    val.observer.error(err);
-  }
+impl<Item, Item2, Err, O> Observer<Item2, Err> for SamplingObserver<Item, O>
+where
+  O: DrainValue<Item, Err> + Observer<Item, Err>,
+{
+  fn next(&mut self, _: Item2) { self.0.drain_value(); }
+
+  error_proxy_impl!(Err, 0);
 
   fn complete(&mut self) {
-    self.emit();
-    let mut val = self.0.borrow_mut();
-    if !val.done {
-      val.subscription.unsubscribe();
-    }
-    val.done = true;
+    self.0.drain_value();
+    self.0.complete();
   }
 }
 
