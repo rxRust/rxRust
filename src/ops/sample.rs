@@ -5,6 +5,7 @@ use std::marker::PhantomData;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
+#[derive(Clone)]
 pub struct SampleOp<S, N> {
   pub(crate) source: S,
   pub(crate) sampling: N,
@@ -25,8 +26,9 @@ where
   Source::Item: Send + Sync + 'static + Clone,
   Source::Unsub: Send + Sync,
   Source::Err: Send + Sync + 'static,
-  Sampling: SharedObservable<Err = Source::Err, Unsub = Source::Unsub>,
+  Sampling: SharedObservable<Err = Source::Err>,
   Sampling::Item: Send + Sync + 'static + Clone,
+  Sampling::Unsub: Send + Sync,
 {
   type Unsub = SharedSubscription;
   fn actual_subscribe<
@@ -58,7 +60,7 @@ where
 impl<'a, Source, Sampling> LocalObservable<'a> for SampleOp<Source, Sampling>
 where
   Source: LocalObservable<'a> + 'a,
-  Sampling: LocalObservable<'a, Err = Source::Err, Unsub = Source::Unsub> + 'a,
+  Sampling: LocalObservable<'a, Err = Source::Err> + 'a,
 {
   type Unsub = LocalSubscription;
   fn actual_subscribe<O: Observer<Self::Item, Self::Err> + 'a>(
