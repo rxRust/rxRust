@@ -50,7 +50,7 @@ where
       subscription: SharedSubscription::default(),
     }));
     subscription.add(self.source.actual_subscribe(Subscriber {
-      observer: source_observer.clone(),
+      observer: source_observer,
       subscription: SharedSubscription::default(),
     }));
     subscription
@@ -80,7 +80,7 @@ where
       subscription: LocalSubscription::default(),
     }));
     subscription.add(self.source.actual_subscribe(Subscriber {
-      observer: source_observer.clone(),
+      observer: source_observer,
       subscription: LocalSubscription::default(),
     }));
     subscription
