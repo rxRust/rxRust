@@ -47,7 +47,7 @@ where
           delay: duration,
           trailing_value: None,
           throttled: None,
-          subscription: subscriber.subscription.clone(),
+          subscription: subscriber.subscription,
         },
       ))),
       subscription,
