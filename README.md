@@ -10,7 +10,7 @@ Add this to your Cargo.toml:
 
 ```toml
 [dependencies]
-rxrust = "0.8.2"
+rxrust = "0.8.3"
 ```
 
 ## Example 
