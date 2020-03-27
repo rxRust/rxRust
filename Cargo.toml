@@ -5,10 +5,13 @@ authors = ["adoo <Adoo@outlook.com>"]
 edition = "2018"
 description = "A Rust implementation of Reactive Extensions."
 repository = "https://github.com/rxRust/rxRust"
-
-
+license="MIT"
 keywords = ["reactivex", "rx", "frp"]
-license = "MIT"
+categories = ["asynchronous"]
+readme = "README.md"
+documentation = "https://docs.rs/rxrust/"
+homepage = "https://github.com/rxRust/rxRust"
+repository = "https://github.com/rxRust/rxRust"
 
 [package.metadata.release]
 no-dev-version = true
