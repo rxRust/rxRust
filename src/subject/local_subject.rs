@@ -1,5 +1,6 @@
 use crate::prelude::*;
 use std::cell::RefCell;
+use std::fmt::{Debug, Formatter};
 use std::rc::Rc;
 
 type LocalPublishers<'a, Item, Err> =
@@ -7,6 +8,14 @@ type LocalPublishers<'a, Item, Err> =
 
 pub type LocalSubject<'a, Item, Err> =
   Subject<LocalPublishers<'a, Item, Err>, LocalSubscription>;
+
+impl<'a, Item, Err> Debug for LocalSubject<'a, Item, Err> {
+  fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    f.debug_struct("LocalSubject")
+      .field("observer_count", &self.observers.borrow().len())
+      .finish()
+  }
+}
 
 impl<'a, Item, Err> Observable for LocalSubject<'a, Item, Err> {
   type Item = Item;
