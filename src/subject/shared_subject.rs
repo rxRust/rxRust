@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use std::fmt::{Debug, Formatter};
 use std::sync::{Arc, Mutex};
 
 type SharedPublishers<Item, Err> =
@@ -6,6 +7,21 @@ type SharedPublishers<Item, Err> =
 
 pub type SharedSubject<Item, Err> =
   Subject<SharedPublishers<Item, Err>, SharedSubscription>;
+
+impl<Item, Err> Debug for SharedSubject<Item, Err> {
+  fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    f.debug_struct("SharedSubject")
+      .field(
+        "observer_count",
+        &self
+          .observers
+          .lock()
+          .expect("error obtaining observer lock")
+          .len(),
+      )
+      .finish()
+  }
+}
 
 impl<Item, Err> Observable for SharedSubject<Item, Err> {
   type Item = Item;
