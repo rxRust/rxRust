@@ -43,6 +43,7 @@ use ops::{
   first::FirstOrOp,
   last::LastOrOp,
   map::MapOp,
+  map_to::MapToOp,
   merge::MergeOp,
   observe_on::ObserveOnOp,
   ref_count::{RefCount, RefCountCreator},
@@ -158,6 +159,18 @@ pub trait Observable {
     MapOp {
       source: self,
       func: f,
+    }
+  }
+
+  /// Maps emissions to a constant value.
+  #[inline]
+  fn map_to<B>(self, value: B) -> MapToOp<Self, B>
+  where
+    Self: Sized,
+  {
+    MapToOp {
+      source: self,
+      value,
     }
   }
 
