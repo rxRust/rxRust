@@ -5,6 +5,7 @@ pub mod filter_map;
 pub mod first;
 pub mod last;
 pub mod map;
+pub mod map_to;
 pub mod merge;
 pub mod observe_on;
 pub mod ref_count;
