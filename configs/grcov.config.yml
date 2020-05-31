@@ -6,3 +6,9 @@ output-file: ./lcov.info
 ignore:
   - "/*"
   - "../*"
+excl-line: "#\\[derive\\("
+excl-br-line: "#\\[derive\\("
+excl-start: "mod tests \\{"
+excl-br-start: "mod tests \\{"
+excl-start: "mod test \\{"
+excl-br-start: "mod test \\{"
