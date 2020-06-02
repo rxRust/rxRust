@@ -61,7 +61,7 @@ where
   O: Observer<B, Err>,
   B: PayloadCopy,
 {
-  fn next(&mut self, value: Item) {
+  fn next(&mut self, _value: Item) {
     self.observer.next(self.value.payload_copy())
   }
   error_proxy_impl!(Err, observer);
