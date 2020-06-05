@@ -122,8 +122,8 @@ impl<'a, Item, Err, S> LocalObservable<'a> for LocalRefCount<'a, S, Item, Err>
 where
   S: LocalObservable<'a, Item = Item, Err = Err> + Clone,
   S::Unsub: Clone,
-  Item: PayloadCopy + 'a,
-  Err: PayloadCopy + 'a,
+  Item: Clone + 'a,
+  Err: Clone + 'a,
 {
   type Unsub = RefCountSubscription<LocalSubscription, S::Unsub>;
   fn actual_subscribe<O: Observer<Self::Item, Self::Err> + 'a>(
@@ -155,8 +155,8 @@ impl<Item, Err, S> SharedObservable for SharedRefCount<S, Item, Err>
 where
   S: SharedObservable<Item = Item, Err = Err> + Clone,
   S::Unsub: Clone,
-  Item: PayloadCopy + Send + Sync + 'static,
-  Err: PayloadCopy + Send + Sync + 'static,
+  Item: Clone + Send + Sync + 'static,
+  Err: Clone + Send + Sync + 'static,
 {
   type Unsub = RefCountSubscription<SharedSubscription, S::Unsub>;
   fn actual_subscribe<

@@ -4,6 +4,10 @@
 
 - **operator**: add `map_to` operator.
 
+### Breaking Changes
+
+- **observable**: don't require items/errors to implement `PayloadCopy`, `Clone` is enough now (remove `PayloadCopy`)
+
 ## [0.8.3](https://github.com/rxRust/rxRust/releases/tag/v0.8.2)  (2020-03-26)
 
 ### Bug Fixes
