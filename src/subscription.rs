@@ -227,6 +227,15 @@ subscription_proxy_impl!(SubscriptionWrapper<T>, { 0 }, T);
 /// If you want to drop it immediately, wrap it in it's own scope
 #[must_use]
 pub struct SubscriptionGuard<T: SubscriptionLike>(pub(crate) T);
+
+impl<T: SubscriptionLike> SubscriptionGuard<T> {
+  /// Wraps an existing subscription with a guard to enable RAII behavior for
+  /// it.
+  pub fn new(subscription: T) -> SubscriptionGuard<T> {
+    SubscriptionGuard(subscription)
+  }
+}
+
 impl<T: SubscriptionLike> Drop for SubscriptionGuard<T> {
   #[inline]
   fn drop(&mut self) { self.0.unsubscribe() }
