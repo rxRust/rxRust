@@ -61,9 +61,7 @@ where
   O: Observer<B, Err>,
   B: Clone,
 {
-  fn next(&mut self, value: Item) {
-    self.observer.next(self.value.clone())
-  }
+  fn next(&mut self, value: Item) { self.observer.next(self.value.clone()) }
   error_proxy_impl!(Err, observer);
   complete_proxy_impl!(observer);
 }
