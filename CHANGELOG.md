@@ -3,6 +3,9 @@
 ### Features
 
 - **operator**: add `map_to` operator.
+- **subscription**: Add `SubscriptionGuard::new()` for enabling RAII for existing subscriptions.
+- **subscription**: Add `SubscriptionWrapper::into_inner()`, e.g. if one wants to add the inner subscription to
+  a composite subscription.
 
 ## [0.8.3](https://github.com/rxRust/rxRust/releases/tag/v0.8.2)  (2020-03-26)
 
