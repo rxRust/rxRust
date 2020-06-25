@@ -2,6 +2,7 @@ pub mod default_if_empty;
 pub mod delay;
 pub mod filter;
 pub mod filter_map;
+pub mod finalize;
 pub mod first;
 pub mod last;
 pub mod map;

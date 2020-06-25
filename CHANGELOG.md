@@ -3,6 +3,7 @@
 ### Features
 
 - **operator**: add `map_to` operator.
+- **operator**: add `finalize` operator.
 
 ### Breaking Changes
 
