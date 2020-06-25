@@ -40,6 +40,7 @@ use ops::{
   box_it::{BoxOp, IntoBox},
   delay::DelayOp,
   filter::FilterOp,
+  finalize::FinalizeOp,
   first::FirstOrOp,
   last::LastOrOp,
   map::MapOp,
@@ -145,6 +146,19 @@ pub trait Observable {
       source: self,
       default: None,
       last: None,
+    }
+  }
+
+  /// Call a function when observable completes, errors or is unsubscribed from.
+  #[inline]
+  fn finalize<F>(self, f: F) -> FinalizeOp<Self, F>
+  where
+    Self: Sized,
+    F: FnMut(),
+  {
+    FinalizeOp {
+      source: self,
+      func: f,
     }
   }
 
