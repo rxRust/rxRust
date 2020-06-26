@@ -35,7 +35,7 @@ where
 impl<'a, B, S> LocalObservable<'a> for MapToOp<S, B>
 where
   S: LocalObservable<'a>,
-  B: PayloadCopy + 'a,
+  B: Clone + 'a,
 {
   type Unsub = S::Unsub;
   observable_impl!(LocalSubscription,'a);
@@ -44,7 +44,7 @@ where
 impl<B, S> SharedObservable for MapToOp<S, B>
 where
   S: SharedObservable,
-  B: PayloadCopy + Send + Sync + 'static,
+  B: Clone + Send + Sync + 'static,
 {
   type Unsub = S::Unsub;
   observable_impl!(SharedSubscription, Send + Sync + 'static);
@@ -59,11 +59,9 @@ pub struct MapToObserver<O, B> {
 impl<Item, Err, O, B> Observer<Item, Err> for MapToObserver<O, B>
 where
   O: Observer<B, Err>,
-  B: PayloadCopy,
+  B: Clone,
 {
-  fn next(&mut self, _value: Item) {
-    self.observer.next(self.value.payload_copy())
-  }
+  fn next(&mut self, _: Item) { self.observer.next(self.value.clone()) }
   error_proxy_impl!(Err, observer);
   complete_proxy_impl!(observer);
 }

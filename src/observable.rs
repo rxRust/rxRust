@@ -40,6 +40,7 @@ use ops::{
   box_it::{BoxOp, IntoBox},
   delay::DelayOp,
   filter::FilterOp,
+  finalize::FinalizeOp,
   first::FirstOrOp,
   last::LastOrOp,
   map::MapOp,
@@ -145,6 +146,19 @@ pub trait Observable {
       source: self,
       default: None,
       last: None,
+    }
+  }
+
+  /// Call a function when observable completes, errors or is unsubscribed from.
+  #[inline]
+  fn finalize<F>(self, f: F) -> FinalizeOp<Self, F>
+  where
+    Self: Sized,
+    F: FnMut(),
+  {
+    FinalizeOp {
+      source: self,
+      func: f,
     }
   }
 
@@ -639,14 +653,13 @@ pub trait Observable {
   fn max(self) -> MinMaxOp<Self, Self::Item>
   where
     Self: Sized,
-    Self::Item: PayloadCopy + Send + PartialOrd<Self::Item>,
+    Self::Item: Clone + Send + PartialOrd<Self::Item>,
   {
     fn get_greater<Item>(i: Option<Item>, v: Item) -> Option<Item>
     where
-      Item: PayloadCopy + PartialOrd<Item>,
+      Item: Clone + PartialOrd<Item>,
     {
-      i.map(|vv| if vv < v { v.payload_copy() } else { vv })
-        .or(Some(v))
+      i.map(|vv| if vv < v { v.clone() } else { vv }).or(Some(v))
     }
     let get_greater_func =
       get_greater as fn(Option<Self::Item>, Self::Item) -> Option<Self::Item>;
@@ -678,14 +691,13 @@ pub trait Observable {
   fn min(self) -> MinMaxOp<Self, Self::Item>
   where
     Self: Sized,
-    Self::Item: PayloadCopy + Send + PartialOrd<Self::Item>,
+    Self::Item: Clone + Send + PartialOrd<Self::Item>,
   {
     fn get_lesser<Item>(i: Option<Item>, v: Item) -> Option<Item>
     where
-      Item: PayloadCopy + PartialOrd<Item>,
+      Item: Clone + PartialOrd<Item>,
     {
-      i.map(|vv| if vv > v { v.payload_copy() } else { vv })
-        .or(Some(v))
+      i.map(|vv| if vv > v { v.clone() } else { vv }).or(Some(v))
     }
 
     let get_lesser_func =
@@ -721,7 +733,7 @@ pub trait Observable {
   fn sum(self) -> SumOp<Self, Self::Item>
   where
     Self: Sized,
-    Self::Item: PayloadCopy + Default + Add<Self::Item, Output = Self::Item>,
+    Self::Item: Clone + Default + Add<Self::Item, Output = Self::Item>,
   {
     self.reduce(|acc, v| acc + v)
   }
@@ -775,7 +787,7 @@ pub trait Observable {
   fn average(self) -> AverageOp<Self, Self::Item>
   where
     Self: Sized,
-    Self::Item: PayloadCopy
+    Self::Item: Clone
       + Send
       + Default
       + Add<Self::Item, Output = Self::Item>
@@ -787,7 +799,7 @@ pub trait Observable {
     /// averaged (e.g. vectors)
     fn average_floats<T>(acc: Accum<T>) -> T
     where
-      T: Default + PayloadCopy + Send + Mul<f64, Output = T>,
+      T: Default + Clone + Send + Mul<f64, Output = T>,
     {
       // Note: we will never be dividing by zero here, as
       // the acc.1 will be always >= 1.
@@ -800,7 +812,7 @@ pub trait Observable {
 
     fn accumulate_item<T>(acc: Accum<T>, v: T) -> Accum<T>
     where
-      T: PayloadCopy + Add<T, Output = T>,
+      T: Clone + Add<T, Output = T>,
     {
       let newacc = acc.0 + v;
       let newcount = acc.1 + 1;

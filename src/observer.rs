@@ -123,12 +123,12 @@ observer_proxy_impl!(Rc<RefCell<S>>, { borrow_mut() }, Item, Err, S);
 impl<Item, Err, T> Observer<Item, Err> for Vec<T>
 where
   T: Publisher<Item, Err>,
-  Item: PayloadCopy,
-  Err: PayloadCopy,
+  Item: Clone,
+  Err: Clone,
 {
   fn next(&mut self, value: Item) {
     self.drain_filter(|subscriber| {
-      subscriber.next(value.payload_copy());
+      subscriber.next(value.clone());
       subscriber.is_closed()
     });
   }
@@ -136,7 +136,7 @@ where
   fn error(&mut self, err: Err) {
     self
       .iter_mut()
-      .for_each(|subscriber| subscriber.error(err.payload_copy()));
+      .for_each(|subscriber| subscriber.error(err.clone()));
     self.clear();
   }
 
@@ -145,38 +145,3 @@ where
     self.clear();
   }
 }
-
-/// There are situations in which rxRust needs to copy items/errors, for example
-/// when you use subjects or cloned observables. All items/errors which are
-/// copyable (= implement `Copy`) work in such situations out of the box.
-/// Items/errors which implement just `Clone` but not `Copy` *don't* work out of
-/// the box (because rxRust wants to prevent you from accidentally introducing
-/// poorly performing observable chains). If you have such items/errors, you
-/// might want to implement `PayloadCopy` for them. You can use it just like a
-/// marker trait because there's a default method definition which simply calls
-/// `clone()` to make the copy. However, take care to only implement it for
-/// types that are cheap to clone! In multi-observer scenarios (e.g. when using
-/// subjects), `payload_copy()` will be called for each single observer!
-///
-/// # Example
-/// ```rust
-/// use rxrust::prelude::*;
-/// use std::rc::Rc;
-///
-/// #[derive(Clone)]
-/// struct MyCloneableItem {
-///   text: Rc<String>,
-/// }
-///
-/// impl PayloadCopy for MyCloneableItem {}
-/// ```
-pub trait PayloadCopy: Clone {
-  /// Should return a copy of the value. Unlike `Copy`, this can be more than
-  /// just a bitwise copy. Unlike `Clone`, this should still be a cheap
-  /// operation.
-  #[must_use]
-  fn payload_copy(&self) -> Self { self.clone() }
-}
-
-// Support all copyable types by default
-impl<T: Copy> PayloadCopy for T {}

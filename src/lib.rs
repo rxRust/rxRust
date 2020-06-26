@@ -31,6 +31,6 @@ pub mod prelude {
   pub use crate::subscriber::Subscriber;
   pub use crate::subscription;
   pub use crate::subscription::*;
-  pub use observer::{Observer, PayloadCopy};
+  pub use observer::Observer;
   pub use shared::*;
 }
