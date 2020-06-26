@@ -53,6 +53,7 @@ use ops::{
   skip::SkipOp,
   skip_last::SkipLastOp,
   subscribe_on::SubscribeOnOP,
+  switch_on_next::SwitchOnNextOp,
   take::TakeOp,
   take_last::TakeLastOp,
   take_until::TakeUntilOp,
@@ -461,6 +462,22 @@ pub trait Observable {
     TakeLastOp {
       source: self,
       count,
+    }
+  }
+
+  /// Converts an Observable that emits Observables into an Observable that
+  /// emits the items emitted by the most recently emitted of those Observables.
+  ///
+  /// TODO Not generic on error yet. No thread-safe version yet.
+  #[inline]
+  fn switch_on_next<'a, InnerItem>(self) -> SwitchOnNextOp<Self, InnerItem>
+  where
+    Self: Sized,
+    Self::Item: LocalObservable<'a, Item = InnerItem, Err = ()>,
+  {
+    SwitchOnNextOp {
+      source: self,
+      p: PhantomData,
     }
   }
 

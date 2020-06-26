@@ -15,6 +15,7 @@ pub mod scan;
 pub mod skip;
 pub mod skip_last;
 pub mod subscribe_on;
+pub mod switch_on_next;
 pub mod take;
 pub mod take_last;
 pub mod take_until;
