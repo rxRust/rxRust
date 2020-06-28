@@ -4,6 +4,9 @@
 
 - **operator**: add `map_to` operator.
 - **operator**: add `finalize` operator.
+- **subscription**: Add `SubscriptionGuard::new()` for enabling RAII for existing subscriptions.
+- **subscription**: Add `SubscriptionWrapper::into_inner()`, e.g. if one wants to add the inner subscription to
+  a composite subscription.
 
 ### Breaking Changes
 

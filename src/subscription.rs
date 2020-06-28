@@ -229,6 +229,9 @@ impl<T: SubscriptionLike> SubscriptionWrapper<T> {
   pub fn unsubscribe_when_dropped(self) -> SubscriptionGuard<T> {
     SubscriptionGuard(self.0)
   }
+
+  /// Consumes this wrapper and returns the underlying subscription.
+  pub fn into_inner(self) -> T { self.0 }
 }
 
 subscription_proxy_impl!(SubscriptionWrapper<T>, { 0 }, T);
@@ -242,10 +245,19 @@ subscription_proxy_impl!(SubscriptionWrapper<T>, { 0 }, T);
 /// #the-must_use-attribute)
 /// attribute
 ///
-/// If you want to drop it immediately, wrap it in it's own scope
+/// If you want to drop it immediately, wrap it in its own scope
 #[derive(Debug)]
 #[must_use]
 pub struct SubscriptionGuard<T: SubscriptionLike>(pub(crate) T);
+
+impl<T: SubscriptionLike> SubscriptionGuard<T> {
+  /// Wraps an existing subscription with a guard to enable RAII behavior for
+  /// it.
+  pub fn new(subscription: T) -> SubscriptionGuard<T> {
+    SubscriptionGuard(subscription)
+  }
+}
+
 impl<T: SubscriptionLike> Drop for SubscriptionGuard<T> {
   #[inline]
   fn drop(&mut self) { self.0.unsubscribe() }
