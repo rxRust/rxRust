@@ -34,22 +34,44 @@ where
   }
 }
 
+impl<S, SD> LocalObservable<'static> for SubscribeOnOP<S, SD>
+where
+  S: LocalObservable<'static> + 'static,
+  SD: LocalScheduler,
+{
+  type Unsub = LocalSubscription;
+  fn actual_subscribe<O: Observer<Self::Item, Self::Err> + 'static>(
+    mut self,
+    subscriber: Subscriber<O, LocalSubscription>,
+  ) -> Self::Unsub {
+    let source = self.source;
+    self.scheduler.schedule(
+      move |mut subscription, _| {
+        subscription.add(source.actual_subscribe(subscriber))
+      },
+      None,
+      (),
+    )
+  }
+}
+
 #[cfg(test)]
 mod test {
   use crate::prelude::*;
-  use crate::scheduler::Schedulers;
+  use futures::executor::ThreadPool;
   use std::sync::{Arc, Mutex};
   use std::thread;
   use std::time::Duration;
 
   #[test]
-  fn new_thread() {
+  fn thread_pool() {
+    let pool = ThreadPool::new().unwrap();
     let res = Arc::new(Mutex::new(vec![]));
     let c_res = res.clone();
     let thread = Arc::new(Mutex::new(vec![]));
     let c_thread = thread.clone();
     observable::from_iter(1..5)
-      .subscribe_on(Schedulers::NewThread)
+      .subscribe_on(pool)
       .to_shared()
       .subscribe(move |v| {
         res.lock().unwrap().push(v);
@@ -63,20 +85,13 @@ mod test {
   }
 
   #[test]
-  fn pool_unsubscribe() { unsubscribe_scheduler(Schedulers::ThreadPool) }
-
-  #[test]
-  fn new_thread_unsubscribe() { unsubscribe_scheduler(Schedulers::NewThread) }
-
-  // #[test]
-  // fn sync_unsubscribe() { unsubscribe_scheduler(Schedulers::Sync) }
-
-  fn unsubscribe_scheduler(scheduler: Schedulers) {
+  fn pool_unsubscribe() {
+    let pool = ThreadPool::new().unwrap();
     let emitted = Arc::new(Mutex::new(vec![]));
     let c_emitted = emitted.clone();
     observable::from_iter(0..10)
-      .subscribe_on(scheduler)
-      .delay(Duration::from_millis(10))
+      .subscribe_on(pool.clone())
+      .delay(Duration::from_millis(10), pool)
       .to_shared()
       .subscribe(move |v| {
         emitted.lock().unwrap().push(v);

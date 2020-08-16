@@ -26,7 +26,7 @@ observable_proxy_impl!(ThrottleTimeOp, S, SD);
 
 impl<Item, Err, S, SD, Unsub> LocalObservable<'static> for ThrottleTimeOp<S, SD>
 where
-  S: for<'r> LocalObservable<'r, Item = Item, Err = Err, Unsub = Unsub>,
+  S: LocalObservable<'static, Item = Item, Err = Err, Unsub = Unsub>,
   Unsub: SubscriptionLike + 'static,
   Item: Clone + 'static,
   SD: LocalScheduler + 'static,
@@ -183,46 +183,50 @@ where
   impl_throttle_observer!(Item, Err, borrow_mut);
 }
 
-#[test]
-fn smoke() {
-  let x = Arc::new(Mutex::new(vec![]));
-  let x_c = x.clone();
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use futures::executor::LocalPool;
 
-  let interval = observable::interval(Duration::from_millis(5));
-  let throttle_subscribe = |edge| {
-    let x = x.clone();
-    interval
-      .clone()
+  #[test]
+  fn smoke() {
+    let x = Rc::new(RefCell::new(vec![]));
+    let x_c = x.clone();
+    let mut pool = LocalPool::new();
+
+    let interval =
+      observable::interval(Duration::from_millis(5), pool.spawner());
+    let spawner = pool.spawner();
+    let throttle_subscribe = |edge| {
+      let x = x.clone();
+      interval
+        .clone()
+        .take(5)
+        .throttle_time(Duration::from_millis(11), edge, spawner.clone())
+        .subscribe(move |v| x.borrow_mut().push(v))
+    };
+
+    // tailing throttle
+    let mut sub = throttle_subscribe(ThrottleEdge::Tailing);
+    pool.run();
+    sub.unsubscribe();
+    assert_eq!(&*x_c.borrow(), &[2, 4]);
+
+    // leading throttle
+    x_c.borrow_mut().clear();
+    throttle_subscribe(ThrottleEdge::Leading);
+    pool.run();
+    assert_eq!(&*x_c.borrow(), &[0, 3]);
+  }
+
+  #[test]
+  fn fork_and_shared() {
+    use futures::executor::ThreadPool;
+    let scheduler = ThreadPool::new().unwrap();
+    observable::of(0..10)
+      .throttle_time(Duration::from_nanos(1), ThrottleEdge::Leading, scheduler)
       .to_shared()
-      .throttle_time(Duration::from_millis(48), edge)
       .to_shared()
-      .subscribe(move |v| x.lock().unwrap().push(v))
-  };
-
-  // tailing throttle
-  let mut sub = throttle_subscribe(ThrottleEdge::Tailing);
-  std::thread::sleep(Duration::from_millis(520));
-  sub.unsubscribe();
-  assert_eq!(
-    x_c.lock().unwrap().clone(),
-    vec![9, 19, 29, 39, 49, 59, 69, 79, 89, 99]
-  );
-
-  // leading throttle
-  x_c.lock().unwrap().clear();
-  throttle_subscribe(ThrottleEdge::Leading);
-  std::thread::sleep(Duration::from_millis(520));
-  assert_eq!(
-    x_c.lock().unwrap().clone(),
-    vec![0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
-  );
-}
-
-#[test]
-fn fork_and_shared() {
-  observable::of(0..10)
-    .throttle_time(Duration::from_nanos(1), ThrottleEdge::Leading)
-    .to_shared()
-    .to_shared()
-    .subscribe(|_| {});
+      .subscribe(|_| {});
+  }
 }

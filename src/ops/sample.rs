@@ -169,27 +169,35 @@ where
 #[cfg(test)]
 mod test {
   use crate::prelude::*;
-  use std::sync::{Arc, Mutex};
+  use futures::executor::LocalPool;
+  use std::{
+    cell::RefCell,
+    rc::Rc,
+    sync::{Arc, Mutex},
+    time::Duration,
+  };
+
   #[test]
   fn sample_base() {
-    let x = Arc::new(Mutex::new(vec![]));
+    let mut pool = LocalPool::new();
+    let x = Rc::new(RefCell::new(vec![]));
 
-    let interval = observable::interval(std::time::Duration::from_millis(5));
+    let interval =
+      observable::interval(Duration::from_millis(2), pool.spawner());
     {
       let x_c = x.clone();
-      let mut sub = interval
-        .sample(observable::interval(std::time::Duration::from_millis(11)))
-        .to_shared()
+      interval
+        .take(46)
+        .sample(observable::interval(
+          Duration::from_millis(10),
+          pool.spawner(),
+        ))
         .subscribe(move |v| {
-          let mut l = x_c.lock().unwrap();
-          l.push(v);
+          x_c.borrow_mut().push(v);
         });
-      std::thread::sleep(std::time::Duration::from_millis(115));
-      sub.unsubscribe();
-      {
-        let v = x.lock().unwrap().clone();
-        assert_eq!(v, vec![1, 3, 5, 7, 10, 12, 14, 16, 18, 21]);
-      }
+
+      pool.run();
+      assert_eq!(x.borrow().len(), 10);
     };
   }
   #[test]

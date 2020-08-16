@@ -93,29 +93,33 @@ impl<T> Drop for SpawnHandle<T> {
 mod test {
   extern crate test;
   use crate::prelude::*;
+  use futures::executor::{LocalPool, ThreadPool};
   use std::f32;
-  use std::sync::{Arc, Mutex};
   use test::Bencher;
 
   #[bench]
-  fn pool(b: &mut Bencher) { b.iter(|| sum_of_sqrt(Schedulers::ThreadPool)) }
-
-  #[bench]
-  fn new_thread(b: &mut Bencher) {
-    b.iter(|| sum_of_sqrt(Schedulers::NewThread))
+  fn pool(b: &mut Bencher) {
+    let pool = ThreadPool::new().unwrap();
+    b.iter(|| {
+      observable::from_iter(0..100)
+        .observe_on(pool.clone())
+        .to_shared()
+        .subscribe(move |v| {
+          (0..1000).fold((v as f32).sqrt(), |acc, _| acc.sqrt());
+        })
+    })
   }
 
-  // #[bench]
-  // fn sync(b: &mut Bencher) { b.iter(|| sum_of_sqrt(Schedulers::Sync)) }
-
-  fn sum_of_sqrt(scheduler: Schedulers) {
-    let sum = Arc::new(Mutex::new(0.));
-    observable::from_iter(0..10)
-      .observe_on(scheduler)
-      .to_shared()
-      .subscribe(move |v| {
-        *sum.lock().unwrap() =
+  #[bench]
+  fn local_thread(b: &mut Bencher) {
+    let local = LocalPool::new();
+    let spawner = local.spawner();
+    b.iter(|| {
+      observable::from_iter(0..100)
+        .observe_on(spawner.clone())
+        .subscribe(move |v| {
           (0..1000).fold((v as f32).sqrt(), |acc, _| acc.sqrt());
-      });
+        })
+    })
   }
 }

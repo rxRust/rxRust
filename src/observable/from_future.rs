@@ -158,28 +158,40 @@ where
   }
 }
 
-#[test]
-fn smoke() {
-  use futures::future;
-  use std::sync::Arc;
-  let res = Arc::new(Mutex::new(0));
-  let c_res = res.clone();
-  {
-    from_future_result(future::ok(1))
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use futures::{
+    executor::{LocalPool, ThreadPool},
+    future,
+  };
+  use std::sync::{Arc, Mutex};
+
+  #[test]
+  fn shared() {
+    let res = Arc::new(Mutex::new(0));
+    let c_res = res.clone();
+    let pool = ThreadPool::new().unwrap();
+    {
+      from_future_result(future::ok(1), pool.clone())
+        .to_shared()
+        .subscribe(move |v| {
+          *res.lock().unwrap() = v;
+        });
+      std::thread::sleep(std::time::Duration::from_millis(10));
+      assert_eq!(*c_res.lock().unwrap(), 1);
+    }
+    // from_future
+    let res = c_res.clone();
+    from_future(future::ready(2), pool.clone())
       .to_shared()
       .subscribe(move |v| {
         *res.lock().unwrap() = v;
       });
     std::thread::sleep(std::time::Duration::from_millis(10));
-    assert_eq!(*c_res.lock().unwrap(), 1);
+    assert_eq!(*c_res.lock().unwrap(), 2);
   }
-  // from_future
-  let res = c_res.clone();
-  from_future(future::ready(2))
-    .to_shared()
-    .subscribe(move |v| {
-      *res.lock().unwrap() = v;
-    });
-  std::thread::sleep(std::time::Duration::from_millis(10));
-  assert_eq!(*c_res.lock().unwrap(), 2);
+
+  #[test]
+  fn local() { unimplemented!() }
 }

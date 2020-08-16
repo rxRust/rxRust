@@ -16,7 +16,6 @@ readme = "README.md"
 no-dev-version = true
 
 [dependencies]
-futures="0.3.5"
 futures-timer = "3.0.2"
 smallvec = "1.4.2"
 
@@ -26,3 +25,7 @@ float-cmp = "0.8.0"
 [dependencies.async-std]
 version = "1.6.3"
 features = ["unstable"]
+
+[dependencies.futures]
+version="0.3.5"
+features= ["thread-pool"]
