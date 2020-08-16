@@ -94,32 +94,39 @@ mod test {
   extern crate test;
   use crate::prelude::*;
   use futures::executor::{LocalPool, ThreadPool};
-  use std::f32;
+  use std::sync::{Arc, Mutex};
   use test::Bencher;
 
   #[bench]
   fn pool(b: &mut Bencher) {
-    let pool = ThreadPool::new().unwrap();
+    let sum = Arc::new(Mutex::new(0.));
     b.iter(|| {
-      observable::from_iter(0..100)
-        .observe_on(pool.clone())
+      let sum = sum.clone();
+      let pool = ThreadPool::new().unwrap();
+      observable::from_iter(0..1000)
+        .observe_on(pool)
         .to_shared()
         .subscribe(move |v| {
-          (0..1000).fold((v as f32).sqrt(), |acc, _| acc.sqrt());
+          *sum.lock().unwrap() =
+            (0..1000).fold((v as f32).sqrt(), |acc, _| acc.sqrt());
         })
     })
   }
 
   #[bench]
   fn local_thread(b: &mut Bencher) {
-    let local = LocalPool::new();
-    let spawner = local.spawner();
+    let sum = Arc::new(Mutex::new(0.));
     b.iter(|| {
-      observable::from_iter(0..100)
-        .observe_on(spawner.clone())
+      let mut local = LocalPool::new();
+      let sum = sum.clone();
+      observable::from_iter(0..1000)
+        .observe_on(local.spawner())
         .subscribe(move |v| {
-          (0..1000).fold((v as f32).sqrt(), |acc, _| acc.sqrt());
-        })
+          *sum.lock().unwrap() =
+            (0..1000).fold((v as f32).sqrt(), |acc, _| acc.sqrt());
+        });
+
+      local.run();
     })
   }
 }

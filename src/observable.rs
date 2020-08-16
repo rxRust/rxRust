@@ -61,7 +61,6 @@ use ops::{
   zip::ZipOp,
   Accum, AverageOp, CountOp, MinMaxOp, ReduceOp, SumOp,
 };
-use std::marker::PhantomData;
 use std::ops::{Add, Mul};
 use std::time::{Duration, Instant};
 
