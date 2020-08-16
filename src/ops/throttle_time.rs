@@ -1,7 +1,11 @@
 use crate::prelude::*;
 use observable::observable_proxy_impl;
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::{
+  cell::RefCell,
+  rc::Rc,
+  sync::{Arc, Mutex},
+  time::Duration,
+};
 
 /// Config to define leading and trailing behavior for throttle
 #[derive(PartialEq, Clone, Copy)]
@@ -11,71 +15,57 @@ pub enum ThrottleEdge {
 }
 
 #[derive(Clone)]
-pub struct ThrottleTimeOp<S> {
+pub struct ThrottleTimeOp<S, SD> {
   pub(crate) source: S,
+  pub(crate) scheduler: SD,
   pub(crate) duration: Duration,
   pub(crate) edge: ThrottleEdge,
 }
 
-observable_proxy_impl!(ThrottleTimeOp, S);
+observable_proxy_impl!(ThrottleTimeOp, S, SD);
 
-impl<Item, Err, S, Unsub> SharedObservable for ThrottleTimeOp<S>
+impl<Item, Err, S, SD, Unsub> LocalObservable<'static> for ThrottleTimeOp<S, SD>
 where
   S: for<'r> LocalObservable<'r, Item = Item, Err = Err, Unsub = Unsub>,
-  Item: Clone + Send + 'static,
   Unsub: SubscriptionLike + 'static,
+  Item: Clone + 'static,
+  SD: LocalScheduler + 'static,
 {
   type Unsub = Unsub;
-  fn actual_subscribe<
-    O: Observer<Self::Item, Self::Err> + Send + Sync + 'static,
-  >(
+
+  fn actual_subscribe<O: Observer<Self::Item, Self::Err> + 'static>(
     self,
-    subscriber: Subscriber<O, SharedSubscription>,
+    subscriber: Subscriber<O, LocalSubscription>,
   ) -> Self::Unsub {
     let Self {
       source,
       duration,
       edge,
+      scheduler,
     } = self;
-    let mut subscription = LocalSubscription::default();
-    subscription.add(subscriber.subscription.clone());
+
     source.actual_subscribe(Subscriber {
-      observer: ThrottleTimeObserver(Arc::new(Mutex::new(
-        InnerThrottleTimeObserver {
+      observer: LocalThrottleObserver(Rc::new(RefCell::new(
+        ThrottleObserver {
           observer: subscriber.observer,
           edge,
           delay: duration,
           trailing_value: None,
           throttled: None,
-          subscription: subscriber.subscription,
+          subscription: subscriber.subscription.clone(),
+          scheduler,
         },
       ))),
-      subscription,
+      subscription: subscriber.subscription,
     })
   }
 }
 
-// Fix me. For now, rust generic specialization is not full finished. we can't
-// impl two SharedObservable for ThrottleTimeOp<S>, so we must wrap `S` with
-// Shared. And this mean's if any ThrottleTimeOp's upstream just support shared
-// subscribe, user must call `to_shared` before `throttle_time`. So,
-// ```rust ignore
-// observable::interval(Duration::from_millis(1))
-//   .throttle_time(Duration::from_millis(9), ThrottleEdge::Leading)
-//   .to_shared()
-//   .subscribe(move |v| println!("{}", v));
-// ```
-// this code will not work, must write like this:
-// ```rust
-// observable::interval(Duration::from_millis(1))
-//   .throttle_time(Duration::from_millis(9), ThrottleEdge::Leading)
-//   .to_shared()
-//   .subscribe(move |v| println!("{}", v));
-// ```
-impl<S> SharedObservable for ThrottleTimeOp<Shared<S>>
+impl<S, SD> SharedObservable for ThrottleTimeOp<S, SD>
 where
   S: SharedObservable,
   S::Item: Clone + Send + 'static,
+  SD: SharedScheduler + Send + 'static,
 {
   type Unsub = S::Unsub;
   fn actual_subscribe<
@@ -88,20 +78,22 @@ where
       source,
       duration,
       edge,
+      scheduler,
     } = self;
     let Subscriber {
       observer,
       subscription,
     } = subscriber;
-    source.0.actual_subscribe(Subscriber {
-      observer: ThrottleTimeObserver(Arc::new(Mutex::new(
-        InnerThrottleTimeObserver {
+    source.actual_subscribe(Subscriber {
+      observer: SharedThrottleObserver(Arc::new(Mutex::new(
+        ThrottleObserver {
           observer,
           edge,
           delay: duration,
           trailing_value: None,
           throttled: None,
           subscription: subscription.clone(),
+          scheduler,
         },
       ))),
       subscription,
@@ -109,35 +101,37 @@ where
   }
 }
 
-struct InnerThrottleTimeObserver<O, Item> {
+struct ThrottleObserver<O, S, Item, Sub> {
+  scheduler: S,
   observer: O,
   edge: ThrottleEdge,
   delay: Duration,
   trailing_value: Option<Item>,
-  throttled: Option<SharedSubscription>,
-  subscription: SharedSubscription,
+  throttled: Option<Sub>,
+  subscription: Sub,
 }
 
-pub struct ThrottleTimeObserver<O, Item>(
-  Arc<Mutex<InnerThrottleTimeObserver<O, Item>>>,
+struct SharedThrottleObserver<O, S, Item>(
+  Arc<Mutex<ThrottleObserver<O, S, Item, SharedSubscription>>>,
 );
 
-impl<O, Item, Err> Observer<Item, Err> for ThrottleTimeObserver<O, Item>
-where
-  O: Observer<Item, Err> + Send + 'static,
-  Item: Clone + Send + 'static,
-{
-  fn next(&mut self, value: Item) {
-    let mut inner = self.0.lock().unwrap();
+struct LocalThrottleObserver<O, S, Item>(
+  Rc<RefCell<ThrottleObserver<O, S, Item, LocalSubscription>>>,
+);
+
+macro impl_throttle_observer($item: ident, $err: ident, $($path: ident).*) {
+  fn next(&mut self, value: $item) {
+    let mut inner = self.0.$($path()).*;
     if inner.edge == ThrottleEdge::Tailing {
       inner.trailing_value = Some(value.clone());
     }
 
     if inner.throttled.is_none() {
       let c_inner = self.0.clone();
-      let subscription = Schedulers::ThreadPool.schedule(
+      let delay = inner.delay;
+      let subscription = inner.scheduler.schedule(
         move |_, _| {
-          let mut inner = c_inner.lock().unwrap();
+          let mut inner = c_inner.$($path()).*;
           if let Some(v) = inner.trailing_value.take() {
             inner.observer.next(v);
           }
@@ -146,7 +140,7 @@ where
             inner.subscription.remove(&throttled);
           }
         },
-        Some(inner.delay),
+        Some(delay),
         (),
       );
       inner.subscription.add(subscription.clone());
@@ -157,18 +151,36 @@ where
     }
   }
 
-  fn error(&mut self, err: Err) {
-    let mut inner = self.0.lock().unwrap();
+  fn error(&mut self, err: $err) {
+    let mut inner = self.0.$($path()).*;
     inner.observer.error(err)
   }
 
   fn complete(&mut self) {
-    let mut inner = self.0.lock().unwrap();
+    let mut inner = self.0.$($path()).*;
     if let Some(value) = inner.trailing_value.take() {
       inner.observer.next(value);
     }
     inner.observer.complete();
   }
+}
+
+impl<O, S, Item, Err> Observer<Item, Err> for SharedThrottleObserver<O, S, Item>
+where
+  O: Observer<Item, Err> + Send + 'static,
+  S: SharedScheduler + Send + 'static,
+  Item: Clone + Send + 'static,
+{
+  impl_throttle_observer!(Item, Err, lock.unwrap);
+}
+
+impl<O, S, Item, Err> Observer<Item, Err> for LocalThrottleObserver<O, S, Item>
+where
+  O: Observer<Item, Err> + 'static,
+  S: LocalScheduler + 'static,
+  Item: Clone + 'static,
+{
+  impl_throttle_observer!(Item, Err, borrow_mut);
 }
 
 #[test]

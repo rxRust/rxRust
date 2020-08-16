@@ -37,7 +37,8 @@ pub(crate) macro observer_proxy_impl(
   , {$($name:tt $($parentheses:tt)?) .+}
   , $item: ident
   , $err: ident
-  $(, $host_ty: ident)? $(, <$($generics: tt),*>)?
+  $(, $host_ty: ident)?
+  $(, <$($generics: tt),*>)?
   $(, {where $($wty:ty : $bound: tt),*})?
 ) {
     impl<$($($generics ,)*)? $item, $err, $($host_ty)? >

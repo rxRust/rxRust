@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use crate::scheduler::Scheduler;
+use crate::scheduler::SharedScheduler;
 use observable::observable_proxy_impl;
 use std::marker::PhantomData;
 use std::sync::{Arc, Mutex};
@@ -18,7 +18,7 @@ where
   S: LocalObservable<'a>,
   S::Item: Clone + Send + Sync + 'static,
   S::Err: Clone + Send + Sync + 'static,
-  SD: Scheduler + 'static,
+  SD: SharedScheduler + 'static,
 {
   type Unsub = S::Unsub;
   fn actual_subscribe<
@@ -51,7 +51,7 @@ where
   S: SharedObservable,
   S::Item: Clone + Send + 'static,
   S::Err: Clone + Send + 'static,
-  SD: Scheduler + Send + Sync + 'static,
+  SD: SharedScheduler + Send + Sync + 'static,
 {
   type Unsub = S::Unsub;
   fn actual_subscribe<
@@ -130,7 +130,7 @@ where
   Item: Clone + Send + 'static,
   Err: Clone + Send + 'static,
   O: Observer<Item, Err> + Send + 'static,
-  SD: Scheduler,
+  SD: SharedScheduler,
 {
   impl_observer!(Item, Err);
 }
@@ -141,7 +141,7 @@ where
   Item: Clone + Send + 'static,
   Err: Clone + Send + 'static,
   O: Observer<Item, Err> + Send + 'static,
-  SD: Scheduler,
+  SD: SharedScheduler,
 {
   impl_observer!(Item, Err);
 }
