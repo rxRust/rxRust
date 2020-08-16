@@ -33,11 +33,9 @@ where
       scheduler: self.scheduler,
     };
 
-    let mut subscription = LocalSubscription::default();
-    subscription.add(subscriber.subscription);
     self.source.actual_subscribe(Subscriber {
       observer,
-      subscription,
+      subscription: subscriber.subscription,
     })
   }
 }
