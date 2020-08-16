@@ -32,6 +32,7 @@ observer_proxy_impl!(Subject<O, U>, {observers}, Item, Err, O, <U>,
 #[cfg(test)]
 mod test {
   use super::*;
+  use futures::executor::ThreadPool;
 
   #[test]
   fn base_data_flow() {
@@ -71,7 +72,7 @@ mod test {
 
   #[test]
   fn empty_local_subject_can_convert_to_shared() {
-    use crate::scheduler::Schedulers;
+    let pool = ThreadPool::new().unwrap();
     use std::sync::{Arc, Mutex};
     let value = Arc::new(Mutex::new(0));
     let c_v = value.clone();
@@ -79,7 +80,7 @@ mod test {
     subject
       .clone()
       .to_shared()
-      .observe_on(Schedulers::NewThread)
+      .observe_on(pool)
       .to_shared()
       .subscribe(move |v: i32| {
         *value.lock().unwrap() = v;

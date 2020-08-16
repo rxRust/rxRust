@@ -65,18 +65,28 @@ where
   }
 }
 
-#[test]
-fn smoke() {
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use futures::executor::{LocalPool, ThreadPool};
   use std::sync::{Arc, Mutex};
-  let value = Arc::new(Mutex::new(0));
-  let c_value = value.clone();
-  observable::of(1)
-    .delay(Duration::from_millis(50))
-    .to_shared()
-    .subscribe(move |v| {
-      *value.lock().unwrap() = v;
-    });
-  assert_eq!(*c_value.lock().unwrap(), 0);
-  std::thread::sleep(Duration::from_millis(60));
-  assert_eq!(*c_value.lock().unwrap(), 1);
+
+  #[test]
+  fn shared_smoke() {
+    let value = Arc::new(Mutex::new(0));
+    let c_value = value.clone();
+    let pool = ThreadPool::new().unwrap();
+    observable::of(1)
+      .delay(Duration::from_millis(50), pool)
+      .to_shared()
+      .subscribe(move |v| {
+        *value.lock().unwrap() = v;
+      });
+    assert_eq!(*c_value.lock().unwrap(), 0);
+    std::thread::sleep(Duration::from_millis(60));
+    assert_eq!(*c_value.lock().unwrap(), 1);
+  }
+
+  #[test]
+  fn local_smoke() { unimplemented!() }
 }

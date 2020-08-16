@@ -1,34 +1,34 @@
 use crate::prelude::*;
 use crate::scheduler::SharedScheduler;
 use observable::observable_proxy_impl;
-use std::marker::PhantomData;
-use std::sync::{Arc, Mutex};
+use std::{
+  cell::RefCell,
+  rc::Rc,
+  sync::{Arc, Mutex},
+};
 
 #[derive(Clone)]
-pub struct ObserveOnOp<'a, S, SD> {
+pub struct ObserveOnOp<S, SD> {
   pub(crate) source: S,
   pub(crate) scheduler: SD,
-  pub(crate) _p: PhantomData<&'a ()>,
 }
 
-observable_proxy_impl!(ObserveOnOp, S, 'a, SD);
+observable_proxy_impl!(ObserveOnOp, S, SD);
 
-impl<'a, S, SD> SharedObservable for ObserveOnOp<'a, S, SD>
+impl<S, SD> LocalObservable<'static> for ObserveOnOp<S, SD>
 where
-  S: LocalObservable<'a>,
-  S::Item: Clone + Send + Sync + 'static,
-  S::Err: Clone + Send + Sync + 'static,
-  SD: SharedScheduler + 'static,
+  S: LocalObservable<'static>,
+  S::Item: Clone + 'static,
+  S::Err: Clone + 'static,
+  SD: LocalScheduler + 'static,
 {
   type Unsub = S::Unsub;
-  fn actual_subscribe<
-    O: Observer<Self::Item, Self::Err> + Sync + Send + 'static,
-  >(
+  fn actual_subscribe<O: Observer<Self::Item, Self::Err> + 'static>(
     self,
-    subscriber: Subscriber<O, SharedSubscription>,
+    subscriber: Subscriber<O, LocalSubscription>,
   ) -> Self::Unsub {
     let observer = ObserveOnObserver {
-      observer: Arc::new(Mutex::new(subscriber.observer)),
+      observer: Rc::new(RefCell::new(subscriber.observer)),
       proxy: subscriber.subscription.clone(),
       scheduler: self.scheduler,
     };
@@ -42,11 +42,7 @@ where
   }
 }
 
-// Fix me. For now, rust generic specialization is not full finished. we can't
-// impl two SharedObservable for ObserveOnOp<'a, S, SD>, so we must wrap `S`
-// with Shared. And this mean's if any ObserveOnOp's upstream just support
-// shared, subscribe, user must call `to_shared` before `observe_on`.
-impl<'a, S, SD> SharedObservable for ObserveOnOp<'a, Shared<S>, SD>
+impl<S, SD> SharedObservable for ObserveOnOp<S, SD>
 where
   S: SharedObservable,
   S::Item: Clone + Send + 'static,
@@ -74,19 +70,19 @@ where
 }
 
 pub struct ObserveOnObserver<O, SD, U> {
-  observer: Arc<Mutex<O>>,
+  observer: O,
   proxy: U,
   scheduler: SD,
 }
 
 #[doc(hidden)]
-macro impl_observer($item: ident, $err: ident) {
+macro impl_observer($item: ident, $err: ident, $($path: ident).*) {
   fn next(&mut self, value: $item) {
     let s = self.scheduler.schedule(
       |subscription, state| {
         if !subscription.is_closed() {
           let (v, observer) = state;
-          observer.lock().unwrap().next(v);
+          observer.$($path()).*.next(v);
         }
       },
       None,
@@ -100,7 +96,7 @@ macro impl_observer($item: ident, $err: ident) {
       |mut subscription, state| {
         if !subscription.is_closed() {
           let (e, observer) = state;
-          observer.lock().unwrap().error(e);
+          observer.$($path()).*.error(e);
           subscription.unsubscribe();
         }
       },
@@ -114,7 +110,7 @@ macro impl_observer($item: ident, $err: ident) {
     let s = self.scheduler.schedule(
       |mut subscription, observer| {
         if !subscription.is_closed() {
-          observer.lock().unwrap().complete();
+          observer.$($path()).*.complete();
           subscription.unsubscribe();
         }
       },
@@ -125,31 +121,31 @@ macro impl_observer($item: ident, $err: ident) {
   }
 }
 impl<Item, Err, O, SD> Observer<Item, Err>
-  for ObserveOnObserver<O, SD, SharedSubscription>
+  for ObserveOnObserver<Arc<Mutex<O>>, SD, SharedSubscription>
 where
   Item: Clone + Send + 'static,
   Err: Clone + Send + 'static,
   O: Observer<Item, Err> + Send + 'static,
   SD: SharedScheduler,
 {
-  impl_observer!(Item, Err);
+  impl_observer!(Item, Err, lock.unwrap);
 }
 
 impl<Item, Err, O, SD> Observer<Item, Err>
-  for ObserveOnObserver<O, SD, LocalSubscription>
+  for ObserveOnObserver<Rc<RefCell<O>>, SD, LocalSubscription>
 where
-  Item: Clone + Send + 'static,
-  Err: Clone + Send + 'static,
-  O: Observer<Item, Err> + Send + 'static,
-  SD: SharedScheduler,
+  Item: Clone + 'static,
+  Err: Clone + 'static,
+  O: Observer<Item, Err> + 'static,
+  SD: LocalScheduler,
 {
-  impl_observer!(Item, Err);
+  impl_observer!(Item, Err, borrow_mut);
 }
 
 #[cfg(test)]
 mod test {
   use crate::prelude::*;
-  use crate::scheduler::Schedulers;
+  use futures::executor::ThreadPool;
   use std::sync::{Arc, Mutex};
   use std::thread;
   use std::time::Duration;
@@ -161,12 +157,14 @@ mod test {
     let observe_thread = Arc::new(Mutex::new(vec![]));
     let oc = observe_thread.clone();
 
+    let pool = ThreadPool::builder().pool_size(10).create().unwrap();
+
     observable::create(|mut s| {
       s.next(&1);
       s.next(&1);
       *emit_thread.lock().unwrap() = thread::current().id();
     })
-    .observe_on(Schedulers::NewThread)
+    .observe_on(pool.clone())
     .to_shared()
     .subscribe(move |_v| {
       observe_thread.lock().unwrap().push(thread::current().id());
@@ -184,21 +182,14 @@ mod test {
   }
 
   #[test]
-  fn pool_unsubscribe() { unsubscribe_scheduler(Schedulers::ThreadPool) }
-
-  #[test]
-  fn new_thread_unsubscribe() { unsubscribe_scheduler(Schedulers::NewThread) }
-
-  // #[test]
-  // fn sync_unsubscribe() { unsubscribe_scheduler(Schedulers::Sync) }
-
-  fn unsubscribe_scheduler(scheduler: Schedulers) {
+  fn pool_unsubscribe() {
+    let scheduler = ThreadPool::new().unwrap();
     let emitted = Arc::new(Mutex::new(vec![]));
     let c_emitted = emitted.clone();
     observable::from_iter(0..10)
       .to_shared()
-      .observe_on(scheduler)
-      .delay(Duration::from_millis(10))
+      .observe_on(scheduler.clone())
+      .delay(Duration::from_millis(10), scheduler)
       .to_shared()
       .subscribe(move |v| {
         emitted.lock().unwrap().push(v);

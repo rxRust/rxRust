@@ -949,14 +949,13 @@ pub trait Observable {
   /// which will be used to reschedule notifications emitted by the source
   /// Observable.
   #[inline]
-  fn observe_on<'a, SD>(self, scheduler: SD) -> ObserveOnOp<'a, Self, SD>
+  fn observe_on<SD>(self, scheduler: SD) -> ObserveOnOp<Self, SD>
   where
     Self: Sized,
   {
     ObserveOnOp {
       source: self,
       scheduler,
-      _p: PhantomData,
     }
   }
 

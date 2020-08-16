@@ -42,15 +42,23 @@ impl<S> IntervalEmitter<S> {
     mut observer: impl Observer<usize, ()>,
   ) -> impl Future<Output = ()> {
     let mut number = 0;
-    let dur = self.at - Instant::now();
-    Delay::new(dur)
-      .into_stream()
-      .chain(async_std::stream::interval(self.dur))
-      .for_each(move |_| {
+    let now = Instant::now();
+    let delay = if self.at > now {
+      self.at - now
+    } else {
+      Duration::from_micros(0)
+    };
+    let dur = self.dur;
+
+    Delay::new(delay).then(move |_| {
+      observer.next(number);
+      number += 1;
+      async_std::stream::interval(dur).for_each(move |_| {
         observer.next(number);
         number += 1;
         future::ready(())
       })
+    })
   }
 }
 
@@ -97,24 +105,30 @@ impl<S: LocalSpawnExt + 'static> LocalEmitter<'static> for IntervalEmitter<S> {
   }
 }
 
-#[test]
-fn smoke() {
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use futures::executor::{LocalPool, ThreadPool};
   use std::sync::{Arc, Mutex};
-  let seconds = Arc::new(Mutex::new(0));
-  let c_seconds = seconds.clone();
 
-  interval(Duration::from_millis(20))
-    .to_shared()
-    .subscribe(move |_| {
-      *seconds.lock().unwrap() += 1;
-    });
-  std::thread::sleep(Duration::from_millis(110));
-  assert_eq!(*c_seconds.lock().unwrap(), 5);
-}
+  #[test]
+  fn shared() {
+    let seconds = Arc::new(Mutex::new(0));
+    let c_seconds = seconds.clone();
+    let pool = ThreadPool::new().unwrap();
 
-#[test]
-fn smoke_fork() {
-  interval(Duration::from_millis(10))
-    .to_shared()
-    .subscribe(|_| {});
+    interval(Duration::from_millis(10), pool)
+      .to_shared()
+      .subscribe(move |_| {
+        *seconds.lock().unwrap() += 1;
+      });
+
+    std::thread::sleep(Duration::from_millis(55));
+    assert_eq!(*c_seconds.lock().unwrap(), 5);
+  }
+
+  #[test]
+  fn local() {
+    unimplemented!();
+  }
 }
