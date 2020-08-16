@@ -1,15 +1,11 @@
 use crate::prelude::*;
 use futures::{
-  executor::ThreadPool, future::Future, future::FutureExt, task::SpawnExt,
+  future::Future,
+  future::FutureExt,
+  task::{LocalSpawn, LocalSpawnExt, Spawn, SpawnExt},
 };
 use observable::of;
 use std::marker::PhantomData;
-use std::sync::Mutex;
-
-lazy_static! {
-  pub static ref DEFAULT_RUNTIME: Mutex<ThreadPool> =
-    Mutex::new(ThreadPool::new().unwrap());
-}
 
 /// Converts a `Future` to an observable sequence. Even though if the future
 /// poll value has `Result::Err` type, also emit as a normal value, not trigger
@@ -31,35 +27,62 @@ lazy_static! {
 /// ```
 /// If your `Future` poll an `Result` type value, and you want dispatch the
 /// error by rxrust, you can use [`from_future_result`]
-pub fn from_future<F, Item>(f: F) -> ObservableBase<FutureEmitter<F>>
+pub fn from_future<F, Item, S>(
+  f: F,
+  scheduler: S,
+) -> ObservableBase<FutureEmitter<F, S>>
 where
-  F: Future<Output = Item> + Send + Clone + Sync + 'static,
+  F: Future<Output = Item>,
 {
-  ObservableBase::new(FutureEmitter(f))
+  ObservableBase::new(FutureEmitter {
+    future: f,
+    scheduler,
+  })
 }
 
 #[derive(Clone)]
-pub struct FutureEmitter<F>(F);
+pub struct FutureEmitter<F, S> {
+  future: F,
+  scheduler: S,
+}
 
-impl<Item, F> Emitter for FutureEmitter<F>
+impl<Item, F, S> Emitter for FutureEmitter<F, S>
 where
-  F: Future<Output = Item> + Send + Sync + 'static,
+  F: Future<Output = Item>,
 {
   type Item = Item;
   type Err = ();
 }
 
-impl<Item, F> SharedEmitter for FutureEmitter<F>
+impl<Item, F, S> SharedEmitter for FutureEmitter<F, S>
 where
   F: Future<Output = Item> + Send + Sync + 'static,
+  S: Spawn,
 {
   fn emit<O>(self, subscriber: Subscriber<O, SharedSubscription>)
   where
     O: Observer<Self::Item, Self::Err> + Send + Sync + 'static,
   {
-    let fmapped =
-      (self.0).map(move |v| SharedEmitter::emit(of::OfEmitter(v), subscriber));
-    DEFAULT_RUNTIME.lock().unwrap().spawn(fmapped).unwrap();
+    let f = self
+      .future
+      .map(move |v| SharedEmitter::emit(of::OfEmitter(v), subscriber));
+    self.scheduler.spawn(f).unwrap();
+  }
+}
+
+impl<Item, F, S> LocalEmitter<'static> for FutureEmitter<F, S>
+where
+  F: Future<Output = Item> + 'static,
+  S: LocalSpawn,
+{
+  fn emit<O>(self, subscriber: Subscriber<O, LocalSubscription>)
+  where
+    O: Observer<Self::Item, Self::Err> + 'static,
+  {
+    let f = self
+      .future
+      .map(move |v| LocalEmitter::emit(of::OfEmitter(v), subscriber));
+    self.scheduler.spawn_local(f).unwrap();
   }
 }
 
@@ -67,41 +90,71 @@ where
 /// [`from_future@from_future`]. But only work for which `Future::Output` is
 /// `Result` type, and `Result::Ok` emit to next handle, and `Result::Err` as an
 /// error to handle.
-pub fn from_future_result<F, Item, Err>(
-  f: F,
-) -> ObservableBase<FutureResultEmitter<F, Item, Err>>
+pub fn from_future_result<F, S, Item, Err>(
+  future: F,
+  scheduler: S,
+) -> ObservableBase<FutureResultEmitter<F, S, Item, Err>>
 where
-  Err: Send + Sync + 'static,
-  Item: Send + Sync + 'static,
-  F: Future + Send + Clone + Sync + 'static,
+  F: Future,
   <F as Future>::Output: Into<Result<Item, Err>>,
 {
-  ObservableBase::new(FutureResultEmitter(f, PhantomData))
+  ObservableBase::new(FutureResultEmitter {
+    future,
+    scheduler,
+    marker: PhantomData,
+  })
 }
 
 #[derive(Clone)]
-pub struct FutureResultEmitter<F, Item, Err>(F, PhantomData<(Item, Err)>);
+pub struct FutureResultEmitter<F, S, Item, Err> {
+  future: F,
+  scheduler: S,
+  marker: PhantomData<(Item, Err)>,
+}
 
-impl<Item, Err, F> Emitter for FutureResultEmitter<F, Item, Err> {
+impl<Item, S, Err, F> Emitter for FutureResultEmitter<F, S, Item, Err>
+where
+  F: Future,
+  <F as Future>::Output: Into<Result<Item, Err>>,
+{
   type Item = Item;
   type Err = Err;
 }
 
-impl<Item, Err, F> SharedEmitter for FutureResultEmitter<F, Item, Err>
+impl<Item, Err, S, F> SharedEmitter for FutureResultEmitter<F, S, Item, Err>
 where
   Item: Send + Sync + 'static,
   Err: Send + Sync + 'static,
   F: Future + Send + Clone + Sync + 'static,
   <F as Future>::Output: Into<Result<Item, Err>>,
+  S: Spawn,
 {
   fn emit<O>(self, subscriber: Subscriber<O, SharedSubscription>)
   where
     O: Observer<Self::Item, Self::Err> + Send + Sync + 'static,
   {
-    let fmapped = (self.0).map(move |v| {
+    let f = self.future.map(move |v| {
       SharedEmitter::emit(of::ResultEmitter(v.into()), subscriber)
     });
-    DEFAULT_RUNTIME.lock().unwrap().spawn(fmapped).unwrap();
+    self.scheduler.spawn(f).unwrap();
+  }
+}
+
+impl<Item, Err, S, F> LocalEmitter<'static>
+  for FutureResultEmitter<F, S, Item, Err>
+where
+  F: Future + 'static,
+  <F as Future>::Output: Into<Result<Item, Err>>,
+  S: LocalSpawn,
+{
+  fn emit<O>(self, subscriber: Subscriber<O, LocalSubscription>)
+  where
+    O: Observer<Self::Item, Self::Err> + 'static,
+  {
+    let f = self.future.map(move |v| {
+      LocalEmitter::emit(of::ResultEmitter(v.into()), subscriber)
+    });
+    self.scheduler.spawn_local(f).unwrap();
   }
 }
 

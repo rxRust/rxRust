@@ -1,56 +1,76 @@
-use crate::observable::from_future::DEFAULT_RUNTIME;
 use crate::prelude::*;
-use futures::prelude::*;
-use futures::{future::RemoteHandle, task::SpawnExt};
-use futures_timer::Interval;
+use futures::{
+  prelude::*,
+  task::{LocalSpawnExt, SpawnExt},
+};
+use futures_timer::Delay;
 use std::time::{Duration, Instant};
 
 /// Creates an observable which will fire at `dur` time into the future,
 /// and will repeat every `dur` interval after.
-pub fn interval(dur: Duration) -> ObservableBase<IntervalEmitter> {
+pub fn interval<S>(
+  dur: Duration,
+  scheduler: S,
+) -> ObservableBase<IntervalEmitter<S>> {
   ObservableBase::new(IntervalEmitter {
     dur,
     at: Instant::now() + dur,
+    scheduler,
   })
 }
 
 /// Creates an observable which will fire at the time specified by `at`,
 /// and then will repeat every `dur` interval after
-pub fn interval_at(
+pub fn interval_at<S>(
   at: Instant,
   dur: Duration,
-) -> ObservableBase<IntervalEmitter> {
-  ObservableBase::new(IntervalEmitter { dur, at })
+  scheduler: S,
+) -> ObservableBase<IntervalEmitter<S>> {
+  ObservableBase::new(IntervalEmitter { dur, at, scheduler })
 }
 
 #[derive(Clone)]
-pub struct IntervalEmitter {
+pub struct IntervalEmitter<S> {
+  scheduler: S,
   dur: Duration,
   at: Instant,
 }
-impl Emitter for IntervalEmitter {
+
+impl<S> IntervalEmitter<S> {
+  fn interval_future(
+    &self,
+    mut observer: impl Observer<usize, ()>,
+  ) -> impl Future<Output = ()> {
+    let mut number = 0;
+    let dur = self.at - Instant::now();
+    Delay::new(dur)
+      .into_stream()
+      .chain(async_std::stream::interval(self.dur))
+      .for_each(move |_| {
+        observer.next(number);
+        number += 1;
+        future::ready(())
+      })
+  }
+}
+
+impl<S> Emitter for IntervalEmitter<S> {
   type Item = usize;
   type Err = ();
 }
 
-impl SharedEmitter for IntervalEmitter {
+impl<S: SpawnExt + 'static> SharedEmitter for IntervalEmitter<S> {
   fn emit<O>(self, subscriber: Subscriber<O, SharedSubscription>)
   where
     O: Observer<Self::Item, Self::Err> + Send + Sync + 'static,
   {
     let Subscriber {
-      mut observer,
+      observer,
       mut subscription,
     } = subscriber;
-    let mut number = 0;
-    let f = Interval::new_at(self.at, self.dur).for_each(move |_| {
-      observer.next(number);
-      number += 1;
-      future::ready(())
-    });
-    let handle = DEFAULT_RUNTIME
-      .lock()
-      .unwrap()
+    let f = self.interval_future(observer);
+    let handle = self
+      .scheduler
       .spawn_with_handle(f)
       .expect("spawn future for an interval failed");
 
@@ -58,27 +78,22 @@ impl SharedEmitter for IntervalEmitter {
   }
 }
 
-pub struct SpawnHandle<T>(Option<RemoteHandle<T>>);
+impl<S: LocalSpawnExt + 'static> LocalEmitter<'static> for IntervalEmitter<S> {
+  fn emit<O>(self, subscriber: Subscriber<O, LocalSubscription>)
+  where
+    O: Observer<Self::Item, Self::Err> + 'static,
+  {
+    let Subscriber {
+      observer,
+      mut subscription,
+    } = subscriber;
+    let f = self.interval_future(observer);
+    let handle = self
+      .scheduler
+      .spawn_local_with_handle(f)
+      .expect("spawn future for an interval failed");
 
-impl<T> SpawnHandle<T> {
-  #[inline(always)]
-  pub fn new(handle: RemoteHandle<T>) -> Self { SpawnHandle(Some(handle)) }
-}
-
-impl<T> SubscriptionLike for SpawnHandle<T> {
-  #[inline(always)]
-  fn unsubscribe(&mut self) { self.0.take(); }
-  #[inline(always)]
-  fn is_closed(&self) -> bool { self.0.is_none() }
-  #[inline(always)]
-  fn inner_addr(&self) -> *const () { ((&self.0) as *const _) as *const () }
-}
-
-impl<T> Drop for SpawnHandle<T> {
-  fn drop(&mut self) {
-    if self.0.is_some() {
-      self.0.take().unwrap().forget()
-    }
+    subscription.add(SpawnHandle::new(handle));
   }
 }
 

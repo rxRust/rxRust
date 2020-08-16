@@ -866,24 +866,26 @@ pub trait Observable {
   /// Delays the emission of items from the source Observable by a given timeout
   /// or until a given `Instant`.
   #[inline]
-  fn delay(self, dur: Duration) -> DelayOp<Self>
+  fn delay<SD>(self, dur: Duration, scheduler: SD) -> DelayOp<Self, SD>
   where
     Self: Sized,
   {
     DelayOp {
       source: self,
       delay: dur,
+      scheduler,
     }
   }
 
   #[inline]
-  fn delay_at(self, at: Instant) -> DelayOp<Self>
+  fn delay_at<SD>(self, at: Instant, scheduler: SD) -> DelayOp<Self, SD>
   where
     Self: Sized,
   {
     DelayOp {
       source: self,
       delay: at.elapsed(),
+      scheduler,
     }
   }
 
@@ -973,11 +975,12 @@ pub trait Observable {
   ///   .subscribe(move |v| println!("{}", v));
   /// ```
   #[inline]
-  fn throttle_time(
+  fn throttle_time<SD>(
     self,
     duration: Duration,
     edge: ThrottleEdge,
-  ) -> ThrottleTimeOp<Self>
+    scheduler: SD,
+  ) -> ThrottleTimeOp<Self, SD>
   where
     Self: Sized,
   {
@@ -985,6 +988,7 @@ pub trait Observable {
       source: self,
       duration,
       edge,
+      scheduler,
     }
   }
 

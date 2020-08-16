@@ -3,17 +3,19 @@ use observable::observable_proxy_impl;
 use std::time::Duration;
 
 #[derive(Clone)]
-pub struct DelayOp<S> {
+pub struct DelayOp<S, SD> {
   pub(crate) source: S,
   pub(crate) delay: Duration,
+  pub(crate) scheduler: SD,
 }
 
-observable_proxy_impl!(DelayOp, S);
+observable_proxy_impl!(DelayOp, S, SD);
 
-impl<S> SharedObservable for DelayOp<S>
+impl<S, SD> SharedObservable for DelayOp<S, SD>
 where
   S: SharedObservable + Send + Sync + 'static,
   S::Unsub: Send + Sync,
+  SD: SharedScheduler,
 {
   type Unsub = SharedSubscription;
   fn actual_subscribe<
@@ -22,9 +24,38 @@ where
     self,
     subscriber: Subscriber<O, SharedSubscription>,
   ) -> Self::Unsub {
-    let Self { delay, source } = self;
+    let Self {
+      delay,
+      source,
+      mut scheduler,
+    } = self;
+    scheduler.schedule(
+      move |mut subscription, _| {
+        subscription.add(source.actual_subscribe(subscriber));
+      },
+      Some(delay),
+      (),
+    )
+  }
+}
 
-    Schedulers::ThreadPool.schedule(
+impl<S, SD, Unsub> LocalObservable<'static> for DelayOp<S, SD>
+where
+  S: for<'r> LocalObservable<'r, Unsub = Unsub> + 'static,
+  Unsub: SubscriptionLike + 'static,
+  SD: LocalScheduler,
+{
+  type Unsub = LocalSubscription;
+  fn actual_subscribe<O: Observer<Self::Item, Self::Err> + 'static>(
+    self,
+    subscriber: Subscriber<O, LocalSubscription>,
+  ) -> Self::Unsub {
+    let Self {
+      delay,
+      source,
+      mut scheduler,
+    } = self;
+    scheduler.schedule(
       move |mut subscription, _| {
         subscription.add(source.actual_subscribe(subscriber));
       },

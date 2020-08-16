@@ -1,65 +1,98 @@
 use crate::prelude::*;
-mod thread_scheduler;
-use thread_scheduler::new_thread_schedule;
-mod thread_pool_scheduler;
-use crate::observable::{from_future::DEFAULT_RUNTIME, interval::SpawnHandle};
-use futures::prelude::*;
-use futures::task::SpawnExt;
+
+use futures::{
+  future::RemoteHandle,
+  prelude::*,
+  task::{LocalSpawn, LocalSpawnExt, Spawn, SpawnExt},
+};
 use futures_timer::Delay;
 use std::time::Duration;
-use thread_pool_scheduler::thread_pool_schedule;
 
 /// A Scheduler is an object to order task and schedule their execution.
-pub trait Scheduler {
+pub trait SharedScheduler {
   fn schedule<T: Send + 'static>(
-    &self,
+    &mut self,
     task: impl FnOnce(SharedSubscription, T) + Send + 'static,
     delay: Option<Duration>,
     state: T,
   ) -> SharedSubscription;
 }
 
-pub enum Schedulers {
-  /// NewThread Scheduler always creates a new thread for each unit of work.
-  NewThread,
-  /// ThreadPool dispatch task to the thread pool to execute task.
-  ThreadPool,
+pub trait LocalScheduler {
+  fn schedule<T: 'static>(
+    &mut self,
+    task: impl FnOnce(LocalSubscription, T) + 'static,
+    delay: Option<Duration>,
+    state: T,
+  ) -> LocalSubscription;
 }
 
-impl Scheduler for Schedulers {
+impl<S: Spawn> SharedScheduler for S {
   fn schedule<T: Send + 'static>(
-    &self,
+    &mut self,
     task: impl FnOnce(SharedSubscription, T) + Send + 'static,
     delay: Option<Duration>,
     state: T,
   ) -> SharedSubscription {
-    match self {
-      Schedulers::NewThread => new_thread_schedule(task, delay, state),
-      Schedulers::ThreadPool => thread_pool_schedule(task, delay, state),
-    }
+    let mut subscription = SharedSubscription::default();
+    let c_subscription = subscription.clone();
+    let delay = delay.unwrap_or_default();
+    let f = Delay::new(delay).inspect(|_| task(c_subscription, state));
+    let handle = self
+      .spawn_with_handle(f)
+      .expect("spawn task to thread pool failed.");
+    subscription.add(SpawnHandle::new(handle));
+    subscription
   }
 }
 
-pub fn delay_task(
-  delay: Duration,
-  task: impl FnOnce() + Send + 'static,
-) -> SpawnHandle<Result<(), std::io::Error>> {
-  let f = Delay::new(delay).inspect(|_| {
-    task();
-  });
-  let handle = DEFAULT_RUNTIME
-    .lock()
-    .unwrap()
-    .spawn_with_handle(f)
-    .expect("spawn task to thread pool failed.");
-  SpawnHandle::new(handle)
+impl<L: LocalSpawn> LocalScheduler for L {
+  fn schedule<T: 'static>(
+    &mut self,
+    task: impl FnOnce(LocalSubscription, T) + 'static,
+    delay: Option<Duration>,
+    state: T,
+  ) -> LocalSubscription {
+    let mut subscription = LocalSubscription::default();
+    let c_subscription = subscription.clone();
+    let delay = delay.unwrap_or_default();
+    let f = Delay::new(delay).inspect(|_| task(c_subscription, state));
+    let handle = self
+      .spawn_local_with_handle(f)
+      .expect("spawn task to thread pool failed.");
+    subscription.add(SpawnHandle::new(handle));
+    subscription
+  }
+}
+
+pub struct SpawnHandle<T>(Option<RemoteHandle<T>>);
+
+impl<T> SpawnHandle<T> {
+  #[inline(always)]
+  pub fn new(handle: RemoteHandle<T>) -> Self { SpawnHandle(Some(handle)) }
+}
+
+impl<T> SubscriptionLike for SpawnHandle<T> {
+  #[inline(always)]
+  fn unsubscribe(&mut self) { self.0.take(); }
+  #[inline(always)]
+  fn is_closed(&self) -> bool { self.0.is_none() }
+  #[inline(always)]
+  fn inner_addr(&self) -> *const () { ((&self.0) as *const _) as *const () }
+}
+
+impl<T> Drop for SpawnHandle<T> {
+  fn drop(&mut self) {
+    if self.0.is_some() {
+      self.0.take().unwrap().forget()
+    }
+  }
 }
 
 #[cfg(test)]
 mod test {
   extern crate test;
   use crate::prelude::*;
-  use crate::scheduler::Schedulers;
   use std::f32;
   use std::sync::{Arc, Mutex};
   use test::Bencher;

@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use crate::scheduler::Scheduler;
+use crate::scheduler::SharedScheduler;
 use observable::observable_proxy_impl;
 
 #[derive(Clone)]
@@ -13,14 +13,14 @@ observable_proxy_impl!(SubscribeOnOP, S, SD);
 impl<'a, S, SD> SharedObservable for SubscribeOnOP<S, SD>
 where
   S: SharedObservable + Send + 'static,
-  SD: Scheduler + Send + 'static,
+  SD: SharedScheduler + Send + 'static,
   S::Unsub: Send + Sync,
 {
   type Unsub = SharedSubscription;
   fn actual_subscribe<
     O: Observer<Self::Item, Self::Err> + Sync + Send + 'static,
   >(
-    self,
+    mut self,
     subscriber: Subscriber<O, SharedSubscription>,
   ) -> Self::Unsub {
     let source = self.source;
