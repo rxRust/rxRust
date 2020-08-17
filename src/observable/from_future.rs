@@ -1,10 +1,7 @@
 use crate::prelude::*;
-use futures::{
-  future::Future,
-  future::FutureExt,
-  task::{LocalSpawn, LocalSpawnExt, Spawn, SpawnExt},
-};
+use futures::FutureExt;
 use observable::of;
+use std::future::Future;
 use std::marker::PhantomData;
 
 /// Converts a `Future` to an observable sequence. Even though if the future
@@ -57,32 +54,34 @@ where
 impl<Item, F, S> SharedEmitter for FutureEmitter<F, S>
 where
   F: Future<Output = Item> + Send + Sync + 'static,
-  S: Spawn,
+  S: SharedScheduler,
 {
   fn emit<O>(self, subscriber: Subscriber<O, SharedSubscription>)
   where
     O: Observer<Self::Item, Self::Err> + Send + Sync + 'static,
   {
+    let mut subscription = subscriber.subscription.clone();
     let f = self
       .future
       .map(move |v| SharedEmitter::emit(of::OfEmitter(v), subscriber));
-    self.scheduler.spawn(f).unwrap();
+    self.scheduler.spawn(f, &mut subscription);
   }
 }
 
 impl<Item, F, S> LocalEmitter<'static> for FutureEmitter<F, S>
 where
   F: Future<Output = Item> + 'static,
-  S: LocalSpawn,
+  S: LocalScheduler,
 {
   fn emit<O>(self, subscriber: Subscriber<O, LocalSubscription>)
   where
     O: Observer<Self::Item, Self::Err> + 'static,
   {
+    let mut subscription = subscriber.subscription.clone();
     let f = self
       .future
       .map(move |v| LocalEmitter::emit(of::OfEmitter(v), subscriber));
-    self.scheduler.spawn_local(f).unwrap();
+    self.scheduler.spawn(f, &mut subscription);
   }
 }
 
@@ -127,16 +126,17 @@ where
   Err: Send + Sync + 'static,
   F: Future + Send + Clone + Sync + 'static,
   <F as Future>::Output: Into<Result<Item, Err>>,
-  S: Spawn,
+  S: SharedScheduler,
 {
   fn emit<O>(self, subscriber: Subscriber<O, SharedSubscription>)
   where
     O: Observer<Self::Item, Self::Err> + Send + Sync + 'static,
   {
+    let mut subscription = subscriber.subscription.clone();
     let f = self.future.map(move |v| {
       SharedEmitter::emit(of::ResultEmitter(v.into()), subscriber)
     });
-    self.scheduler.spawn(f).unwrap();
+    self.scheduler.spawn(f, &mut subscription);
   }
 }
 
@@ -145,16 +145,17 @@ impl<Item, Err, S, F> LocalEmitter<'static>
 where
   F: Future + 'static,
   <F as Future>::Output: Into<Result<Item, Err>>,
-  S: LocalSpawn,
+  S: LocalScheduler,
 {
   fn emit<O>(self, subscriber: Subscriber<O, LocalSubscription>)
   where
     O: Observer<Self::Item, Self::Err> + 'static,
   {
+    let mut subscription = subscriber.subscription.clone();
     let f = self.future.map(move |v| {
       LocalEmitter::emit(of::ResultEmitter(v.into()), subscriber)
     });
-    self.scheduler.spawn_local(f).unwrap();
+    self.scheduler.spawn(f, &mut subscription);
   }
 }
 
@@ -165,7 +166,11 @@ mod tests {
     executor::{LocalPool, ThreadPool},
     future,
   };
-  use std::sync::{Arc, Mutex};
+  use std::{
+    cell::RefCell,
+    rc::Rc,
+    sync::{Arc, Mutex},
+  };
 
   #[test]
   fn shared() {
@@ -193,5 +198,22 @@ mod tests {
   }
 
   #[test]
-  fn local() { unimplemented!() }
+  fn local() {
+    let mut local = LocalPool::new();
+    let value = Rc::new(RefCell::new(0));
+    let v_c = value.clone();
+    from_future_result(future::ok(1), local.spawner()).subscribe(move |v| {
+      *v_c.borrow_mut() = v;
+    });
+    local.run();
+    assert_eq!(*value.borrow(), 1);
+
+    let v_c = value.clone();
+    from_future(future::ready(2), local.spawner()).subscribe(move |v| {
+      *v_c.borrow_mut() = v;
+    });
+
+    local.run();
+    assert_eq!(*value.borrow(), 2);
+  }
 }

@@ -1,33 +1,19 @@
 use crate::prelude::*;
-
 use futures::{
   future::RemoteHandle,
-  prelude::*,
   task::{LocalSpawn, LocalSpawnExt, Spawn, SpawnExt},
+  FutureExt,
 };
 use futures_timer::Delay;
+use std::future::Future;
 use std::time::Duration;
 
 /// A Scheduler is an object to order task and schedule their execution.
 pub trait SharedScheduler {
-  fn schedule<T: Send + 'static>(
-    &mut self,
-    task: impl FnOnce(SharedSubscription, T) + Send + 'static,
-    delay: Option<Duration>,
-    state: T,
-  ) -> SharedSubscription;
-}
+  fn spawn<Fut>(&self, future: Fut, subscription: &mut SharedSubscription)
+  where
+    Fut: Future<Output = ()> + Send + 'static;
 
-pub trait LocalScheduler {
-  fn schedule<T: 'static>(
-    &mut self,
-    task: impl FnOnce(LocalSubscription, T) + 'static,
-    delay: Option<Duration>,
-    state: T,
-  ) -> LocalSubscription;
-}
-
-impl<S: Spawn> SharedScheduler for S {
   fn schedule<T: Send + 'static>(
     &mut self,
     task: impl FnOnce(SharedSubscription, T) + Send + 'static,
@@ -38,15 +24,16 @@ impl<S: Spawn> SharedScheduler for S {
     let c_subscription = subscription.clone();
     let delay = delay.unwrap_or_default();
     let f = Delay::new(delay).inspect(|_| task(c_subscription, state));
-    let handle = self
-      .spawn_with_handle(f)
-      .expect("spawn task to thread pool failed.");
-    subscription.add(SpawnHandle::new(handle));
+    self.spawn(f, &mut subscription);
     subscription
   }
 }
 
-impl<L: LocalSpawn> LocalScheduler for L {
+pub trait LocalScheduler {
+  fn spawn<Fut>(&self, future: Fut, subscription: &mut LocalSubscription)
+  where
+    Fut: Future<Output = ()> + 'static;
+
   fn schedule<T: 'static>(
     &mut self,
     task: impl FnOnce(LocalSubscription, T) + 'static,
@@ -57,19 +44,41 @@ impl<L: LocalSpawn> LocalScheduler for L {
     let c_subscription = subscription.clone();
     let delay = delay.unwrap_or_default();
     let f = Delay::new(delay).inspect(|_| task(c_subscription, state));
-    let handle = self
-      .spawn_local_with_handle(f)
-      .expect("spawn task to thread pool failed.");
-    subscription.add(SpawnHandle::new(handle));
+    self.spawn(f, &mut subscription);
+
     subscription
   }
 }
 
-pub struct SpawnHandle<T>(Option<RemoteHandle<T>>);
+impl<S: Spawn> SharedScheduler for S {
+  fn spawn<Fut>(&self, future: Fut, subscription: &mut SharedSubscription)
+  where
+    Fut: Future<Output = ()> + Send + 'static,
+  {
+    let handle = self
+      .spawn_with_handle(future)
+      .expect("spawn task to thread pool failed.");
+    subscription.add(SpawnHandle::new(handle))
+  }
+}
+
+impl<L: LocalSpawn> LocalScheduler for L {
+  fn spawn<Fut>(&self, future: Fut, subscription: &mut LocalSubscription)
+  where
+    Fut: Future<Output = ()> + 'static,
+  {
+    let handle = self
+      .spawn_local_with_handle(future)
+      .expect("spawn task to thread pool failed.");
+    subscription.add(SpawnHandle::new(handle))
+  }
+}
+
+struct SpawnHandle<T>(Option<RemoteHandle<T>>);
 
 impl<T> SpawnHandle<T> {
   #[inline(always)]
-  pub fn new(handle: RemoteHandle<T>) -> Self { SpawnHandle(Some(handle)) }
+  fn new(handle: RemoteHandle<T>) -> Self { SpawnHandle(Some(handle)) }
 }
 
 impl<T> SubscriptionLike for SpawnHandle<T> {

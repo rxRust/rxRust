@@ -1,4 +1,11 @@
-#![feature(external_doc, min_specialization, drain_filter, test, decl_macro)]
+#![feature(
+  external_doc,
+  min_specialization,
+  drain_filter,
+  test,
+  decl_macro,
+  future_readiness_fns
+)]
 //! Reactive extensions library for Rust: a library for
 //! [Reactive Programming](http://reactivex.io/) using
 //! [Observable](crate::observable::Observable), to make

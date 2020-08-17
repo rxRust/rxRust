@@ -41,7 +41,7 @@ where
 
 impl<S, SD, Unsub> LocalObservable<'static> for DelayOp<S, SD>
 where
-  S: for<'r> LocalObservable<'r, Unsub = Unsub> + 'static,
+  S: LocalObservable<'static, Unsub = Unsub> + 'static,
   Unsub: SubscriptionLike + 'static,
   SD: LocalScheduler,
 {
