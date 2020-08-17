@@ -1,10 +1,10 @@
 use crate::prelude::*;
-use futures::{
-  prelude::*,
-  task::{LocalSpawnExt, SpawnExt},
-};
+use futures::prelude::*;
 use futures_timer::Delay;
-use std::time::{Duration, Instant};
+use std::{
+  future::Future,
+  time::{Duration, Instant},
+};
 
 /// Creates an observable which will fire at `dur` time into the future,
 /// and will repeat every `dur` interval after.
@@ -67,7 +67,7 @@ impl<S> Emitter for IntervalEmitter<S> {
   type Err = ();
 }
 
-impl<S: SpawnExt + 'static> SharedEmitter for IntervalEmitter<S> {
+impl<S: SharedScheduler + 'static> SharedEmitter for IntervalEmitter<S> {
   fn emit<O>(self, subscriber: Subscriber<O, SharedSubscription>)
   where
     O: Observer<Self::Item, Self::Err> + Send + Sync + 'static,
@@ -77,16 +77,11 @@ impl<S: SpawnExt + 'static> SharedEmitter for IntervalEmitter<S> {
       mut subscription,
     } = subscriber;
     let f = self.interval_future(observer);
-    let handle = self
-      .scheduler
-      .spawn_with_handle(f)
-      .expect("spawn future for an interval failed");
-
-    subscription.add(SpawnHandle::new(handle));
+    self.scheduler.spawn(f, &mut subscription);
   }
 }
 
-impl<S: LocalSpawnExt + 'static> LocalEmitter<'static> for IntervalEmitter<S> {
+impl<S: LocalScheduler + 'static> LocalEmitter<'static> for IntervalEmitter<S> {
   fn emit<O>(self, subscriber: Subscriber<O, LocalSubscription>)
   where
     O: Observer<Self::Item, Self::Err> + 'static,
@@ -96,12 +91,7 @@ impl<S: LocalSpawnExt + 'static> LocalEmitter<'static> for IntervalEmitter<S> {
       mut subscription,
     } = subscriber;
     let f = self.interval_future(observer);
-    let handle = self
-      .scheduler
-      .spawn_local_with_handle(f)
-      .expect("spawn future for an interval failed");
-
-    subscription.add(SpawnHandle::new(handle));
+    self.scheduler.spawn(f, &mut subscription);
   }
 }
 
@@ -109,7 +99,11 @@ impl<S: LocalSpawnExt + 'static> LocalEmitter<'static> for IntervalEmitter<S> {
 mod tests {
   use super::*;
   use futures::executor::{LocalPool, ThreadPool};
-  use std::sync::{Arc, Mutex};
+  use std::{
+    cell::RefCell,
+    rc::Rc,
+    sync::{Arc, Mutex},
+  };
 
   #[test]
   fn shared() {
@@ -129,6 +123,14 @@ mod tests {
 
   #[test]
   fn local() {
-    unimplemented!();
+    let mut local = LocalPool::new();
+    let millis = Rc::new(RefCell::new(0));
+    let c_millis = millis.clone();
+    interval(Duration::from_millis(1), local.spawner()).subscribe(move |_| {
+      *c_millis.borrow_mut() += 1;
+    });
+
+    local.run_until(futures_timer::Delay::new(Duration::from_millis(5)));
+    assert_eq!(*millis.borrow(), 5);
   }
 }

@@ -10,7 +10,9 @@ pub use of::{of, of_fn, of_option, of_result, of_sequence};
 pub(crate) mod from_future;
 pub use from_future::{from_future, from_future_result};
 
+#[cfg(feature = "interval")]
 pub(crate) mod interval;
+#[cfg(feature = "interval")]
 pub use interval::{interval, interval_at};
 
 pub(crate) mod connectable_observable;
