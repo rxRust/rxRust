@@ -13,6 +13,7 @@ pub trait Observer<Item, Err> {
   fn next(&mut self, value: Item);
   fn error(&mut self, err: Err);
   fn complete(&mut self);
+  fn is_stopped(&self) -> bool;
 }
 
 #[doc(hidden)]
@@ -50,6 +51,7 @@ pub(crate) macro observer_proxy_impl(
       next_proxy_impl!($item, $($name$($parentheses)?).+);
       error_proxy_impl!($err, $($name$($parentheses)?).+);
       complete_proxy_impl!($($name$($parentheses)?).+);
+      is_stopped_proxy_impl!($($name$($parentheses)?).+);
     }
 }
 
@@ -80,6 +82,12 @@ pub(crate) macro complete_proxy_impl($($name:tt $($parentheses:tt)?) .+) {
 }
 
 #[doc(hidden)]
+pub(crate) macro is_stopped_proxy_impl($($name:tt $($parentheses:tt)?) .+) {
+  #[inline]
+  fn is_stopped(&self) -> bool { self.$($name$($parentheses)?).+.is_stopped() }
+}
+
+#[doc(hidden)]
 macro observer_pointer_proxy_impl(
   $ty: ty, $item: ident, $err:ident $(, <$($generics: tt),*>)?)
 {
@@ -93,6 +101,9 @@ macro observer_pointer_proxy_impl(
 
     #[inline]
     fn complete(&mut self) { (&mut **self).complete(); }
+
+    #[inline]
+    fn is_stopped(&self)-> bool { (&**self).is_stopped() }
   }
 }
 
@@ -130,7 +141,7 @@ where
   fn next(&mut self, value: Item) {
     self.drain_filter(|subscriber| {
       subscriber.next(value.clone());
-      subscriber.is_closed()
+      subscriber.is_finished()
     });
   }
 
@@ -145,4 +156,7 @@ where
     self.iter_mut().for_each(|subscriber| subscriber.complete());
     self.clear();
   }
+
+  #[inline]
+  fn is_stopped(&self) -> bool { self.iter().all(|o| o.is_stopped()) }
 }

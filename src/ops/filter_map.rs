@@ -109,6 +109,9 @@ where
   }
   error_proxy_impl!(Err, down_observer);
   complete_proxy_impl!(down_observer);
+
+  #[inline]
+  fn is_stopped(&self) -> bool { self.down_observer.is_stopped() }
 }
 
 #[cfg(test)]

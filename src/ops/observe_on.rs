@@ -38,7 +38,7 @@ where
     };
 
     self.source.actual_subscribe(Subscriber {
-      observer: observer,
+      observer,
       subscription,
     })
   }
@@ -127,6 +127,9 @@ where
   SD: SharedScheduler,
 {
   impl_observer!(Item, Err);
+
+  #[inline]
+  fn is_stopped(&self) -> bool { self.observer.lock().unwrap().is_stopped() }
 }
 
 impl<O: 'static, SD: LocalScheduler + 'static> LocalObserver<O, SD> {
@@ -152,6 +155,9 @@ where
   SD: LocalScheduler + 'static,
 {
   impl_observer!(Item, Err);
+
+  #[inline]
+  fn is_stopped(&self) -> bool { self.observer.borrow().is_stopped() }
 }
 
 #[cfg(test)]
@@ -190,7 +196,7 @@ mod test {
       s.next(&1);
       *emit_thread.lock().unwrap() = thread::current().id();
     })
-    .observe_on(pool.clone())
+    .observe_on(pool)
     .to_shared()
     .subscribe(move |_v| {
       observe_thread.lock().unwrap().push(thread::current().id());

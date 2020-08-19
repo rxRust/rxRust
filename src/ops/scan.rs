@@ -1,4 +1,6 @@
-use crate::observer::{complete_proxy_impl, error_proxy_impl};
+use crate::observer::{
+  complete_proxy_impl, error_proxy_impl, is_stopped_proxy_impl,
+};
 use crate::prelude::*;
 
 #[derive(Clone)]
@@ -89,6 +91,7 @@ where
 
   error_proxy_impl!(Err, target_observer);
   complete_proxy_impl!(target_observer);
+  is_stopped_proxy_impl!(target_observer);
 }
 
 #[cfg(test)]

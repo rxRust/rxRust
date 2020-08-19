@@ -1,5 +1,7 @@
 use crate::prelude::*;
-use observer::{complete_proxy_impl, error_proxy_impl, next_proxy_impl};
+use observer::{
+  complete_proxy_impl, error_proxy_impl, is_stopped_proxy_impl, next_proxy_impl,
+};
 
 pub struct MutRefValue<T>(pub *mut T);
 
@@ -100,6 +102,7 @@ impl<'a, Item, Err: Clone> Observer<&mut Item, Err>
   fn next(&mut self, value: &mut Item) { self.subject.next(MutRefValue(value)) }
   error_proxy_impl!(Err, subject);
   complete_proxy_impl!(subject);
+  is_stopped_proxy_impl!(subject);
 }
 
 impl<'a, Item: Clone, Err> Observer<Item, &mut Err>
@@ -115,6 +118,7 @@ impl<'a, Item: Clone, Err> Observer<Item, &mut Err>
   #[inline]
   fn error(&mut self, err: &mut Err) { self.subject.error(MutRefValue(err)) }
   complete_proxy_impl!(subject);
+  is_stopped_proxy_impl!(subject);
 }
 
 impl<'a, Item, Err> Observer<&mut Item, &mut Err>
@@ -131,6 +135,7 @@ impl<'a, Item, Err> Observer<&mut Item, &mut Err>
   #[inline]
   fn error(&mut self, err: &mut Err) { self.subject.error(MutRefValue(err)) }
   complete_proxy_impl!(subject);
+  is_stopped_proxy_impl!(subject);
 }
 
 struct MutRefObserver<O, MI, ME> {
@@ -181,6 +186,7 @@ where
   fn next(&mut self, v: Item) { self.observer.next((self.map_item)(v)) }
   fn error(&mut self, err: Err) { self.observer.error((self.map_err)(err)) }
   complete_proxy_impl!(observer);
+  is_stopped_proxy_impl!(observer);
 }
 
 #[test]

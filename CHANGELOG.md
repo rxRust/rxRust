@@ -8,12 +8,17 @@
 - **subscription**: Add `SubscriptionWrapper::into_inner()`, e.g. if one wants to add the inner subscription to
   a composite subscription.
 - **scheduler**: Add two trait `SharedScheduler` and `LocalScheduler` to implement custom Scheduler. 
-- **scheduler**: `LocalPool` and `ThreadPool` in `futures::executor` can directly use it as scheduler.
+- **scheduler**: `LocalPool` and `ThreadPool` in `futures::executor` can directly use as scheduler.
 - **scheduler**: `tokio::runtime::Runtime` also supported, but need enable the feature `futures-scheduler`.  
+- **observer**: add a `is_stopped` method for `Observer` to detect if emit completed.
 
 ### Refactor
 
 - **scheduler**: Use the runtime of future as the scheduler, and the default scheduler has be removed.
+
+### Bug Fixes
+
+- **operator**: `observer_on` not really emit value from immediate observable like `observable::of`.
 
 ### Breaking Changes
 

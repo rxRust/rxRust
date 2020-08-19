@@ -133,7 +133,10 @@ impl SubscriptionLike for SharedSubscription {
   }
 }
 
-pub trait Publisher<Item, Err>: Observer<Item, Err> + SubscriptionLike {}
+pub trait Publisher<Item, Err>: Observer<Item, Err> + SubscriptionLike {
+  #[inline]
+  fn is_finished(&self) -> bool { self.is_closed() || self.is_stopped() }
+}
 
 impl<Item, Err, T> Publisher<Item, Err> for T where
   T: Observer<Item, Err> + SubscriptionLike
@@ -212,6 +215,25 @@ impl<Item, Err> SubscriptionLike
   for Box<dyn Publisher<Item, Err> + Send + Sync>
 {
   subscription_direct_impl_proxy!();
+}
+
+impl<S: SubscriptionLike> SubscriptionLike for Rc<RefCell<S>> {
+  #[inline]
+  fn unsubscribe(&mut self) { self.borrow_mut().unsubscribe() }
+
+  #[inline]
+  fn is_closed(&self) -> bool { self.borrow().is_closed() }
+
+  #[inline]
+  fn inner_addr(&self) -> *const () { self.borrow().inner_addr() }
+}
+
+impl<S: SubscriptionLike> SubscriptionLike for Arc<Mutex<S>> {
+  fn unsubscribe(&mut self) { self.lock().unwrap().unsubscribe() }
+
+  fn is_closed(&self) -> bool { self.lock().unwrap().is_closed() }
+
+  fn inner_addr(&self) -> *const () { self.lock().unwrap().inner_addr() }
 }
 
 /// Wrapper around a subscription which provides the

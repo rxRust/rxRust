@@ -10,17 +10,15 @@ use std::marker::PhantomData;
 ///
 /// ```rust
 /// # use rxrust::prelude::*;
-/// # use std::sync::{Arc, Mutex};
-/// let res = Arc::new(Mutex::new(0));
-/// let c_res = res.clone();
-/// use futures::future;
-/// observable::from_future(future::ready(1))
-///   .to_shared()
+/// use futures::{future, executor::LocalPool};
+/// let mut local_scheduler = LocalPool::new();
+///
+/// observable::from_future(future::ready(1), local_scheduler.spawner())
 ///   .subscribe(move |v| {
-///     *res.lock().unwrap() = v;
+///     println!("subscribed {}", v);
 ///   });
-/// std::thread::sleep(std::time::Duration::new(1, 0));
-/// assert_eq!(*c_res.lock().unwrap(), 1);
+///
+/// local_scheduler.run();
 /// ```
 /// If your `Future` poll an `Result` type value, and you want dispatch the
 /// error by rxrust, you can use [`from_future_result`]
@@ -188,7 +186,7 @@ mod tests {
     }
     // from_future
     let res = c_res.clone();
-    from_future(future::ready(2), pool.clone())
+    from_future(future::ready(2), pool)
       .to_shared()
       .subscribe(move |v| {
         *res.lock().unwrap() = v;

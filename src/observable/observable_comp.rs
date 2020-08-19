@@ -4,6 +4,7 @@ use crate::prelude::*;
 pub struct ObserverComp<N, C> {
   next: N,
   complete: C,
+  is_stopped: bool,
 }
 
 impl<N, C, Item> Observer<Item, ()> for ObserverComp<N, C>
@@ -11,17 +12,26 @@ where
   C: FnMut(),
   N: FnMut(Item),
 {
-  #[inline(always)]
+  #[inline]
   fn next(&mut self, value: Item) { (self.next)(value); }
-  #[inline(always)]
-  fn error(&mut self, _err: ()) {}
-  #[inline(always)]
-  fn complete(&mut self) { (self.complete)(); }
+  #[inline]
+  fn error(&mut self, _err: ()) { self.is_stopped = true; }
+  fn complete(&mut self) {
+    (self.complete)();
+    self.is_stopped = true;
+  }
+  fn is_stopped(&self) -> bool { self.is_stopped }
 }
 
 impl<N, C> ObserverComp<N, C> {
   #[inline(always)]
-  pub fn new(next: N, complete: C) -> Self { ObserverComp { next, complete } }
+  pub fn new(next: N, complete: C) -> Self {
+    ObserverComp {
+      next,
+      complete,
+      is_stopped: false,
+    }
+  }
 }
 
 pub trait SubscribeComplete<'a, N, C> {
@@ -52,8 +62,11 @@ where
   where
     Self: Sized,
   {
-    let unsub =
-      self.actual_subscribe(Subscriber::local(ObserverComp { next, complete }));
+    let unsub = self.actual_subscribe(Subscriber::local(ObserverComp {
+      next,
+      complete,
+      is_stopped: false,
+    }));
     SubscriptionWrapper(unsub)
   }
 }
@@ -73,9 +86,11 @@ where
   where
     Self: Sized,
   {
-    let unsub = self
-      .0
-      .actual_subscribe(Subscriber::shared(ObserverComp { next, complete }));
+    let unsub = self.0.actual_subscribe(Subscriber::shared(ObserverComp {
+      next,
+      complete,
+      is_stopped: false,
+    }));
     SubscriptionWrapper(unsub)
   }
 }

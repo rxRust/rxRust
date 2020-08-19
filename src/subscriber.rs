@@ -34,24 +34,25 @@ where
   U: SubscriptionLike,
 {
   fn next(&mut self, v: Item) {
-    if !self.subscription.is_closed() {
+    if !self.subscription.is_closed() && !self.observer.is_stopped() {
       self.observer.next(v)
     }
   }
 
   fn error(&mut self, err: Err) {
-    if !self.subscription.is_closed() {
+    if !self.subscription.is_closed() && !self.observer.is_stopped() {
       self.observer.error(err);
-      self.subscription.unsubscribe();
     }
   }
 
   fn complete(&mut self) {
-    if !self.subscription.is_closed() {
+    if !self.subscription.is_closed() && !self.observer.is_stopped() {
       self.observer.complete();
-      self.subscription.unsubscribe()
     }
   }
+
+  #[inline]
+  fn is_stopped(&self) -> bool { self.observer.is_stopped() }
 }
 
 subscription_proxy_impl!(Subscriber<O, U>, {subscription}, U, <O>);

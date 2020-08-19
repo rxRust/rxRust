@@ -182,7 +182,7 @@ mod test {
       let pool = ThreadPool::new().unwrap();
       observable::from_iter(0..1000)
         .observe_on(pool)
-        .map(move |i| waste_time(i))
+        .map(waste_time)
         .to_shared()
         .subscribe(move |v| *c_last.lock().unwrap() = v);
 
@@ -200,7 +200,7 @@ mod test {
       let mut local = LocalPool::new();
       observable::from_iter(0..1000)
         .observe_on(local.spawner())
-        .map(move |i| waste_time(i))
+        .map(waste_time)
         .subscribe(move |v| *c_last.lock().unwrap() = v);
       local.run();
       *last.lock().unwrap()
@@ -217,7 +217,7 @@ mod test {
 
       observable::from_iter(0..1000)
         .observe_on(local)
-        .map(move |i| waste_time(i))
+        .map(waste_time)
         .to_shared()
         .subscribe(move |v| *c_last.lock().unwrap() = v);
 
@@ -238,7 +238,7 @@ mod test {
         .unwrap();
       observable::from_iter(0..1000)
         .observe_on(pool)
-        .map(move |i| waste_time(i))
+        .map(waste_time)
         .to_shared()
         .subscribe(move |v| *c_last.lock().unwrap() = v);
 
