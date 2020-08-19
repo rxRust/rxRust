@@ -45,13 +45,13 @@ macro iter_emitter($subscription:ty, $($marker:ident +)* $lf: lifetime) {
     O: Observer<Self::Item, Self::Err> + $($marker +)* $lf
   {
     for v in self.0.into_iter() {
-      if !subscriber.is_closed() {
+      if !subscriber.is_finished() {
         subscriber.next(v);
       } else {
         break;
       }
     }
-    if !subscriber.is_closed() {
+    if !subscriber.is_finished() {
       subscriber.complete();
     }
   }

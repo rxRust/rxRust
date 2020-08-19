@@ -89,7 +89,7 @@ struct FinalizerSubscription<F> {
 
 impl<F, Target> SubscriptionLike for FinalizerSubscription<F>
 where
-  F: InnerDeref<Target = Option<Target>>,
+  F: InnerDerefMut<Target = Option<Target>>,
   Target: FnMut(),
 {
   fn unsubscribe(&mut self) {
@@ -101,15 +101,12 @@ where
 
   #[inline]
   fn is_closed(&self) -> bool { self.is_closed }
-
-  #[inline]
-  fn inner_addr(&self) -> *const () { self as *const _ as *const () }
 }
 
 impl<Item, Err, O, F, Target> Observer<Item, Err> for FinalizerObserver<O, F>
 where
   O: Observer<Item, Err>,
-  F: InnerDeref<Target = Option<Target>>,
+  F: InnerDerefMut<Target = Option<Target>>,
   Target: FnMut(),
 {
   #[inline]
