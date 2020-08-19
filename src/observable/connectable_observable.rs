@@ -135,22 +135,3 @@ fn publish_smoke() {
   assert_eq!(first, 100);
   assert_eq!(second, 100);
 }
-
-#[test]
-fn filter() {
-  use crate::ops::FilterMap;
-  use crate::subject::MutRefValue;
-  let mut subject = Subject::new();
-
-  unsafe {
-    subject
-      .clone()
-      .mut_ref_all()
-      .filter_map::<fn(&mut i32) -> Option<&mut i32>, _, _>(|v| Some(v))
-      .publish()
-      .subscribe_err(|_: &mut _| {}, |_: &mut i32| {});
-  }
-
-  subject.next(MutRefValue(&mut 1));
-  subject.error(MutRefValue(&mut 2));
-}
