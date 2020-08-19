@@ -11,6 +11,22 @@ pub struct DelayOp<S, SD> {
 
 observable_proxy_impl!(DelayOp, S, SD);
 
+macro impl_observable($op: ident, $subscriber: ident) {{
+  let delay = $op.delay;
+  let source = $op.source;
+  let scheduler = $op.scheduler;
+  let subscription = $subscriber.subscription.clone();
+  let c_subscription = subscription.clone();
+  let handle = scheduler.schedule(
+    move |_| {
+      c_subscription.add(source.actual_subscribe($subscriber));
+    },
+    Some(delay),
+    (),
+  );
+  subscription.add(handle);
+  subscription
+}}
 impl<S, SD> SharedObservable for DelayOp<S, SD>
 where
   S: SharedObservable + Send + Sync + 'static,
@@ -24,18 +40,7 @@ where
     self,
     subscriber: Subscriber<O, SharedSubscription>,
   ) -> Self::Unsub {
-    let Self {
-      delay,
-      source,
-      scheduler,
-    } = self;
-    scheduler.schedule(
-      move |subscription, _| {
-        subscription.add(source.actual_subscribe(subscriber));
-      },
-      Some(delay),
-      (),
-    )
+    impl_observable!(self, subscriber)
   }
 }
 
@@ -50,18 +55,7 @@ where
     self,
     subscriber: Subscriber<O, LocalSubscription>,
   ) -> Self::Unsub {
-    let Self {
-      delay,
-      source,
-      scheduler,
-    } = self;
-    scheduler.schedule(
-      move |subscription, _| {
-        subscription.add(source.actual_subscribe(subscriber));
-      },
-      Some(delay),
-      (),
-    )
+    impl_observable!(self, subscriber)
   }
 }
 

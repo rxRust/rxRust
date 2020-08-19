@@ -75,12 +75,10 @@ impl<S: SharedScheduler + 'static> SharedEmitter for IntervalEmitter<S> {
   where
     O: Observer<Self::Item, Self::Err> + Send + Sync + 'static,
   {
-    let Subscriber {
-      observer,
-      mut subscription,
-    } = subscriber;
-    let f = self.interval_future(observer);
-    self.scheduler.spawn(f, &mut subscription);
+    let future = self.interval_future(subscriber.observer);
+    let (future, handle) = futures::future::abortable(future);
+    self.scheduler.spawn(future.map(|_| ()));
+    subscriber.subscription.add(SpawnHandle::new(handle));
   }
 }
 
@@ -89,12 +87,10 @@ impl<S: LocalScheduler + 'static> LocalEmitter<'static> for IntervalEmitter<S> {
   where
     O: Observer<Self::Item, Self::Err> + 'static,
   {
-    let Subscriber {
-      observer,
-      mut subscription,
-    } = subscriber;
-    let f = self.interval_future(observer);
-    self.scheduler.spawn(f, &mut subscription);
+    let future = self.interval_future(subscriber.observer);
+    let (future, handle) = futures::future::abortable(future);
+    self.scheduler.spawn(future.map(|_| ()));
+    subscriber.subscription.add(SpawnHandle::new(handle));
   }
 }
 

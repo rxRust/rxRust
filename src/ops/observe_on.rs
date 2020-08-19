@@ -110,7 +110,7 @@ where
     Task: FnOnce(Arc<Mutex<O>>, S) + Send + 'static,
   {
     let subscription = self.scheduler.schedule(
-      |_, (observer, state)| task(observer, state),
+      |(observer, state)| task(observer, state),
       None,
       (self.observer.clone(), state),
     );
@@ -139,7 +139,7 @@ impl<O: 'static, SD: LocalScheduler + 'static> LocalObserver<O, SD> {
     Task: FnOnce(Rc<RefCell<O>>, S) + 'static,
   {
     let subscription = self.scheduler.schedule(
-      |_, (observer, state)| task(observer, state),
+      |(observer, state)| task(observer, state),
       None,
       (self.observer.clone(), state),
     );

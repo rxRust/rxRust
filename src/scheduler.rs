@@ -1,67 +1,57 @@
 use crate::prelude::*;
 use async_std::prelude::FutureExt as AsyncFutureExt;
-use futures::future::{lazy, AbortHandle};
+use futures::future::{lazy, AbortHandle, FutureExt};
 use std::future::Future;
 
 use std::time::Duration;
 
-fn task_future<U, T>(
-  task: impl FnOnce(U, T) + 'static,
+pub fn task_future<T>(
+  task: impl FnOnce(T) + 'static,
   state: T,
   delay: Option<Duration>,
-) -> (U, impl Future<Output = ()>)
-where
-  U: SubscriptionLike + Default + Clone,
-{
-  let subscription = U::default();
-  let c_subscription = subscription.clone();
-  let fut = lazy(|_| {
-    if !c_subscription.is_closed() {
-      task(c_subscription, state)
-    }
-  })
-  .delay(delay.unwrap_or_default());
-
-  (subscription, fut)
+) -> (impl Future<Output = ()>, SpawnHandle) {
+  let fut = lazy(|_| task(state)).delay(delay.unwrap_or_default());
+  let (fut, handle) = futures::future::abortable(fut);
+  (fut.map(|_| ()), SpawnHandle::new(handle))
 }
 
 /// A Scheduler is an object to order task and schedule their execution.
 pub trait SharedScheduler {
-  fn spawn<Fut>(&self, future: Fut, subscription: &mut SharedSubscription)
+  fn spawn<Fut>(&self, future: Fut)
   where
     Fut: Future<Output = ()> + Send + 'static;
 
   fn schedule<T: Send + 'static>(
     &self,
-    task: impl FnOnce(SharedSubscription, T) + Send + 'static,
+    task: impl FnOnce(T) + Send + 'static,
     delay: Option<Duration>,
     state: T,
-  ) -> SharedSubscription {
-    let (mut subscription, fut) = task_future(task, state, delay);
-    self.spawn(fut, &mut subscription);
-    subscription
+  ) -> SpawnHandle {
+    let (f, handle) = task_future(task, state, delay);
+    self.spawn(f);
+    handle
   }
 }
 
 pub trait LocalScheduler {
-  fn spawn<Fut>(&self, future: Fut, subscription: &mut LocalSubscription)
+  fn spawn<Fut>(&self, future: Fut)
   where
     Fut: Future<Output = ()> + 'static;
 
   fn schedule<T: 'static>(
     &self,
-    task: impl FnOnce(LocalSubscription, T) + 'static,
+    task: impl FnOnce(T) + 'static,
     delay: Option<Duration>,
     state: T,
-  ) -> LocalSubscription {
-    let (mut subscription, fut) = task_future(task, state, delay);
-    self.spawn(fut, &mut subscription);
-    subscription
+  ) -> SpawnHandle {
+    let (f, handle) = task_future(task, state, delay);
+    self.spawn(f);
+    handle
   }
 }
 
 pub struct SpawnHandle {
-  handle: AbortHandle,
+  pub handle: AbortHandle,
   is_closed: bool,
 }
 
@@ -91,28 +81,23 @@ mod futures_scheduler {
   use futures::{
     executor::{LocalSpawner, ThreadPool},
     task::{LocalSpawnExt, SpawnExt},
-    FutureExt,
   };
 
   impl SharedScheduler for ThreadPool {
-    fn spawn<Fut>(&self, future: Fut, subscription: &mut SharedSubscription)
+    fn spawn<Fut>(&self, future: Fut)
     where
       Fut: Future<Output = ()> + Send + 'static,
     {
-      let (f, handle) = futures::future::abortable(future);
-      SpawnExt::spawn(self, f.map(|_| ())).unwrap();
-      subscription.add(SpawnHandle::new(handle))
+      SpawnExt::spawn(self, future).unwrap();
     }
   }
 
   impl LocalScheduler for LocalSpawner {
-    fn spawn<Fut>(&self, future: Fut, subscription: &mut LocalSubscription)
+    fn spawn<Fut>(&self, future: Fut)
     where
       Fut: Future<Output = ()> + 'static,
     {
-      let (f, handle) = futures::future::abortable(future);
-      self.spawn_local(f.map(|_| ())).unwrap();
-      subscription.add(SpawnHandle::new(handle))
+      self.spawn_local(future).unwrap();
     }
   }
 }
@@ -123,33 +108,21 @@ mod tokio_scheduler {
   use std::sync::Arc;
   use tokio::runtime::Runtime;
 
-  fn rt_spawn<Fut>(
-    rt: &Runtime,
-    future: Fut,
-    subscription: &mut SharedSubscription,
-  ) where
-    Fut: Future<Output = ()> + Send + 'static,
-  {
-    let (f, handle) = futures::future::abortable(future);
-    subscription.add(SpawnHandle::new(handle));
-    rt.spawn(f);
-  }
-
   impl SharedScheduler for Runtime {
-    fn spawn<Fut>(&self, future: Fut, subscription: &mut SharedSubscription)
+    fn spawn<Fut>(&self, future: Fut)
     where
       Fut: Future<Output = ()> + Send + 'static,
     {
-      rt_spawn(self, future, subscription)
+      Runtime::spawn(self, future);
     }
   }
 
   impl SharedScheduler for Arc<Runtime> {
-    fn spawn<Fut>(&self, future: Fut, subscription: &mut SharedSubscription)
+    fn spawn<Fut>(&self, future: Fut)
     where
       Fut: Future<Output = ()> + Send + 'static,
     {
-      rt_spawn(self, future, subscription)
+      Runtime::spawn(self, future);
     }
   }
 }
