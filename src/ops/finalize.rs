@@ -1,4 +1,9 @@
 use crate::prelude::*;
+use std::{
+  cell::RefCell,
+  rc::Rc,
+  sync::{Arc, Mutex},
+};
 
 #[derive(Clone)]
 pub struct FinalizeOp<S, F> {
@@ -15,30 +20,31 @@ where
   type Err = S::Err;
 }
 
-#[doc(hidden)]
-macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
-fn actual_subscribe<O: Observer<Self::Item, Self::Err> + $($marker +)* $lf>(
-self,
-subscriber: Subscriber<O, $subscription>,
-) -> Self::Unsub {
-let  subscription = subscriber.subscription.clone();
-subscription.add(self.source.actual_subscribe(subscriber));
-subscription.add(Finalizer {
-s: <$subscription>::default(),
-f: self.func,
-});
-subscription
-}
-}
-
 impl<'a, S, F> LocalObservable<'a> for FinalizeOp<S, F>
 where
   S: LocalObservable<'a>,
   F: FnMut() + 'static,
 {
-  type Unsub = LocalSubscription;
+  type Unsub = S::Unsub;
 
-  observable_impl!(LocalSubscription, 'a);
+  fn actual_subscribe<O: Observer<Self::Item, Self::Err> + 'a>(
+    self,
+    subscriber: Subscriber<O, LocalSubscription>,
+  ) -> Self::Unsub {
+    let subscription = subscriber.subscription.clone();
+    let func = Rc::new(RefCell::new(Some(self.func)));
+    subscription.add(FinalizerSubscription {
+      is_closed: false,
+      func: func.clone(),
+    });
+    self.source.actual_subscribe(Subscriber {
+      observer: FinalizerObserver {
+        observer: subscriber.observer,
+        func,
+      },
+      subscription,
+    })
+  }
 }
 
 impl<S, F> SharedObservable for FinalizeOp<S, F>
@@ -47,29 +53,84 @@ where
   F: FnMut() + Send + Sync + 'static,
   S::Unsub: Send + Sync,
 {
-  type Unsub = SharedSubscription;
+  type Unsub = S::Unsub;
 
-  observable_impl!(SharedSubscription, Send + Sync + 'static);
+  fn actual_subscribe<
+    O: Observer<Self::Item, Self::Err> + Sync + Send + 'static,
+  >(
+    self,
+    subscriber: Subscriber<O, SharedSubscription>,
+  ) -> Self::Unsub {
+    let subscription = subscriber.subscription.clone();
+    let func = Arc::new(Mutex::new(Some(self.func)));
+    subscription.add(FinalizerSubscription {
+      is_closed: false,
+      func: func.clone(),
+    });
+    self.source.actual_subscribe(Subscriber {
+      observer: FinalizerObserver {
+        observer: subscriber.observer,
+        func,
+      },
+      subscription,
+    })
+  }
 }
 
-struct Finalizer<Sub, F> {
-  s: Sub,
-  f: F,
+struct FinalizerObserver<O, F> {
+  observer: O,
+  func: F,
 }
 
-impl<Sub, F> SubscriptionLike for Finalizer<Sub, F>
+struct FinalizerSubscription<F> {
+  is_closed: bool,
+  func: F,
+}
+
+impl<F, Target> SubscriptionLike for FinalizerSubscription<F>
 where
-  Sub: SubscriptionLike,
-  F: FnMut(),
+  F: InnerDeref<Target = Option<Target>>,
+  Target: FnMut(),
 {
   fn unsubscribe(&mut self) {
-    self.s.unsubscribe();
-    (self.f)()
+    self.is_closed = true;
+    if let Some(mut func) = (self.func.inner_deref_mut()).take() {
+      func()
+    }
   }
 
-  fn is_closed(&self) -> bool { self.s.is_closed() }
+  #[inline]
+  fn is_closed(&self) -> bool { self.is_closed }
 
-  fn inner_addr(&self) -> *const () { self.s.inner_addr() }
+  #[inline]
+  fn inner_addr(&self) -> *const () { self as *const _ as *const () }
+}
+
+impl<Item, Err, O, F, Target> Observer<Item, Err> for FinalizerObserver<O, F>
+where
+  O: Observer<Item, Err>,
+  F: InnerDeref<Target = Option<Target>>,
+  Target: FnMut(),
+{
+  #[inline]
+  fn next(&mut self, value: Item) { self.observer.next(value); }
+
+  fn error(&mut self, err: Err) {
+    self.observer.error(err);
+    if let Some(mut func) = (self.func.inner_deref_mut()).take() {
+      func()
+    }
+  }
+
+  fn complete(&mut self) {
+    self.observer.complete();
+    if let Some(mut func) = (self.func.inner_deref_mut()).take() {
+      func()
+    }
+  }
+
+  #[inline]
+  fn is_stopped(&self) -> bool { self.observer.is_stopped() }
 }
 
 #[cfg(test)]
@@ -77,7 +138,10 @@ mod test {
   use crate::prelude::*;
   use std::cell::Cell;
   use std::rc::Rc;
-  use std::sync::{Arc, Mutex};
+  use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+  };
 
   #[test]
   fn finalize_on_complete_simple() {
@@ -184,20 +248,20 @@ mod test {
   #[test]
   fn finalize_shared() {
     // Given
-    let finalized = Arc::new(Mutex::new(false));
+    let finalized = Arc::new(AtomicBool::new(false));
     let mut s = SharedSubject::new();
     // When
     let finalized_clone = finalized.clone();
     let mut subscription = s
       .clone()
       .to_shared()
-      .finalize(move || *finalized_clone.lock().unwrap() = true)
+      .finalize(move || finalized_clone.store(true, Ordering::Relaxed))
       .to_shared()
       .subscribe(|_| ());
     s.next(1);
     s.next(2);
     subscription.unsubscribe();
     // Then
-    assert!(*finalized.lock().unwrap());
+    assert!(finalized.load(Ordering::Relaxed));
   }
 }

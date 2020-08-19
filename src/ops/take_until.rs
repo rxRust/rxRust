@@ -29,6 +29,7 @@ macro observable_impl($subscription:ty, $sharer:path, $mutability_enabler:path,
       observer: TakeUntilNotifierObserver {
         subscription: subscription.clone(),
         main_observer: shared_observer,
+        is_stopped: false,
         _p: PhantomData,
       },
       subscription: subscription.clone(),
@@ -73,6 +74,7 @@ pub struct TakeUntilNotifierObserver<O, U, Item> {
   main_observer: O,
   // We need to unsubscribe everything as soon as notifier fired
   subscription: U,
+  is_stopped: bool,
   _p: PhantomData<Item>,
 }
 
@@ -90,11 +92,14 @@ where
   fn error(&mut self, err: Err) {
     self.main_observer.error(err);
     self.subscription.unsubscribe();
+    self.is_stopped = true;
   }
 
-  fn complete(&mut self) {
-    // Do nothing
-  }
+  #[inline]
+  fn complete(&mut self) { self.is_stopped = true; }
+
+  #[inline]
+  fn is_stopped(&self) -> bool { self.is_stopped }
 }
 
 #[cfg(test)]

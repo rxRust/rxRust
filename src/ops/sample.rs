@@ -1,4 +1,4 @@
-use crate::observer::error_proxy_impl;
+use crate::observer::{error_proxy_impl, is_stopped_proxy_impl};
 use crate::prelude::*;
 use std::cell::RefCell;
 use std::marker::PhantomData;
@@ -123,6 +123,7 @@ where
       self.done = true;
     }
   }
+  is_stopped_proxy_impl!(observer);
 }
 
 trait DrainValue<Item, Err> {
@@ -164,6 +165,8 @@ where
     self.0.drain_value();
     self.0.complete();
   }
+
+  is_stopped_proxy_impl!(0);
 }
 
 #[cfg(test)]

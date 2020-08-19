@@ -102,11 +102,13 @@ where
   fn complete(&mut self) {
     if self.completed_one {
       self.observer.complete();
-      self.subscription.unsubscribe();
     } else {
       self.completed_one = true;
     }
   }
+
+  #[inline]
+  fn is_stopped(&self) -> bool { self.observer.is_stopped() }
 }
 
 #[cfg(test)]

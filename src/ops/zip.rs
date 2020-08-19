@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use observer::{complete_proxy_impl, error_proxy_impl};
+use observer::{complete_proxy_impl, error_proxy_impl, is_stopped_proxy_impl};
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::marker::PhantomData;
@@ -147,6 +147,8 @@ where
       self.completed_one = true;
     }
   }
+
+  is_stopped_proxy_impl!(observer);
 }
 
 struct AObserver<O, B>(O, PhantomData<B>);
@@ -159,6 +161,7 @@ where
 
   error_proxy_impl!(Err, 0);
   complete_proxy_impl!(0);
+  is_stopped_proxy_impl!(0);
 }
 
 struct BObserver<O, A>(O, PhantomData<A>);
@@ -171,6 +174,7 @@ where
 
   error_proxy_impl!(Err, 0);
   complete_proxy_impl!(0);
+  is_stopped_proxy_impl!(0);
 }
 
 #[cfg(test)]

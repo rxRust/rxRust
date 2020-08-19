@@ -163,6 +163,11 @@ macro impl_throttle_observer($item: ident, $err: ident, $($path: ident).*) {
     }
     inner.observer.complete();
   }
+
+  fn is_stopped(&self) -> bool {
+    let inner = self.0.$($path()).*;
+    inner.observer.is_stopped()
+  }
 }
 
 impl<O, S, Item, Err> Observer<Item, Err> for SharedThrottleObserver<O, S, Item>

@@ -65,6 +65,8 @@ where
   fn next(&mut self, value: Item) { self.observer.next((self.map)(value)) }
   error_proxy_impl!(Err, observer);
   complete_proxy_impl!(observer);
+  #[inline]
+  fn is_stopped(&self) -> bool { self.observer.is_stopped() }
 }
 
 #[cfg(test)]

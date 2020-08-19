@@ -1,11 +1,14 @@
+#![allow(incomplete_features)]
 #![feature(
   external_doc,
   min_specialization,
   drain_filter,
   test,
   decl_macro,
-  future_readiness_fns
+  future_readiness_fns,
+  generic_associated_types
 )]
+
 //! Reactive extensions library for Rust: a library for
 //! [Reactive Programming](http://reactivex.io/) using
 //! [Observable](crate::observable::Observable), to make
@@ -15,6 +18,7 @@
 #[cfg(test)]
 extern crate float_cmp;
 
+pub mod inner_deref;
 pub mod observable;
 pub mod observer;
 pub mod ops;
@@ -25,6 +29,7 @@ pub mod subscriber;
 pub mod subscription;
 
 pub mod prelude {
+  pub use crate::inner_deref::InnerDeref;
   pub use crate::observable;
   pub use crate::observable::*;
   pub use crate::observer;

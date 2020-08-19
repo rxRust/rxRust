@@ -1,18 +1,22 @@
 use crate::prelude::*;
 
 #[derive(Clone)]
-pub struct ObserverN<N>(N);
+pub struct ObserverN<N> {
+  next: N,
+  is_stopped: bool,
+}
 
 impl<Item, N> Observer<Item, ()> for ObserverN<N>
 where
   N: FnMut(Item),
 {
-  #[inline(always)]
-  fn next(&mut self, value: Item) { (self.0)(value); }
-  #[inline(always)]
-  fn error(&mut self, _err: ()) {}
-  #[inline(always)]
-  fn complete(&mut self) {}
+  #[inline]
+  fn next(&mut self, value: Item) { (self.next)(value); }
+  #[inline]
+  fn error(&mut self, _err: ()) { self.is_stopped = true; }
+  #[inline]
+  fn complete(&mut self) { self.is_stopped = true; }
+  fn is_stopped(&self) -> bool { self.is_stopped }
 }
 
 pub trait SubscribeNext<'a, N> {
@@ -31,7 +35,10 @@ where
 {
   type Unsub = S::Unsub;
   fn subscribe(self, next: N) -> SubscriptionWrapper<Self::Unsub> {
-    let unsub = self.actual_subscribe(Subscriber::local(ObserverN(next)));
+    let unsub = self.actual_subscribe(Subscriber::local(ObserverN {
+      next,
+      is_stopped: false,
+    }));
     SubscriptionWrapper(unsub)
   }
 }
@@ -43,7 +50,10 @@ where
 {
   type Unsub = S::Unsub;
   fn subscribe(self, next: N) -> SubscriptionWrapper<Self::Unsub> {
-    let unsub = self.0.actual_subscribe(Subscriber::shared(ObserverN(next)));
+    let unsub = self.0.actual_subscribe(Subscriber::shared(ObserverN {
+      next,
+      is_stopped: false,
+    }));
     SubscriptionWrapper(unsub)
   }
 }

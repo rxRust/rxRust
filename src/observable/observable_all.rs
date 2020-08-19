@@ -5,6 +5,7 @@ pub struct ObserverAll<N, E, C> {
   next: N,
   error: E,
   complete: C,
+  is_stopped: bool,
 }
 
 impl<N, E, C> ObserverAll<N, E, C> {
@@ -14,6 +15,7 @@ impl<N, E, C> ObserverAll<N, E, C> {
       next,
       error,
       complete,
+      is_stopped: false,
     }
   }
 }
@@ -26,10 +28,19 @@ where
 {
   #[inline(always)]
   fn next(&mut self, value: Item) { (self.next)(value); }
-  #[inline(always)]
-  fn error(&mut self, err: Err) { (self.error)(err); }
-  #[inline(always)]
-  fn complete(&mut self) { (self.complete)(); }
+
+  fn error(&mut self, err: Err) {
+    (self.error)(err);
+    self.is_stopped = true;
+  }
+
+  fn complete(&mut self) {
+    (self.complete)();
+    self.is_stopped = true;
+  }
+
+  #[inline]
+  fn is_stopped(&self) -> bool { self.is_stopped }
 }
 
 pub trait SubscribeAll<'a, N, E, C> {
@@ -71,6 +82,7 @@ where
       next,
       error,
       complete,
+      is_stopped: false,
     });
     SubscriptionWrapper(self.actual_subscribe(subscriber))
   }
@@ -97,6 +109,7 @@ where
       next,
       error,
       complete,
+      is_stopped: false,
     });
     SubscriptionWrapper(self.0.actual_subscribe(subscriber))
   }

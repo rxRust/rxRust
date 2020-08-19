@@ -476,8 +476,9 @@ pub trait Observable {
   /// use futures::executor::LocalPool;
   ///
   /// let mut local_scheduler = LocalPool::new();
-  /// observable::interval(Duration::from_millis(2), local_scheduler.spawner())
-  ///   .sample(observable::interval(Duration::from_millis(5), local_scheduler.spawner()))
+  /// let spawner = local_scheduler.spawner();
+  /// observable::interval(Duration::from_millis(2), spawner.clone())
+  ///   .sample(observable::interval(Duration::from_millis(5), spawner))
   ///   .take(5)
   ///   .subscribe(move |v| println!("{}", v));
   ///
@@ -972,8 +973,9 @@ pub trait Observable {
   /// use futures::executor::LocalPool;
   ///
   /// let mut local_scheduler = LocalPool::new();
-  /// observable::interval(Duration::from_millis(1), local_scheduler.spawner())
-  ///   .throttle_time(Duration::from_millis(9), ThrottleEdge::Leading, local_scheduler.spawner())
+  /// let spawner = local_scheduler.spawner();
+  /// observable::interval(Duration::from_millis(1), spawner.clone())
+  ///   .throttle_time(Duration::from_millis(9), ThrottleEdge::Leading, spawner)
   ///   .take(5)
   ///   .subscribe(move |v| println!("{}", v));
   ///
