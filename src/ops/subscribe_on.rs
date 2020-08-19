@@ -24,13 +24,17 @@ where
     subscriber: Subscriber<O, SharedSubscription>,
   ) -> Self::Unsub {
     let source = self.source;
-    self.scheduler.schedule(
-      move |subscription, _| {
+    let subscription = subscriber.subscription.clone();
+    let handle = self.scheduler.schedule(
+      move |_| {
+        let subscription = subscriber.subscription.clone();
         subscription.add(source.actual_subscribe(subscriber))
       },
       None,
       (),
-    )
+    );
+    subscription.add(handle);
+    subscription
   }
 }
 
@@ -45,13 +49,17 @@ where
     subscriber: Subscriber<O, LocalSubscription>,
   ) -> Self::Unsub {
     let source = self.source;
-    self.scheduler.schedule(
-      move |subscription, _| {
+    let subscription = subscriber.subscription.clone();
+    let handle = self.scheduler.schedule(
+      move |_| {
+        let subscription = subscriber.subscription.clone();
         subscription.add(source.actual_subscribe(subscriber))
       },
       None,
       (),
-    )
+    );
+    subscription.add(handle);
+    subscription
   }
 }
 

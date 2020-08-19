@@ -107,7 +107,7 @@ struct ThrottleObserver<O, S, Item, Sub> {
   edge: ThrottleEdge,
   delay: Duration,
   trailing_value: Option<Item>,
-  throttled: Option<Sub>,
+  throttled: Option<SpawnHandle>,
   subscription: Sub,
 }
 
@@ -129,8 +129,8 @@ macro impl_throttle_observer($item: ident, $err: ident, $($path: ident).*) {
     if inner.throttled.is_none() {
       let c_inner = self.0.clone();
       let delay = inner.delay;
-      let subscription = inner.scheduler.schedule(
-        move |_, _| {
+      let spawn_handle = inner.scheduler.schedule(
+        move |_| {
           let mut inner = c_inner.$($path()).*;
           if let Some(v) = inner.trailing_value.take() {
             inner.observer.next(v);
@@ -142,8 +142,8 @@ macro impl_throttle_observer($item: ident, $err: ident, $($path: ident).*) {
         Some(delay),
         (),
       );
-      inner.subscription.add(subscription.clone());
-      inner.throttled = Some(subscription);
+      inner.throttled = Some(SpawnHandle::new(spawn_handle.handle.clone()));
+      inner.subscription.add(spawn_handle);
       if inner.edge == ThrottleEdge::Leading {
         inner.observer.next(value);
       }

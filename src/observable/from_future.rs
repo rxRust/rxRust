@@ -58,11 +58,14 @@ where
   where
     O: Observer<Self::Item, Self::Err> + Send + Sync + 'static,
   {
-    let mut subscription = subscriber.subscription.clone();
+    let subscription = subscriber.subscription.clone();
+
     let f = self
       .future
       .map(move |v| SharedEmitter::emit(of::OfEmitter(v), subscriber));
-    self.scheduler.spawn(f, &mut subscription);
+    let (future, handle) = futures::future::abortable(f);
+    self.scheduler.spawn(future.map(|_| ()));
+    subscription.add(SpawnHandle::new(handle))
   }
 }
 
@@ -75,11 +78,14 @@ where
   where
     O: Observer<Self::Item, Self::Err> + 'static,
   {
-    let mut subscription = subscriber.subscription.clone();
+    let subscription = subscriber.subscription.clone();
+
     let f = self
       .future
       .map(move |v| LocalEmitter::emit(of::OfEmitter(v), subscriber));
-    self.scheduler.spawn(f, &mut subscription);
+    let (future, handle) = futures::future::abortable(f);
+    self.scheduler.spawn(future.map(|_| ()));
+    subscription.add(SpawnHandle::new(handle))
   }
 }
 
@@ -130,11 +136,14 @@ where
   where
     O: Observer<Self::Item, Self::Err> + Send + Sync + 'static,
   {
-    let mut subscription = subscriber.subscription.clone();
+    let subscription = subscriber.subscription.clone();
+
     let f = self.future.map(move |v| {
       SharedEmitter::emit(of::ResultEmitter(v.into()), subscriber)
     });
-    self.scheduler.spawn(f, &mut subscription);
+    let (future, handle) = futures::future::abortable(f);
+    self.scheduler.spawn(future.map(|_| ()));
+    subscription.add(SpawnHandle::new(handle))
   }
 }
 
@@ -149,11 +158,14 @@ where
   where
     O: Observer<Self::Item, Self::Err> + 'static,
   {
-    let mut subscription = subscriber.subscription.clone();
+    let subscription = subscriber.subscription.clone();
+
     let f = self.future.map(move |v| {
       LocalEmitter::emit(of::ResultEmitter(v.into()), subscriber)
     });
-    self.scheduler.spawn(f, &mut subscription);
+    let (future, handle) = futures::future::abortable(f);
+    self.scheduler.spawn(future.map(|_| ()));
+    subscription.add(SpawnHandle::new(handle))
   }
 }
 
