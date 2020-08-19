@@ -16,13 +16,11 @@ readme = "README.md"
 no-dev-version = true
 
 [dependencies]
-futures-timer = "3.0.2"
 smallvec = "1.4.2"
 
 [dependencies.async-std]
 version = "1.6.3"
 features = ["unstable"]
-optional = true
 
 [dependencies.futures]
 version="0.3.5"
@@ -34,9 +32,9 @@ features = ["rt-threaded", "rt-core"]
 optional = true
 
 [features]
-default = ["interval", "tokio-scheduler"]
+default = ["futures-scheduler"]
 tokio-scheduler = ["tokio"]
-interval = ["async-std"]
+futures-scheduler = []
 
 [dev-dependencies]
 float-cmp = "0.8.0"

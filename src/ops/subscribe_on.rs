@@ -20,12 +20,12 @@ where
   fn actual_subscribe<
     O: Observer<Self::Item, Self::Err> + Sync + Send + 'static,
   >(
-    mut self,
+    self,
     subscriber: Subscriber<O, SharedSubscription>,
   ) -> Self::Unsub {
     let source = self.source;
     self.scheduler.schedule(
-      move |mut subscription, _| {
+      move |subscription, _| {
         subscription.add(source.actual_subscribe(subscriber))
       },
       None,
@@ -41,12 +41,12 @@ where
 {
   type Unsub = LocalSubscription;
   fn actual_subscribe<O: Observer<Self::Item, Self::Err> + 'static>(
-    mut self,
+    self,
     subscriber: Subscriber<O, LocalSubscription>,
   ) -> Self::Unsub {
     let source = self.source;
     self.scheduler.schedule(
-      move |mut subscription, _| {
+      move |subscription, _| {
         subscription.add(source.actual_subscribe(subscriber))
       },
       None,

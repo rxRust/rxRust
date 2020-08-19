@@ -7,10 +7,20 @@
 - **subscription**: Add `SubscriptionGuard::new()` for enabling RAII for existing subscriptions.
 - **subscription**: Add `SubscriptionWrapper::into_inner()`, e.g. if one wants to add the inner subscription to
   a composite subscription.
+- **scheduler**: Add two trait `SharedScheduler` and `LocalScheduler` to implement custom Scheduler. 
+- **scheduler**: `LocalPool` and `ThreadPool` in `futures::executor` can directly use it as scheduler.
+- **scheduler**: `tokio::runtime::Runtime` also supported, but need enable the feature `futures-scheduler`.  
+
+### Refactor
+
+- **scheduler**: Use the runtime of future as the scheduler, and the default scheduler has be removed.
 
 ### Breaking Changes
 
+- **scheduler**: `Schedulers` has been removed.
 - **observable**: don't require items/errors to implement `PayloadCopy`, `Clone` is enough now (remove `PayloadCopy`)
+- **observable**: `observable::from_future` and `observable::interval` need give `scheduler` parameter.
+- **operator**: `delay`,`observer_on` and `subscribe_on` need give `scheduler` parameter.
 
 ## [0.8.3](https://github.com/rxRust/rxRust/releases/tag/v0.8.2)  (2020-03-26)
 

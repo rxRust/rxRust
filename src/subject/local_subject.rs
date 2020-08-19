@@ -24,7 +24,7 @@ impl<'a, Item, Err> Observable for LocalSubject<'a, Item, Err> {
 impl<'a, Item, Err> LocalObservable<'a> for LocalSubject<'a, Item, Err> {
   type Unsub = LocalSubscription;
   fn actual_subscribe<O: Observer<Self::Item, Self::Err> + 'a>(
-    mut self,
+    self,
     subscriber: Subscriber<O, LocalSubscription>,
   ) -> LocalSubscription {
     let subscription = subscriber.subscription.clone();

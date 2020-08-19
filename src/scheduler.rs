@@ -1,12 +1,29 @@
 use crate::prelude::*;
-use futures::{
-  future::RemoteHandle,
-  task::{LocalSpawn, LocalSpawnExt, Spawn, SpawnExt},
-  FutureExt,
-};
-use futures_timer::Delay;
+use async_std::prelude::FutureExt as AsyncFutureExt;
+use futures::future::{lazy, AbortHandle};
 use std::future::Future;
+
 use std::time::Duration;
+
+fn task_future<U, T>(
+  task: impl FnOnce(U, T) + 'static,
+  state: T,
+  delay: Option<Duration>,
+) -> (U, impl Future<Output = ()>)
+where
+  U: SubscriptionLike + Default + Clone,
+{
+  let subscription = U::default();
+  let c_subscription = subscription.clone();
+  let fut = lazy(|_| {
+    if !c_subscription.is_closed() {
+      task(c_subscription, state)
+    }
+  })
+  .delay(delay.unwrap_or_default());
+
+  (subscription, fut)
+}
 
 /// A Scheduler is an object to order task and schedule their execution.
 pub trait SharedScheduler {
@@ -15,16 +32,13 @@ pub trait SharedScheduler {
     Fut: Future<Output = ()> + Send + 'static;
 
   fn schedule<T: Send + 'static>(
-    &mut self,
+    &self,
     task: impl FnOnce(SharedSubscription, T) + Send + 'static,
     delay: Option<Duration>,
     state: T,
   ) -> SharedSubscription {
-    let mut subscription = SharedSubscription::default();
-    let c_subscription = subscription.clone();
-    let delay = delay.unwrap_or_default();
-    let f = Delay::new(delay).inspect(|_| task(c_subscription, state));
-    self.spawn(f, &mut subscription);
+    let (mut subscription, fut) = task_future(task, state, delay);
+    self.spawn(fut, &mut subscription);
     subscription
   }
 }
@@ -35,70 +49,117 @@ pub trait LocalScheduler {
     Fut: Future<Output = ()> + 'static;
 
   fn schedule<T: 'static>(
-    &mut self,
+    &self,
     task: impl FnOnce(LocalSubscription, T) + 'static,
     delay: Option<Duration>,
     state: T,
   ) -> LocalSubscription {
-    let mut subscription = LocalSubscription::default();
-    let c_subscription = subscription.clone();
-    let delay = delay.unwrap_or_default();
-    let f = Delay::new(delay).inspect(|_| task(c_subscription, state));
-    self.spawn(f, &mut subscription);
-
+    let (mut subscription, fut) = task_future(task, state, delay);
+    self.spawn(fut, &mut subscription);
     subscription
   }
 }
 
-impl<S: Spawn> SharedScheduler for S {
-  fn spawn<Fut>(&self, future: Fut, subscription: &mut SharedSubscription)
-  where
-    Fut: Future<Output = ()> + Send + 'static,
-  {
-    let handle = self
-      .spawn_with_handle(future)
-      .expect("spawn task to thread pool failed.");
-    subscription.add(SpawnHandle::new(handle))
-  }
+pub struct SpawnHandle {
+  handle: AbortHandle,
+  is_closed: bool,
 }
 
-impl<L: LocalSpawn> LocalScheduler for L {
-  fn spawn<Fut>(&self, future: Fut, subscription: &mut LocalSubscription)
-  where
-    Fut: Future<Output = ()> + 'static,
-  {
-    let handle = self
-      .spawn_local_with_handle(future)
-      .expect("spawn task to thread pool failed.");
-    subscription.add(SpawnHandle::new(handle))
-  }
-}
-
-struct SpawnHandle<T>(Option<RemoteHandle<T>>);
-
-impl<T> SpawnHandle<T> {
-  #[inline(always)]
-  fn new(handle: RemoteHandle<T>) -> Self { SpawnHandle(Some(handle)) }
-}
-
-impl<T> SubscriptionLike for SpawnHandle<T> {
-  #[inline(always)]
-  fn unsubscribe(&mut self) { self.0.take(); }
-  #[inline(always)]
-  fn is_closed(&self) -> bool { self.0.is_none() }
-  #[inline(always)]
-  fn inner_addr(&self) -> *const () { ((&self.0) as *const _) as *const () }
-}
-
-impl<T> Drop for SpawnHandle<T> {
-  fn drop(&mut self) {
-    if self.0.is_some() {
-      self.0.take().unwrap().forget()
+impl SpawnHandle {
+  #[inline]
+  pub fn new(handle: AbortHandle) -> Self {
+    SpawnHandle {
+      handle,
+      is_closed: false,
     }
   }
 }
 
-#[cfg(test)]
+impl SubscriptionLike for SpawnHandle {
+  fn unsubscribe(&mut self) {
+    self.is_closed = true;
+    self.handle.abort();
+  }
+
+  #[inline]
+  fn is_closed(&self) -> bool { self.is_closed }
+
+  #[inline]
+  fn inner_addr(&self) -> *const () {
+    ((&self.handle) as *const _) as *const ()
+  }
+}
+
+#[cfg(feature = "futures-scheduler")]
+mod futures_scheduler {
+  use super::*;
+  use futures::{
+    executor::{LocalSpawner, ThreadPool},
+    task::{LocalSpawnExt, SpawnExt},
+    FutureExt,
+  };
+
+  impl SharedScheduler for ThreadPool {
+    fn spawn<Fut>(&self, future: Fut, subscription: &mut SharedSubscription)
+    where
+      Fut: Future<Output = ()> + Send + 'static,
+    {
+      let (f, handle) = futures::future::abortable(future);
+      SpawnExt::spawn(self, f.map(|_| ())).unwrap();
+      subscription.add(SpawnHandle::new(handle))
+    }
+  }
+
+  impl LocalScheduler for LocalSpawner {
+    fn spawn<Fut>(&self, future: Fut, subscription: &mut LocalSubscription)
+    where
+      Fut: Future<Output = ()> + 'static,
+    {
+      let (f, handle) = futures::future::abortable(future);
+      self.spawn_local(f.map(|_| ())).unwrap();
+      subscription.add(SpawnHandle::new(handle))
+    }
+  }
+}
+
+#[cfg(feature = "tokio-scheduler")]
+mod tokio_scheduler {
+  use super::*;
+  use std::sync::Arc;
+  use tokio::runtime::Runtime;
+
+  fn rt_spawn<Fut>(
+    rt: &Runtime,
+    future: Fut,
+    subscription: &mut SharedSubscription,
+  ) where
+    Fut: Future<Output = ()> + Send + 'static,
+  {
+    let (f, handle) = futures::future::abortable(future);
+    subscription.add(SpawnHandle::new(handle));
+    rt.spawn(f);
+  }
+
+  impl SharedScheduler for Runtime {
+    fn spawn<Fut>(&self, future: Fut, subscription: &mut SharedSubscription)
+    where
+      Fut: Future<Output = ()> + Send + 'static,
+    {
+      rt_spawn(self, future, subscription)
+    }
+  }
+
+  impl SharedScheduler for Arc<Runtime> {
+    fn spawn<Fut>(&self, future: Fut, subscription: &mut SharedSubscription)
+    where
+      Fut: Future<Output = ()> + Send + 'static,
+    {
+      rt_spawn(self, future, subscription)
+    }
+  }
+}
+
+#[cfg(all(test, feature = "tokio-scheduler"))]
 mod test {
   extern crate test;
   use crate::prelude::*;
@@ -106,36 +167,84 @@ mod test {
   use std::sync::{Arc, Mutex};
   use test::Bencher;
 
+  fn waste_time(v: u32) -> u32 {
+    (0..v)
+      .into_iter()
+      .map(|index| (0..index).sum::<u32>().min(u32::MAX / v))
+      .sum()
+  }
+
   #[bench]
   fn pool(b: &mut Bencher) {
-    let sum = Arc::new(Mutex::new(0.));
+    let last = Arc::new(Mutex::new(0));
     b.iter(|| {
-      let sum = sum.clone();
+      let c_last = last.clone();
       let pool = ThreadPool::new().unwrap();
       observable::from_iter(0..1000)
         .observe_on(pool)
+        .map(move |i| waste_time(i))
         .to_shared()
-        .subscribe(move |v| {
-          *sum.lock().unwrap() =
-            (0..1000).fold((v as f32).sqrt(), |acc, _| acc.sqrt());
-        })
+        .subscribe(move |v| *c_last.lock().unwrap() = v);
+
+      // todo: no way to wait all task has finished in `ThreadPool`.
+
+      *last.lock().unwrap()
     })
   }
 
   #[bench]
   fn local_thread(b: &mut Bencher) {
-    let sum = Arc::new(Mutex::new(0.));
+    let last = Arc::new(Mutex::new(0));
     b.iter(|| {
+      let c_last = last.clone();
       let mut local = LocalPool::new();
-      let sum = sum.clone();
       observable::from_iter(0..1000)
         .observe_on(local.spawner())
-        .subscribe(move |v| {
-          *sum.lock().unwrap() =
-            (0..1000).fold((v as f32).sqrt(), |acc, _| acc.sqrt());
-        });
-
+        .map(move |i| waste_time(i))
+        .subscribe(move |v| *c_last.lock().unwrap() = v);
       local.run();
+      *last.lock().unwrap()
+    })
+  }
+
+  #[bench]
+  fn tokio_basic(b: &mut Bencher) {
+    use tokio::runtime;
+    let last = Arc::new(Mutex::new(0));
+    b.iter(|| {
+      let c_last = last.clone();
+      let local = runtime::Builder::new().basic_scheduler().build().unwrap();
+
+      observable::from_iter(0..1000)
+        .observe_on(local)
+        .map(move |i| waste_time(i))
+        .to_shared()
+        .subscribe(move |v| *c_last.lock().unwrap() = v);
+
+      // todo: no way to wait all task has finished in `Tokio` Scheduler.
+      *last.lock().unwrap()
+    })
+  }
+
+  #[bench]
+  fn tokio_thread(b: &mut Bencher) {
+    use tokio::runtime;
+    let last = Arc::new(Mutex::new(0));
+    b.iter(|| {
+      let c_last = last.clone();
+      let pool = runtime::Builder::new()
+        .threaded_scheduler()
+        .build()
+        .unwrap();
+      observable::from_iter(0..1000)
+        .observe_on(pool)
+        .map(move |i| waste_time(i))
+        .to_shared()
+        .subscribe(move |v| *c_last.lock().unwrap() = v);
+
+      // todo: no way to wait all task has finished in `Tokio` Scheduler.
+
+      *last.lock().unwrap()
     })
   }
 }

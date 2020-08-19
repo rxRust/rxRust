@@ -33,7 +33,7 @@ impl<Item, Err> SharedObservable for SharedSubject<Item, Err> {
   fn actual_subscribe<
     O: Observer<Self::Item, Self::Err> + Sync + Send + 'static,
   >(
-    mut self,
+    self,
     subscriber: Subscriber<O, SharedSubscription>,
   ) -> Self::Unsub {
     let subscription = subscriber.subscription.clone();

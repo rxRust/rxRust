@@ -54,12 +54,14 @@ In this case, we must clone the stream.
 
 ```rust 
 use rxrust::prelude::*;
+use futures::executor::ThreadPool;
 
+let pool_scheduler = ThreadPool::new().unwrap();
 observable::from_iter(0..10)
-  .subscribe_on(Schedulers::NewThread)
+  .subscribe_on(pool_scheduler.clone())
   .map(|v| v*2)
   .to_shared()
-  .observe_on(Schedulers::NewThread)
+  .observe_on(pool_scheduler)
   .to_shared()
   .subscribe(|v| {println!("{},", v)});
 ```
@@ -70,15 +72,14 @@ just use `observable::from_future` to convert a `Future` to an observable sequen
 
 ```rust
 use rxrust::prelude::*;
-use futures::future;
+use futures::{ future, executor::LocalPool };
 
-observable::from_future(future::ready(1))
-  .to_shared()
+let mut local_scheduler = LocalPool::new();
+observable::from_future(future::ready(1), local_scheduler.spawner())
   .subscribe(move |v| println!("subscribed with {}", v));
 
-// because all future in rxrust are execute async, so we wait a second to see
-// the print, no need to use this line in your code.
-std::thread::sleep(std::time::Duration::new(1, 0));
+// Wait `LocalPool` finish.
+local_scheduler.run();
 ```
 
 A `from_future_result` function also provided to propagating error from `Future`.

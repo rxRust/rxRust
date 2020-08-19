@@ -1,6 +1,7 @@
 use crate::prelude::*;
+
+use async_std::prelude::FutureExt;
 use futures::prelude::*;
-use futures_timer::Delay;
 use std::{
   future::Future,
   time::{Duration, Instant},
@@ -50,15 +51,17 @@ impl<S> IntervalEmitter<S> {
     };
     let dur = self.dur;
 
-    Delay::new(delay).then(move |_| {
-      observer.next(number);
-      number += 1;
-      async_std::stream::interval(dur).for_each(move |_| {
+    future::ready(())
+      .then(move |_| {
         observer.next(number);
         number += 1;
-        future::ready(())
+        async_std::stream::interval(dur).for_each(move |_| {
+          observer.next(number);
+          number += 1;
+          future::ready(())
+        })
       })
-    })
+      .delay(delay)
   }
 }
 
@@ -99,11 +102,7 @@ impl<S: LocalScheduler + 'static> LocalEmitter<'static> for IntervalEmitter<S> {
 mod tests {
   use super::*;
   use futures::executor::{LocalPool, ThreadPool};
-  use std::{
-    cell::RefCell,
-    rc::Rc,
-    sync::{Arc, Mutex},
-  };
+  use std::sync::{Arc, Mutex};
 
   #[test]
   fn shared() {
@@ -117,20 +116,19 @@ mod tests {
         *seconds.lock().unwrap() += 1;
       });
 
-    std::thread::sleep(Duration::from_millis(55));
+    std::thread::sleep(Duration::from_millis(58));
     assert_eq!(*c_seconds.lock().unwrap(), 5);
   }
 
   #[test]
   fn local() {
     let mut local = LocalPool::new();
-    let millis = Rc::new(RefCell::new(0));
-    let c_millis = millis.clone();
-    interval(Duration::from_millis(1), local.spawner()).subscribe(move |_| {
-      *c_millis.borrow_mut() += 1;
-    });
+    let stamp = Instant::now();
+    interval(Duration::from_millis(1), local.spawner())
+      .take(5)
+      .subscribe(|_| {});
 
-    local.run_until(futures_timer::Delay::new(Duration::from_millis(5)));
-    assert_eq!(*millis.borrow(), 5);
+    local.run();
+    assert!(stamp.elapsed() > Duration::from_millis(5));
   }
 }
