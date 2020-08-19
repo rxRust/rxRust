@@ -10,9 +10,7 @@ pub use of::{of, of_fn, of_option, of_result, of_sequence};
 pub(crate) mod from_future;
 pub use from_future::{from_future, from_future_result};
 
-#[cfg(feature = "interval")]
 pub(crate) mod interval;
-#[cfg(feature = "interval")]
 pub use interval::{interval, interval_at};
 
 pub(crate) mod connectable_observable;
@@ -475,12 +473,15 @@ pub trait Observable {
   /// ```
   /// use rxrust::prelude::*;
   /// use std::time::Duration;
+  /// use futures::executor::LocalPool;
   ///
-  /// observable::interval(Duration::from_millis(2))
-  ///   .sample(observable::interval(Duration::from_millis(5)))
-  ///   .to_shared()
+  /// let mut local_scheduler = LocalPool::new();
+  /// observable::interval(Duration::from_millis(2), local_scheduler.spawner())
+  ///   .sample(observable::interval(Duration::from_millis(5), local_scheduler.spawner()))
+  ///   .take(5)
   ///   .subscribe(move |v| println!("{}", v));
   ///
+  /// local_scheduler.run();
   /// // print logs:
   /// // 1
   /// // 4
@@ -916,10 +917,11 @@ pub trait Observable {
   /// to use the new thread scheduler for values emitted by Observable `a`:
   /// ```rust
   /// use rxrust::prelude::*;
-  /// use rxrust::scheduler::Schedulers;
   /// use std::thread;
+  /// use futures::executor::ThreadPool;
   ///
-  /// let a = observable::from_iter(1..5).subscribe_on(Schedulers::NewThread);
+  /// let pool = ThreadPool::new().unwrap();
+  /// let a = observable::from_iter(1..5).subscribe_on(pool);
   /// let b = observable::from_iter(5..10);
   /// a.merge(b).to_shared().subscribe(|v|{
   ///   let handle = thread::current();
@@ -967,12 +969,15 @@ pub trait Observable {
   /// ```
   /// use rxrust::{ prelude::*, ops::throttle_time::ThrottleEdge };
   /// use std::time::Duration;
+  /// use futures::executor::LocalPool;
   ///
-  /// observable::interval(Duration::from_millis(1))
-  ///   .to_shared()
-  ///   .throttle_time(Duration::from_millis(9), ThrottleEdge::Leading)
-  ///   .to_shared()
+  /// let mut local_scheduler = LocalPool::new();
+  /// observable::interval(Duration::from_millis(1), local_scheduler.spawner())
+  ///   .throttle_time(Duration::from_millis(9), ThrottleEdge::Leading, local_scheduler.spawner())
+  ///   .take(5)
   ///   .subscribe(move |v| println!("{}", v));
+  ///
+  /// local_scheduler.run();
   /// ```
   #[inline]
   fn throttle_time<SD>(

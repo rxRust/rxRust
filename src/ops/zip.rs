@@ -37,7 +37,7 @@ where
     self,
     subscriber: Subscriber<O, LocalSubscription>,
   ) -> Self::Unsub {
-    let mut sub = subscriber.subscription;
+    let sub = subscriber.subscription;
     let o_zip = ZipObserver::new(subscriber.observer, sub.clone());
     let o_zip = Rc::new(RefCell::new(o_zip));
     sub.add(self.a.actual_subscribe(Subscriber {
@@ -69,7 +69,7 @@ where
     self,
     subscriber: Subscriber<O, SharedSubscription>,
   ) -> Self::Unsub {
-    let mut sub = subscriber.subscription;
+    let sub = subscriber.subscription;
     let o_zip = ZipObserver::new(subscriber.observer, sub.clone());
     let o_zip = Arc::new(Mutex::new(o_zip));
     sub.add(self.a.actual_subscribe(Subscriber {

@@ -18,7 +18,7 @@ macro observable_impl($subscription:ty, $sharer:path, $mutability_enabler:path,
     self,
     subscriber: Subscriber<O, $subscription>,
   ) -> Self::Unsub {
-    let mut subscription = subscriber.subscription;
+    let  subscription = subscriber.subscription;
     // We need to keep a reference to the observer from two places
     let shared_observer = $sharer($mutability_enabler(subscriber.observer));
     let main_subscriber = Subscriber {

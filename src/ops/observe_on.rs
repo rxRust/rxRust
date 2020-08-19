@@ -27,15 +27,19 @@ where
     self,
     subscriber: Subscriber<O, LocalSubscription>,
   ) -> Self::Unsub {
-    let observer = ObserveOnObserver {
-      observer: Rc::new(RefCell::new(subscriber.observer)),
-      proxy: subscriber.subscription.clone(),
+    let Subscriber {
+      observer,
+      subscription,
+    } = subscriber;
+    let observer = LocalObserver {
+      observer: Rc::new(RefCell::new(observer)),
       scheduler: self.scheduler,
+      subscription: subscription.clone(),
     };
 
     self.source.actual_subscribe(Subscriber {
-      observer,
-      subscription: subscriber.subscription,
+      observer: observer,
+      subscription,
     })
   }
 }
@@ -54,99 +58,123 @@ where
     self,
     subscriber: Subscriber<O, SharedSubscription>,
   ) -> Self::Unsub {
-    let subscription = subscriber.subscription;
-    let observer = ObserveOnObserver {
-      observer: Arc::new(Mutex::new(subscriber.observer)),
-      proxy: subscription.clone(),
+    let Subscriber {
+      observer,
+      subscription,
+    } = subscriber;
+    let subscriber = SharedObserver {
+      observer: Arc::new(Mutex::new(observer)),
+      subscription: subscription.clone(),
       scheduler: self.scheduler,
     };
     self.source.actual_subscribe(Subscriber {
-      observer,
+      observer: subscriber,
       subscription,
     })
   }
 }
 
-pub struct ObserveOnObserver<O, SD, U> {
-  observer: O,
-  proxy: U,
+struct LocalObserver<O, SD: LocalScheduler> {
+  observer: Rc<RefCell<O>>,
+  scheduler: SD,
+  subscription: LocalSubscription,
+}
+
+struct SharedObserver<O, SD: SharedScheduler> {
+  observer: Arc<Mutex<O>>,
+  subscription: SharedSubscription,
   scheduler: SD,
 }
 
 #[doc(hidden)]
-macro impl_observer($item: ident, $err: ident, $($path: ident).*) {
+macro impl_observer($item: ident, $err: ident) {
   fn next(&mut self, value: $item) {
-    let s = self.scheduler.schedule(
-      |subscription, state| {
-        if !subscription.is_closed() {
-          let (v, observer) = state;
-          observer.$($path()).*.next(v);
-        }
-      },
-      None,
-      (value, self.observer.clone()),
-    );
-    self.proxy.add(s);
+    self.observer_schedule(move |mut observer, v| observer.next(v), value)
   }
-
   fn error(&mut self, err: $err) {
-    let s = self.scheduler.schedule(
-      |mut subscription, state| {
-        if !subscription.is_closed() {
-          let (e, observer) = state;
-          observer.$($path()).*.error(e);
-          subscription.unsubscribe();
-        }
-      },
-      None,
-      (err, self.observer.clone()),
-    );
-    self.proxy.add(s);
+    self.observer_schedule(|mut observer, v| observer.error(v), err)
   }
-
   fn complete(&mut self) {
-    let s = self.scheduler.schedule(
-      |mut subscription, observer| {
-        if !subscription.is_closed() {
-          observer.$($path()).*.complete();
-          subscription.unsubscribe();
-        }
-      },
-      None,
-      self.observer.clone(),
-    );
-    self.proxy.add(s);
+    self.observer_schedule(|mut observer, _| observer.complete(), ())
   }
 }
-impl<Item, Err, O, SD> Observer<Item, Err>
-  for ObserveOnObserver<Arc<Mutex<O>>, SD, SharedSubscription>
+
+impl<O, SD> SharedObserver<O, SD>
+where
+  SD: SharedScheduler,
+{
+  fn observer_schedule<S, Task>(&mut self, task: Task, state: S)
+  where
+    S: Send + 'static,
+    O: Send + 'static,
+    Task: FnOnce(Arc<Mutex<O>>, S) + Send + 'static,
+  {
+    let subscription = self.scheduler.schedule(
+      |_, (observer, state)| task(observer, state),
+      None,
+      (self.observer.clone(), state),
+    );
+
+    self.subscription.add(subscription);
+  }
+}
+
+impl<Item, Err, O, SD> Observer<Item, Err> for SharedObserver<O, SD>
 where
   Item: Clone + Send + 'static,
   Err: Clone + Send + 'static,
   O: Observer<Item, Err> + Send + 'static,
   SD: SharedScheduler,
 {
-  impl_observer!(Item, Err, lock.unwrap);
+  impl_observer!(Item, Err);
 }
 
-impl<Item, Err, O, SD> Observer<Item, Err>
-  for ObserveOnObserver<Rc<RefCell<O>>, SD, LocalSubscription>
+impl<O: 'static, SD: LocalScheduler + 'static> LocalObserver<O, SD> {
+  fn observer_schedule<S, Task>(&mut self, task: Task, state: S)
+  where
+    S: 'static,
+    Task: FnOnce(Rc<RefCell<O>>, S) + 'static,
+  {
+    let subscription = self.scheduler.schedule(
+      |_, (observer, state)| task(observer, state),
+      None,
+      (self.observer.clone(), state),
+    );
+
+    self.subscription.add(subscription);
+  }
+}
+impl<Item, Err, O, SD> Observer<Item, Err> for LocalObserver<O, SD>
 where
   Item: Clone + 'static,
   Err: Clone + 'static,
   O: Observer<Item, Err> + 'static,
-  SD: LocalScheduler,
+  SD: LocalScheduler + 'static,
 {
-  impl_observer!(Item, Err, borrow_mut);
+  impl_observer!(Item, Err);
 }
 
 #[cfg(test)]
 mod test {
   use crate::prelude::*;
-  use futures::executor::ThreadPool;
+  use futures::executor::{LocalPool, ThreadPool};
   use std::sync::{Arc, Mutex};
   use std::thread;
   use std::time::Duration;
+  use std::{cell::RefCell, rc::Rc};
+
+  #[test]
+  fn smoke() {
+    let v = Rc::new(RefCell::new(0));
+    let v_c = v.clone();
+    let mut local = LocalPool::new();
+    observable::of(1)
+      .observe_on(local.spawner())
+      .subscribe(move |i| *v_c.borrow_mut() = i);
+    local.run();
+
+    assert_eq!(*v.borrow(), 1);
+  }
 
   #[test]
   fn switch_thread() {
@@ -155,7 +183,7 @@ mod test {
     let observe_thread = Arc::new(Mutex::new(vec![]));
     let oc = observe_thread.clone();
 
-    let pool = ThreadPool::builder().pool_size(10).create().unwrap();
+    let pool = ThreadPool::builder().pool_size(100).create().unwrap();
 
     observable::create(|mut s| {
       s.next(&1);

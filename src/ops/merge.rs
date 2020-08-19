@@ -32,7 +32,7 @@ where
     self,
     subscriber: Subscriber<O, LocalSubscription>,
   ) -> Self::Unsub {
-    let mut subscription = subscriber.subscription;
+    let subscription = subscriber.subscription;
     let merge_observer = Rc::new(RefCell::new(MergeObserver {
       observer: subscriber.observer,
       subscription: subscription.clone(),
@@ -63,7 +63,7 @@ where
     self,
     subscriber: Subscriber<O, SharedSubscription>,
   ) -> Self::Unsub {
-    let mut subscription = subscriber.subscription;
+    let subscription = subscriber.subscription;
     let merge_observer = Arc::new(Mutex::new(MergeObserver {
       observer: subscriber.observer,
       subscription: subscription.clone(),

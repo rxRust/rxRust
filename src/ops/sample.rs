@@ -37,7 +37,7 @@ where
     self,
     subscriber: Subscriber<O, SharedSubscription>,
   ) -> Self::Unsub {
-    let mut subscription = subscriber.subscription;
+    let subscription = subscriber.subscription;
     let source_observer = Arc::new(Mutex::new(SampleObserver {
       observer: subscriber.observer,
       value: Option::None,
@@ -67,7 +67,7 @@ where
     self,
     subscriber: Subscriber<O, LocalSubscription>,
   ) -> Self::Unsub {
-    let mut subscription = subscriber.subscription;
+    let subscription = subscriber.subscription;
     let source_observer = Rc::new(RefCell::new(SampleObserver {
       observer: subscriber.observer,
       value: Option::None,

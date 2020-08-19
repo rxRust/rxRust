@@ -64,13 +64,13 @@ pub(crate) macro subscription_proxy_impl(
 }
 
 impl LocalSubscription {
-  pub fn add<S: SubscriptionLike + 'static>(&mut self, subscription: S) {
+  pub fn add<S: SubscriptionLike + 'static>(&self, subscription: S) {
     if self.inner_addr() != subscription.inner_addr() {
       self.0.borrow_mut().add(Box::new(subscription))
     }
   }
 
-  pub fn remove(&mut self, subscription: &dyn SubscriptionLike) {
+  pub fn remove(&self, subscription: &dyn SubscriptionLike) {
     self.0.borrow_mut().remove(subscription);
   }
 }
@@ -101,7 +101,7 @@ pub struct SharedSubscription(
 
 impl SharedSubscription {
   pub fn add<S: SubscriptionLike + Send + Sync + 'static>(
-    &mut self,
+    &self,
     subscription: S,
   ) {
     if self.inner_addr() != subscription.inner_addr() {
@@ -109,7 +109,7 @@ impl SharedSubscription {
     }
   }
 
-  pub fn remove(&mut self, subscription: &dyn SubscriptionLike) {
+  pub fn remove(&self, subscription: &dyn SubscriptionLike) {
     self.0.lock().unwrap().remove(subscription);
   }
 }
@@ -268,7 +268,7 @@ mod test {
   use super::*;
   #[test]
   fn add_remove_for_local() {
-    let mut local = LocalSubscription::default();
+    let local = LocalSubscription::default();
     let l1 = LocalSubscription::default();
     let l2 = LocalSubscription::default();
     let l3 = LocalSubscription::default();
@@ -288,7 +288,7 @@ mod test {
 
   #[test]
   fn add_remove_for_shared() {
-    let mut local = SharedSubscription::default();
+    let local = SharedSubscription::default();
     let l1 = SharedSubscription::default();
     let l2 = SharedSubscription::default();
     let l3 = SharedSubscription::default();

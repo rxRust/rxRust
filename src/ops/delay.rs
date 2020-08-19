@@ -27,10 +27,10 @@ where
     let Self {
       delay,
       source,
-      mut scheduler,
+      scheduler,
     } = self;
     scheduler.schedule(
-      move |mut subscription, _| {
+      move |subscription, _| {
         subscription.add(source.actual_subscribe(subscriber));
       },
       Some(delay),
@@ -53,10 +53,10 @@ where
     let Self {
       delay,
       source,
-      mut scheduler,
+      scheduler,
     } = self;
     scheduler.schedule(
-      move |mut subscription, _| {
+      move |subscription, _| {
         subscription.add(source.actual_subscribe(subscriber));
       },
       Some(delay),
@@ -69,7 +69,11 @@ where
 mod tests {
   use super::*;
   use futures::executor::{LocalPool, ThreadPool};
-  use std::sync::{Arc, Mutex};
+  use std::{
+    cell::RefCell,
+    rc::Rc,
+    sync::{Arc, Mutex},
+  };
 
   #[test]
   fn shared_smoke() {
@@ -88,5 +92,17 @@ mod tests {
   }
 
   #[test]
-  fn local_smoke() { unimplemented!() }
+  fn local_smoke() {
+    let value = Rc::new(RefCell::new(0));
+    let c_value = value.clone();
+    let mut pool = LocalPool::new();
+    observable::of(1)
+      .delay(Duration::from_millis(50), pool.spawner())
+      .subscribe(move |v| {
+        *c_value.borrow_mut() = v;
+      });
+    assert_eq!(*value.borrow(), 0);
+    pool.run();
+    assert_eq!(*value.borrow(), 1);
+  }
 }
