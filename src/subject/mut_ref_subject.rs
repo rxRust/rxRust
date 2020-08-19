@@ -19,8 +19,13 @@ pub struct MutRefSubject<'a, Item, Err, MI, ME> {
   map_err: ME,
 }
 
-subscription_proxy_impl!(
-  MutRefSubject<'a, Item, Err, MI, ME>, {subject}, <'a, Item, Err, MI, ME>);
+impl<'a, Item, Err, MI, ME> SubscriptionLike
+  for MutRefSubject<'a, Item, Err, MI, ME>
+{
+  fn is_closed(&self) -> bool { self.subject.is_closed() }
+
+  fn unsubscribe(&mut self) { self.subject.unsubscribe() }
+}
 
 #[inline]
 fn value_as_mut_ref<'a, T>(v: MutRefValue<T>) -> &'a mut T {

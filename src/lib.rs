@@ -29,7 +29,7 @@ pub mod subscriber;
 pub mod subscription;
 
 pub mod prelude {
-  pub use crate::inner_deref::InnerDeref;
+  pub use crate::inner_deref::{InnerDeref, InnerDerefMut};
   pub use crate::observable;
   pub use crate::observable::*;
   pub use crate::observer;

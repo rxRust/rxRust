@@ -1,5 +1,4 @@
 use crate::prelude::*;
-use subscription::subscription_proxy_impl;
 
 /// Implements the Observer trait and Subscription trait. While the Observer is
 /// the public API for consuming the values of an Observable, all Observers get
@@ -34,19 +33,19 @@ where
   U: SubscriptionLike,
 {
   fn next(&mut self, v: Item) {
-    if !self.subscription.is_closed() && !self.observer.is_stopped() {
+    if !self.is_finished() {
       self.observer.next(v)
     }
   }
 
   fn error(&mut self, err: Err) {
-    if !self.subscription.is_closed() && !self.observer.is_stopped() {
+    if !self.is_finished() {
       self.observer.error(err);
     }
   }
 
   fn complete(&mut self) {
-    if !self.subscription.is_closed() && !self.observer.is_stopped() {
+    if !self.is_finished() {
       self.observer.complete();
     }
   }
@@ -55,7 +54,12 @@ where
   fn is_stopped(&self) -> bool { self.observer.is_stopped() }
 }
 
-subscription_proxy_impl!(Subscriber<O, U>, {subscription}, U, <O>);
+impl<O, U: SubscriptionLike> SubscriptionLike for Subscriber<O, U> {
+  #[inline]
+  fn is_closed(&self) -> bool { self.subscription.is_closed() }
+  #[inline]
+  fn unsubscribe(&mut self) { self.subscription.unsubscribe() }
+}
 
 #[cfg(test)]
 mod test {

@@ -83,11 +83,6 @@ impl SubscriptionLike for SpawnHandle {
 
   #[inline]
   fn is_closed(&self) -> bool { self.is_closed }
-
-  #[inline]
-  fn inner_addr(&self) -> *const () {
-    ((&self.handle) as *const _) as *const ()
-  }
 }
 
 #[cfg(feature = "futures-scheduler")]

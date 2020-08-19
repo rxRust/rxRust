@@ -25,7 +25,14 @@ where
   pub fn new() -> Self { Self::default() }
 }
 
-subscription_proxy_impl!(Subject<O, U>, {subscription}, U, <O>);
+impl<O, U: SubscriptionLike> SubscriptionLike for Subject<O, U> {
+  #[inline]
+  fn is_closed(&self) -> bool { self.subscription.is_closed() }
+
+  #[inline]
+  fn unsubscribe(&mut self) { self.subscription.unsubscribe(); }
+}
+
 observer_proxy_impl!(Subject<O, U>, {observers}, Item, Err, O, <U>, 
   {where Item: Clone, Err: Clone});
 

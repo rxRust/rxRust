@@ -52,7 +52,7 @@ In this case, we must clone the stream.
 
 ## Scheduler
 
-`rxrust` use the runtime of the `Future` as the scheduler, `LocalPool` and `ThreadPool` in `futures::executor` can directly use as scheduler, and `tokio::runtime::Runtime` also supported, but need enable the feature `futures-scheduler`. Across `LocalScheduler` and `SharedScheduler` to implement custom `Scheduler`.
+`rxrust` use the runtime of the `Future` as the scheduler, `LocalPool` and `ThreadPool` in `futures::executor` can be used as schedulers directly, and `tokio::runtime::Runtime` also supported, but need enable the feature `futures-scheduler`. Across `LocalScheduler` and `SharedScheduler` to implement custom `Scheduler`.
 
 ```rust 
 use rxrust::prelude::*;

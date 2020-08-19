@@ -1,9 +1,12 @@
 use crate::prelude::*;
 use smallvec::SmallVec;
-use std::cell::RefCell;
-use std::fmt::{Debug, Formatter};
-use std::rc::Rc;
-use std::sync::{Arc, Mutex};
+use std::{
+  any::Any,
+  cell::RefCell,
+  fmt::{Debug, Formatter},
+  rc::Rc,
+  sync::{Arc, Mutex},
+};
 
 /// Subscription returns from `Observable.subscribe(Subscriber)` to allow
 ///  unsubscribing.
@@ -13,8 +16,6 @@ pub trait SubscriptionLike {
   fn unsubscribe(&mut self);
 
   fn is_closed(&self) -> bool;
-
-  fn inner_addr(&self) -> *const ();
 }
 
 impl Debug for Box<dyn SubscriptionLike> {
@@ -28,50 +29,19 @@ impl Debug for Box<dyn SubscriptionLike> {
 #[derive(Clone, Debug, Default)]
 pub struct LocalSubscription(Rc<RefCell<Inner<Box<dyn SubscriptionLike>>>>);
 
-#[doc(hidden)]
-/// subscription_proxy_impl!(
-///   type          // give the type you want to implement for
-///   , {path}      // the path to access to the actual observer
-///   , host_type?  // options, give the host type of the actual observer, if
-///                 // it's a generic type
-///   , <generics>? // options, give the generics type must use in the
-///                 // implement, except `Item` and `Err` and host type.
-///   , {where}?    // options, where bounds for the generics )
-pub(crate) macro subscription_proxy_impl(
-    $ty: ty
-  , {$($name:tt $($parentheses:tt)?) .+}
-  $(, $host_ty: ident)? $(, <$($generics: tt),*>)?
-  $(, {where $($wty:ty : $bound: tt),*})?
-  ) {
-  impl<$($($generics ,)*)? $($host_ty)?> SubscriptionLike for $ty
-  where
-    $($host_ty: SubscriptionLike,)?
-    $($($wty: $bound), *)?
-  {
-    #[inline(always)]
-    fn unsubscribe(&mut self) {
-      self.$($name $($parentheses)? ).+.unsubscribe();
-    }
-    #[inline(always)]
-    fn is_closed(&self) -> bool {
-      self.$($name $($parentheses)? ).+.is_closed()
-    }
-    #[inline(always)]
-    fn inner_addr(&self) -> *const () {
-       self.$($name $($parentheses)? ).+.inner_addr()
-    }
-  }
-}
-
 impl LocalSubscription {
   pub fn add<S: SubscriptionLike + 'static>(&self, subscription: S) {
-    if self.inner_addr() != subscription.inner_addr() {
+    if !self.is_same(&subscription) {
       self.0.borrow_mut().add(Box::new(subscription))
     }
   }
 
-  pub fn remove(&self, subscription: &dyn SubscriptionLike) {
-    self.0.borrow_mut().remove(subscription);
+  fn is_same(&self, other: &dyn Any) -> bool {
+    if let Some(other) = other.downcast_ref::<Self>() {
+      Rc::ptr_eq(&self.0, &other.0)
+    } else {
+      false
+    }
   }
 }
 
@@ -89,9 +59,7 @@ impl SubscriptionLike for LocalSubscription {
     inner.unsubscribe();
   }
 
-  fn is_closed(&self) -> bool { self.0.borrow_mut().is_closed() }
-
-  fn inner_addr(&self) -> *const () { self.0.as_ptr() as *const () }
+  fn is_closed(&self) -> bool { self.0.borrow().is_closed() }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -104,13 +72,17 @@ impl SharedSubscription {
     &self,
     subscription: S,
   ) {
-    if self.inner_addr() != subscription.inner_addr() {
+    if !self.is_same(&subscription) {
       self.0.lock().unwrap().add(Box::new(subscription));
     }
   }
 
-  pub fn remove(&self, subscription: &dyn SubscriptionLike) {
-    self.0.lock().unwrap().remove(subscription);
+  fn is_same(&self, other: &dyn Any) -> bool {
+    if let Some(other) = other.downcast_ref::<Self>() {
+      Arc::ptr_eq(&self.0, &other.0)
+    } else {
+      false
+    }
   }
 }
 
@@ -125,12 +97,6 @@ impl SubscriptionLike for SharedSubscription {
   }
 
   fn is_closed(&self) -> bool { self.0.lock().unwrap().is_closed() }
-
-  fn inner_addr(&self) -> *const () {
-    let inner = self.0.lock().unwrap();
-    let pointer = &*inner as *const _;
-    pointer as *const ()
-  }
 }
 
 pub trait Publisher<Item, Err>: Observer<Item, Err> + SubscriptionLike {
@@ -173,12 +139,10 @@ impl<T: SubscriptionLike> Inner<T> {
   fn add(&mut self, mut v: T) {
     if self.closed {
       v.unsubscribe();
+    } else {
+      self.teardown.retain(|v| !v.is_closed());
+      self.teardown.push(v);
     }
-    self.teardown.push(v);
-  }
-
-  fn remove(&mut self, s: &dyn SubscriptionLike) {
-    self.teardown.retain(|v| v.inner_addr() != s.inner_addr());
   }
 }
 
@@ -193,12 +157,10 @@ impl<T> Default for Inner<T> {
 
 #[doc(hidden)]
 macro subscription_direct_impl_proxy() {
-  #[inline(always)]
+  #[inline]
   fn unsubscribe(&mut self) { (&mut **self).unsubscribe(); }
-  #[inline(always)]
+  #[inline]
   fn is_closed(&self) -> bool { (&**self).is_closed() }
-  #[inline(always)]
-  fn inner_addr(&self) -> *const () { (&**self).inner_addr() }
 }
 
 impl<'a> SubscriptionLike for Box<dyn SubscriptionLike + 'a> {
@@ -217,23 +179,16 @@ impl<Item, Err> SubscriptionLike
   subscription_direct_impl_proxy!();
 }
 
-impl<S: SubscriptionLike> SubscriptionLike for Rc<RefCell<S>> {
+impl<T> SubscriptionLike for T
+where
+  T: InnerDerefMut,
+  T::Target: SubscriptionLike,
+{
   #[inline]
-  fn unsubscribe(&mut self) { self.borrow_mut().unsubscribe() }
+  fn unsubscribe(&mut self) { self.inner_deref_mut().unsubscribe() }
 
   #[inline]
-  fn is_closed(&self) -> bool { self.borrow().is_closed() }
-
-  #[inline]
-  fn inner_addr(&self) -> *const () { self.borrow().inner_addr() }
-}
-
-impl<S: SubscriptionLike> SubscriptionLike for Arc<Mutex<S>> {
-  fn unsubscribe(&mut self) { self.lock().unwrap().unsubscribe() }
-
-  fn is_closed(&self) -> bool { self.lock().unwrap().is_closed() }
-
-  fn inner_addr(&self) -> *const () { self.lock().unwrap().inner_addr() }
+  fn is_closed(&self) -> bool { self.inner_deref().is_closed() }
 }
 
 /// Wrapper around a subscription which provides the
@@ -256,7 +211,12 @@ impl<T: SubscriptionLike> SubscriptionWrapper<T> {
   pub fn into_inner(self) -> T { self.0 }
 }
 
-subscription_proxy_impl!(SubscriptionWrapper<T>, { 0 }, T);
+impl<T: SubscriptionLike> SubscriptionLike for SubscriptionWrapper<T> {
+  #[inline]
+  fn is_closed(&self) -> bool { self.0.is_closed() }
+  #[inline]
+  fn unsubscribe(&mut self) { self.0.unsubscribe() }
+}
 
 /// An RAII implementation of a "scoped subscribed" of a subscription.
 /// When this structure is dropped (falls out of scope), the subscription will
@@ -294,18 +254,12 @@ mod test {
     let l1 = LocalSubscription::default();
     let l2 = LocalSubscription::default();
     let l3 = LocalSubscription::default();
-    local.add(l1.clone());
+    local.add(l1);
     assert_eq!(local.0.borrow().teardown.len(), 1);
-    local.add(l2.clone());
+    local.add(l2);
     assert_eq!(local.0.borrow().teardown.len(), 2);
-    local.add(l3.clone());
+    local.add(l3);
     assert_eq!(local.0.borrow().teardown.len(), 3);
-    local.remove(&l1);
-    assert_eq!(local.0.borrow().teardown.len(), 2);
-    local.remove(&l2);
-    assert_eq!(local.0.borrow().teardown.len(), 1);
-    local.remove(&l3);
-    assert_eq!(local.0.borrow().teardown.len(), 0);
   }
 
   #[test]
@@ -314,17 +268,11 @@ mod test {
     let l1 = SharedSubscription::default();
     let l2 = SharedSubscription::default();
     let l3 = SharedSubscription::default();
-    local.add(l1.clone());
+    local.add(l1);
     assert_eq!(local.0.lock().unwrap().teardown.len(), 1);
-    local.add(l2.clone());
+    local.add(l2);
     assert_eq!(local.0.lock().unwrap().teardown.len(), 2);
-    local.add(l3.clone());
+    local.add(l3);
     assert_eq!(local.0.lock().unwrap().teardown.len(), 3);
-    local.remove(&l1);
-    assert_eq!(local.0.lock().unwrap().teardown.len(), 2);
-    local.remove(&l2);
-    assert_eq!(local.0.lock().unwrap().teardown.len(), 1);
-    local.remove(&l3);
-    assert_eq!(local.0.lock().unwrap().teardown.len(), 0);
   }
 }

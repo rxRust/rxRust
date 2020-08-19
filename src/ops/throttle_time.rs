@@ -137,7 +137,6 @@ macro impl_throttle_observer($item: ident, $err: ident, $($path: ident).*) {
           }
           if let Some(mut throttled) = inner.throttled.take() {
             throttled.unsubscribe();
-            inner.subscription.remove(&throttled);
           }
         },
         Some(delay),
