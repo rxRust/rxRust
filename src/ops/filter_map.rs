@@ -144,14 +144,4 @@ mod test {
       .to_shared()
       .subscribe(|_| {});
   }
-  #[test]
-  fn filter_map_mut_ref() {
-    let mut subject = unsafe { Subject::new().mut_ref_item() };
-    subject
-      .clone()
-      .filter_map::<fn(&mut i32) -> Option<&mut i32>, _, _>(|v| Some(v))
-      .subscribe(|_: &mut i32| {});
-
-    subject.next(&mut 1);
-  }
 }

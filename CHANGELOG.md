@@ -27,6 +27,7 @@
 - **observable**: `observable::from_future` and `observable::interval` need give `scheduler` parameter.
 - **operator**: `delay`,`observer_on` and `subscribe_on` need give `scheduler` parameter.
 - **subscription**: remove method `inner_addr` in `SubscriptionLike`.
+- **subject** remove `MutRefSubject`.
 
 ## [0.8.3](https://github.com/rxRust/rxRust/releases/tag/v0.8.2)  (2020-03-26)
 

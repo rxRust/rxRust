@@ -1,10 +1,6 @@
 use observer::observer_proxy_impl;
 
 use crate::prelude::*;
-
-mod mut_ref_subject;
-pub use mut_ref_subject::*;
-
 mod local_subject;
 pub use local_subject::*;
 
