@@ -51,7 +51,7 @@ impl<T> InnerDerefMut for Arc<Mutex<T>> {
 
 impl<T: ?Sized> InnerDeref for Box<T> {
   type Target = T;
-  
+
   #[rustfmt::skip]
   type Deref<'r> where T:'r =&'r T;
   #[inline]

@@ -190,7 +190,7 @@ mod test {
     {
       let x_c = x.clone();
       interval
-        .take(46)
+        .take(48)
         .sample(observable::interval(
           Duration::from_millis(10),
           pool.spawner(),
