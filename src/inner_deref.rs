@@ -6,7 +6,7 @@ use std::{
 };
 
 pub trait InnerDeref {
-  type Target;
+  type Target: ?Sized;
   #[rustfmt::skip]
   type Deref<'r>: Deref<Target = Self::Target> where Self::Target: 'r;
   fn inner_deref(&self) -> Self::Deref<'_>;
@@ -49,23 +49,18 @@ impl<T> InnerDerefMut for Arc<Mutex<T>> {
   fn inner_deref_mut(&mut self) -> Self::DerefMut<'_> { self.lock().unwrap() }
 }
 
-macro ptr_impl_inner_deref($target: ident, $ty: ty) {
-  impl<$target> InnerDeref for $ty {
-    #[rustfmt::skip]
-    type Deref<'r> where $target:'r =&'r $target;
-    type Target = $target;
-    fn inner_deref(&self) -> Self::Deref<'_> { self }
-  }
+impl<T: ?Sized> InnerDeref for Box<T> {
+  type Target = T;
+  
+  #[rustfmt::skip]
+  type Deref<'r> where T:'r =&'r T;
+  #[inline]
+  fn inner_deref(&self) -> Self::Deref<'_> { self }
 }
 
-macro ptr_impl_inner_deref_mut($target: ident, $ty: ty) {
-  impl<$target> InnerDerefMut for $ty {
-    #[rustfmt::skip]
-    type DerefMut<'r> where $target: 'r = &'r mut $target;
-    #[inline]
-    fn inner_deref_mut(&mut self) -> Self::DerefMut<'_> { self }
-  }
+impl<T: ?Sized> InnerDerefMut for Box<T> {
+  #[rustfmt::skip]
+  type DerefMut<'r> where T: 'r = &'r mut T;
+  #[inline]
+  fn inner_deref_mut(&mut self) -> Self::DerefMut<'_> { self }
 }
-
-ptr_impl_inner_deref!(T, Box<T>);
-ptr_impl_inner_deref_mut!(T, Box<T>);

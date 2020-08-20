@@ -1,5 +1,4 @@
 use crate::prelude::*;
-use std::fmt::{Debug, Formatter};
 use std::sync::{Arc, Mutex};
 
 type SharedPublishers<Item, Err> =
@@ -7,21 +6,6 @@ type SharedPublishers<Item, Err> =
 
 pub type SharedSubject<Item, Err> =
   Subject<SharedPublishers<Item, Err>, SharedSubscription>;
-
-impl<Item, Err> Debug for SharedSubject<Item, Err> {
-  fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-    f.debug_struct("SharedSubject")
-      .field(
-        "observer_count",
-        &self
-          .observers
-          .lock()
-          .expect("error obtaining observer lock")
-          .len(),
-      )
-      .finish()
-  }
-}
 
 impl<Item, Err> Observable for SharedSubject<Item, Err> {
   type Item = Item;
@@ -33,21 +17,20 @@ impl<Item, Err> SharedObservable for SharedSubject<Item, Err> {
   fn actual_subscribe<
     O: Observer<Self::Item, Self::Err> + Sync + Send + 'static,
   >(
-    self,
+    mut self,
     subscriber: Subscriber<O, SharedSubscription>,
   ) -> Self::Unsub {
     let subscription = subscriber.subscription.clone();
     self.subscription.add(subscription.clone());
-    self.observers.lock().unwrap().push(Box::new(subscriber));
+    self
+      .observers
+      .observers
+      .inner_deref_mut()
+      .push(Box::new(subscriber));
     subscription
   }
 }
 
-impl<Item, Err> SharedSubject<Item, Err> {
-  pub fn subscribed_size(&self) -> usize {
-    self.observers.lock().unwrap().len()
-  }
-}
 #[test]
 
 fn smoke() {

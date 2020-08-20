@@ -54,12 +54,10 @@ pub trait TearDownSize: SubscriptionLike {
 }
 
 impl SubscriptionLike for LocalSubscription {
-  fn unsubscribe(&mut self) {
-    let mut inner = self.0.borrow_mut();
-    inner.unsubscribe();
-  }
-
-  fn is_closed(&self) -> bool { self.0.borrow().is_closed() }
+  #[inline]
+  fn unsubscribe(&mut self) { self.0.unsubscribe() }
+  #[inline]
+  fn is_closed(&self) -> bool { self.0.is_closed() }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -91,12 +89,10 @@ impl TearDownSize for SharedSubscription {
 }
 
 impl SubscriptionLike for SharedSubscription {
-  fn unsubscribe(&mut self) {
-    let mut inner = self.0.lock().unwrap();
-    inner.unsubscribe();
-  }
-
-  fn is_closed(&self) -> bool { self.0.lock().unwrap().is_closed() }
+  #[inline]
+  fn unsubscribe(&mut self) { self.0.unsubscribe(); }
+  #[inline]
+  fn is_closed(&self) -> bool { self.0.is_closed() }
 }
 
 pub trait Publisher<Item, Err>: Observer<Item, Err> + SubscriptionLike {
@@ -123,7 +119,7 @@ impl<T> Debug for Inner<T> {
   }
 }
 
-impl<T: SubscriptionLike> Inner<T> {
+impl<T: SubscriptionLike> SubscriptionLike for Inner<T> {
   #[inline(always)]
   fn is_closed(&self) -> bool { self.closed }
 
@@ -135,7 +131,9 @@ impl<T: SubscriptionLike> Inner<T> {
       }
     }
   }
+}
 
+impl<T: SubscriptionLike> Inner<T> {
   fn add(&mut self, mut v: T) {
     if self.closed {
       v.unsubscribe();
@@ -153,30 +151,6 @@ impl<T> Default for Inner<T> {
       teardown: SmallVec::new(),
     }
   }
-}
-
-#[doc(hidden)]
-macro subscription_direct_impl_proxy() {
-  #[inline]
-  fn unsubscribe(&mut self) { (&mut **self).unsubscribe(); }
-  #[inline]
-  fn is_closed(&self) -> bool { (&**self).is_closed() }
-}
-
-impl<'a> SubscriptionLike for Box<dyn SubscriptionLike + 'a> {
-  subscription_direct_impl_proxy!();
-}
-impl<'a, Item, Err> SubscriptionLike for Box<dyn Publisher<Item, Err> + 'a> {
-  subscription_direct_impl_proxy!();
-}
-
-impl SubscriptionLike for Box<dyn SubscriptionLike + Send + Sync> {
-  subscription_direct_impl_proxy!();
-}
-impl<Item, Err> SubscriptionLike
-  for Box<dyn Publisher<Item, Err> + Send + Sync>
-{
-  subscription_direct_impl_proxy!();
 }
 
 impl<T> SubscriptionLike for T
