@@ -119,19 +119,19 @@ struct LocalThrottleObserver<O, S, Item>(
   Rc<RefCell<ThrottleObserver<O, S, Item, LocalSubscription>>>,
 );
 
-macro impl_throttle_observer($item: ident, $err: ident, $($path: ident).*) {
+macro impl_throttle_observer($item: ident, $err: ident) {
   fn next(&mut self, value: $item) {
-    let mut inner = self.0.$($path()).*;
+    let mut c_inner = self.0.clone();
+    let mut inner = self.0.inner_deref_mut();
     if inner.edge == ThrottleEdge::Tailing {
       inner.trailing_value = Some(value.clone());
     }
 
     if inner.throttled.is_none() {
-      let c_inner = self.0.clone();
       let delay = inner.delay;
       let spawn_handle = inner.scheduler.schedule(
         move |_| {
-          let mut inner = c_inner.$($path()).*;
+          let mut inner = c_inner.inner_deref_mut();
           if let Some(v) = inner.trailing_value.take() {
             inner.observer.next(v);
           }
@@ -151,12 +151,12 @@ macro impl_throttle_observer($item: ident, $err: ident, $($path: ident).*) {
   }
 
   fn error(&mut self, err: $err) {
-    let mut inner = self.0.$($path()).*;
+    let mut inner = self.0.inner_deref_mut();
     inner.observer.error(err)
   }
 
   fn complete(&mut self) {
-    let mut inner = self.0.$($path()).*;
+    let mut inner = self.0.inner_deref_mut();
     if let Some(value) = inner.trailing_value.take() {
       inner.observer.next(value);
     }
@@ -164,7 +164,7 @@ macro impl_throttle_observer($item: ident, $err: ident, $($path: ident).*) {
   }
 
   fn is_stopped(&self) -> bool {
-    let inner = self.0.$($path()).*;
+    let inner = self.0.inner_deref();
     inner.observer.is_stopped()
   }
 }
@@ -175,7 +175,7 @@ where
   S: SharedScheduler + Send + 'static,
   Item: Clone + Send + 'static,
 {
-  impl_throttle_observer!(Item, Err, lock.unwrap);
+  impl_throttle_observer!(Item, Err);
 }
 
 impl<O, S, Item, Err> Observer<Item, Err> for LocalThrottleObserver<O, S, Item>
@@ -184,7 +184,7 @@ where
   S: LocalScheduler + 'static,
   Item: Clone + 'static,
 {
-  impl_throttle_observer!(Item, Err, borrow_mut);
+  impl_throttle_observer!(Item, Err);
 }
 
 #[cfg(test)]

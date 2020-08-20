@@ -1,7 +1,4 @@
-use crate::subscription::Publisher;
-use std::cell::RefCell;
-use std::rc::Rc;
-use std::sync::{Arc, Mutex};
+use crate::inner_deref::InnerDerefMut;
 
 /// An Observer is a consumer of values delivered by an Observable. One for each
 /// type of notification delivered by the Observable: `next`, `error`,
@@ -14,45 +11,6 @@ pub trait Observer<Item, Err> {
   fn error(&mut self, err: Err);
   fn complete(&mut self);
   fn is_stopped(&self) -> bool;
-}
-
-#[doc(hidden)]
-/// auto impl a proxy observer
-/// observer_proxy_impl!(
-///   type          // give the type you want to implement for
-///   , {path}      // the path to access to the actual observer,
-///   , item        // the generic Item name
-///   , err         // the generic Err name
-///   , host_type?  // options, give the host type of the actual observer, if
-///                 // it's a generic type
-///   , <generics>? // options, give the generics type must use in the
-///                 // implement, except `Item` and `Err` and host type.
-///   , {where}?    // options, where bounds for the generics )
-///
-/// # Example
-/// ```rust ignore
-///  observer_proxy_impl!(Arc<Mutex<S>>, {lock().unwrap()}, S, <S>);
-/// ```
-pub(crate) macro observer_proxy_impl(
-  $ty: ty
-  , {$($name:tt $($parentheses:tt)?) .+}
-  , $item: ident
-  , $err: ident
-  $(, $host_ty: ident)?
-  $(, <$($generics: tt),*>)?
-  $(, {where $($wty:ty : $bound: tt),*})?
-) {
-    impl<$($($generics ,)*)? $item, $err, $($host_ty)? >
-      Observer<$item, $err> for $ty
-    where
-      $($host_ty: Observer<$item, $err>,)?
-      $($($wty: $bound), *)?
-    {
-      next_proxy_impl!($item, $($name$($parentheses)?).+);
-      error_proxy_impl!($err, $($name$($parentheses)?).+);
-      complete_proxy_impl!($($name$($parentheses)?).+);
-      is_stopped_proxy_impl!($($name$($parentheses)?).+);
-    }
 }
 
 #[doc(hidden)]
@@ -87,76 +45,13 @@ pub(crate) macro is_stopped_proxy_impl($($name:tt $($parentheses:tt)?) .+) {
   fn is_stopped(&self) -> bool { self.$($name$($parentheses)?).+.is_stopped() }
 }
 
-#[doc(hidden)]
-macro observer_pointer_proxy_impl(
-  $ty: ty, $item: ident, $err:ident $(, <$($generics: tt),*>)?)
-{
-  impl<$($($generics ,)*)? $item, $err> Observer<$item, $err> for $ty {
-
-    #[inline]
-    fn next(&mut self, value: $item) { (&mut **self).next(value); }
-
-    #[inline]
-    fn error(&mut self, err: $err) { (&mut **self).error(err); }
-
-    #[inline]
-    fn complete(&mut self) { (&mut **self).complete(); }
-
-    #[inline]
-    fn is_stopped(&self)-> bool { (&**self).is_stopped() }
-  }
-}
-
-// implement `Observer` for Box<dyn Observer<Item, Err> + 'a>
-observer_pointer_proxy_impl!(
-  Box<dyn Observer<Item, Err> + 'a>, Item, Err, <'a>);
-
-// implement `Observer` for Box<dyn Observer<Item, Err> + Send + Sync>
-observer_pointer_proxy_impl!(
-  Box<dyn Observer<Item, Err> + Send + Sync>,
-  Item,
-  Err
-);
-
-// implement `Observer` for Box<dyn Publisher<Item, Err> + 'a>
-observer_pointer_proxy_impl!(
-  Box<dyn Publisher<Item, Err> + 'a>, Item, Err, <'a>);
-
-// implement `Observer` for Box<dyn Publisher<Item, Err> + Send + Sync>
-observer_pointer_proxy_impl!(
-  Box<dyn Publisher<Item, Err> + Send + Sync>,
-  Item,
-  Err
-);
-
-observer_proxy_impl!(Arc<Mutex<S>>, { lock().unwrap() }, Item, Err, S);
-observer_proxy_impl!(Rc<RefCell<S>>, { borrow_mut() }, Item, Err, S);
-
-impl<Item, Err, T> Observer<Item, Err> for Vec<T>
+impl<Item, Err, T> Observer<Item, Err> for T
 where
-  T: Publisher<Item, Err>,
-  Item: Clone,
-  Err: Clone,
+  T: InnerDerefMut,
+  T::Target: Observer<Item, Err>,
 {
-  fn next(&mut self, value: Item) {
-    self.drain_filter(|subscriber| {
-      subscriber.next(value.clone());
-      subscriber.is_finished()
-    });
-  }
-
-  fn error(&mut self, err: Err) {
-    self
-      .iter_mut()
-      .for_each(|subscriber| subscriber.error(err.clone()));
-    self.clear();
-  }
-
-  fn complete(&mut self) {
-    self.iter_mut().for_each(|subscriber| subscriber.complete());
-    self.clear();
-  }
-
-  #[inline]
-  fn is_stopped(&self) -> bool { self.iter().all(|o| o.is_stopped()) }
+  fn next(&mut self, value: Item) { self.inner_deref_mut().next(value) }
+  fn error(&mut self, err: Err) { self.inner_deref_mut().error(err); }
+  fn complete(&mut self) { self.inner_deref_mut().complete(); }
+  fn is_stopped(&self) -> bool { self.inner_deref().is_stopped() }
 }
