@@ -1,3 +1,4 @@
+pub mod box_it;
 pub mod default_if_empty;
 pub mod delay;
 pub mod filter;
@@ -20,8 +21,6 @@ pub mod take_last;
 pub mod take_until;
 pub mod take_while;
 pub mod throttle_time;
-pub use filter_map::FilterMap;
-pub mod box_it;
 pub mod zip;
 
 use last::LastOrOp;

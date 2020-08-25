@@ -1,7 +1,13 @@
-## [Unreleased](https://github.com/rxRust/rxRust/compare/v0.8.3...HEAD)
+## [Unreleased](https://github.com/rxRust/rxRust/compare/v0.9.1...HEAD)
+
+## [0.9.1](https://github.com/rxRust/rxRust/releases/tag/v0.9.1)  (2020-08-25)
 
 ### Features
+- **operator**: export `filter_map` in `Observable`.
 
+## [0.9.0](https://github.com/rxRust/rxRust/releases/tag/v0.9.0)  (2020-08-22)
+
+### Features
 - **operator**: add `map_to` operator.
 - **operator**: add `finalize` operator.
 - **subscription**: Add `SubscriptionGuard::new()` for enabling RAII for existing subscriptions.
