@@ -87,7 +87,7 @@ local_scheduler.run();
 A `from_future_result` function also provided to propagating error from `Future`.
 
 ## Missing Features List
-See [missing features](missing_features.md) to know what rxRust not have for now.
+See [missing features](missing_features.md) to know what rxRust does not have yet.
 
 ## All contributions are welcome
 
