@@ -38,6 +38,7 @@ pub use observable_comp::*;
 use crate::ops::default_if_empty::DefaultIfEmptyOp;
 use ops::{
   box_it::{BoxOp, IntoBox},
+  debounce::DebounceOp,
   delay::DelayOp,
   filter::FilterOp,
   filter_map::FilterMapOp,
@@ -994,6 +995,24 @@ pub trait Observable {
   {
     ObserveOnOp {
       source: self,
+      scheduler,
+    }
+  }
+
+  /// Emits a value from the source Observable only after a particular time span
+  /// has passed without another source emission.
+  #[inline]
+  fn debounce<SD>(
+    self,
+    duration: Duration,
+    scheduler: SD,
+  ) -> DebounceOp<Self, SD>
+  where
+    Self: Sized,
+  {
+    DebounceOp {
+      source: self,
+      duration,
       scheduler,
     }
   }
