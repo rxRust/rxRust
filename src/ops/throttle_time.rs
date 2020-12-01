@@ -227,7 +227,7 @@ mod tests {
   fn fork_and_shared() {
     use futures::executor::ThreadPool;
     let scheduler = ThreadPool::new().unwrap();
-    observable::of(0..10)
+    observable::from_iter(0..10)
       .throttle_time(Duration::from_nanos(1), ThrottleEdge::Leading, scheduler)
       .to_shared()
       .to_shared()
