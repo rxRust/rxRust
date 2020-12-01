@@ -2,6 +2,7 @@ pub mod box_it;
 pub mod debounce;
 pub mod default_if_empty;
 pub mod delay;
+pub mod distinct;
 pub mod filter;
 pub mod filter_map;
 pub mod finalize;
