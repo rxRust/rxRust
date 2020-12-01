@@ -40,6 +40,7 @@ use ops::{
   box_it::{BoxOp, IntoBox},
   debounce::DebounceOp,
   delay::DelayOp,
+  distinct::DistinctOp,
   filter::FilterOp,
   filter_map::FilterMapOp,
   finalize::FinalizeOp,
@@ -1051,6 +1052,16 @@ pub trait Observable {
       edge,
       scheduler,
     }
+  }
+
+  /// Returns an Observable that emits all items emitted by the source
+  /// Observable that are distinct by comparison from previous items.
+  #[inline]
+  fn distinct(self) -> DistinctOp<Self>
+  where
+    Self: Sized,
+  {
+    DistinctOp { source: self }
   }
 
   /// 'Zips up' two observable into a single observable of pairs.
