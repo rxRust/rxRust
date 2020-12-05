@@ -1,14 +1,15 @@
 use crate::prelude::*;
 
 #[derive(Clone)]
-pub struct ObserverAll<N, E, C> {
+pub struct ObserverAll<N, E, C, Item, Err> {
   next: N,
   error: E,
   complete: C,
   is_stopped: bool,
+  marker: TypeHint<(*const Item, *const Err)>,
 }
 
-impl<N, E, C> ObserverAll<N, E, C> {
+impl<Item, Err, N, E, C> ObserverAll<N, E, C, Item, Err> {
   #[inline(always)]
   pub fn new(next: N, error: E, complete: C) -> Self {
     ObserverAll {
@@ -16,20 +17,23 @@ impl<N, E, C> ObserverAll<N, E, C> {
       error,
       complete,
       is_stopped: false,
+      marker: TypeHint::new(),
     }
   }
 }
 
-impl<Item, Err, N, E, C> Observer<Item, Err> for ObserverAll<N, E, C>
+impl<Item, Err, N, E, C> Observer for ObserverAll<N, E, C, Item, Err>
 where
   C: FnMut(),
   N: FnMut(Item),
   E: FnMut(Err),
 {
+  type Item = Item;
+  type Err = Err;
   #[inline(always)]
-  fn next(&mut self, value: Item) { (self.next)(value); }
+  fn next(&mut self, value: Self::Item) { (self.next)(value); }
 
-  fn error(&mut self, err: Err) {
+  fn error(&mut self, err: Self::Err) {
     (self.error)(err);
     self.is_stopped = true;
   }
@@ -66,6 +70,8 @@ where
   S: LocalObservable<'a>,
   N: FnMut(S::Item) + 'a,
   E: FnMut(S::Err) + 'a,
+  S::Err: 'a,
+  S::Item: 'a,
   C: FnMut() + 'a,
 {
   type Unsub = S::Unsub;
@@ -83,6 +89,7 @@ where
       error,
       complete,
       is_stopped: false,
+      marker: TypeHint::new(),
     });
     SubscriptionWrapper(self.actual_subscribe(subscriber))
   }
@@ -94,6 +101,8 @@ where
   N: FnMut(S::Item) + Send + Sync + 'static,
   E: FnMut(S::Err) + Send + Sync + 'static,
   C: FnMut() + Send + Sync + 'static,
+  S::Err: 'static,
+  S::Item: 'static,
 {
   type Unsub = S::Unsub;
   fn subscribe_all(
@@ -110,6 +119,7 @@ where
       error,
       complete,
       is_stopped: false,
+      marker: TypeHint::new(),
     });
     SubscriptionWrapper(self.0.actual_subscribe(subscriber))
   }

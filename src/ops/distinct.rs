@@ -16,15 +16,17 @@ pub struct DistinctOp<S> {
 
 observable_proxy_impl!(DistinctOp, S);
 
-impl<S, Item, Unsub, Err> LocalObservable<'static> for DistinctOp<S>
+impl<S, Unsub> LocalObservable<'static> for DistinctOp<S>
 where
-  S: LocalObservable<'static, Item = Item, Err = Err, Unsub = Unsub>,
+  S: LocalObservable<'static, Unsub = Unsub>,
   Unsub: SubscriptionLike + 'static,
-  Item: Clone + 'static + Hash + Eq,
+  S::Item: Clone + 'static + Hash + Eq,
 {
   type Unsub = Unsub;
 
-  fn actual_subscribe<O: Observer<Self::Item, Self::Err> + 'static>(
+  fn actual_subscribe<
+    O: Observer<Item = Self::Item, Err = Self::Err> + 'static,
+  >(
     self,
     subscriber: Subscriber<O, LocalSubscription>,
   ) -> Self::Unsub {
@@ -48,7 +50,7 @@ where
 {
   type Unsub = S::Unsub;
   fn actual_subscribe<
-    O: Observer<Self::Item, Self::Err> + Sync + Send + 'static,
+    O: Observer<Item = Self::Item, Err = Self::Err> + Sync + Send + 'static,
   >(
     self,
     subscriber: Subscriber<O, SharedSubscription>,
@@ -78,15 +80,15 @@ struct DistinctObserver<O, Item> {
 struct SharedDistinctObserver<O, Item>(Arc<Mutex<DistinctObserver<O, Item>>>);
 struct LocalDinstinctObserver<O, Item>(Rc<RefCell<DistinctObserver<O, Item>>>);
 
-macro impl_distinct_observer($item:ident, $err:ident) {
-  fn next(&mut self, value: $item) {
+macro impl_distinct_observer() {
+  fn next(&mut self, value: Self::Item) {
     let mut inner = self.0.inner_deref_mut();
     if !inner.seen.contains(&value) {
       inner.seen.insert(value.clone());
       inner.observer.next(value);
     }
   }
-  fn error(&mut self, err: $err) {
+  fn error(&mut self, err: Self::Err) {
     let mut inner = self.0.inner_deref_mut();
     inner.observer.error(err);
   }
@@ -100,20 +102,24 @@ macro impl_distinct_observer($item:ident, $err:ident) {
   }
 }
 
-impl<O, Item, Err> Observer<Item, Err> for SharedDistinctObserver<O, Item>
+impl<O> Observer for SharedDistinctObserver<O, O::Item>
 where
-  O: Observer<Item, Err> + Send + 'static,
-  Item: Clone + Send + 'static + Eq + Hash,
+  O: Observer + Send + 'static,
+  O::Item: Clone + Send + 'static + Eq + Hash,
 {
-  impl_distinct_observer!(Item, Err);
+  type Item = O::Item;
+  type Err = O::Err;
+  impl_distinct_observer!();
 }
 
-impl<O, Item, Err> Observer<Item, Err> for LocalDinstinctObserver<O, Item>
+impl<O> Observer for LocalDinstinctObserver<O, O::Item>
 where
-  O: Observer<Item, Err> + 'static,
-  Item: Clone + 'static + Eq + Hash,
+  O: Observer + 'static,
+  O::Item: Clone + 'static + Eq + Hash,
 {
-  impl_distinct_observer!(Item, Err);
+  type Item = O::Item;
+  type Err = O::Err;
+  impl_distinct_observer!();
 }
 
 #[cfg(test)]

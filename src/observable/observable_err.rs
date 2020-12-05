@@ -1,17 +1,20 @@
 use crate::prelude::*;
 
 #[derive(Clone)]
-pub struct ObserverErr<N, E> {
+pub struct ObserverErr<N, E, Item, Err> {
   next: N,
   error: E,
   is_stopped: bool,
+  marker: TypeHint<fn() -> (Item, Err)>,
 }
 
-impl<Item, Err, N, E> Observer<Item, Err> for ObserverErr<N, E>
+impl<Item, Err, N, E> Observer for ObserverErr<N, E, Item, Err>
 where
   N: FnMut(Item),
   E: FnMut(Err),
 {
+  type Item = Item;
+  type Err = Err;
   #[inline]
   fn next(&mut self, err: Item) { (self.next)(err); }
   fn error(&mut self, err: Err) {
@@ -24,13 +27,14 @@ where
   fn is_stopped(&self) -> bool { self.is_stopped }
 }
 
-impl<N, E> ObserverErr<N, E> {
+impl<N, E, Item, Err> ObserverErr<N, E, Item, Err> {
   #[inline(always)]
   pub fn new(next: N, error: E) -> Self {
     ObserverErr {
       next,
       error,
       is_stopped: false,
+      marker: TypeHint::new(),
     }
   }
 }
@@ -53,6 +57,8 @@ where
   S: LocalObservable<'a>,
   N: FnMut(S::Item) + 'a,
   E: FnMut(S::Err) + 'a,
+  S::Err: 'a,
+  S::Item: 'a,
 {
   type Unsub = S::Unsub;
   fn subscribe_err(
@@ -64,6 +70,7 @@ where
       next,
       error,
       is_stopped: false,
+      marker: TypeHint::new(),
     }));
     SubscriptionWrapper(unsub)
   }
@@ -74,6 +81,8 @@ where
   S: SharedObservable,
   N: FnMut(S::Item) + Send + Sync + 'static,
   E: FnMut(S::Err) + Send + Sync + 'static,
+  S::Item: 'static,
+  S::Err: 'static,
 {
   type Unsub = S::Unsub;
   fn subscribe_err(self, next: N, error: E) -> SubscriptionWrapper<Self::Unsub>
@@ -84,6 +93,7 @@ where
       next,
       error,
       is_stopped: false,
+      marker: TypeHint::new(),
     }));
     SubscriptionWrapper(unsub)
   }

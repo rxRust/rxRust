@@ -95,15 +95,12 @@ impl SubscriptionLike for SharedSubscription {
   fn is_closed(&self) -> bool { self.0.is_closed() }
 }
 
-pub trait Publisher<Item, Err>: Observer<Item, Err> + SubscriptionLike {
+pub trait Publisher: Observer + SubscriptionLike {
   #[inline]
   fn is_finished(&self) -> bool { self.is_closed() || self.is_stopped() }
 }
 
-impl<Item, Err, T> Publisher<Item, Err> for T where
-  T: Observer<Item, Err> + SubscriptionLike
-{
-}
+impl<T> Publisher for T where T: Observer + SubscriptionLike {}
 
 struct Inner<T> {
   closed: bool,

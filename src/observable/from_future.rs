@@ -2,7 +2,6 @@ use crate::prelude::*;
 use futures::FutureExt;
 use observable::of;
 use std::future::Future;
-use std::marker::PhantomData;
 
 /// Converts a `Future` to an observable sequence. Even though if the future
 /// poll value has `Result::Err` type, also emit as a normal value, not trigger
@@ -56,7 +55,7 @@ where
 {
   fn emit<O>(self, subscriber: Subscriber<O, SharedSubscription>)
   where
-    O: Observer<Self::Item, Self::Err> + Send + Sync + 'static,
+    O: Observer<Item = Self::Item, Err = Self::Err> + Send + Sync + 'static,
   {
     let subscription = subscriber.subscription.clone();
 
@@ -76,7 +75,7 @@ where
 {
   fn emit<O>(self, subscriber: Subscriber<O, LocalSubscription>)
   where
-    O: Observer<Self::Item, Self::Err> + 'static,
+    O: Observer<Item = Self::Item, Err = Self::Err> + 'static,
   {
     let subscription = subscriber.subscription.clone();
 
@@ -104,7 +103,7 @@ where
   ObservableBase::new(FutureResultEmitter {
     future,
     scheduler,
-    marker: PhantomData,
+    marker: TypeHint::new(),
   })
 }
 
@@ -112,7 +111,7 @@ where
 pub struct FutureResultEmitter<F, S, Item, Err> {
   future: F,
   scheduler: S,
-  marker: PhantomData<(Item, Err)>,
+  marker: TypeHint<(Item, Err)>,
 }
 
 impl<Item, S, Err, F> Emitter for FutureResultEmitter<F, S, Item, Err>
@@ -134,7 +133,7 @@ where
 {
   fn emit<O>(self, subscriber: Subscriber<O, SharedSubscription>)
   where
-    O: Observer<Self::Item, Self::Err> + Send + Sync + 'static,
+    O: Observer<Item = Self::Item, Err = Self::Err> + Send + Sync + 'static,
   {
     let subscription = subscriber.subscription.clone();
 
@@ -156,7 +155,7 @@ where
 {
   fn emit<O>(self, subscriber: Subscriber<O, LocalSubscription>)
   where
-    O: Observer<Self::Item, Self::Err> + 'static,
+    O: Observer<Item = Self::Item, Err = Self::Err> + 'static,
   {
     let subscription = subscriber.subscription.clone();
 

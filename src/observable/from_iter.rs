@@ -42,7 +42,7 @@ pub struct IterEmitter<Iter>(Iter);
 macro iter_emitter($subscription:ty, $($marker:ident +)* $lf: lifetime) {
   fn emit<O>(self, mut subscriber: Subscriber<O, $subscription>)
   where
-    O: Observer<Self::Item, Self::Err> + $($marker +)* $lf
+    O: Observer<Item=Self::Item, Err=Self::Err> + $($marker +)* $lf
   {
     for v in self.0.into_iter() {
       if !subscriber.is_finished() {

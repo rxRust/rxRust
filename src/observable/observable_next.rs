@@ -1,17 +1,20 @@
 use crate::prelude::*;
 
 #[derive(Clone)]
-pub struct ObserverN<N> {
+pub struct ObserverN<N, Item> {
   next: N,
   is_stopped: bool,
+  marker: TypeHint<*const Item>,
 }
 
-impl<Item, N> Observer<Item, ()> for ObserverN<N>
+impl<Item, N> Observer for ObserverN<N, Item>
 where
   N: FnMut(Item),
 {
+  type Item = Item;
+  type Err = ();
   #[inline]
-  fn next(&mut self, value: Item) { (self.next)(value); }
+  fn next(&mut self, value: Self::Item) { (self.next)(value); }
   #[inline]
   fn error(&mut self, _err: ()) { self.is_stopped = true; }
   #[inline]
@@ -32,12 +35,14 @@ impl<'a, S, N> SubscribeNext<'a, N> for S
 where
   S: LocalObservable<'a, Err = ()>,
   N: FnMut(S::Item) + 'a,
+  S::Item: 'a,
 {
   type Unsub = S::Unsub;
   fn subscribe(self, next: N) -> SubscriptionWrapper<Self::Unsub> {
     let unsub = self.actual_subscribe(Subscriber::local(ObserverN {
       next,
       is_stopped: false,
+      marker: TypeHint::new(),
     }));
     SubscriptionWrapper(unsub)
   }
@@ -47,12 +52,14 @@ impl<'a, S, N> SubscribeNext<'a, N> for Shared<S>
 where
   S: SharedObservable<Err = ()>,
   N: FnMut(S::Item) + Send + Sync + 'static,
+  S::Item: 'static,
 {
   type Unsub = S::Unsub;
   fn subscribe(self, next: N) -> SubscriptionWrapper<Self::Unsub> {
     let unsub = self.0.actual_subscribe(Subscriber::shared(ObserverN {
       next,
       is_stopped: false,
+      marker: TypeHint::new(),
     }));
     SubscriptionWrapper(unsub)
   }

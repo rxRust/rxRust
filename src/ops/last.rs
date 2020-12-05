@@ -18,10 +18,11 @@ where
 
 #[doc(hidden)]
 macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
-  fn actual_subscribe<O: Observer<Self::Item, Self::Err> + $($marker +)* $lf>(
+  fn actual_subscribe<O>(
     self,
     subscriber: Subscriber<O, $subscription>,
-  ) -> Self::Unsub {
+  ) -> Self::Unsub
+  where O: Observer<Item=Self::Item,Err= Self::Err> + $($marker +)* $lf {
     let subscriber = Subscriber {
       observer: LastOrObserver {
         observer: subscriber.observer,
@@ -58,10 +59,12 @@ pub struct LastOrObserver<S, T> {
   last: Option<T>,
 }
 
-impl<O, Item, Err> Observer<Item, Err> for LastOrObserver<O, Item>
+impl<O, Item, Err> Observer for LastOrObserver<O, Item>
 where
-  O: Observer<Item, Err>,
+  O: Observer<Item = Item, Err = Err>,
 {
+  type Item = Item;
+  type Err = Err;
   fn next(&mut self, value: Item) { self.last = Some(value); }
   error_proxy_impl!(Err, observer);
   fn complete(&mut self) {

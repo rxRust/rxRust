@@ -40,7 +40,7 @@ pub struct IntervalEmitter<S> {
 impl<S> IntervalEmitter<S> {
   fn interval_future(
     &self,
-    mut observer: impl Observer<usize, ()>,
+    mut observer: impl Observer<Item = usize, Err = ()>,
   ) -> impl Future<Output = ()> {
     let mut number = 0;
     let now = Instant::now();
@@ -73,7 +73,7 @@ impl<S> Emitter for IntervalEmitter<S> {
 impl<S: SharedScheduler + 'static> SharedEmitter for IntervalEmitter<S> {
   fn emit<O>(self, subscriber: Subscriber<O, SharedSubscription>)
   where
-    O: Observer<Self::Item, Self::Err> + Send + Sync + 'static,
+    O: Observer<Item = Self::Item, Err = Self::Err> + Send + Sync + 'static,
   {
     let future = self.interval_future(subscriber.observer);
     let (future, handle) = futures::future::abortable(future);
@@ -85,7 +85,7 @@ impl<S: SharedScheduler + 'static> SharedEmitter for IntervalEmitter<S> {
 impl<S: LocalScheduler + 'static> LocalEmitter<'static> for IntervalEmitter<S> {
   fn emit<O>(self, subscriber: Subscriber<O, LocalSubscription>)
   where
-    O: Observer<Self::Item, Self::Err> + 'static,
+    O: Observer<Item = Self::Item, Err = Self::Err> + 'static,
   {
     let future = self.interval_future(subscriber.observer);
     let (future, handle) = futures::future::abortable(future);

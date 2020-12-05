@@ -59,7 +59,7 @@ pub struct OfEmitter<Item>(pub(crate) Item);
 macro of_emitter($subscription:ty, $($marker:ident +)* $lf: lifetime) {
   fn emit<O>(self, mut subscriber: Subscriber<O, $subscription>)
   where
-    O: Observer<Self::Item, Self::Err> + $($marker +)* $lf
+    O: Observer<Item=Self::Item,Err= Self::Err> + $($marker +)* $lf
   {
       subscriber.next(self.0);
       subscriber.complete();
@@ -112,7 +112,7 @@ pub fn of_result<Item, Err>(
 macro of_result_emitter($subscription:ty, $($marker:ident +)* $lf: lifetime) {
   fn emit<O>(self, mut subscriber: Subscriber<O, $subscription>)
   where
-    O: Observer<Self::Item, Self::Err> + $($marker +)* $lf
+    O: Observer<Item=Self::Item,Err= Self::Err> + $($marker +)* $lf
   {
       match self.0 {
         Ok(v) => subscriber.next(v),
@@ -166,7 +166,7 @@ pub struct OptionEmitter<Item>(pub(crate) Option<Item>);
 macro of_option_emitter($subscription:ty, $($marker:ident +)* $lf: lifetime) {
   fn emit<O>(self, mut subscriber: Subscriber<O, $subscription>)
   where
-    O: Observer<Self::Item, Self::Err> + $($marker +)* $lf
+    O: Observer<Item=Self::Item,Err= Self::Err> + $($marker +)* $lf
   {
       if let Some(v) = self.0 {
         subscriber.next(v)
@@ -218,7 +218,7 @@ pub struct CallableEmitter<F>(F);
 macro of_fn_emitter($subscription:ty, $($marker:ident +)* $lf: lifetime) {
   fn emit<O>(self, mut subscriber: Subscriber<O, $subscription>)
   where
-    O: Observer<Self::Item, Self::Err> + $($marker +)* $lf
+    O: Observer<Item=Self::Item,Err= Self::Err> + $($marker +)* $lf
   {
       subscriber.next((self.0)());
       subscriber.complete();

@@ -35,7 +35,7 @@ where
 {
   type Unsub = SharedSubscription;
   fn actual_subscribe<
-    O: Observer<Self::Item, Self::Err> + Sync + Send + 'static,
+    O: Observer<Item = Self::Item, Err = Self::Err> + Sync + Send + 'static,
   >(
     self,
     subscriber: Subscriber<O, SharedSubscription>,
@@ -51,7 +51,9 @@ where
   SD: LocalScheduler,
 {
   type Unsub = LocalSubscription;
-  fn actual_subscribe<O: Observer<Self::Item, Self::Err> + 'static>(
+  fn actual_subscribe<
+    O: Observer<Item = Self::Item, Err = Self::Err> + 'static,
+  >(
     self,
     subscriber: Subscriber<O, LocalSubscription>,
   ) -> Self::Unsub {

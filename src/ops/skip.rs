@@ -10,10 +10,11 @@ pub struct SkipOp<S> {
 
 #[doc(hidden)]
 macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
-  fn actual_subscribe<O: Observer<Self::Item, Self::Err> + $($marker +)* $lf>(
+  fn actual_subscribe<O>(
     self,
     subscriber: Subscriber<O, $subscription>,
-  ) -> Self::Unsub {
+  ) -> Self::Unsub
+  where O: Observer<Item=Self::Item,Err= Self::Err> + $($marker +)* $lf {
     let subscriber = Subscriber {
       observer: SkipObserver {
         observer: subscriber.observer,
@@ -52,11 +53,13 @@ pub struct SkipObserver<O, S> {
   hits: u32,
 }
 
-impl<Item, Err, O, U> Observer<Item, Err> for SkipObserver<O, U>
+impl<Item, Err, O, U> Observer for SkipObserver<O, U>
 where
-  O: Observer<Item, Err>,
+  O: Observer<Item = Item, Err = Err>,
   U: SubscriptionLike,
 {
+  type Item = Item;
+  type Err = Err;
   fn next(&mut self, value: Item) {
     self.hits += 1;
     if self.hits > self.count {

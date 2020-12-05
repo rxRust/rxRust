@@ -37,13 +37,15 @@ impl<O, U: SubscriptionLike> SubscriptionLike for Subject<O, U> {
   fn unsubscribe(&mut self) { self.subscription.unsubscribe(); }
 }
 
-impl<Item, Err, U, O, V> Observer<Item, Err> for Subject<V, U>
+impl<Item, Err, U, O, V> Observer for Subject<V, U>
 where
   V: InnerDerefMut<Target = Vec<O>>,
-  O: Observer<Item, Err> + SubscriptionLike,
+  O: Observer<Item = Item, Err = Err> + SubscriptionLike,
   Item: Clone,
   Err: Clone,
 {
+  type Item = Item;
+  type Err = Err;
   #[inline]
   fn next(&mut self, value: Item) { self.observers.next(value) }
 
@@ -63,13 +65,15 @@ pub(crate) struct SubjectObserver<V> {
   is_stopped: bool,
 }
 
-impl<Item, Err, V, O> Observer<Item, Err> for SubjectObserver<V>
+impl<Item, Err, V, O> Observer for SubjectObserver<V>
 where
   V: InnerDerefMut<Target = Vec<O>>,
-  O: Observer<Item, Err> + SubscriptionLike,
+  O: Publisher<Item = Item, Err = Err>,
   Item: Clone,
   Err: Clone,
 {
+  type Item = Item;
+  type Err = Err;
   fn next(&mut self, value: Item) {
     self.observers.inner_deref_mut().drain_filter(|subscriber| {
       subscriber.next(value.clone());

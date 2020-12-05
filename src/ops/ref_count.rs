@@ -16,7 +16,6 @@ use crate::observable::{
 };
 use crate::prelude::*;
 use std::cell::RefCell;
-use std::marker::PhantomData;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
@@ -25,10 +24,10 @@ struct Inner<C, U> {
   connection: Option<U>,
 }
 
-pub struct RefCount<T, C>(T, PhantomData<C>);
+pub struct RefCount<T, C>(T, TypeHint<C>);
 
 impl<T: Clone, C> Clone for RefCount<T, C> {
-  fn clone(&self) -> Self { RefCount(self.0.clone(), PhantomData) }
+  fn clone(&self) -> Self { RefCount(self.0.clone(), TypeHint::new()) }
 }
 
 type LocalRef<C, U> = Rc<RefCell<Inner<C, U>>>;
@@ -89,7 +88,7 @@ where
         connectable,
         connection: None,
       }))),
-      PhantomData,
+      TypeHint::new(),
     )
   }
 }
@@ -105,7 +104,7 @@ where
         connectable,
         connection: None,
       }))),
-      PhantomData,
+      TypeHint::new(),
     )
   }
 }
@@ -126,7 +125,7 @@ where
   Err: Clone + 'a,
 {
   type Unsub = RefCountSubscription<LocalSubscription, S::Unsub>;
-  fn actual_subscribe<O: Observer<Self::Item, Self::Err> + 'a>(
+  fn actual_subscribe<O: Observer<Item = Self::Item, Err = Self::Err> + 'a>(
     self,
     subscriber: Subscriber<O, LocalSubscription>,
   ) -> Self::Unsub {
@@ -160,7 +159,7 @@ where
 {
   type Unsub = RefCountSubscription<SharedSubscription, S::Unsub>;
   fn actual_subscribe<
-    O: Observer<Self::Item, Self::Err> + Sync + Send + 'static,
+    O: Observer<Item = Self::Item, Err = Self::Err> + Sync + Send + 'static,
   >(
     self,
     subscriber: Subscriber<O, SharedSubscription>,

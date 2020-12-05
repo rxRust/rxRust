@@ -11,10 +11,11 @@ pub struct SkipLastOp<S> {
 
 #[doc(hidden)]
 macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
-  fn actual_subscribe<O: Observer<Self::Item, Self::Err> + $($marker +)* $lf>(
+  fn actual_subscribe<O>(
     self,
     subscriber: Subscriber<O, $subscription>,
-  ) -> Self::Unsub {
+  ) -> Self::Unsub
+  where O: Observer<Item=Self::Item,Err= Self::Err> + $($marker +)* $lf {
     let subscriber = Subscriber {
       observer: SkipLastObserver {
         observer: subscriber.observer,
@@ -52,10 +53,12 @@ pub struct SkipLastObserver<O, Item> {
   queue: VecDeque<Item>,
 }
 
-impl<Item, Err, O> Observer<Item, Err> for SkipLastObserver<O, Item>
+impl<Item, Err, O> Observer for SkipLastObserver<O, Item>
 where
-  O: Observer<Item, Err>,
+  O: Observer<Item = Item, Err = Err>,
 {
+  type Item = Item;
+  type Err = Err;
   fn next(&mut self, value: Item) { self.queue.push_back(value); }
 
   error_proxy_impl!(Err, observer);

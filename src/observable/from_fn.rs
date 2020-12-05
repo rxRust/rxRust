@@ -1,14 +1,4 @@
 use crate::prelude::*;
-use std::marker::PhantomData;
-
-unsafe impl<F, Item, Err> Send for FnEmitter<F, Item, Err> where F: Send {}
-unsafe impl<F, Item, Err> Sync for FnEmitter<F, Item, Err> where F: Sync {}
-impl<F, Item, Err> Clone for FnEmitter<F, Item, Err>
-where
-  F: Clone,
-{
-  fn clone(&self) -> Self { FnEmitter(self.0.clone(), PhantomData) }
-}
 
 /// param `subscribe`: the function that is called when the Observable is
 /// initially subscribed to. This function is given a Subscriber, to which
@@ -20,13 +10,14 @@ pub fn create<F, O, U, Item, Err>(
 ) -> ObservableBase<FnEmitter<F, Item, Err>>
 where
   F: FnOnce(Subscriber<O, U>),
-  O: Observer<Item, Err>,
+  O: Observer<Item = Item, Err = Err>,
   U: SubscriptionLike,
 {
-  ObservableBase::new(FnEmitter(subscribe, PhantomData))
+  ObservableBase::new(FnEmitter(subscribe, TypeHint::new()))
 }
 
-pub struct FnEmitter<F, Item, Err>(F, PhantomData<(Item, Err)>);
+#[derive(Clone)]
+pub struct FnEmitter<F, Item, Err>(F, TypeHint<(Item, Err)>);
 
 impl<F, Item, Err> Emitter for FnEmitter<F, Item, Err> {
   type Item = Item;
@@ -37,14 +28,14 @@ impl<'a, F, Item, Err> LocalEmitter<'a> for FnEmitter<F, Item, Err>
 where
   F: FnOnce(
     Subscriber<
-      Box<dyn Observer<Item, Err> + 'a>,
+      Box<dyn Observer<Item = Item, Err = Err> + 'a>,
       Box<dyn SubscriptionLike + 'a>,
     >,
   ),
 {
   fn emit<O>(self, subscriber: Subscriber<O, LocalSubscription>)
   where
-    O: Observer<Self::Item, Self::Err> + 'a,
+    O: Observer<Item = Self::Item, Err = Self::Err> + 'a,
   {
     (self.0)(Subscriber {
       observer: Box::new(subscriber.observer),
@@ -57,14 +48,14 @@ impl<F, Item, Err> SharedEmitter for FnEmitter<F, Item, Err>
 where
   F: FnOnce(
     Subscriber<
-      Box<dyn Observer<Item, Err> + Send + Sync + 'static>,
+      Box<dyn Observer<Item = Item, Err = Err> + Send + Sync + 'static>,
       SharedSubscription,
     >,
   ),
 {
   fn emit<O>(self, subscriber: Subscriber<O, SharedSubscription>)
   where
-    O: Observer<Self::Item, Self::Err> + Send + Sync + 'static,
+    O: Observer<Item = Self::Item, Err = Self::Err> + Send + Sync + 'static,
   {
     (self.0)(Subscriber {
       observer: Box::new(subscriber.observer),

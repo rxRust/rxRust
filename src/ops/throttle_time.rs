@@ -33,7 +33,9 @@ where
 {
   type Unsub = Unsub;
 
-  fn actual_subscribe<O: Observer<Self::Item, Self::Err> + 'static>(
+  fn actual_subscribe<
+    O: Observer<Item = Self::Item, Err = Self::Err> + 'static,
+  >(
     self,
     subscriber: Subscriber<O, LocalSubscription>,
   ) -> Self::Unsub {
@@ -69,7 +71,7 @@ where
 {
   type Unsub = S::Unsub;
   fn actual_subscribe<
-    O: Observer<Self::Item, Self::Err> + Sync + Send + 'static,
+    O: Observer<Item = Self::Item, Err = Self::Err> + Sync + Send + 'static,
   >(
     self,
     subscriber: Subscriber<O, SharedSubscription>,
@@ -119,8 +121,8 @@ struct LocalThrottleObserver<O, S, Item>(
   Rc<RefCell<ThrottleObserver<O, S, Item, LocalSubscription>>>,
 );
 
-macro impl_throttle_observer($item: ident, $err: ident) {
-  fn next(&mut self, value: $item) {
+macro impl_throttle_observer() {
+  fn next(&mut self, value: Self::Item) {
     let mut c_inner = self.0.clone();
     let mut inner = self.0.inner_deref_mut();
     if inner.edge == ThrottleEdge::Tailing {
@@ -150,7 +152,7 @@ macro impl_throttle_observer($item: ident, $err: ident) {
     }
   }
 
-  fn error(&mut self, err: $err) {
+  fn error(&mut self, err: Self::Err) {
     let mut inner = self.0.inner_deref_mut();
     inner.observer.error(err)
   }
@@ -169,22 +171,26 @@ macro impl_throttle_observer($item: ident, $err: ident) {
   }
 }
 
-impl<O, S, Item, Err> Observer<Item, Err> for SharedThrottleObserver<O, S, Item>
+impl<O, S> Observer for SharedThrottleObserver<O, S, O::Item>
 where
-  O: Observer<Item, Err> + Send + 'static,
+  O: Observer + Send + 'static,
   S: SharedScheduler + Send + 'static,
-  Item: Clone + Send + 'static,
+  O::Item: Clone + Send + 'static,
 {
-  impl_throttle_observer!(Item, Err);
+  type Item = O::Item;
+  type Err = O::Err;
+  impl_throttle_observer!();
 }
 
-impl<O, S, Item, Err> Observer<Item, Err> for LocalThrottleObserver<O, S, Item>
+impl<O, S> Observer for LocalThrottleObserver<O, S, O::Item>
 where
-  O: Observer<Item, Err> + 'static,
+  O: Observer + 'static,
   S: LocalScheduler + 'static,
-  Item: Clone + 'static,
+  O::Item: Clone + 'static,
 {
-  impl_throttle_observer!(Item, Err);
+  type Item = O::Item;
+  type Err = O::Err;
+  impl_throttle_observer!();
 }
 
 #[cfg(test)]

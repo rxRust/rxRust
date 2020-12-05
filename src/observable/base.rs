@@ -8,7 +8,7 @@ pub trait Emitter {
 pub trait LocalEmitter<'a>: Emitter {
   fn emit<O>(self, subscriber: Subscriber<O, LocalSubscription>)
   where
-    O: Observer<Self::Item, Self::Err> + 'a;
+    O: Observer<Item = Self::Item, Err = Self::Err> + 'a;
 }
 
 #[derive(Clone)]
@@ -20,10 +20,11 @@ impl<Emit> ObservableBase<Emit> {
 
 #[doc(hidden)]
 macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
-  fn actual_subscribe<O: Observer<Self::Item, Self::Err> + $($marker +)* $lf>(
+  fn actual_subscribe<O>(
     self,
     subscriber: Subscriber<O, $subscription>,
-  ) -> Self::Unsub {
+  ) -> Self::Unsub
+  where O: Observer<Item=Self::Item,Err= Self::Err> + $($marker +)* $lf {
     let subscription = subscriber.subscription.clone();
     self.0.emit(subscriber);
     subscription

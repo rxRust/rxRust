@@ -1,5 +1,4 @@
 use std::cell::RefCell;
-use std::marker::PhantomData;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
@@ -14,10 +13,11 @@ pub struct TakeUntilOp<S, N> {
 #[doc(hidden)]
 macro observable_impl($subscription:ty, $sharer:path, $mutability_enabler:path,
                       $($marker:ident +)* $lf: lifetime) {
-  fn actual_subscribe<O: Observer<Self::Item, Self::Err> + $($marker +)* $lf>(
+  fn actual_subscribe<O>(
     self,
     subscriber: Subscriber<O, $subscription>,
-  ) -> Self::Unsub {
+  ) -> Self::Unsub
+  where O: Observer<Item=Self::Item, Err= Self::Err> + $($marker +)* $lf {
     let  subscription = subscriber.subscription;
     // We need to keep a reference to the observer from two places
     let shared_observer = $sharer($mutability_enabler(subscriber.observer));
@@ -30,7 +30,7 @@ macro observable_impl($subscription:ty, $sharer:path, $mutability_enabler:path,
         subscription: subscription.clone(),
         main_observer: shared_observer,
         is_stopped: false,
-        _p: PhantomData,
+        _p: TypeHint::new(),
       },
       subscription: subscription.clone(),
     };
@@ -56,6 +56,7 @@ where
   S: SharedObservable,
   N: SharedObservable<Err = S::Err>,
   S::Item: Send + Sync + 'static,
+  N::Item: Send + Sync + 'static,
   S::Unsub: Send + Sync,
   N::Unsub: Send + Sync,
 {
@@ -75,15 +76,17 @@ pub struct TakeUntilNotifierObserver<O, U, Item> {
   // We need to unsubscribe everything as soon as notifier fired
   subscription: U,
   is_stopped: bool,
-  _p: PhantomData<Item>,
+  _p: TypeHint<Item>,
 }
 
-impl<O, U, NotifierItem, Item, Err> Observer<NotifierItem, Err>
-  for TakeUntilNotifierObserver<O, U, Item>
+impl<O, U, NotifierItem, Err> Observer
+  for TakeUntilNotifierObserver<O, U, NotifierItem>
 where
-  O: Observer<Item, Err>,
+  O: Observer<Err = Err>,
   U: SubscriptionLike,
 {
+  type Item = NotifierItem;
+  type Err = Err;
   fn next(&mut self, _: NotifierItem) {
     self.main_observer.complete();
     self.subscription.unsubscribe();

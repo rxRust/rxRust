@@ -10,23 +10,26 @@ pub struct ScanOp<Source, BinaryOp, OutputItem> {
   pub(crate) initial_value: OutputItem,
 }
 
-pub struct ScanObserver<Observer, BinaryOp, OutputItem> {
+pub struct ScanObserver<Observer, BinaryOp, OutputItem, InputItem> {
   target_observer: Observer,
   binary_op: BinaryOp,
   acc: OutputItem,
+  _marker: TypeHint<InputItem>,
 }
 
 #[doc(hidden)]
 macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
-  fn actual_subscribe<O: Observer<Self::Item, Self::Err> + $($marker +)* $lf>(
+  fn actual_subscribe<O>(
     self,
     subscriber: Subscriber<O, $subscription>,
-  ) -> Self::Unsub {
+  ) -> Self::Unsub
+  where O: Observer<Item=Self::Item,Err= Self::Err> + $($marker +)* $lf {
     self.source_observable.actual_subscribe(Subscriber {
       observer: ScanObserver {
         target_observer: subscriber.observer,
         binary_op: self.binary_op,
         acc: self.initial_value,
+        _marker: TypeHint::new(),
       },
       subscription: subscriber.subscription,
     })
@@ -56,6 +59,7 @@ where
   Source: LocalObservable<'a>,
   OutputItem: Clone + 'a,
   BinaryOp: FnMut(OutputItem, Source::Item) -> OutputItem + 'a,
+  Source::Item: 'a,
 {
   type Unsub = Source::Unsub;
   observable_impl!(LocalSubscription, 'a);
@@ -66,6 +70,7 @@ impl<OutputItem, Source, BinaryOp> SharedObservable
 where
   Source: SharedObservable,
   OutputItem: Clone + Send + Sync + 'static,
+  Source::Item: 'static,
   BinaryOp:
     FnMut(OutputItem, Source::Item) -> OutputItem + Send + Sync + 'static,
 {
@@ -76,13 +81,15 @@ where
 // We're making `ScanObserver` being able to be subscribed to other observables
 // by implementing `Observer` trait. Thanks to this, it is able to observe
 // sources having `Item` type as its `InputItem` type.
-impl<InputItem, Err, Source, BinaryOp, OutputItem> Observer<InputItem, Err>
-  for ScanObserver<Source, BinaryOp, OutputItem>
+impl<InputItem, Err, Source, BinaryOp, OutputItem> Observer
+  for ScanObserver<Source, BinaryOp, OutputItem, InputItem>
 where
-  Source: Observer<OutputItem, Err>,
+  Source: Observer<Item = OutputItem, Err = Err>,
   BinaryOp: FnMut(OutputItem, InputItem) -> OutputItem,
   OutputItem: Clone,
 {
+  type Item = InputItem;
+  type Err = Err;
   fn next(&mut self, value: InputItem) {
     // accumulating each item with a current value
     self.acc = (self.binary_op)(self.acc.clone(), value);

@@ -14,10 +14,11 @@ macro observable_impl(
   $subscription:ty, $source:ident, $($marker:ident +)* $lf: lifetime)
 {
   type Unsub = $source::Unsub;
-  fn actual_subscribe<O: Observer<Self::Item, Self::Err> + $($marker +)* $lf>(
+  fn actual_subscribe<O>(
     self,
     subscriber: Subscriber<O, $subscription>,
-  ) -> Self::Unsub {
+  ) -> Self::Unsub
+  where O: Observer<Item=Self::Item,Err= Self::Err> + $($marker +)* $lf {
     let subscriber = Subscriber {
       observer: TakeWhileObserver {
         observer: subscriber.observer,
@@ -61,12 +62,14 @@ pub struct TakeWhileObserver<O, S, F> {
   callback: F,
 }
 
-impl<O, U, Item, Err, F> Observer<Item, Err> for TakeWhileObserver<O, U, F>
+impl<O, U, Item, Err, F> Observer for TakeWhileObserver<O, U, F>
 where
-  O: Observer<Item, Err>,
+  O: Observer<Item = Item, Err = Err>,
   U: SubscriptionLike,
   F: FnMut(&Item) -> bool,
 {
+  type Item = Item;
+  type Err = Err;
   fn next(&mut self, value: Item) {
     if (self.callback)(&value) {
       self.observer.next(value);

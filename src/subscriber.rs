@@ -27,11 +27,13 @@ impl<O> Subscriber<O, SharedSubscription> {
   }
 }
 
-impl<Item, Err, O, U> Observer<Item, Err> for Subscriber<O, U>
+impl<Item, Err, O, U> Observer for Subscriber<O, U>
 where
-  O: Observer<Item, Err>,
+  O: Observer<Item = Item, Err = Err>,
   U: SubscriptionLike,
 {
+  type Item = Item;
+  type Err = Err;
   fn next(&mut self, v: Item) {
     if !self.is_finished() {
       self.observer.next(v)
@@ -93,7 +95,8 @@ mod test {
 
   type SubscriberInfo<O> =
     (Arc<Mutex<i32>>, Arc<Mutex<i32>>, Arc<Mutex<i32>>, O);
-  fn shared_subscriber_creator() -> SubscriberInfo<impl Observer<i32, ()>> {
+  fn shared_subscriber_creator()
+  -> SubscriberInfo<impl Observer<Item = i32, Err = ()>> {
     let next = Arc::new(Mutex::new(0));
     let err = Arc::new(Mutex::new(0));
     let complete = Arc::new(Mutex::new(0));
