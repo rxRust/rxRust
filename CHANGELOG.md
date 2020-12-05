@@ -1,4 +1,15 @@
-## [Unreleased](https://github.com/rxRust/rxRust/compare/v0.9.1...HEAD)
+## [Unreleased](https://github.com/rxRust/rxRust/compare/v0.10.0...HEAD)
+
+## [0.10.0](https://github.com/rxRust/rxRust/compare/v0.10.0...HEAD)
+### Features
+- **operator**: add `distinct` operator.
+- **operator**: add `debounce` operator.
+- **subject**: export `LocalSubjectRef`, `LocalSubjectErrRef` and `LocalSubjectRefAll`.
+
+### Breaking Changes
+
+- `Observer` trait now use associated type replace generic type. 
+
 
 ## [0.9.1](https://github.com/rxRust/rxRust/releases/tag/v0.9.1)  (2020-08-25)
 
