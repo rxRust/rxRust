@@ -27,7 +27,7 @@ where
 {
   type Unsub = S::Unsub;
 
-  fn actual_subscribe<O: Observer<Self::Item, Self::Err> + 'a>(
+  fn actual_subscribe<O: Observer<Item = Self::Item, Err = Self::Err> + 'a>(
     self,
     subscriber: Subscriber<O, LocalSubscription>,
   ) -> Self::Unsub {
@@ -56,7 +56,7 @@ where
   type Unsub = S::Unsub;
 
   fn actual_subscribe<
-    O: Observer<Self::Item, Self::Err> + Sync + Send + 'static,
+    O: Observer<Item = Self::Item, Err = Self::Err> + Sync + Send + 'static,
   >(
     self,
     subscriber: Subscriber<O, SharedSubscription>,
@@ -103,12 +103,14 @@ where
   fn is_closed(&self) -> bool { self.is_closed }
 }
 
-impl<Item, Err, O, F, Target> Observer<Item, Err> for FinalizerObserver<O, F>
+impl<Item, Err, O, F, Target> Observer for FinalizerObserver<O, F>
 where
-  O: Observer<Item, Err>,
+  O: Observer<Item = Item, Err = Err>,
   F: InnerDerefMut<Target = Option<Target>>,
   Target: FnMut(),
 {
+  type Item = Item;
+  type Err = Err;
   #[inline]
   fn next(&mut self, value: Item) { self.observer.next(value); }
 

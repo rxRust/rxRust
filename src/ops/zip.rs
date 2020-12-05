@@ -2,7 +2,6 @@ use crate::prelude::*;
 use observer::{complete_proxy_impl, error_proxy_impl, is_stopped_proxy_impl};
 use std::cell::RefCell;
 use std::collections::VecDeque;
-use std::marker::PhantomData;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
@@ -33,7 +32,7 @@ where
   B::Item: 'a,
 {
   type Unsub = LocalSubscription;
-  fn actual_subscribe<O: Observer<Self::Item, Self::Err> + 'a>(
+  fn actual_subscribe<O: Observer<Item = Self::Item, Err = Self::Err> + 'a>(
     self,
     subscriber: Subscriber<O, LocalSubscription>,
   ) -> Self::Unsub {
@@ -41,12 +40,12 @@ where
     let o_zip = ZipObserver::new(subscriber.observer, sub.clone());
     let o_zip = Rc::new(RefCell::new(o_zip));
     sub.add(self.a.actual_subscribe(Subscriber {
-      observer: AObserver(o_zip.clone(), PhantomData),
+      observer: AObserver(o_zip.clone(), TypeHint::new()),
       subscription: LocalSubscription::default(),
     }));
 
     sub.add(self.b.actual_subscribe(Subscriber {
-      observer: BObserver(o_zip, PhantomData),
+      observer: BObserver(o_zip, TypeHint::new()),
       subscription: LocalSubscription::default(),
     }));
     sub
@@ -64,7 +63,7 @@ where
 {
   type Unsub = SharedSubscription;
   fn actual_subscribe<
-    O: Observer<Self::Item, Self::Err> + Sync + Send + 'static,
+    O: Observer<Item = Self::Item, Err = Self::Err> + Sync + Send + 'static,
   >(
     self,
     subscriber: Subscriber<O, SharedSubscription>,
@@ -73,12 +72,12 @@ where
     let o_zip = ZipObserver::new(subscriber.observer, sub.clone());
     let o_zip = Arc::new(Mutex::new(o_zip));
     sub.add(self.a.actual_subscribe(Subscriber {
-      observer: AObserver(o_zip.clone(), PhantomData),
+      observer: AObserver(o_zip.clone(), TypeHint::new()),
       subscription: SharedSubscription::default(),
     }));
 
     sub.add(self.b.actual_subscribe(Subscriber {
-      observer: BObserver(o_zip, PhantomData),
+      observer: BObserver(o_zip, TypeHint::new()),
       subscription: SharedSubscription::default(),
     }));
     sub
@@ -110,11 +109,13 @@ impl<O, U, A, B> ZipObserver<O, U, A, B> {
   }
 }
 
-impl<O, U, A, B, Err> Observer<ZipItem<A, B>, Err> for ZipObserver<O, U, A, B>
+impl<O, U, A, B, Err> Observer for ZipObserver<O, U, A, B>
 where
-  O: Observer<(A, B), Err>,
+  O: Observer<Item = (A, B), Err = Err>,
   U: SubscriptionLike,
 {
+  type Item = ZipItem<A, B>;
+  type Err = Err;
   fn next(&mut self, value: ZipItem<A, B>) {
     match value {
       ZipItem::ItemA(v) => {
@@ -151,12 +152,14 @@ where
   is_stopped_proxy_impl!(observer);
 }
 
-struct AObserver<O, B>(O, PhantomData<B>);
+struct AObserver<O, B>(O, TypeHint<B>);
 
-impl<O, A, B, Err> Observer<A, Err> for AObserver<O, B>
+impl<O, A, B, Err> Observer for AObserver<O, B>
 where
-  O: Observer<ZipItem<A, B>, Err>,
+  O: Observer<Item = ZipItem<A, B>, Err = Err>,
 {
+  type Item = A;
+  type Err = Err;
   fn next(&mut self, value: A) { self.0.next(ZipItem::ItemA(value)); }
 
   error_proxy_impl!(Err, 0);
@@ -164,12 +167,14 @@ where
   is_stopped_proxy_impl!(0);
 }
 
-struct BObserver<O, A>(O, PhantomData<A>);
+struct BObserver<O, A>(O, TypeHint<A>);
 
-impl<O, A, B, Err> Observer<B, Err> for BObserver<O, A>
+impl<O, A, B, Err> Observer for BObserver<O, A>
 where
-  O: Observer<ZipItem<A, B>, Err>,
+  O: Observer<Item = ZipItem<A, B>, Err = Err>,
 {
+  type Item = B;
+  type Err = Err;
   fn next(&mut self, value: B) { self.0.next(ZipItem::ItemB(value)); }
 
   error_proxy_impl!(Err, 0);

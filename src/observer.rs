@@ -6,9 +6,11 @@ use crate::inner_deref::InnerDerefMut;
 ///
 /// `Item` the type of the elements being emitted.
 /// `Err`the type of the error may propagating.
-pub trait Observer<Item, Err> {
-  fn next(&mut self, value: Item);
-  fn error(&mut self, err: Err);
+pub trait Observer {
+  type Item;
+  type Err;
+  fn next(&mut self, value: Self::Item);
+  fn error(&mut self, err: Self::Err);
   fn complete(&mut self);
   fn is_stopped(&self) -> bool;
 }
@@ -45,11 +47,13 @@ pub(crate) macro is_stopped_proxy_impl($($name:tt $($parentheses:tt)?) .+) {
   fn is_stopped(&self) -> bool { self.$($name$($parentheses)?).+.is_stopped() }
 }
 
-impl<Item, Err, T> Observer<Item, Err> for T
+impl<Item, Err, T> Observer for T
 where
   T: InnerDerefMut,
-  T::Target: Observer<Item, Err>,
+  T::Target: Observer<Item = Item, Err = Err>,
 {
+  type Item = Item;
+  type Err = Err;
   fn next(&mut self, value: Item) { self.inner_deref_mut().next(value) }
   fn error(&mut self, err: Err) { self.inner_deref_mut().error(err); }
   fn complete(&mut self) { self.inner_deref_mut().complete(); }

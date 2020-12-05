@@ -9,7 +9,7 @@ pub struct Shared<R>(pub(crate) R);
 pub trait SharedObservable: Observable {
   type Unsub: SubscriptionLike + 'static;
   fn actual_subscribe<
-    O: Observer<Self::Item, Self::Err> + Sync + Send + 'static,
+    O: Observer<Item = Self::Item, Err = Self::Err> + Sync + Send + 'static,
   >(
     self,
     subscriber: Subscriber<O, SharedSubscription>,
@@ -28,7 +28,7 @@ pub trait SharedObservable: Observable {
 pub trait SharedEmitter: Emitter {
   fn emit<O>(self, subscriber: Subscriber<O, SharedSubscription>)
   where
-    O: Observer<Self::Item, Self::Err> + Send + Sync + 'static;
+    O: Observer<Item = Self::Item, Err = Self::Err> + Send + Sync + 'static;
 }
 
 observable_proxy_impl!(Shared, S);
@@ -40,7 +40,7 @@ where
   type Unsub = S::Unsub;
   #[inline]
   fn actual_subscribe<
-    O: Observer<Self::Item, Self::Err> + Sync + Send + 'static,
+    O: Observer<Item = Self::Item, Err = Self::Err> + Sync + Send + 'static,
   >(
     self,
     subscriber: Subscriber<O, SharedSubscription>,

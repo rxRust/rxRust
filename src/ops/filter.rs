@@ -9,13 +9,13 @@ pub struct FilterOp<S, F> {
 
 #[doc(hidden)]
 macro observable_impl(
-  $subscription:ty, $source:ident, $($marker:ident +)* $lf: lifetime)
-{
+  $subscription:ty, $source:ident, $($marker:ident +)* $lf: lifetime) {
   type Unsub = $source::Unsub;
-  fn actual_subscribe<O: Observer<Self::Item, Self::Err> + $($marker +)* $lf>(
+  fn actual_subscribe<O>(
     self,
     subscriber: Subscriber<O, $subscription>,
-  ) -> Self::Unsub {
+  ) -> Self::Unsub
+  where O: Observer<Item=Self::Item,Err= Self::Err> + $($marker +)* $lf {
     let filter = self.filter;
     self.source.actual_subscribe(Subscriber {
       observer: FilterObserver {
@@ -57,11 +57,13 @@ pub struct FilterObserver<S, F> {
   filter: F,
 }
 
-impl<Item, Err, O, F> Observer<Item, Err> for FilterObserver<O, F>
+impl<Item, Err, O, F> Observer for FilterObserver<O, F>
 where
-  O: Observer<Item, Err>,
+  O: Observer<Item = Item, Err = Err>,
   F: FnMut(&Item) -> bool,
 {
+  type Item = Item;
+  type Err = Err;
   fn next(&mut self, value: Item) {
     if (self.filter)(&value) {
       self.observer.next(value)

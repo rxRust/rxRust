@@ -1,17 +1,20 @@
 use crate::prelude::*;
 
 #[derive(Clone)]
-pub struct ObserverComp<N, C> {
+pub struct ObserverComp<N, C, Item> {
   next: N,
   complete: C,
   is_stopped: bool,
+  marker: TypeHint<*const Item>,
 }
 
-impl<N, C, Item> Observer<Item, ()> for ObserverComp<N, C>
+impl<N, C, Item> Observer for ObserverComp<N, C, Item>
 where
   C: FnMut(),
   N: FnMut(Item),
 {
+  type Item = Item;
+  type Err = ();
   #[inline]
   fn next(&mut self, value: Item) { (self.next)(value); }
   #[inline]
@@ -21,17 +24,6 @@ where
     self.is_stopped = true;
   }
   fn is_stopped(&self) -> bool { self.is_stopped }
-}
-
-impl<N, C> ObserverComp<N, C> {
-  #[inline(always)]
-  pub fn new(next: N, complete: C) -> Self {
-    ObserverComp {
-      next,
-      complete,
-      is_stopped: false,
-    }
-  }
 }
 
 pub trait SubscribeComplete<'a, N, C> {
@@ -52,6 +44,7 @@ where
   S: LocalObservable<'a, Err = ()>,
   C: FnMut() + 'a,
   N: FnMut(S::Item) + 'a,
+  S::Item: 'a,
 {
   type Unsub = S::Unsub;
   fn subscribe_complete(
@@ -61,11 +54,13 @@ where
   ) -> SubscriptionWrapper<Self::Unsub>
   where
     Self: Sized,
+    S::Item: 'a,
   {
     let unsub = self.actual_subscribe(Subscriber::local(ObserverComp {
       next,
       complete,
       is_stopped: false,
+      marker: TypeHint::new(),
     }));
     SubscriptionWrapper(unsub)
   }
@@ -76,6 +71,7 @@ where
   S: SharedObservable<Err = ()>,
   C: FnMut() + Send + Sync + 'static,
   N: FnMut(S::Item) + Send + Sync + 'static,
+  S::Item: 'static,
 {
   type Unsub = S::Unsub;
   fn subscribe_complete(
@@ -90,6 +86,7 @@ where
       next,
       complete,
       is_stopped: false,
+      marker: TypeHint::new(),
     }));
     SubscriptionWrapper(unsub)
   }

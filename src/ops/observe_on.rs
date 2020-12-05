@@ -23,7 +23,9 @@ where
   SD: LocalScheduler + 'static,
 {
   type Unsub = S::Unsub;
-  fn actual_subscribe<O: Observer<Self::Item, Self::Err> + 'static>(
+  fn actual_subscribe<
+    O: Observer<Item = Self::Item, Err = Self::Err> + 'static,
+  >(
     self,
     subscriber: Subscriber<O, LocalSubscription>,
   ) -> Self::Unsub {
@@ -53,7 +55,7 @@ where
 {
   type Unsub = S::Unsub;
   fn actual_subscribe<
-    O: Observer<Self::Item, Self::Err> + Sync + Send + 'static,
+    O: Observer<Item = Self::Item, Err = Self::Err> + Sync + Send + 'static,
   >(
     self,
     subscriber: Subscriber<O, SharedSubscription>,
@@ -119,13 +121,15 @@ where
   }
 }
 
-impl<Item, Err, O, SD> Observer<Item, Err> for SharedObserver<O, SD>
+impl<Item, Err, O, SD> Observer for SharedObserver<O, SD>
 where
   Item: Clone + Send + 'static,
   Err: Clone + Send + 'static,
-  O: Observer<Item, Err> + Send + 'static,
+  O: Observer<Item = Item, Err = Err> + Send + 'static,
   SD: SharedScheduler,
 {
+  type Item = Item;
+  type Err = Err;
   impl_observer!(Item, Err);
 
   #[inline]
@@ -147,13 +151,15 @@ impl<O: 'static, SD: LocalScheduler + 'static> LocalObserver<O, SD> {
     self.subscription.add(subscription);
   }
 }
-impl<Item, Err, O, SD> Observer<Item, Err> for LocalObserver<O, SD>
+impl<Item, Err, O, SD> Observer for LocalObserver<O, SD>
 where
   Item: Clone + 'static,
   Err: Clone + 'static,
-  O: Observer<Item, Err> + 'static,
+  O: Observer<Item = Item, Err = Err> + 'static,
   SD: LocalScheduler + 'static,
 {
+  type Item = Item;
+  type Err = Err;
   impl_observer!(Item, Err);
 
   #[inline]

@@ -1,5 +1,4 @@
 use crate::prelude::*;
-use std::marker::PhantomData;
 
 /// Creates an observable that emits no items, just terminates with an error.
 ///
@@ -18,7 +17,7 @@ macro throw_emitter($subscription:ty, $($marker:ident +)* $lf: lifetime) {
   #[inline]
   fn emit<O>(self, mut subscriber: Subscriber<O, $subscription>)
   where
-    O: Observer<Self::Item, Self::Err> + $($marker +)* $lf
+    O: Observer<Item=Self::Item,Err= Self::Err> + $($marker +)* $lf
   {
     subscriber.error(self.0);
   }
@@ -50,18 +49,18 @@ impl<Err> SharedEmitter for ThrowEmitter<Err> {
 /// // Result: no thing printed
 /// ```
 pub fn empty<Item>() -> ObservableBase<EmptyEmitter<Item>> {
-  ObservableBase::new(EmptyEmitter(PhantomData))
+  ObservableBase::new(EmptyEmitter(TypeHint::new()))
 }
 
 #[derive(Clone)]
-pub struct EmptyEmitter<Item>(PhantomData<Item>);
+pub struct EmptyEmitter<Item>(TypeHint<Item>);
 
 #[doc(hidden)]
 macro empty_emitter($subscription:ty, $($marker:ident +)* $lf: lifetime) {
   #[inline]
   fn emit<O>(self, mut subscriber: Subscriber<O, $subscription>)
   where
-    O: Observer<Self::Item, Self::Err> + $($marker +)* $lf
+    O: Observer<Item=Self::Item,Err= Self::Err> + $($marker +)* $lf
   {
     subscriber.complete();
   }
@@ -94,7 +93,7 @@ macro never_emitter($subscription:ty, $($marker:ident +)* $lf: lifetime) {
   #[inline]
   fn emit<O>(self, _subscriber: Subscriber<O, $subscription>)
   where
-    O: Observer<Self::Item, Self::Err> + $($marker +)* $lf
+    O: Observer<Item=Self::Item,Err= Self::Err> + $($marker +)* $lf
   {
   }
 }

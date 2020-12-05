@@ -28,7 +28,7 @@ where
 {
   type Unsub = LocalSubscription;
 
-  fn actual_subscribe<O: Observer<Self::Item, Self::Err> + 'a>(
+  fn actual_subscribe<O: Observer<Item = Self::Item, Err = Self::Err> + 'a>(
     self,
     subscriber: Subscriber<O, LocalSubscription>,
   ) -> Self::Unsub {
@@ -58,7 +58,7 @@ where
 {
   type Unsub = SharedSubscription;
   fn actual_subscribe<
-    O: Observer<Self::Item, Self::Err> + Sync + Send + 'static,
+    O: Observer<Item = Self::Item, Err = Self::Err> + Sync + Send + 'static,
   >(
     self,
     subscriber: Subscriber<O, SharedSubscription>,
@@ -88,11 +88,13 @@ pub struct MergeObserver<O, Unsub> {
   completed_one: bool,
 }
 
-impl<Item, Err, O, Unsub> Observer<Item, Err> for MergeObserver<O, Unsub>
+impl<Item, Err, O, Unsub> Observer for MergeObserver<O, Unsub>
 where
-  O: Observer<Item, Err>,
+  O: Observer<Item = Item, Err = Err>,
   Unsub: SubscriptionLike,
 {
+  type Item = Item;
+  type Err = Err;
   next_proxy_impl!(Item, observer);
   fn error(&mut self, err: Err) {
     self.observer.error(err);

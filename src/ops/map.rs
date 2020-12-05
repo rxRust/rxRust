@@ -9,15 +9,17 @@ pub struct MapOp<S, M> {
 
 #[doc(hidden)]
 macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
-  fn actual_subscribe<O: Observer<Self::Item, Self::Err> + $($marker +)* $lf>(
+  fn actual_subscribe<O>(
     self,
     subscriber: Subscriber<O, $subscription>,
-  ) -> Self::Unsub {
+  ) -> Self::Unsub
+  where O: Observer<Item=Self::Item, Err=Self::Err> + $($marker +)* $lf {
     let map = self.func;
     self.source.actual_subscribe(Subscriber {
       observer: MapObserver {
         observer: subscriber.observer,
         map,
+        marker: TypeHint::new(),
       },
       subscription: subscriber.subscription,
     })
@@ -37,6 +39,7 @@ impl<'a, Item, S, M> LocalObservable<'a> for MapOp<S, M>
 where
   S: LocalObservable<'a>,
   M: FnMut(S::Item) -> Item + 'a,
+  S::Item: 'a,
 {
   type Unsub = S::Unsub;
   observable_impl!(LocalSubscription,'a);
@@ -46,22 +49,26 @@ impl<Item, S, M> SharedObservable for MapOp<S, M>
 where
   S: SharedObservable,
   M: FnMut(S::Item) -> Item + Send + Sync + 'static,
+  S::Item: 'static,
 {
   type Unsub = S::Unsub;
   observable_impl!(SharedSubscription, Send + Sync + 'static);
 }
 
 #[derive(Clone)]
-pub struct MapObserver<O, M> {
+pub struct MapObserver<O, M, Item> {
   observer: O,
   map: M,
+  marker: TypeHint<*const Item>,
 }
 
-impl<Item, Err, O, M, B> Observer<Item, Err> for MapObserver<O, M>
+impl<Item, Err, O, M, B> Observer for MapObserver<O, M, Item>
 where
-  O: Observer<B, Err>,
+  O: Observer<Item = B, Err = Err>,
   M: FnMut(Item) -> B,
 {
+  type Item = Item;
+  type Err = Err;
   fn next(&mut self, value: Item) { self.observer.next((self.map)(value)) }
   error_proxy_impl!(Err, observer);
   complete_proxy_impl!(observer);

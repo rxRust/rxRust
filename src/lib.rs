@@ -5,7 +5,6 @@
   drain_filter,
   test,
   decl_macro,
-  future_readiness_fns,
   generic_associated_types
 )]
 
@@ -27,6 +26,7 @@ pub mod shared;
 pub mod subject;
 pub mod subscriber;
 pub mod subscription;
+pub mod type_hint;
 
 pub mod prelude {
   pub use crate::inner_deref::{InnerDeref, InnerDerefMut};
@@ -37,10 +37,11 @@ pub mod prelude {
   pub use crate::scheduler::*;
   pub use crate::shared;
   pub use crate::subject;
-  pub use crate::subject::{LocalSubject, SharedSubject, Subject};
+  pub use crate::subject::*;
   pub use crate::subscriber::Subscriber;
   pub use crate::subscription;
   pub use crate::subscription::*;
+  pub use crate::type_hint::TypeHint;
   pub use observer::Observer;
   pub use shared::*;
 }

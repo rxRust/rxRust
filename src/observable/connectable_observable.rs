@@ -29,10 +29,11 @@ pub type SharedConnectableObservable<S, Item, Err> =
 macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
   type Unsub = $subscription;
   #[inline(always)]
-  fn actual_subscribe<O: Observer<Self::Item, Self::Err> + $($marker +)* $lf>(
+  fn actual_subscribe<O>(
     self,
     subscriber: Subscriber<O, $subscription>,
-  ) -> Self::Unsub {
+  ) -> Self::Unsub
+  where O: Observer<Item=Self::Item, Err= Self::Err> + $($marker +)* $lf {
     self.subject.actual_subscribe(subscriber)
   }
 }

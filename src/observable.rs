@@ -266,7 +266,6 @@ pub trait Observable {
   ///
   /// ```
   ///  # use rxrust::prelude::*;
-  ///  # use rxrust::ops::FilterMap;
   ///  let mut res: Vec<i32> = vec![];
   ///   observable::from_iter(["1", "lol", "3", "NaN", "5"].iter())
   ///   .filter_map(|s: &&str| s.parse().ok())
@@ -1109,7 +1108,7 @@ pub trait Observable {
 
 pub trait LocalObservable<'a>: Observable {
   type Unsub: SubscriptionLike + 'static;
-  fn actual_subscribe<O: Observer<Self::Item, Self::Err> + 'a>(
+  fn actual_subscribe<O: Observer<Item = Self::Item, Err = Self::Err> + 'a>(
     self,
     subscriber: Subscriber<O, LocalSubscription>,
   ) -> Self::Unsub;
