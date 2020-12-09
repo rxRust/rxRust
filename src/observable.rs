@@ -123,6 +123,15 @@ pub trait Observable {
     }
   }
 
+  /// Emit only item n (0-indexed) emitted by an Observable
+  #[inline]
+  fn element_at(self, nth: u32) -> TakeOp<SkipOp<Self>>
+  where
+    Self: Sized,
+  {
+    self.skip(nth).first()
+  }
+
   /// Emits only last final item emitted by a source observable.
   ///
   /// Completes right after emitting the single last item, or when source
