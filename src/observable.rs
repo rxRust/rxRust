@@ -1139,3 +1139,16 @@ pub(crate) macro observable_proxy_impl(
     type Err = $host::Err;
   }
 }
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  #[test]
+  fn smoke_element_at() {
+    let s = observable::from_iter(0..20);
+    s.clone().element_at(0).subscribe(|v| assert_eq!(v, 0));
+    s.clone().element_at(5).subscribe(|v| assert_eq!(v, 5));
+    s.clone().element_at(20).subscribe(|v| assert_eq!(v, 20));
+    s.clone().element_at(21).subscribe(|_| assert!(false));
+  }
+}
