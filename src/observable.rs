@@ -45,6 +45,7 @@ use ops::{
   filter_map::FilterMapOp,
   finalize::FinalizeOp,
   first::FirstOrOp,
+  ignore_elements::IgnoreElementsOp,
   last::LastOrOp,
   map::MapOp,
   map_to::MapToOp,
@@ -129,6 +130,16 @@ pub trait Observable {
     Self: Sized,
   {
     self.skip(nth).first()
+  }
+
+  /// Do not emit any items from an Observable but mirror its termination
+  /// notification
+  #[inline]
+  fn ignore_elements(self) -> IgnoreElementsOp<Self>
+  where
+    Self: Sized,
+  {
+    IgnoreElementsOp { source: self }
   }
 
   /// Emits only last final item emitted by a source observable.

@@ -46,7 +46,7 @@ Operators that selectively emit items from a source Observable.
 - [x] ElementAt — emit only item n emitted by an Observable
 - [x] Filter — emit only those items from an Observable that pass a predicate test
 - [x] First — emit only the first item, or the first item that meets a condition, from an Observable
-- [ ] IgnoreElements — do not emit any items from an Observable but mirror its termination notification
+- [x] IgnoreElements — do not emit any items from an Observable but mirror its termination notification
 - [x] Last — emit only the last item emitted by an Observable
 - [ ] Sample — emit the most recent item emitted by an Observable within periodic time intervals
 - [x] Skip — suppress the first n items emitted by an Observable
