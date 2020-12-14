@@ -1,13 +1,7 @@
 use crate::prelude::*;
 use observable::observable_proxy_impl;
-use std::{
-  cell::RefCell,
-  cmp::Eq,
-  collections::HashSet,
-  hash::Hash,
-  rc::Rc,
-  sync::{Arc, Mutex},
-};
+use observer::{complete_proxy_impl, error_proxy_impl, is_stopped_proxy_impl};
+use std::{cmp::Eq, collections::HashSet, hash::Hash};
 
 #[derive(Clone)]
 pub struct DistinctOp<S> {
@@ -16,60 +10,39 @@ pub struct DistinctOp<S> {
 
 observable_proxy_impl!(DistinctOp, S);
 
-impl<S, Unsub> LocalObservable<'static> for DistinctOp<S>
-where
-  S: LocalObservable<'static, Unsub = Unsub>,
-  Unsub: SubscriptionLike + 'static,
-  S::Item: Clone + 'static + Hash + Eq,
-{
-  type Unsub = Unsub;
-
-  fn actual_subscribe<
-    O: Observer<Item = Self::Item, Err = Self::Err> + 'static,
-  >(
+macro distinct_impl( $subscription:ty, $($marker:ident +)* $lf: lifetime) {
+  fn actual_subscribe<O>(
     self,
-    subscriber: Subscriber<O, LocalSubscription>,
-  ) -> Self::Unsub {
-    let Self { source } = self;
-    source.actual_subscribe(Subscriber {
-      observer: LocalDinstinctObserver(Rc::new(RefCell::new(
-        DistinctObserver {
-          observer: subscriber.observer,
-          seen: HashSet::new(),
-        },
-      ))),
+    subscriber: Subscriber<O, $subscription>,
+  ) -> Self::Unsub
+  where O: Observer<Item=Self::Item,Err= Self::Err> + $($marker +)* $lf {
+    let subscriber = Subscriber {
+      observer: DistinctObserver {
+        observer: subscriber.observer,
+        seen: HashSet::new(),
+      },
       subscription: subscriber.subscription,
-    })
+    };
+    self.source.actual_subscribe(subscriber)
   }
 }
 
-impl<S> SharedObservable for DistinctOp<S>
+impl<'a, S, Item> LocalObservable<'a> for DistinctOp<S>
 where
-  S: SharedObservable,
-  S::Item: Clone + Send + 'static + Eq + Hash,
+  S: LocalObservable<'a, Item = Item>,
+  Item: 'a + Eq + Hash + Clone,
 {
   type Unsub = S::Unsub;
-  fn actual_subscribe<
-    O: Observer<Item = Self::Item, Err = Self::Err> + Sync + Send + 'static,
-  >(
-    self,
-    subscriber: Subscriber<O, SharedSubscription>,
-  ) -> S::Unsub {
-    let Self { source } = self;
-    let Subscriber {
-      observer,
-      subscription,
-    } = subscriber;
-    source.actual_subscribe(Subscriber {
-      observer: SharedDistinctObserver(Arc::new(Mutex::new(
-        DistinctObserver {
-          observer,
-          seen: HashSet::new(),
-        },
-      ))),
-      subscription,
-    })
-  }
+  distinct_impl!(LocalSubscription,'a);
+}
+
+impl<S, Item> SharedObservable for DistinctOp<S>
+where
+  S: SharedObservable<Item = Item>,
+  Item: Hash + Eq + Clone + Send + Sync + 'static,
+{
+  type Unsub = S::Unsub;
+  distinct_impl!(SharedSubscription, Send + Sync + 'static);
 }
 
 struct DistinctObserver<O, Item> {
@@ -77,54 +50,28 @@ struct DistinctObserver<O, Item> {
   seen: HashSet<Item>,
 }
 
-struct SharedDistinctObserver<O, Item>(Arc<Mutex<DistinctObserver<O, Item>>>);
-struct LocalDinstinctObserver<O, Item>(Rc<RefCell<DistinctObserver<O, Item>>>);
-
-macro impl_distinct_observer() {
+impl<O, Item, Err> Observer for DistinctObserver<O, Item>
+where
+  O: Observer<Item = Item, Err = Err>,
+  Item: Hash + Eq + Clone,
+{
+  type Item = Item;
+  type Err = Err;
   fn next(&mut self, value: Self::Item) {
-    let mut inner = self.0.inner_deref_mut();
-    if !inner.seen.contains(&value) {
-      inner.seen.insert(value.clone());
-      inner.observer.next(value);
+    if !self.seen.contains(&value) {
+      self.seen.insert(value.clone());
+      self.observer.next(value);
     }
   }
-  fn error(&mut self, err: Self::Err) {
-    let mut inner = self.0.inner_deref_mut();
-    inner.observer.error(err);
-  }
-  fn complete(&mut self) {
-    let mut inner = self.0.inner_deref_mut();
-    inner.observer.complete();
-  }
-  fn is_stopped(&self) -> bool {
-    let inner = self.0.inner_deref();
-    inner.observer.is_stopped()
-  }
-}
-
-impl<O> Observer for SharedDistinctObserver<O, O::Item>
-where
-  O: Observer + Send + 'static,
-  O::Item: Clone + Send + 'static + Eq + Hash,
-{
-  type Item = O::Item;
-  type Err = O::Err;
-  impl_distinct_observer!();
-}
-
-impl<O> Observer for LocalDinstinctObserver<O, O::Item>
-where
-  O: Observer + 'static,
-  O::Item: Clone + 'static + Eq + Hash,
-{
-  type Item = O::Item;
-  type Err = O::Err;
-  impl_distinct_observer!();
+  complete_proxy_impl!(observer);
+  error_proxy_impl!(Err, observer);
+  is_stopped_proxy_impl!(observer);
 }
 
 #[cfg(test)]
 mod tests {
   use super::*;
+  use std::{cell::RefCell, rc::Rc};
   #[test]
   fn smoke() {
     let x = Rc::new(RefCell::new(vec![]));
