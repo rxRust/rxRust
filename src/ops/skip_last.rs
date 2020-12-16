@@ -1,6 +1,6 @@
 use crate::prelude::*;
 use observable::observable_proxy_impl;
-use observer::{error_proxy_impl, is_stopped_proxy_impl};
+use observer::{complete_proxy_impl, error_proxy_impl, is_stopped_proxy_impl};
 use std::collections::VecDeque;
 
 #[derive(Clone)]
@@ -19,7 +19,7 @@ macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
     let subscriber = Subscriber {
       observer: SkipLastObserver {
         observer: subscriber.observer,
-        count: self.count,
+        count_down: self.count,
         queue: VecDeque::new(),
       },
       subscription: subscriber.subscription,
@@ -49,7 +49,7 @@ where
 
 pub struct SkipLastObserver<O, Item> {
   observer: O,
-  count: usize,
+  count_down: usize,
   queue: VecDeque<Item>,
 }
 
@@ -59,19 +59,18 @@ where
 {
   type Item = Item;
   type Err = Err;
-  fn next(&mut self, value: Item) { self.queue.push_back(value); }
-
-  error_proxy_impl!(Err, observer);
-  fn complete(&mut self) {
-    if self.count <= self.queue.len() {
-      let skip_index = self.queue.len() - self.count;
-      for value in self.queue.drain(..skip_index) {
-        self.observer.next(value);
-      }
+  fn next(&mut self, value: Item) {
+    if self.count_down == 0 {
+      self.queue.push_back(value);
+      self.observer.next(self.queue.pop_front().unwrap());
+    } else {
+      self.queue.push_back(value);
+      self.count_down -= 1;
     }
-    self.observer.complete();
   }
 
+  error_proxy_impl!(Err, observer);
+  complete_proxy_impl!(observer);
   is_stopped_proxy_impl!(observer);
 }
 
