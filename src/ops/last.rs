@@ -2,13 +2,12 @@ use crate::observer::error_proxy_impl;
 use crate::prelude::*;
 
 #[derive(Clone)]
-pub struct LastOrOp<S, Item> {
+pub struct LastOp<S, Item> {
   pub(crate) source: S,
-  pub(crate) default: Option<Item>,
   pub(crate) last: Option<Item>,
 }
 
-impl<Item, S> Observable for LastOrOp<S, Item>
+impl<Item, S> Observable for LastOp<S, Item>
 where
   S: Observable<Item = Item>,
 {
@@ -24,9 +23,8 @@ macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
   ) -> Self::Unsub
   where O: Observer<Item=Self::Item,Err= Self::Err> + $($marker +)* $lf {
     let subscriber = Subscriber {
-      observer: LastOrObserver {
+      observer: LastObserver {
         observer: subscriber.observer,
-        default: self.default,
         last: self.last,
       },
       subscription: subscriber.subscription,
@@ -35,41 +33,41 @@ macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
   }
 }
 
-impl<'a, Item, S> LocalObservable<'a> for LastOrOp<S, Item>
+impl<'a, Item, S> LocalObservable<'a> for LastOp<S, Item>
 where
   S: LocalObservable<'a, Item = Item>,
-  Item: 'a,
+  Item: 'a + Clone,
 {
   type Unsub = S::Unsub;
   observable_impl!(LocalSubscription, 'a);
 }
 
-impl<Item, S> SharedObservable for LastOrOp<S, Item>
+impl<Item, S> SharedObservable for LastOp<S, Item>
 where
   S: SharedObservable<Item = Item>,
-  Item: Send + Sync + 'static,
+  Item: Send + Sync + 'static + Clone,
 {
   type Unsub = S::Unsub;
   observable_impl!(SharedSubscription, Send + Sync + 'static);
 }
 
-pub struct LastOrObserver<S, T> {
-  default: Option<T>,
+pub struct LastObserver<S, T> {
   observer: S,
   last: Option<T>,
 }
 
-impl<O, Item, Err> Observer for LastOrObserver<O, Item>
+impl<O, Item, Err> Observer for LastObserver<O, Item>
 where
   O: Observer<Item = Item, Err = Err>,
+  Item: Clone,
 {
   type Item = Item;
   type Err = Err;
-  fn next(&mut self, value: Item) { self.last = Some(value); }
+  fn next(&mut self, value: Item) { self.last = Some(value.clone()); }
   error_proxy_impl!(Err, observer);
   fn complete(&mut self) {
-    if let Some(v) = self.last.take().or_else(|| self.default.take()) {
-      self.observer.next(v)
+    if let Some(v) = &self.last {
+      self.observer.next(v.clone())
     }
     self.observer.complete();
   }

@@ -6,7 +6,6 @@ pub mod distinct;
 pub mod filter;
 pub mod filter_map;
 pub mod finalize;
-pub mod first;
 pub mod ignore_elements;
 pub mod last;
 pub mod map;
@@ -26,7 +25,8 @@ pub mod take_while;
 pub mod throttle_time;
 pub mod zip;
 
-use last::LastOrOp;
+use default_if_empty::DefaultIfEmptyOp;
+use last::LastOp;
 use map::MapOp;
 use scan::ScanOp;
 
@@ -36,10 +36,10 @@ pub type SumOp<Source, Item> = ReduceOp<Source, fn(Item, Item) -> Item, Item>;
 
 // A composition of `scan` followed by `last`
 pub type ReduceOp<Source, BinaryOp, OutputItem> =
-  LastOrOp<ScanOp<Source, BinaryOp, OutputItem>, OutputItem>;
+  DefaultIfEmptyOp<LastOp<ScanOp<Source, BinaryOp, OutputItem>, OutputItem>>;
 /// Realised as chained composition of scan->last->map operators.
 pub type MinMaxOp<Source, Item> = MapOp<
-  LastOrOp<
+  LastOp<
     ScanOp<Source, fn(Option<Item>, Item) -> Option<Item>, Option<Item>>,
     Option<Item>,
   >,
@@ -52,7 +52,7 @@ pub type Accum<Item> = (Item, usize);
 
 /// Realised as chained composition of scan->last->map operators.
 pub type AverageOp<Source, Item> = MapOp<
-  LastOrOp<
+  LastOp<
     ScanOp<Source, fn(Accum<Item>, Item) -> Accum<Item>, Accum<Item>>,
     Accum<Item>,
   >,
