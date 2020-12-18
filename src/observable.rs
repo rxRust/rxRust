@@ -45,6 +45,7 @@ use ops::{
   filter_map::FilterMapOp,
   finalize::FinalizeOp,
   first::FirstOrOp,
+  ignore_elements::IgnoreElementsOp,
   last::LastOrOp,
   map::MapOp,
   map_to::MapToOp,
@@ -120,6 +121,25 @@ pub trait Observable {
       default: Some(default),
       last: None,
     }
+  }
+
+  /// Emit only item n (0-indexed) emitted by an Observable
+  #[inline]
+  fn element_at(self, nth: u32) -> TakeOp<SkipOp<Self>>
+  where
+    Self: Sized,
+  {
+    self.skip(nth).first()
+  }
+
+  /// Do not emit any items from an Observable but mirror its termination
+  /// notification
+  #[inline]
+  fn ignore_elements(self) -> IgnoreElementsOp<Self>
+  where
+    Self: Sized,
+  {
+    IgnoreElementsOp { source: self }
   }
 
   /// Emits only last final item emitted by a source observable.
@@ -1128,5 +1148,18 @@ pub(crate) macro observable_proxy_impl(
   {
     type Item = $host::Item;
     type Err = $host::Err;
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  #[test]
+  fn smoke_element_at() {
+    let s = observable::from_iter(0..20);
+    s.clone().element_at(0).subscribe(|v| assert_eq!(v, 0));
+    s.clone().element_at(5).subscribe(|v| assert_eq!(v, 5));
+    s.clone().element_at(20).subscribe(|v| assert_eq!(v, 20));
+    s.clone().element_at(21).subscribe(|_| assert!(false));
   }
 }
