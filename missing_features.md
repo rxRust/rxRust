@@ -51,8 +51,10 @@ Operators that selectively emit items from a source Observable.
 - [ ] Sample — emit the most recent item emitted by an Observable within periodic time intervals
 - [x] Skip — suppress the first n items emitted by an Observable
 - [x] SkipLast — suppress the last n items emitted by an Observable
+- [x] SkipWhile — suppress items emitted by an Observable until a specified condition becomes false
 - [x] Take — emit only the first n items emitted by an Observable
 - [x] TakeLast — emit only the last n items emitted by an Observable
+- [x] TakeWhile — emit items emitted by an Observable while a specified condition is true
 
 ### Combining Observables
 Operators that work with multiple source Observables to create a single Observable

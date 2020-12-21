@@ -55,6 +55,7 @@ use ops::{
   scan::ScanOp,
   skip::SkipOp,
   skip_last::SkipLastOp,
+  skip_while::SkipWhileOp,
   subscribe_on::SubscribeOnOP,
   take::TakeOp,
   take_last::TakeLastOp,
@@ -336,6 +337,40 @@ pub trait Observable {
     SkipOp {
       source: self,
       count,
+    }
+  }
+
+  /// Ignore values while result of a callback is true.
+  ///
+  /// `skip_while` returns an Observable that ignores values while result of an
+  /// callback is true emitted by the source Observable.
+  ///
+  /// # Example
+  /// Suppress the first 5 items of an infinite 1-second interval Observable
+  ///
+  /// ```
+  /// # use rxrust::prelude::*;
+  ///
+  /// observable::from_iter(0..10)
+  ///   .skip_while(|v| v < &5)
+  ///   .subscribe(|v| println!("{}", v));
+  ///
+  /// // print logs:
+  /// // 5
+  /// // 6
+  /// // 7
+  /// // 8
+  /// // 9
+  /// ```
+  #[inline]
+  fn skip_while<F>(self, callback: F) -> SkipWhileOp<Self, F>
+  where
+    Self: Sized,
+    F: FnMut(&Self::Item) -> bool,
+  {
+    SkipWhileOp {
+      source: self,
+      callback,
     }
   }
 
