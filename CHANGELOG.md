@@ -8,12 +8,12 @@
 - **operator**: add `ignore_elements` operator.
 - **subject**: export `LocalSubjectRef`, `LocalSubjectErrRef` and `LocalSubjectRefAll`.
 
-## Refactor
+### Refactor
 - **operator**: `skip_last` should emit not only when observer complete.
 
 ### Breaking Changes
 
-- `Observer` trait now use associated type replace generic type. 
+- `Observer` trait now use associated type replace generic type.
 
 
 ## [0.9.1](https://github.com/rxRust/rxRust/releases/tag/v0.9.1)  (2020-08-25)
@@ -29,9 +29,9 @@
 - **subscription**: Add `SubscriptionGuard::new()` for enabling RAII for existing subscriptions.
 - **subscription**: Add `SubscriptionWrapper::into_inner()`, e.g. if one wants to add the inner subscription to
   a composite subscription.
-- **scheduler**: Add two trait `SharedScheduler` and `LocalScheduler` to implement custom Scheduler. 
+- **scheduler**: Add two trait `SharedScheduler` and `LocalScheduler` to implement custom Scheduler.
 - **scheduler**: `LocalPool` and `ThreadPool` in `futures::executor` can directly use as scheduler.
-- **scheduler**: `tokio::runtime::Runtime` also supported, but need enable the feature `futures-scheduler`.  
+- **scheduler**: `tokio::runtime::Runtime` also supported, but need enable the feature `futures-scheduler`.
 - **observer**: add a `is_stopped` method for `Observer` to detect if emit completed.
 
 ### Refactor
@@ -61,7 +61,7 @@
 
 ### Breaking Changes
 
-**operator**: add some explicit bounds on operators method to improve type infer, and some code use `map` may not compile, if it's just `map` and never subscribe. 
+**operator**: add some explicit bounds on operators method to improve type infer, and some code use `map` may not compile, if it's just `map` and never subscribe.
 **Subject**: MutRefSubject now mark as unsafe.
 
 ### Bug Fixes
@@ -75,9 +75,9 @@
 - **operator**: add `take_while` operator.
 - **operator**: add `share` operator.
 - **operator**: add `default_if_empty` operator.
-- **observer**: add support for items/errors that don't implement `Copy` (by implementing `PayloadCopy`) 
-- **observable**: add macros `of_sequence` that producing values from a custom sequence. 
-- **subject**: add `subscribed_size` method on Subject. 
+- **observer**: add support for items/errors that don't implement `Copy` (by implementing `PayloadCopy`)
+- **observable**: add macros `of_sequence` that producing values from a custom sequence.
+- **subject**: add `subscribed_size` method on Subject.
 
 ## [0.8.1](https://github.com/rxRust/rxRust/releases/tag/v0.8.1)  (2020-02-28)
 
@@ -100,7 +100,7 @@
 
 - **observable**: Operators as provided methods on Observable instead of extension traits.
 - **observable**: Every observable creation function has a concrete type, not only use a LocalObservable struct to wrap all,
-- **observable** rename `RawSubscribable` to `LocalObservable` 
+- **observable** rename `RawSubscribable` to `LocalObservable`
 
 ### Breaking Changes
 
@@ -200,7 +200,7 @@
 
 ### Breaking Changes
 
-**Scheduler**: add a `delay` param for `schedule` method, from 
+**Scheduler**: add a `delay` param for `schedule` method, from
 ```
 pub trait Scheduler {
   fn schedule<T: Send + Sync + 'static>(
@@ -273,11 +273,11 @@ assert_eq!(res, 100);
 - **observable**: add `observable::empty` and `observable::of`
 - **observable**: add `observable::from_future` and `observable::from_future_with_err`
 - **observable**: add `observable::interval`
-- **operator**: add `delay` operator 
-- **operator**: add `filter` operator 
-- **operator**: add `first` operator 
+- **operator**: add `delay` operator
+- **operator**: add `filter` operator
+- **operator**: add `first` operator
 - **operator**: add `multicast` and `fork` operator, `multicast` and `fork` are  special operators in rxrust, that because in rxrust all operators both consume the upstream, so the are unicast, `multicast` let you can convert an unicast stream to a multicast stream to support `fork` stream from it.
-- **operator**: add `map` operator 
+- **operator**: add `map` operator
 - **operator**: add `merge` operator
 - **operator**: add `observe_on` operator
 - **operator**: add `subscribe_on` operator
