@@ -9,7 +9,7 @@
 - **subject**: export `LocalSubjectRef`, `LocalSubjectErrRef` and `LocalSubjectRefAll`.
 
 ## Refactor
-- **operator**: skip_last should emit not only when observer complete.
+- **operator**: `skip_last` should emit not only when observer complete.
 
 ### Breaking Changes
 
