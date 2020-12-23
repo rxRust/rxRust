@@ -1,15 +1,16 @@
 ## [Unreleased](https://github.com/rxRust/rxRust/compare/v0.10.0...HEAD)
+### Features
+- **operator**: add `element_at` operator.
+- **operator**: add `ignore_elements` operator.
+
+### Refactor
+- **operator**: `skip_last` should emit not only when observer complete.
 
 ## [0.10.0](https://github.com/rxRust/rxRust/compare/v0.10.0...HEAD)
 ### Features
 - **operator**: add `distinct` operator.
 - **operator**: add `debounce` operator.
-- **operator**: add `element_at` operator.
-- **operator**: add `ignore_elements` operator.
 - **subject**: export `LocalSubjectRef`, `LocalSubjectErrRef` and `LocalSubjectRefAll`.
-
-### Refactor
-- **operator**: `skip_last` should emit not only when observer complete.
 
 ### Breaking Changes
 
