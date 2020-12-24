@@ -44,9 +44,7 @@ use ops::{
   filter::FilterOp,
   filter_map::FilterMapOp,
   finalize::FinalizeOp,
-  first::FirstOrOp,
-  ignore_elements::IgnoreElementsOp,
-  last::LastOrOp,
+  last::LastOp,
   map::MapOp,
   map_to::MapToOp,
   merge::MergeOp,
@@ -84,14 +82,11 @@ pub trait Observable {
 
   /// emit only the first item emitted by an Observable
   #[inline]
-  fn first_or(self, default: Self::Item) -> FirstOrOp<TakeOp<Self>, Self::Item>
+  fn first_or(self, default: Self::Item) -> DefaultIfEmptyOp<TakeOp<Self>>
   where
     Self: Sized,
   {
-    FirstOrOp {
-      source: self.first(),
-      default,
-    }
+    self.first().default_if_empty(default)
   }
 
   /// Emit only the last final item emitted by a source observable or a
@@ -113,15 +108,14 @@ pub trait Observable {
   /// // 1234
   /// ```
   #[inline]
-  fn last_or(self, default: Self::Item) -> LastOrOp<Self, Self::Item>
+  fn last_or(
+    self,
+    default: Self::Item,
+  ) -> DefaultIfEmptyOp<LastOp<Self, Self::Item>>
   where
     Self: Sized,
   {
-    LastOrOp {
-      source: self,
-      default: Some(default),
-      last: None,
-    }
+    self.last().default_if_empty(default)
   }
 
   /// Emit only item n (0-indexed) emitted by an Observable
@@ -136,11 +130,12 @@ pub trait Observable {
   /// Do not emit any items from an Observable but mirror its termination
   /// notification
   #[inline]
-  fn ignore_elements(self) -> IgnoreElementsOp<Self>
+  fn ignore_elements(self) -> FilterOp<Self, fn(&Self::Item) -> bool>
   where
     Self: Sized,
   {
-    IgnoreElementsOp { source: self }
+    fn always_false<Item>(_: &Item) -> bool { false }
+    self.filter(always_false as fn(&Self::Item) -> bool)
   }
 
   /// Emits only last final item emitted by a source observable.
@@ -161,13 +156,12 @@ pub trait Observable {
   /// // print log:
   /// // 99
   /// ```
-  fn last(self) -> LastOrOp<Self, Self::Item>
+  fn last(self) -> LastOp<Self, Self::Item>
   where
     Self: Sized,
   {
-    LastOrOp {
+    LastOp {
       source: self,
-      default: None,
       last: None,
     }
   }
@@ -719,7 +713,7 @@ pub trait Observable {
   fn reduce<OutputItem, BinaryOp>(
     self,
     binary_op: BinaryOp,
-  ) -> LastOrOp<ScanOp<Self, BinaryOp, OutputItem>, OutputItem>
+  ) -> DefaultIfEmptyOp<LastOp<ScanOp<Self, BinaryOp, OutputItem>, OutputItem>>
   where
     Self: Sized,
     BinaryOp: Fn(OutputItem, Self::Item) -> OutputItem,
@@ -1196,5 +1190,84 @@ mod tests {
     s.clone().element_at(5).subscribe(|v| assert_eq!(v, 5));
     s.clone().element_at(20).subscribe(|v| assert_eq!(v, 20));
     s.clone().element_at(21).subscribe(|_| assert!(false));
+  }
+
+  #[test]
+  fn first() {
+    let mut completed = 0;
+    let mut next_count = 0;
+
+    observable::from_iter(0..2)
+      .first()
+      .subscribe_complete(|_| next_count += 1, || completed += 1);
+
+    assert_eq!(completed, 1);
+    assert_eq!(next_count, 1);
+  }
+
+  #[test]
+  fn first_or() {
+    let mut completed = false;
+    let mut next_count = 0;
+
+    observable::from_iter(0..2)
+      .first_or(100)
+      .subscribe_complete(|_| next_count += 1, || completed = true);
+
+    assert_eq!(next_count, 1);
+    assert_eq!(completed, true);
+
+    completed = false;
+    let mut v = 0;
+    observable::empty()
+      .first_or(100)
+      .subscribe_complete(|value| v = value, || completed = true);
+
+    assert_eq!(completed, true);
+    assert_eq!(v, 100);
+  }
+
+  #[test]
+  fn first_support_fork() {
+    let mut value = 0;
+    let mut value2 = 0;
+    {
+      let o = observable::from_iter(1..100).first();
+      let o1 = o.clone().first();
+      let o2 = o.first();
+      o1.subscribe(|v| value = v);
+      o2.subscribe(|v| value2 = v);
+    }
+    assert_eq!(value, 1);
+    assert_eq!(value2, 1);
+  }
+  #[test]
+  fn first_or_support_fork() {
+    let mut default = 0;
+    let mut default2 = 0;
+    let o = observable::create(|mut subscriber| {
+      subscriber.complete();
+    })
+    .first_or(100);
+    let o1 = o.clone().first_or(0);
+    let o2 = o.clone().first_or(0);
+    o1.subscribe(|v| default = v);
+    o2.subscribe(|v| default2 = v);
+    assert_eq!(default, 100);
+    assert_eq!(default, 100);
+  }
+  #[test]
+  fn smoke_ignore_elements() {
+    observable::from_iter(0..20)
+      .ignore_elements()
+      .subscribe(move |_| assert!(false));
+  }
+
+  #[test]
+  fn shared_ignore_elements() {
+    observable::from_iter(0..20)
+      .ignore_elements()
+      .to_shared()
+      .subscribe(|_| assert!(false));
   }
 }
