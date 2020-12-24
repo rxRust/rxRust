@@ -5,6 +5,9 @@
 
 ### Refactor
 - **operator**: `skip_last` should emit not only when observer complete.
+- **operator**: make `first_or` implement with `first` and `default_if_empty`
+- **operator**: make `last_or` implement with `last` and `default_if_empty`
+- **operator**: make `ignore_elements` implement with `filter`
 
 ## [0.10.0](https://github.com/rxRust/rxRust/compare/v0.10.0...HEAD)
 ### Features
