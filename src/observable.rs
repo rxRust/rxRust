@@ -67,25 +67,17 @@ use ops::{
 use std::ops::{Add, Mul};
 use std::time::{Duration, Instant};
 
-pub trait Observable {
+pub trait Observable: Sized {
   type Item;
   type Err;
 
   /// emit only the first item emitted by an Observable
   #[inline]
-  fn first(self) -> TakeOp<Self>
-  where
-    Self: Sized,
-  {
-    self.take(1)
-  }
+  fn first(self) -> TakeOp<Self> { self.take(1) }
 
   /// emit only the first item emitted by an Observable
   #[inline]
-  fn first_or(self, default: Self::Item) -> DefaultIfEmptyOp<TakeOp<Self>>
-  where
-    Self: Sized,
-  {
+  fn first_or(self, default: Self::Item) -> DefaultIfEmptyOp<TakeOp<Self>> {
     self.first().default_if_empty(default)
   }
 
@@ -111,29 +103,20 @@ pub trait Observable {
   fn last_or(
     self,
     default: Self::Item,
-  ) -> DefaultIfEmptyOp<LastOp<Self, Self::Item>>
-  where
-    Self: Sized,
-  {
+  ) -> DefaultIfEmptyOp<LastOp<Self, Self::Item>> {
     self.last().default_if_empty(default)
   }
 
   /// Emit only item n (0-indexed) emitted by an Observable
   #[inline]
-  fn element_at(self, nth: u32) -> TakeOp<SkipOp<Self>>
-  where
-    Self: Sized,
-  {
+  fn element_at(self, nth: u32) -> TakeOp<SkipOp<Self>> {
     self.skip(nth).first()
   }
 
   /// Do not emit any items from an Observable but mirror its termination
   /// notification
   #[inline]
-  fn ignore_elements(self) -> FilterOp<Self, fn(&Self::Item) -> bool>
-  where
-    Self: Sized,
-  {
+  fn ignore_elements(self) -> FilterOp<Self, fn(&Self::Item) -> bool> {
     fn always_false<Item>(_: &Item) -> bool { false }
     self.filter(always_false as fn(&Self::Item) -> bool)
   }
@@ -156,10 +139,7 @@ pub trait Observable {
   /// // print log:
   /// // 99
   /// ```
-  fn last(self) -> LastOp<Self, Self::Item>
-  where
-    Self: Sized,
-  {
+  fn last(self) -> LastOp<Self, Self::Item> {
     LastOp {
       source: self,
       last: None,
@@ -170,7 +150,6 @@ pub trait Observable {
   #[inline]
   fn finalize<F>(self, f: F) -> FinalizeOp<Self, F>
   where
-    Self: Sized,
     F: FnMut(),
   {
     FinalizeOp {
@@ -184,7 +163,6 @@ pub trait Observable {
   #[inline]
   fn map<B, F>(self, f: F) -> MapOp<Self, F>
   where
-    Self: Sized,
     F: Fn(Self::Item) -> B,
   {
     MapOp {
@@ -195,10 +173,7 @@ pub trait Observable {
 
   /// Maps emissions to a constant value.
   #[inline]
-  fn map_to<B>(self, value: B) -> MapToOp<Self, B>
-  where
-    Self: Sized,
-  {
+  fn map_to<B>(self, value: B) -> MapToOp<Self, B> {
     MapToOp {
       source: self,
       value,
@@ -226,7 +201,6 @@ pub trait Observable {
   #[inline]
   fn merge<S>(self, o: S) -> MergeOp<Self, S>
   where
-    Self: Sized,
     S: Observable<Item = Self::Item, Err = Self::Err>,
   {
     MergeOp {
@@ -254,7 +228,6 @@ pub trait Observable {
   #[inline]
   fn filter<F>(self, filter: F) -> FilterOp<Self, F>
   where
-    Self: Sized,
     F: Fn(&Self::Item) -> bool,
   {
     FilterOp {
@@ -290,7 +263,6 @@ pub trait Observable {
   /// ```
   fn filter_map<F, SourceItem, Item>(self, f: F) -> FilterMapOp<Self, F>
   where
-    Self: Sized,
     F: FnMut(SourceItem) -> Option<Item>,
   {
     FilterMapOp { source: self, f }
@@ -315,7 +287,6 @@ pub trait Observable {
   #[inline]
   fn box_it<O: IntoBox<Self>>(self) -> BoxOp<O>
   where
-    Self: Sized,
     BoxOp<O>: Observable<Item = Self::Item, Err = Self::Err>,
   {
     O::box_it(self)
@@ -344,10 +315,7 @@ pub trait Observable {
   /// // 10
   /// ```
   #[inline]
-  fn skip(self, count: u32) -> SkipOp<Self>
-  where
-    Self: Sized,
-  {
+  fn skip(self, count: u32) -> SkipOp<Self> {
     SkipOp {
       source: self,
       count,
@@ -379,7 +347,6 @@ pub trait Observable {
   #[inline]
   fn skip_while<F>(self, callback: F) -> SkipWhileOp<Self, F>
   where
-    Self: Sized,
     F: FnMut(&Self::Item) -> bool,
   {
     SkipWhileOp {
@@ -413,10 +380,7 @@ pub trait Observable {
   /// // 4
   /// ```
   #[inline]
-  fn skip_last(self, count: usize) -> SkipLastOp<Self>
-  where
-    Self: Sized,
-  {
+  fn skip_last(self, count: usize) -> SkipLastOp<Self> {
     SkipLastOp {
       source: self,
       count,
@@ -447,10 +411,7 @@ pub trait Observable {
   /// ```
   ///
   #[inline]
-  fn take(self, count: u32) -> TakeOp<Self>
-  where
-    Self: Sized,
-  {
+  fn take(self, count: u32) -> TakeOp<Self> {
     TakeOp {
       source: self,
       count,
@@ -466,10 +427,7 @@ pub trait Observable {
   /// Observable and completes. If the `notifier` doesn't emit any value and
   /// completes then `take_until` will pass all values.
   #[inline]
-  fn take_until<T>(self, notifier: T) -> TakeUntilOp<Self, T>
-  where
-    Self: Sized,
-  {
+  fn take_until<T>(self, notifier: T) -> TakeUntilOp<Self, T> {
     TakeUntilOp {
       source: self,
       notifier,
@@ -503,7 +461,6 @@ pub trait Observable {
   #[inline]
   fn take_while<F>(self, callback: F) -> TakeWhileOp<Self, F>
   where
-    Self: Sized,
     F: FnMut(&Self::Item) -> bool,
   {
     TakeWhileOp {
@@ -538,10 +495,7 @@ pub trait Observable {
   /// ```
   ///
   #[inline]
-  fn take_last(self, count: usize) -> TakeLastOp<Self>
-  where
-    Self: Sized,
-  {
+  fn take_last(self, count: usize) -> TakeLastOp<Self> {
     TakeLastOp {
       source: self,
       count,
@@ -578,7 +532,6 @@ pub trait Observable {
   #[inline]
   fn sample<O>(self, sampling: O) -> SampleOp<Self, O>
   where
-    Self: Sized,
     O: Observable,
   {
     SampleOp {
@@ -633,7 +586,6 @@ pub trait Observable {
     binary_op: BinaryOp,
   ) -> ScanOp<Self, BinaryOp, OutputItem>
   where
-    Self: Sized,
     BinaryOp: Fn(OutputItem, Self::Item) -> OutputItem,
     OutputItem: Clone,
   {
@@ -657,7 +609,6 @@ pub trait Observable {
     binary_op: BinaryOp,
   ) -> ScanOp<Self, BinaryOp, OutputItem>
   where
-    Self: Sized,
     BinaryOp: Fn(OutputItem, Self::Item) -> OutputItem,
     OutputItem: Default + Clone,
   {
@@ -692,7 +643,6 @@ pub trait Observable {
     binary_op: BinaryOp,
   ) -> ReduceOp<Self, BinaryOp, OutputItem>
   where
-    Self: Sized,
     BinaryOp: Fn(OutputItem, Self::Item) -> OutputItem,
     OutputItem: Clone,
   {
@@ -715,7 +665,6 @@ pub trait Observable {
     binary_op: BinaryOp,
   ) -> DefaultIfEmptyOp<LastOp<ScanOp<Self, BinaryOp, OutputItem>, OutputItem>>
   where
-    Self: Sized,
     BinaryOp: Fn(OutputItem, Self::Item) -> OutputItem,
     OutputItem: Default + Clone,
   {
@@ -740,7 +689,6 @@ pub trait Observable {
   /// ```
   fn max(self) -> MinMaxOp<Self, Self::Item>
   where
-    Self: Sized,
     Self::Item: Clone + Send + PartialOrd<Self::Item>,
   {
     fn get_greater<Item>(i: Option<Item>, v: Item) -> Option<Item>
@@ -778,7 +726,6 @@ pub trait Observable {
   /// ```
   fn min(self) -> MinMaxOp<Self, Self::Item>
   where
-    Self: Sized,
     Self::Item: Clone + Send + PartialOrd<Self::Item>,
   {
     fn get_lesser<Item>(i: Option<Item>, v: Item) -> Option<Item>
@@ -820,7 +767,6 @@ pub trait Observable {
   #[inline]
   fn sum(self) -> SumOp<Self, Self::Item>
   where
-    Self: Sized,
     Self::Item: Clone + Default + Add<Self::Item, Output = Self::Item>,
   {
     self.reduce(|acc, v| acc + v)
@@ -847,12 +793,7 @@ pub trait Observable {
   /// // 5
   /// ```
   #[inline]
-  fn count(self) -> CountOp<Self, Self::Item>
-  where
-    Self: Sized,
-  {
-    self.reduce(|acc, _v| acc + 1)
-  }
+  fn count(self) -> CountOp<Self, Self::Item> { self.reduce(|acc, _v| acc + 1) }
 
   /// Calculates the sum of numbers emitted by an source observable and emits
   /// this sum when source completes.
@@ -874,7 +815,6 @@ pub trait Observable {
   /// ```
   fn average(self) -> AverageOp<Self, Self::Item>
   where
-    Self: Sized,
     Self::Item: Clone
       + Send
       + Default
@@ -923,10 +863,7 @@ pub trait Observable {
   /// applied to it. In this way you can wait for all intended observers to
   /// subscribe to the Observable before the Observable begins emitting items.
   #[inline]
-  fn publish<Subject: Default>(self) -> ConnectableObservable<Self, Subject>
-  where
-    Self: Sized,
-  {
+  fn publish<Subject: Default>(self) -> ConnectableObservable<Self, Subject> {
     ConnectableObservable {
       source: self,
       subject: Subject::default(),
@@ -946,7 +883,7 @@ pub trait Observable {
   where
     Inner: RefCountCreator<Connectable = ConnectableObservable<Self, Subject>>,
     Subject: Default,
-    Self: Sized + Clone,
+    Self: Clone,
   {
     self.publish::<Subject>().ref_count::<Inner>()
   }
@@ -954,10 +891,7 @@ pub trait Observable {
   /// Delays the emission of items from the source Observable by a given timeout
   /// or until a given `Instant`.
   #[inline]
-  fn delay<SD>(self, dur: Duration, scheduler: SD) -> DelayOp<Self, SD>
-  where
-    Self: Sized,
-  {
+  fn delay<SD>(self, dur: Duration, scheduler: SD) -> DelayOp<Self, SD> {
     DelayOp {
       source: self,
       delay: dur,
@@ -966,10 +900,7 @@ pub trait Observable {
   }
 
   #[inline]
-  fn delay_at<SD>(self, at: Instant, scheduler: SD) -> DelayOp<Self, SD>
-  where
-    Self: Sized,
-  {
+  fn delay_at<SD>(self, at: Instant, scheduler: SD) -> DelayOp<Self, SD> {
     DelayOp {
       source: self,
       delay: at.elapsed(),
@@ -1021,10 +952,7 @@ pub trait Observable {
   /// before, but the emissions from `a` are scheduled on a new thread because
   /// we are now using the `NewThread` Scheduler for that specific Observable.
   #[inline]
-  fn subscribe_on<SD>(self, scheduler: SD) -> SubscribeOnOP<Self, SD>
-  where
-    Self: Sized,
-  {
+  fn subscribe_on<SD>(self, scheduler: SD) -> SubscribeOnOP<Self, SD> {
     SubscribeOnOP {
       source: self,
       scheduler,
@@ -1038,10 +966,7 @@ pub trait Observable {
   /// which will be used to reschedule notifications emitted by the source
   /// Observable.
   #[inline]
-  fn observe_on<SD>(self, scheduler: SD) -> ObserveOnOp<Self, SD>
-  where
-    Self: Sized,
-  {
+  fn observe_on<SD>(self, scheduler: SD) -> ObserveOnOp<Self, SD> {
     ObserveOnOp {
       source: self,
       scheduler,
@@ -1055,10 +980,7 @@ pub trait Observable {
     self,
     duration: Duration,
     scheduler: SD,
-  ) -> DebounceOp<Self, SD>
-  where
-    Self: Sized,
-  {
+  ) -> DebounceOp<Self, SD> {
     DebounceOp {
       source: self,
       duration,
@@ -1090,10 +1012,7 @@ pub trait Observable {
     duration: Duration,
     edge: ThrottleEdge,
     scheduler: SD,
-  ) -> ThrottleTimeOp<Self, SD>
-  where
-    Self: Sized,
-  {
+  ) -> ThrottleTimeOp<Self, SD> {
     ThrottleTimeOp {
       source: self,
       duration,
@@ -1105,12 +1024,7 @@ pub trait Observable {
   /// Returns an Observable that emits all items emitted by the source
   /// Observable that are distinct by comparison from previous items.
   #[inline]
-  fn distinct(self) -> DistinctOp<Self>
-  where
-    Self: Sized,
-  {
-    DistinctOp { source: self }
-  }
+  fn distinct(self) -> DistinctOp<Self> { DistinctOp { source: self } }
 
   /// 'Zips up' two observable into a single observable of pairs.
   ///
@@ -1123,7 +1037,6 @@ pub trait Observable {
   #[inline]
   fn zip<U>(self, other: U) -> ZipOp<Self, U>
   where
-    Self: Sized,
     U: Observable,
   {
     ZipOp { a: self, b: other }
@@ -1143,10 +1056,10 @@ pub trait Observable {
   /// // 5
   /// ```
   #[inline]
-  fn default_if_empty(self, default_value: Self::Item) -> DefaultIfEmptyOp<Self>
-  where
-    Self: Sized,
-  {
+  fn default_if_empty(
+    self,
+    default_value: Self::Item,
+  ) -> DefaultIfEmptyOp<Self> {
     DefaultIfEmptyOp {
       source: self,
       is_empty: true,
