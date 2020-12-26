@@ -91,7 +91,7 @@ A toolbox of useful Operators for working with Observables
 ### Conditional and Boolean Operators
 Operators that evaluate one or more Observables or items emitted by Observables
 
-- [ ] All — determine whether all items emitted by an Observable meet some criteria
+- [x] All — determine whether all items emitted by an Observable meet some criteria
 - [ ] Amb — given two or more source Observables, emit all of the items from only the first of these Observables to emit an item
 - [ ] Contains — determine whether an Observable emits a particular item or not
 - [x] DefaultIfEmpty — emit items from the source Observable, or a default item if the source Observable emits nothing

@@ -121,6 +121,22 @@ pub trait Observable: Sized {
     self.filter(always_false as fn(&Self::Item) -> bool)
   }
 
+  // Determine whether all items emitted by an Observable meet some criteria
+  #[inline]
+  fn all<F>(
+    self,
+    pred: F,
+  ) -> DefaultIfEmptyOp<TakeOp<FilterOp<MapOp<Self, F>, fn(&bool) -> bool>>>
+  where
+    F: Fn(Self::Item) -> bool,
+  {
+    fn not(b: &bool) -> bool { !b }
+    self
+      .map(pred)
+      .filter(not as fn(&bool) -> bool)
+      .first_or(true)
+  }
+
   /// Emits only last final item emitted by a source observable.
   ///
   /// Completes right after emitting the single last item, or when source
@@ -139,6 +155,7 @@ pub trait Observable: Sized {
   /// // print log:
   /// // 99
   /// ```
+  #[inline]
   fn last(self) -> LastOp<Self, Self::Item> {
     LastOp {
       source: self,
@@ -261,6 +278,7 @@ pub trait Observable: Sized {
   ///
   /// assert_eq!(res, [1, 3, 5]);
   /// ```
+  #[inline]
   fn filter_map<F, SourceItem, Item>(self, f: F) -> FilterMapOp<Self, F>
   where
     F: FnMut(SourceItem) -> Option<Item>,
@@ -637,6 +655,7 @@ pub trait Observable: Sized {
   /// // print log:
   /// // 105
   /// ```
+  #[inline]
   fn reduce_initial<OutputItem, BinaryOp>(
     self,
     initial: OutputItem,
@@ -687,6 +706,7 @@ pub trait Observable: Sized {
   /// // print log:
   /// // 7
   /// ```
+  #[inline]
   fn max(self) -> MinMaxOp<Self, Self::Item>
   where
     Self::Item: Clone + Send + PartialOrd<Self::Item>,
@@ -724,6 +744,7 @@ pub trait Observable: Sized {
   /// // print log:
   /// // 3
   /// ```
+  #[inline]
   fn min(self) -> MinMaxOp<Self, Self::Item>
   where
     Self::Item: Clone + Send + PartialOrd<Self::Item>,
@@ -813,6 +834,7 @@ pub trait Observable: Sized {
   /// // print log:
   /// // 5
   /// ```
+  #[inline]
   fn average(self) -> AverageOp<Self, Self::Item>
   where
     Self::Item: Clone
@@ -1182,5 +1204,15 @@ mod tests {
       .ignore_elements()
       .to_shared()
       .subscribe(|_| assert!(false));
+  }
+
+  #[test]
+  fn smoke_all() {
+    observable::from_iter(0..10)
+      .all(|v| v < 10)
+      .subscribe(|b| assert!(b));
+    observable::from_iter(0..10)
+      .all(|v| v < 5)
+      .subscribe(|b| assert!(!b));
   }
 }
