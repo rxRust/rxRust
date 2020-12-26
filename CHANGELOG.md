@@ -2,6 +2,7 @@
 ### Features
 - **operator**: add `element_at` operator.
 - **operator**: add `ignore_elements` operator.
+- **operator**: add `all` operator.
 
 ### Refactor
 - **operator**: `skip_last` should emit not only when observer complete.
