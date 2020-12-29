@@ -1,4 +1,5 @@
 pub mod box_it;
+pub mod contains;
 pub mod debounce;
 pub mod default_if_empty;
 pub mod delay;

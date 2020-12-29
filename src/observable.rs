@@ -38,6 +38,7 @@ pub use observable_comp::*;
 use crate::ops::default_if_empty::DefaultIfEmptyOp;
 use ops::{
   box_it::{BoxOp, IntoBox},
+  contains::ContainsOp,
   debounce::DebounceOp,
   delay::DelayOp,
   distinct::DistinctOp,
@@ -121,7 +122,7 @@ pub trait Observable: Sized {
     self.filter(always_false as fn(&Self::Item) -> bool)
   }
 
-  // Determine whether all items emitted by an Observable meet some criteria
+  /// Determine whether all items emitted by an Observable meet some criteria
   #[inline]
   fn all<F>(
     self,
@@ -135,6 +136,14 @@ pub trait Observable: Sized {
       .map(pred)
       .filter(not as fn(&bool) -> bool)
       .first_or(true)
+  }
+
+  /// Determine whether an Observable emits a particular item or not
+  fn contains(self, target: Self::Item) -> ContainsOp<Self, Self::Item> {
+    ContainsOp {
+      source: self,
+      target: target,
+    }
   }
 
   /// Emits only last final item emitted by a source observable.
