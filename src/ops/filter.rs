@@ -78,7 +78,9 @@ where
 
 #[cfg(test)]
 mod test {
+  extern crate test;
   use crate::prelude::*;
+  use test::Bencher;
 
   #[test]
   fn fork_and_shared() {
@@ -90,4 +92,16 @@ mod test {
       .to_shared()
       .subscribe(|_| {});
   }
+
+  #[test]
+  fn smoke() {
+    observable::from_iter(0..1000)
+      .filter(|v| v % 2 == 0)
+      .subscribe(|v| {
+        assert!(v % 2 == 0);
+      });
+  }
+
+  #[bench]
+  fn bench_filter(b: &mut Bencher) { b.iter(smoke); }
 }
