@@ -85,7 +85,9 @@ where
 
 #[cfg(test)]
 mod test {
+  extern crate test;
   use crate::prelude::*;
+  use test::Bencher;
   #[test]
   fn contains_smoke() {
     observable::from_iter(0..10)
@@ -104,4 +106,6 @@ mod test {
       .to_shared()
       .subscribe(|b| assert!(b));
   }
+  #[bench]
+  fn bench_contains(b: &mut Bencher) { b.iter(contains_smoke); }
 }

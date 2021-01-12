@@ -97,7 +97,9 @@ where
 
 #[cfg(test)]
 mod test {
+  extern crate test;
   use super::*;
+  use test::Bencher;
 
   #[test]
   fn smoke() {
@@ -122,17 +124,18 @@ mod test {
 
     connected.connect();
   }
-}
+  #[test]
+  fn publish_smoke() {
+    let p = observable::of(100).publish();
+    let mut first = 0;
+    let mut second = 0;
+    p.clone().subscribe(|v| first = v);
+    p.clone().subscribe(|v| second = v);
 
-#[test]
-fn publish_smoke() {
-  let p = observable::of(100).publish();
-  let mut first = 0;
-  let mut second = 0;
-  p.clone().subscribe(|v| first = v);
-  p.clone().subscribe(|v| second = v);
-
-  p.connect();
-  assert_eq!(first, 100);
-  assert_eq!(second, 100);
+    p.connect();
+    assert_eq!(first, 100);
+    assert_eq!(second, 100);
+  }
+  #[bench]
+  fn bench_connectable(b: &mut Bencher) { b.iter(smoke); }
 }

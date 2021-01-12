@@ -70,8 +70,10 @@ where
 
 #[cfg(test)]
 mod tests {
+  extern crate test;
   use super::*;
   use std::{cell::RefCell, rc::Rc};
+  use test::Bencher;
   #[test]
   fn smoke() {
     let x = Rc::new(RefCell::new(vec![]));
@@ -91,4 +93,6 @@ mod tests {
       .to_shared()
       .subscribe(|_| {});
   }
+  #[bench]
+  fn bench_distinct(b: &mut Bencher) { b.iter(smoke); }
 }

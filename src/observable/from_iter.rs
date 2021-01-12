@@ -111,54 +111,62 @@ where
   from_iter(std::iter::repeat(v).take(n))
 }
 
-#[test]
-fn from_range() {
-  let mut hit_count = 0;
-  let mut completed = false;
-  observable::from_iter(0..100)
-    .subscribe_complete(|_| hit_count += 1, || completed = true);
+#[cfg(test)]
+mod test {
+  extern crate test;
+  use crate::prelude::*;
+  use test::Bencher;
+  #[test]
+  fn from_range() {
+    let mut hit_count = 0;
+    let mut completed = false;
+    observable::from_iter(0..100)
+      .subscribe_complete(|_| hit_count += 1, || completed = true);
 
-  assert_eq!(hit_count, 100);
-  assert_eq!(completed, true);
-}
+    assert_eq!(hit_count, 100);
+    assert_eq!(completed, true);
+  }
 
-#[test]
-fn from_vec() {
-  let mut hit_count = 0;
-  let mut completed = false;
-  observable::from_iter(vec![0; 100])
-    .subscribe_complete(|_| hit_count += 1, || completed = true);
+  #[test]
+  fn from_vec() {
+    let mut hit_count = 0;
+    let mut completed = false;
+    observable::from_iter(vec![0; 100])
+      .subscribe_complete(|_| hit_count += 1, || completed = true);
 
-  assert_eq!(hit_count, 100);
-  assert_eq!(completed, true);
-}
+    assert_eq!(hit_count, 100);
+    assert_eq!(completed, true);
+  }
 
-#[test]
-fn repeat_three_times() {
-  let mut hit_count = 0;
-  let mut completed = false;
-  repeat(123, 5).subscribe_complete(
-    |v| {
-      hit_count += 1;
-      assert_eq!(123, v);
-    },
-    || completed = true,
-  );
-  assert_eq!(5, hit_count);
-  assert!(completed);
-}
+  #[test]
+  fn repeat_three_times() {
+    let mut hit_count = 0;
+    let mut completed = false;
+    repeat(123, 5).subscribe_complete(
+      |v| {
+        hit_count += 1;
+        assert_eq!(123, v);
+      },
+      || completed = true,
+    );
+    assert_eq!(5, hit_count);
+    assert!(completed);
+  }
 
-#[test]
-fn repeat_zero_times() {
-  let mut hit_count = 0;
-  let mut completed = false;
-  repeat(123, 0).subscribe_complete(
-    |v| {
-      hit_count += 1;
-      assert_eq!(123, v);
-    },
-    || completed = true,
-  );
-  assert_eq!(0, hit_count);
-  assert!(completed);
+  #[test]
+  fn repeat_zero_times() {
+    let mut hit_count = 0;
+    let mut completed = false;
+    repeat(123, 0).subscribe_complete(
+      |v| {
+        hit_count += 1;
+        assert_eq!(123, v);
+      },
+      || completed = true,
+    );
+    assert_eq!(0, hit_count);
+    assert!(completed);
+  }
+  #[bench]
+  fn bench_from_iter(b: &mut Bencher) { b.iter(from_range); }
 }
