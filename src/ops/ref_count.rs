@@ -199,66 +199,74 @@ where
   fn is_closed(&self) -> bool { self.subscription.is_closed() }
 }
 
-#[test]
-fn smoke() {
-  let mut accept1 = 0;
-  let mut accept2 = 0;
-  {
-    let ref_count = observable::of(1).publish().ref_count();
-    ref_count.clone().subscribe(|v| accept1 = v);
-    ref_count.clone().subscribe(|v| accept2 = v);
+#[cfg(test)]
+mod test {
+  extern crate test;
+  use crate::prelude::*;
+  use test::Bencher;
+  #[test]
+  fn smoke() {
+    let mut accept1 = 0;
+    let mut accept2 = 0;
+    {
+      let ref_count = observable::of(1).publish().ref_count();
+      ref_count.clone().subscribe(|v| accept1 = v);
+      ref_count.clone().subscribe(|v| accept2 = v);
+    }
+
+    assert_eq!(accept1, 1);
+    assert_eq!(accept2, 0);
   }
 
-  assert_eq!(accept1, 1);
-  assert_eq!(accept2, 0);
-}
+  #[test]
+  fn auto_unsubscribe() {
+    let mut accept1 = 0;
+    let mut accept2 = 0;
+    {
+      let mut subject = Subject::new();
+      let ref_count = subject.clone().publish().ref_count();
+      let mut s1 = ref_count.clone().subscribe(|v| accept1 = v);
+      let mut s2 = ref_count.clone().subscribe(|v| accept2 = v);
+      subject.next(1);
+      s1.unsubscribe();
+      s2.unsubscribe();
+      subject.next(2);
+    }
 
-#[test]
-fn auto_unsubscribe() {
-  let mut accept1 = 0;
-  let mut accept2 = 0;
-  {
-    let mut subject = Subject::new();
-    let ref_count = subject.clone().publish().ref_count();
-    let mut s1 = ref_count.clone().subscribe(|v| accept1 = v);
-    let mut s2 = ref_count.clone().subscribe(|v| accept2 = v);
-    subject.next(1);
-    s1.unsubscribe();
-    s2.unsubscribe();
-    subject.next(2);
+    assert_eq!(accept1, 1);
+    assert_eq!(accept2, 1);
   }
 
-  assert_eq!(accept1, 1);
-  assert_eq!(accept2, 1);
-}
+  #[test]
+  fn fork_and_shared() {
+    observable::of(1).publish().ref_count().subscribe(|_| {});
 
-#[test]
-fn fork_and_shared() {
-  observable::of(1).publish().ref_count().subscribe(|_| {});
+    Subject::new()
+      .publish()
+      .ref_count()
+      .to_shared()
+      .subscribe(|_: i32| {});
 
-  Subject::new()
-    .publish()
-    .ref_count()
-    .to_shared()
-    .subscribe(|_: i32| {});
+    observable::of(1)
+      .publish()
+      .ref_count()
+      .to_shared()
+      .subscribe(|_| {});
 
-  observable::of(1)
-    .publish()
-    .ref_count()
-    .to_shared()
-    .subscribe(|_| {});
-
-  observable::of(1)
-    .to_shared()
-    .publish()
-    .ref_count()
-    .to_shared()
-    .subscribe(|_| {});
-  observable::of(1)
-    .to_shared()
-    .publish()
-    .ref_count()
-    .to_shared()
-    .to_shared()
-    .subscribe(|_| {});
+    observable::of(1)
+      .to_shared()
+      .publish()
+      .ref_count()
+      .to_shared()
+      .subscribe(|_| {});
+    observable::of(1)
+      .to_shared()
+      .publish()
+      .ref_count()
+      .to_shared()
+      .to_shared()
+      .subscribe(|_| {});
+  }
+  #[bench]
+  fn bench_ref_count(b: &mut Bencher) { b.iter(smoke) }
 }

@@ -170,6 +170,7 @@ where
 
 #[cfg(test)]
 mod tests {
+  extern crate test;
   use super::*;
   use futures::{
     executor::{LocalPool, ThreadPool},
@@ -180,6 +181,7 @@ mod tests {
     rc::Rc,
     sync::{Arc, Mutex},
   };
+  use test::Bencher;
 
   #[test]
   fn shared() {
@@ -225,4 +227,6 @@ mod tests {
     local.run();
     assert_eq!(*value.borrow(), 2);
   }
+  #[bench]
+  fn bench_from_future(b: &mut Bencher) { b.iter(local); }
 }

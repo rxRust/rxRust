@@ -107,7 +107,9 @@ where
 
 #[cfg(test)]
 mod test {
+  extern crate test;
   use std::sync::{Arc, Mutex};
+  use test::Bencher;
 
   use crate::prelude::*;
 
@@ -172,4 +174,6 @@ mod test {
     assert_eq!(*last_next_arg_mirror.lock().unwrap(), Some(5));
     assert_eq!(*completed_count_mirror.lock().unwrap(), 1);
   }
+  #[bench]
+  fn bench_take_until(b: &mut Bencher) { b.iter(base_function); }
 }

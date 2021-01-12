@@ -184,9 +184,11 @@ where
 
 #[cfg(test)]
 mod test {
+  extern crate test;
   use crate::prelude::*;
   use std::sync::atomic::{AtomicUsize, Ordering};
   use std::sync::Arc;
+  use test::Bencher;
 
   #[test]
   fn smoke() {
@@ -228,4 +230,6 @@ mod test {
     }
     assert_eq!(complete, true);
   }
+  #[bench]
+  fn bench_zip(b: &mut Bencher) { b.iter(smoke); }
 }
