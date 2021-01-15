@@ -1126,7 +1126,10 @@ pub(crate) macro observable_proxy_impl(
 
 #[cfg(test)]
 mod tests {
+  extern crate test;
   use super::*;
+  use test::Bencher;
+
   #[test]
   fn smoke_element_at() {
     let s = observable::from_iter(0..20);
@@ -1135,6 +1138,9 @@ mod tests {
     s.clone().element_at(20).subscribe(|v| assert_eq!(v, 20));
     s.clone().element_at(21).subscribe(|_| assert!(false));
   }
+
+  #[bench]
+  fn element_at_bench(b: &mut Bencher) { b.iter(smoke_element_at); }
 
   #[test]
   fn first() {
@@ -1148,6 +1154,9 @@ mod tests {
     assert_eq!(completed, 1);
     assert_eq!(next_count, 1);
   }
+
+  #[bench]
+  fn first_bench(b: &mut Bencher) { b.iter(first); }
 
   #[test]
   fn first_or() {
@@ -1171,6 +1180,9 @@ mod tests {
     assert_eq!(v, 100);
   }
 
+  #[bench]
+  fn first_or_bench(b: &mut Bencher) { b.iter(first_or); }
+
   #[test]
   fn first_support_fork() {
     let mut value = 0;
@@ -1185,6 +1197,7 @@ mod tests {
     assert_eq!(value, 1);
     assert_eq!(value2, 1);
   }
+
   #[test]
   fn first_or_support_fork() {
     let mut default = 0;
@@ -1200,12 +1213,15 @@ mod tests {
     assert_eq!(default, 100);
     assert_eq!(default, 100);
   }
+
   #[test]
   fn smoke_ignore_elements() {
     observable::from_iter(0..20)
       .ignore_elements()
       .subscribe(move |_| assert!(false));
   }
+  #[bench]
+  fn ignore_emements_bench(b: &mut Bencher) { b.iter(smoke_ignore_elements); }
 
   #[test]
   fn shared_ignore_elements() {
@@ -1224,4 +1240,6 @@ mod tests {
       .all(|v| v < 5)
       .subscribe(|b| assert!(!b));
   }
+  #[bench]
+  fn all_bench(b: &mut Bencher) { b.iter(smoke_all); }
 }
