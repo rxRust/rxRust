@@ -1,4 +1,6 @@
-## [Unreleased](https://github.com/rxRust/rxRust/compare/v0.10.0...HEAD)
+## [Unreleased](https://github.com/rxRust/rxRust/compare/v0.11.0...HEAD)
+
+## [0.11.0](https://github.com/rxRust/rxRust/compare/v0.10.0...HEAD)
 ### Features
 - **operator**: add `element_at` operator.
 - **operator**: add `ignore_elements` operator.
@@ -10,6 +12,10 @@
 - **operator**: make `first_or` implement with `first` and `default_if_empty`
 - **operator**: make `last_or` implement with `last` and `default_if_empty`
 - **operator**: make `ignore_elements` implement with `filter`
+
+### Bug Fixes 
+
+- make `interval` mod public.
 
 ## [0.10.0](https://github.com/rxRust/rxRust/compare/v0.10.0...HEAD)
 ### Features
