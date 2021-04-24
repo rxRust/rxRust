@@ -7,6 +7,7 @@ pub mod distinct;
 pub mod filter;
 pub mod filter_map;
 pub mod finalize;
+pub mod flatten;
 pub mod last;
 pub mod map;
 pub mod map_to;
