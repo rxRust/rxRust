@@ -45,6 +45,7 @@ use ops::{
   filter::FilterOp,
   filter_map::FilterMapOp,
   finalize::FinalizeOp,
+  flatten::FlattenOp,
   last::LastOp,
   map::MapOp,
   map_to::MapToOp,
@@ -181,6 +182,40 @@ pub trait Observable: Sized {
     FinalizeOp {
       source: self,
       func: f,
+    }
+  }
+
+  /// Creates an Observable that combines all the emissions from Observables
+  /// that get emitted from an Observable.
+  ///
+  /// # Example
+  ///
+  /// ```
+  /// # use rxrust::prelude::*;
+  /// let source = Subject::new();
+  /// let numbers = Subject::new();
+  /// // crate a even stream by filter
+  /// let even = numbers.clone().filter(|v| *v % 2 == 0);
+  /// // crate an odd stream by filter
+  /// let odd = numbers.clone().filter(|v| *v % 2 != 0);
+  ///
+  /// // merge odd and even stream again
+  /// let out = source.clone().flatten();
+  ///
+  /// source.next(even);
+  /// source.next(odd);
+  ///
+  /// // attach observers
+  /// out.subscribe(|v: &i32| println!("{} ", v));
+  /// ```
+  #[inline]
+  fn flatten<Inner, A>(self) -> FlattenOp<Self, Inner>
+  where
+    Inner: Observable<Item = A, Err = Self::Err>,
+  {
+    FlattenOp {
+      source: self,
+      marker: std::marker::PhantomData::<Inner>,
     }
   }
 
