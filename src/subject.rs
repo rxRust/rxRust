@@ -138,7 +138,7 @@ mod test {
     let mut broadcast = Subject::new();
     broadcast
       .clone()
-      .subscribe_err(|_: i32| {}, |e: _| panic!(e));
+      .subscribe_err(|_: i32| {}, |e: _| panic!("{}",e));
     broadcast.next(1);
 
     broadcast.error(&"should panic!");

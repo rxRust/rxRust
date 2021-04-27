@@ -192,12 +192,12 @@ pub trait Observable: Sized {
   ///
   /// ```
   /// # use rxrust::prelude::*;
-  /// let source = Subject::new();
+  /// let mut source = Subject::new();
   /// let numbers = Subject::new();
   /// // create a even stream by filter
-  /// let even = numbers.clone().filter(|v| *v % 2 == 0);
+  /// let even = numbers.clone().filter((|v| *v % 2 == 0) as fn(&i32) -> bool);
   /// // create an odd stream by filter
-  /// let odd = numbers.clone().filter(|v| *v % 2 != 0);
+  /// let odd = numbers.clone().filter((|v| *v % 2 != 0) as fn(&i32) -> bool);
   ///
   /// // merge odd and even stream again
   /// let out = source.clone().flatten();
@@ -206,7 +206,7 @@ pub trait Observable: Sized {
   /// source.next(odd);
   ///
   /// // attach observers
-  /// out.subscribe(|v: &i32| println!("{} ", v));
+  /// out.subscribe(|v: i32| println!("{} ", v));
   /// ```
   #[inline]
   fn flatten<Inner, A>(self) -> FlattenOp<Self, Inner>

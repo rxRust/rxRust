@@ -200,8 +200,7 @@ mod test {
     let pool = ThreadPool::builder().pool_size(100).create().unwrap();
 
     observable::create(|mut s| {
-      s.next(&1);
-      s.next(&1);
+      (0..100).for_each(|i| s.next(i));
       *emit_thread.lock().unwrap() = thread::current().id();
     })
     .observe_on(pool)
@@ -213,12 +212,9 @@ mod test {
 
     let current_id = thread::current().id();
     assert_eq!(*emit_thread.lock().unwrap(), current_id);
-    let ot = oc.lock().unwrap();
-    let ot1 = ot[0];
-    let ot2 = ot[1];
-    assert_ne!(ot1, ot2);
-    assert_ne!(current_id, ot2);
-    assert_ne!(current_id, ot1);
+    let mut ot = oc.lock().unwrap();
+    ot.dedup();
+    assert!(ot.len() > 1);
   }
 
   #[test]
