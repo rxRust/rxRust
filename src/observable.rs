@@ -194,9 +194,9 @@ pub trait Observable: Sized {
   /// # use rxrust::prelude::*;
   /// let source = Subject::new();
   /// let numbers = Subject::new();
-  /// // crate a even stream by filter
+  /// // create a even stream by filter
   /// let even = numbers.clone().filter(|v| *v % 2 == 0);
-  /// // crate an odd stream by filter
+  /// // create an odd stream by filter
   /// let odd = numbers.clone().filter(|v| *v % 2 != 0);
   ///
   /// // merge odd and even stream again
@@ -248,9 +248,9 @@ pub trait Observable: Sized {
   /// ```
   /// # use rxrust::prelude::*;
   /// let numbers = Subject::new();
-  /// // crate a even stream by filter
+  /// // create a even stream by filter
   /// let even = numbers.clone().filter(|v| *v % 2 == 0);
-  /// // crate an odd stream by filter
+  /// // create an odd stream by filter
   /// let odd = numbers.clone().filter(|v| *v % 2 != 0);
   ///
   /// // merge odd and even stream again
