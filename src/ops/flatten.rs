@@ -459,7 +459,7 @@ mod test {
     let local1 = observable::of(1);
     let local2 = observable::of(2);
 
-    let shared = source.clone().flatten().to_shared();
+    let shared = source.clone().flatten().into_shared();
 
     shared.subscribe(move |v: i32| {
       res.push(v);

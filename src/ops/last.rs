@@ -185,14 +185,14 @@ mod test {
   fn last_fork_and_shared() {
     observable::of(0)
       .last_or(0)
-      .to_shared()
-      .to_shared()
+      .into_shared()
+      .into_shared()
       .subscribe(|_| {});
 
     observable::of(0)
       .last()
-      .to_shared()
-      .to_shared()
+      .into_shared()
+      .into_shared()
       .subscribe(|_| {});
   }
   #[bench]

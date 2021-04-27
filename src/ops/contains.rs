@@ -103,7 +103,7 @@ mod test {
   fn contains_shared() {
     observable::from_iter(0..10)
       .contains(4)
-      .to_shared()
+      .into_shared()
       .subscribe(|b| assert!(b));
   }
   #[bench]

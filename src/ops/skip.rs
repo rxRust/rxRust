@@ -127,11 +127,11 @@ mod test {
   }
 
   #[test]
-  fn into_shared() {
+  fn ininto_shared() {
     observable::from_iter(0..100)
       .skip(5)
       .skip(5)
-      .to_shared()
+      .into_shared()
       .subscribe(|_| {});
   }
   #[bench]

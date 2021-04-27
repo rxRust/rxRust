@@ -219,8 +219,8 @@ mod tests {
     let scheduler = ThreadPool::new().unwrap();
     observable::from_iter(0..10)
       .debounce(Duration::from_nanos(1), scheduler)
-      .to_shared()
-      .to_shared()
+      .into_shared()
+      .into_shared()
       .subscribe(|_| {});
   }
 }

@@ -158,7 +158,7 @@ mod test {
   }
 
   #[test]
-  fn empty_local_subject_can_convert_to_shared() {
+  fn empty_local_subject_can_convert_into_shared() {
     let pool = ThreadPool::new().unwrap();
     use std::sync::{Arc, Mutex};
     let value = Arc::new(Mutex::new(0));
@@ -166,9 +166,9 @@ mod test {
     let mut subject = Subject::new();
     subject
       .clone()
-      .to_shared()
+      .into_shared()
       .observe_on(pool)
-      .to_shared()
+      .into_shared()
       .subscribe(move |v: i32| {
         *value.lock().unwrap() = v;
       });

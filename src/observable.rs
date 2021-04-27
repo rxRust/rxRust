@@ -1006,7 +1006,7 @@ pub trait Observable: Sized {
   /// let pool = ThreadPool::new().unwrap();
   /// let a = observable::from_iter(1..5).subscribe_on(pool);
   /// let b = observable::from_iter(5..10);
-  /// a.merge(b).to_shared().subscribe(|v|{
+  /// a.merge(b).into_shared().subscribe(|v|{
   ///   let handle = thread::current();
   ///   print!("{}({:?}) ", v, handle.id())
   /// });
@@ -1262,7 +1262,7 @@ mod tests {
   fn shared_ignore_elements() {
     observable::from_iter(0..20)
       .ignore_elements()
-      .to_shared()
+      .into_shared()
       .subscribe(|_| panic!());
   }
 

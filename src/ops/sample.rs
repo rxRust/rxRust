@@ -216,7 +216,7 @@ mod test {
     subject
       .clone()
       .sample(notifier.clone())
-      .to_shared()
+      .into_shared()
       .subscribe(move |v: i32| {
         *c_test_code.lock().unwrap() = v;
       });

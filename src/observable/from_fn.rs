@@ -88,7 +88,7 @@ mod test {
       subscriber.next(&3);
       subscriber.error("never dispatch error");
     })
-    .to_shared()
+    .into_shared()
     .subscribe_all(
       move |_| *next.lock().unwrap() += 1,
       move |_: &str| *err.lock().unwrap() += 1,
@@ -121,10 +121,10 @@ mod test {
   #[test]
   fn fork_and_share() {
     let observable = observable::create(|_| {});
-    observable.clone().to_shared().subscribe(|_: i32| {});
-    observable.clone().to_shared().subscribe(|_| {});
+    observable.clone().into_shared().subscribe(|_: i32| {});
+    observable.clone().into_shared().subscribe(|_| {});
 
-    let observable = observable::create(|_| {}).to_shared();
+    let observable = observable::create(|_| {}).into_shared();
     observable.clone().subscribe(|_: i32| {});
     observable.clone().subscribe(|_| {});
   }

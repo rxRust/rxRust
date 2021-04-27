@@ -119,8 +119,8 @@ mod test {
   fn fork_and_shared() {
     let o = observable::of(100);
     let connected = ConnectableObservable::new(o);
-    connected.clone().to_shared().subscribe(|_| {});
-    connected.clone().to_shared().subscribe(|_| {});
+    connected.clone().into_shared().subscribe(|_| {});
+    connected.clone().into_shared().subscribe(|_| {});
 
     connected.connect();
   }

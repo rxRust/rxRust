@@ -62,9 +62,9 @@ let pool_scheduler = ThreadPool::new().unwrap();
 observable::from_iter(0..10)
   .subscribe_on(pool_scheduler.clone())
   .map(|v| v*2)
-  .to_shared()
+  .into_shared()
   .observe_on(pool_scheduler)
-  .to_shared()
+  .into_shared()
   .subscribe(|v| {println!("{},", v)});
 ```
 
