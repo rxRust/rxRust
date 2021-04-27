@@ -60,11 +60,10 @@ where
   type Item = Item;
   type Err = Err;
   fn next(&mut self, value: Item) {
+    self.queue.push_back(value);
     if self.count_down == 0 {
-      self.queue.push_back(value);
       self.observer.next(self.queue.pop_front().unwrap());
     } else {
-      self.queue.push_back(value);
       self.count_down -= 1;
     }
   }

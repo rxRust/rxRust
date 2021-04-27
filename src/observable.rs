@@ -69,6 +69,9 @@ use ops::{
 use std::ops::{Add, Mul};
 use std::time::{Duration, Instant};
 
+type ALLOp<O, F> =
+  DefaultIfEmptyOp<TakeOp<FilterOp<MapOp<O, F>, fn(&bool) -> bool>>>;
+
 pub trait Observable: Sized {
   type Item;
   type Err;
@@ -125,10 +128,7 @@ pub trait Observable: Sized {
 
   /// Determine whether all items emitted by an Observable meet some criteria
   #[inline]
-  fn all<F>(
-    self,
-    pred: F,
-  ) -> DefaultIfEmptyOp<TakeOp<FilterOp<MapOp<Self, F>, fn(&bool) -> bool>>>
+  fn all<F>(self, pred: F) -> ALLOp<Self, F>
   where
     F: Fn(Self::Item) -> bool,
   {
@@ -143,7 +143,7 @@ pub trait Observable: Sized {
   fn contains(self, target: Self::Item) -> ContainsOp<Self, Self::Item> {
     ContainsOp {
       source: self,
-      target: target,
+      target,
     }
   }
 
@@ -1171,7 +1171,7 @@ mod tests {
     s.clone().element_at(0).subscribe(|v| assert_eq!(v, 0));
     s.clone().element_at(5).subscribe(|v| assert_eq!(v, 5));
     s.clone().element_at(20).subscribe(|v| assert_eq!(v, 20));
-    s.clone().element_at(21).subscribe(|_| assert!(false));
+    s.element_at(21).subscribe(|_| panic!());
   }
 
   #[bench]
@@ -1253,7 +1253,7 @@ mod tests {
   fn smoke_ignore_elements() {
     observable::from_iter(0..20)
       .ignore_elements()
-      .subscribe(move |_| assert!(false));
+      .subscribe(move |_| panic!());
   }
   #[bench]
   fn ignore_emements_bench(b: &mut Bencher) { b.iter(smoke_ignore_elements); }
@@ -1263,7 +1263,7 @@ mod tests {
     observable::from_iter(0..20)
       .ignore_elements()
       .to_shared()
-      .subscribe(|_| assert!(false));
+      .subscribe(|_| panic!());
   }
 
   #[test]
