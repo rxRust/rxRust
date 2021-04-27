@@ -27,7 +27,7 @@ pub fn interval_at<S>(
   dur: Duration,
   scheduler: S,
 ) -> ObservableBase<IntervalEmitter<S>> {
-  ObservableBase::new(IntervalEmitter { dur, at, scheduler })
+  ObservableBase::new(IntervalEmitter { scheduler, dur, at })
 }
 
 #[derive(Clone)]

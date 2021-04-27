@@ -63,7 +63,7 @@ where
 {
   type Item = Item;
   type Err = Err;
-  fn next(&mut self, value: Item) { self.last = Some(value.clone()); }
+  fn next(&mut self, value: Item) { self.last = Some(value); }
   error_proxy_impl!(Err, observer);
   fn complete(&mut self) {
     if let Some(v) = &self.last {

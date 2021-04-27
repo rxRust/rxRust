@@ -38,15 +38,8 @@ pub struct FlattenState {
 
 impl FlattenState {
   /// Creates a new state for a Flatten operator.
-  pub fn new() -> Self {
-    FlattenState {
-      // when this record is created, we are subscribing to an observable of
-      // observables, so it must be accounted for from the get-go
-      total: 1,
-      done: 0,
-      is_completed: false,
-    }
-  }
+  #[inline]
+  pub fn new() -> Self { Self::default() }
 
   /// Indicates if a completion of emissions has been detected. This happens
   /// when the number of new Observables is the same as the number of
@@ -59,7 +52,7 @@ impl FlattenState {
       return;
     }
 
-    self.total = self.total + 1;
+    self.total += 1;
   }
 
   /// Records the signaling of an error from any registered Observable.
@@ -83,7 +76,7 @@ impl FlattenState {
       return false;
     }
 
-    self.done = self.done + 1;
+    self.done += 1;
 
     if self.total == self.done {
       self.is_completed = true;
@@ -92,6 +85,18 @@ impl FlattenState {
     } else {
       // report signal to not complete observer
       false
+    }
+  }
+}
+
+impl Default for FlattenState {
+  fn default() -> Self {
+    FlattenState {
+      // when this record is created, we are subscribing to an observable of
+      // observables, so it must be accounted for from the get-go
+      total: 1,
+      done: 0,
+      is_completed: false,
     }
   }
 }
@@ -158,16 +163,15 @@ where
 ////////////////////////////////////////////////////////////////////////////////
 // shared
 
+type SharedInnerObserver<O> =
+  FlattenInnerObserver<O, SharedSubscription, Arc<Mutex<FlattenState>>>;
+
 #[derive(Clone)]
 /// This is an `Observer` for `Observable` values that get emitted by an
 /// `Observable` that works on a shared environment.
 pub struct FlattenSharedOuterObserver<Inner, O> {
   marker: std::marker::PhantomData<Inner>,
-  inner_observer: Arc<
-    Mutex<
-      FlattenInnerObserver<O, SharedSubscription, Arc<Mutex<FlattenState>>>,
-    >,
-  >,
+  inner_observer: Arc<Mutex<SharedInnerObserver<O>>>,
   subscription: SharedSubscription,
   state: Arc<Mutex<FlattenState>>,
 }
@@ -230,9 +234,9 @@ where
 
     let observer = FlattenSharedOuterObserver {
       marker: std::marker::PhantomData::<Inner>,
-      inner_observer: inner_observer,
+      inner_observer,
       subscription: subscription.clone(),
-      state: state,
+      state,
     };
 
     subscription
@@ -245,16 +249,15 @@ where
 ////////////////////////////////////////////////////////////////////////////////
 // local
 
+type LocalInnerObserver<O> =
+  FlattenInnerObserver<O, LocalSubscription, Rc<RefCell<FlattenState>>>;
+
 #[derive(Clone)]
 /// This is an `Observer` for `Observable` values that get emitted by an
 /// `Observable` that works on a local environment.
 pub struct FlattenLocalOuterObserver<Inner, O> {
   marker: std::marker::PhantomData<Inner>,
-  inner_observer: Rc<
-    RefCell<
-      FlattenInnerObserver<O, LocalSubscription, Rc<RefCell<FlattenState>>>,
-    >,
-  >,
+  inner_observer: Rc<RefCell<LocalInnerObserver<O>>>,
   subscription: LocalSubscription,
   state: Rc<RefCell<FlattenState>>,
 }
@@ -312,9 +315,9 @@ where
 
     let observer = FlattenLocalOuterObserver {
       marker: std::marker::PhantomData::<Inner>,
-      inner_observer: inner_observer,
+      inner_observer,
       subscription: subscription.clone(),
-      state: state,
+      state,
     };
 
     subscription.add(self.source.actual_subscribe(Subscriber::local(observer)));
