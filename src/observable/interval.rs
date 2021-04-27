@@ -107,7 +107,7 @@ mod tests {
     let pool = ThreadPool::new().unwrap();
 
     interval(Duration::from_millis(10), pool)
-      .to_shared()
+      .into_shared()
       .subscribe(move |_| {
         *seconds.lock().unwrap() += 1;
       });

@@ -130,8 +130,8 @@ mod test {
     // type to type can fork
     let m = observable::from_iter(0..100).reduce(|acc: i32, v| acc + v);
     m.reduce(|acc: i32, v| acc + v)
-      .to_shared()
-      .to_shared()
+      .into_shared()
+      .into_shared()
       .subscribe(|_| {});
   }
 
@@ -209,7 +209,7 @@ mod test {
   fn max_fork_and_shared() {
     // type to type can fork
     let m = observable::from_iter(vec![1., 2.]).max();
-    m.to_shared().to_shared().subscribe(|_| {});
+    m.into_shared().into_shared().subscribe(|_| {});
   }
 
   // -------------------------------------------------------------------
@@ -284,7 +284,7 @@ mod test {
   fn min_fork_and_shared() {
     // type to type can fork
     let m = observable::from_iter(vec![1., 2.]).min();
-    m.to_shared().to_shared().subscribe(|_| {});
+    m.into_shared().into_shared().subscribe(|_| {});
   }
 
   #[test]
@@ -323,7 +323,7 @@ mod test {
   fn sum_fork_and_shared() {
     // type to type can fork
     let m = observable::from_iter(0..100).sum();
-    m.sum().to_shared().to_shared().subscribe(|_| {});
+    m.sum().into_shared().into_shared().subscribe(|_| {});
   }
 
   #[test]
@@ -348,7 +348,7 @@ mod test {
   fn count_fork_and_shared() {
     // type to type can fork
     let m = observable::from_iter(0..100).count();
-    m.to_shared().to_shared().subscribe(|_| {});
+    m.into_shared().into_shared().subscribe(|_| {});
   }
 
   #[test]
@@ -424,6 +424,6 @@ mod test {
   fn average_fork_and_shared() {
     // type to type can fork
     let m = observable::from_iter(vec![1., 2.]).average();
-    m.to_shared().to_shared().subscribe(|_| {});
+    m.into_shared().into_shared().subscribe(|_| {});
   }
 }

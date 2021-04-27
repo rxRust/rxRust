@@ -244,27 +244,27 @@ mod test {
     Subject::new()
       .publish()
       .ref_count()
-      .to_shared()
+      .into_shared()
       .subscribe(|_: i32| {});
 
     observable::of(1)
       .publish()
       .ref_count()
-      .to_shared()
+      .into_shared()
       .subscribe(|_| {});
 
     observable::of(1)
-      .to_shared()
+      .into_shared()
       .publish()
       .ref_count()
-      .to_shared()
+      .into_shared()
       .subscribe(|_| {});
     observable::of(1)
-      .to_shared()
+      .into_shared()
       .publish()
       .ref_count()
-      .to_shared()
-      .to_shared()
+      .into_shared()
+      .into_shared()
       .subscribe(|_| {});
   }
   #[bench]

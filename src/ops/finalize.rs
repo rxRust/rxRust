@@ -255,9 +255,9 @@ mod test {
     let finalized_clone = finalized.clone();
     let mut subscription = s
       .clone()
-      .to_shared()
+      .into_shared()
       .finalize(move || finalized_clone.store(true, Ordering::Relaxed))
-      .to_shared()
+      .into_shared()
       .subscribe(|_| ());
     s.next(1);
     s.next(2);

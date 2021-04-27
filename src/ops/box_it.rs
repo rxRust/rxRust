@@ -238,10 +238,10 @@ mod test {
   #[test]
   fn shared_box_observable() {
     let mut boxed: SharedBoxOp<i32, ()> = observable::of(100).box_it();
-    boxed.to_shared().subscribe(|_| {});
+    boxed.into_shared().subscribe(|_| {});
 
     boxed = observable::empty().box_it();
-    boxed.to_shared().subscribe(|_| unreachable!());
+    boxed.into_shared().subscribe(|_| unreachable!());
   }
 
   #[test]
@@ -257,7 +257,7 @@ mod test {
     observable::of(100)
       .box_it::<Box<dyn SharedBoxClone<Item = _, Err = _>>>()
       .clone()
-      .to_shared()
+      .into_shared()
       .subscribe(|_| {});
   }
 

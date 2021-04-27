@@ -190,7 +190,7 @@ mod tests {
     let pool = ThreadPool::new().unwrap();
     {
       from_future_result(future::ok(1), pool.clone())
-        .to_shared()
+        .into_shared()
         .subscribe(move |v| {
           *res.lock().unwrap() = v;
         });
@@ -200,7 +200,7 @@ mod tests {
     // from_future
     let res = c_res.clone();
     from_future(future::ready(2), pool)
-      .to_shared()
+      .into_shared()
       .subscribe(move |v| {
         *res.lock().unwrap() = v;
       });

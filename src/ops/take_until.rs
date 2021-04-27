@@ -145,7 +145,7 @@ mod test {
   }
 
   #[test]
-  fn into_shared() {
+  fn ininto_shared() {
     let last_next_arg = Arc::new(Mutex::new(None));
     let last_next_arg_mirror = last_next_arg.clone();
     let next_count = Arc::new(Mutex::new(0));
@@ -157,7 +157,7 @@ mod test {
     source
       .clone()
       .take_until(notifier.clone())
-      .to_shared()
+      .into_shared()
       .subscribe_complete(
         move |i| {
           *last_next_arg.lock().unwrap() = Some(i);

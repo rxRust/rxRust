@@ -82,7 +82,7 @@ mod test {
     let c_thread = thread.clone();
     observable::from_iter(1..5)
       .subscribe_on(pool)
-      .to_shared()
+      .into_shared()
       .subscribe(move |v| {
         res.lock().unwrap().push(v);
         let handle = thread::current();
@@ -102,7 +102,7 @@ mod test {
     observable::from_iter(0..10)
       .subscribe_on(pool.clone())
       .delay(Duration::from_millis(10), pool)
-      .to_shared()
+      .into_shared()
       .subscribe(move |v| {
         emitted.lock().unwrap().push(v);
       })

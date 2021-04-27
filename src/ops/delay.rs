@@ -78,7 +78,7 @@ mod tests {
     let pool = ThreadPool::new().unwrap();
     observable::of(1)
       .delay(Duration::from_millis(50), pool)
-      .to_shared()
+      .into_shared()
       .subscribe(move |v| {
         *value.lock().unwrap() = v;
       });

@@ -17,7 +17,7 @@ pub trait SharedObservable: Observable {
 
   /// Convert to a thread-safe mode.
   #[inline]
-  fn to_shared(self) -> Shared<Self>
+  fn into_shared(self) -> Shared<Self>
   where
     Self: Sized,
   {

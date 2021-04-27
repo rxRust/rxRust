@@ -157,8 +157,8 @@ mod test {
     // type to type can fork
     let m = observable::from_iter(vec!['a', 'b', 'c']).scan(|_acc, _v| 1i32);
     m.scan(|_acc, v| v as f32)
-      .to_shared()
-      .to_shared()
+      .into_shared()
+      .into_shared()
       .subscribe(|_| {});
   }
 
@@ -167,8 +167,8 @@ mod test {
     // type to type can fork
     let m = observable::from_iter(0..100).scan(|acc: i32, v| acc + v);
     m.scan(|acc: i32, v| acc + v)
-      .to_shared()
-      .to_shared()
+      .into_shared()
+      .into_shared()
       .subscribe(|_| {});
   }
   #[bench]

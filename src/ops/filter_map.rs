@@ -99,7 +99,7 @@ mod test {
     observable::of(1)
       .filter_map(|_| Some("str"))
       .clone()
-      .to_shared()
+      .into_shared()
       .subscribe(|_| {});
   }
 
@@ -108,7 +108,7 @@ mod test {
     observable::of(&1)
       .filter_map(Some)
       .clone()
-      .to_shared()
+      .into_shared()
       .subscribe(|_| {});
   }
   #[bench]

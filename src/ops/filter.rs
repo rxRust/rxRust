@@ -89,7 +89,7 @@ mod test {
       .clone()
       .filter(|_| true)
       .clone()
-      .to_shared()
+      .into_shared()
       .subscribe(|_| {});
   }
 

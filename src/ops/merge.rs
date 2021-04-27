@@ -234,7 +234,7 @@ mod test {
     let shared = observable::of(1);
     let local = observable::of(2);
 
-    shared.merge(local).to_shared().subscribe(move |v| {
+    shared.merge(local).into_shared().subscribe(move |v| {
       res.push(v);
     });
   }

@@ -2,6 +2,10 @@
 ### Features
 - **operator**: add `flatten` operator.
 
+### Breaking Changes
+
+- **SharedObservable**:  rename `SharedObservable::to_shared` as `SharedObservable::into_shared`
+
 ## [0.11.0](https://github.com/rxRust/rxRust/compare/v0.10.0...HEAD)
 ### Features
 - **operator**: add `element_at` operator.

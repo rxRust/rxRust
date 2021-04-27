@@ -204,7 +204,7 @@ mod test {
       *emit_thread.lock().unwrap() = thread::current().id();
     })
     .observe_on(pool)
-    .to_shared()
+    .into_shared()
     .subscribe(move |_v| {
       observe_thread.lock().unwrap().push(thread::current().id());
     });
@@ -223,10 +223,10 @@ mod test {
     let emitted = Arc::new(Mutex::new(vec![]));
     let c_emitted = emitted.clone();
     observable::from_iter(0..10)
-      .to_shared()
+      .into_shared()
       .observe_on(scheduler.clone())
       .delay(Duration::from_millis(10), scheduler)
-      .to_shared()
+      .into_shared()
       .subscribe(move |v| {
         emitted.lock().unwrap().push(v);
       })

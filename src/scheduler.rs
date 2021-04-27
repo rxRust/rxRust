@@ -151,7 +151,7 @@ mod test {
       observable::from_iter(0..1000)
         .observe_on(pool)
         .map(waste_time)
-        .to_shared()
+        .into_shared()
         .subscribe(move |v| *c_last.lock().unwrap() = v);
 
       // todo: no way to wait all task has finished in `ThreadPool`.
@@ -186,7 +186,7 @@ mod test {
       observable::from_iter(0..1000)
         .observe_on(local)
         .map(waste_time)
-        .to_shared()
+        .into_shared()
         .subscribe(move |v| *c_last.lock().unwrap() = v);
 
       // todo: no way to wait all task has finished in `Tokio` Scheduler.
@@ -207,7 +207,7 @@ mod test {
       observable::from_iter(0..1000)
         .observe_on(pool)
         .map(waste_time)
-        .to_shared()
+        .into_shared()
         .subscribe(move |v| *c_last.lock().unwrap() = v);
 
       // todo: no way to wait all task has finished in `Tokio` Scheduler.

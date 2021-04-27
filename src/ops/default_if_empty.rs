@@ -116,18 +116,18 @@ mod test {
   }
 
   #[test]
-  fn into_shared() {
+  fn ininto_shared() {
     observable::from_iter(0..100)
       .default_if_empty(5)
-      .to_shared()
+      .into_shared()
       .subscribe(|_| {});
   }
 
   #[test]
-  fn into_shared_empty() {
+  fn ininto_shared_empty() {
     observable::empty()
       .default_if_empty(5)
-      .to_shared()
+      .into_shared()
       .subscribe(|_| {});
   }
   #[bench]

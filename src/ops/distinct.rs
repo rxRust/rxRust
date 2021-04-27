@@ -89,8 +89,8 @@ mod tests {
   fn shared() {
     observable::from_iter(0..10)
       .distinct()
-      .to_shared()
-      .to_shared()
+      .into_shared()
+      .into_shared()
       .subscribe(|_| {});
   }
   #[bench]
