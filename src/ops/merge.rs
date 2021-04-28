@@ -183,12 +183,12 @@ mod test {
     );
 
     even.complete();
-    assert_eq!(c_clone.load(Ordering::Relaxed), false);
+    assert!(!c_clone.load(Ordering::Relaxed));
     odd.complete();
-    assert_eq!(c_clone.load(Ordering::Relaxed), true);
+    assert!(c_clone.load(Ordering::Relaxed));
     c_clone.store(false, Ordering::Relaxed);
     even.complete();
-    assert_eq!(c_clone.load(Ordering::Relaxed), false);
+    assert!(!c_clone.load(Ordering::Relaxed));
   }
 
   #[test]

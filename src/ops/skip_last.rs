@@ -89,7 +89,7 @@ mod test {
       .subscribe_complete(|v| ticks.push(v), || completed = true);
 
     assert_eq!(ticks, vec![0, 1, 2, 3, 4]);
-    assert_eq!(completed, true);
+    assert!(completed);
   }
 
   #[test]
@@ -102,7 +102,7 @@ mod test {
       .subscribe_complete(|v| ticks.push(v), || completed = true);
 
     assert_eq!(ticks, vec![]);
-    assert_eq!(completed, true);
+    assert!(completed);
   }
 
   #[test]

@@ -124,7 +124,7 @@ mod test {
       .subscribe_complete(|_| hit_count += 1, || completed = true);
 
     assert_eq!(hit_count, 100);
-    assert_eq!(completed, true);
+    assert!(completed);
   }
 
   #[test]
@@ -135,7 +135,7 @@ mod test {
       .subscribe_complete(|_| hit_count += 1, || completed = true);
 
     assert_eq!(hit_count, 100);
-    assert_eq!(completed, true);
+    assert!(completed);
   }
 
   #[test]

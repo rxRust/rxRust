@@ -190,11 +190,11 @@ mod test {
     let x = Rc::new(RefCell::new(vec![]));
 
     let interval =
-      observable::interval(Duration::from_millis(2), pool.spawner());
+      observable::interval(Duration::from_millis(1), pool.spawner());
     {
       let x_c = x.clone();
       interval
-        .take(49)
+        .take(100)
         .sample(observable::interval(
           Duration::from_millis(10),
           pool.spawner(),

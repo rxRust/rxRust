@@ -1203,7 +1203,7 @@ mod tests {
       .subscribe_complete(|_| next_count += 1, || completed = true);
 
     assert_eq!(next_count, 1);
-    assert_eq!(completed, true);
+    assert!(completed);
 
     completed = false;
     let mut v = 0;
@@ -1211,7 +1211,7 @@ mod tests {
       .first_or(100)
       .subscribe_complete(|value| v = value, || completed = true);
 
-    assert_eq!(completed, true);
+    assert!(completed);
     assert_eq!(v, 100);
   }
 
