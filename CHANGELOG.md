@@ -1,4 +1,6 @@
-## [Unreleased](https://github.com/rxRust/rxRust/compare/v0.11.0...HEAD)
+## [Unreleased](https://github.com/rxRust/rxRust/compare/v0.12.0...HEAD)
+
+## [0.12.0](https://github.com/rxRust/rxRust/compare/v0.11.0...HEAD)
 ### Features
 - **operator**: add `flatten` operator.
 
