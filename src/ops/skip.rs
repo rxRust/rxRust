@@ -94,7 +94,7 @@ mod test {
       .subscribe_complete(|_| next_count += 1, || completed = true);
 
     assert_eq!(next_count, 95);
-    assert_eq!(completed, true);
+    assert!(completed);
   }
 
   #[test]
@@ -107,7 +107,7 @@ mod test {
       .subscribe_complete(|_| next_count += 1, || completed = true);
 
     assert_eq!(next_count, 0);
-    assert_eq!(completed, true);
+    assert!(completed);
   }
 
   #[test]

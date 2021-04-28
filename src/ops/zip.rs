@@ -216,7 +216,7 @@ mod test {
 
       s1.complete();
     }
-    assert_eq!(complete, false);
+    assert!(!complete);
 
     {
       let mut s1 = Subject::new();
@@ -228,7 +228,7 @@ mod test {
       s1.complete();
       s2.complete();
     }
-    assert_eq!(complete, true);
+    assert!(complete);
   }
   #[bench]
   fn bench_zip(b: &mut Bencher) { b.iter(smoke); }

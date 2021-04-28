@@ -99,7 +99,7 @@ mod test {
       .subscribe_complete(|v| value = v, || completed = true);
 
     assert_eq!(value, 10);
-    assert_eq!(completed, true);
+    assert!(completed);
   }
 
   #[test]
@@ -112,11 +112,11 @@ mod test {
       .subscribe_complete(|v| value = v, || completed = true);
 
     assert_eq!(value, 5);
-    assert_eq!(completed, true);
+    assert!(completed);
   }
 
   #[test]
-  fn ininto_shared() {
+  fn into_shared() {
     observable::from_iter(0..100)
       .default_if_empty(5)
       .into_shared()

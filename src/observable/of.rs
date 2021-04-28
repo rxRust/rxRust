@@ -329,7 +329,7 @@ mod test {
     observable::of(100).subscribe_complete(|v| value = v, || completed = true);
 
     assert_eq!(value, 100);
-    assert_eq!(completed, true);
+    assert!(completed);
   }
 
   #[test]

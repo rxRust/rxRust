@@ -140,6 +140,6 @@ mod test {
     observable::empty().subscribe_complete(|()| hits += 1, || completed = true);
 
     assert_eq!(hits, 0);
-    assert_eq!(completed, true);
+    assert!(completed);
   }
 }

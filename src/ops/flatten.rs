@@ -409,13 +409,13 @@ mod test {
     source.next(two.clone());
 
     one.complete();
-    assert_eq!(c_clone.load(Ordering::Relaxed), false);
+    assert!(!c_clone.load(Ordering::Relaxed));
 
     two.complete();
-    assert_eq!(c_clone.load(Ordering::Relaxed), false);
+    assert!(!c_clone.load(Ordering::Relaxed));
 
     source.complete();
-    assert_eq!(c_clone.load(Ordering::Relaxed), true);
+    assert!(c_clone.load(Ordering::Relaxed));
   }
 
   #[test]
