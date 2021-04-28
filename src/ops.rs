@@ -28,6 +28,7 @@ pub mod throttle_time;
 pub mod zip;
 
 use default_if_empty::DefaultIfEmptyOp;
+use flatten::FlattenOp;
 use last::LastOp;
 use map::MapOp;
 use scan::ScanOp;
@@ -60,6 +61,12 @@ pub type AverageOp<Source, Item> = MapOp<
   >,
   fn(Accum<Item>) -> Item,
 >;
+
+/// Returns an Observable that emits items based on applying a function that you
+/// supply to each item emitted by the source Observable, where that function
+/// returns an Observable, and then merging those resulting Observables and
+/// emitting the results of this merger.
+pub type FlatMapOp<Source, Inner, F> = FlattenOp<MapOp<Source, F>, Inner>;
 
 #[cfg(test)]
 mod test {
@@ -420,10 +427,66 @@ mod test {
   }
 
   #[test]
-
   fn average_fork_and_shared() {
     // type to type can fork
     let m = observable::from_iter(vec![1., 2.]).average();
     m.into_shared().into_shared().subscribe(|_| {});
+  }
+
+  // -------------------------------------------------------------------
+  // testing FlatMap operator
+  // -------------------------------------------------------------------
+
+  #[test]
+  fn flat_map_identity() {
+    let return_fn = |x| observable::of(x);
+    let f = |x| observable::of(x + 1);
+    let m = observable::of(0_i32);
+
+    // left identity
+    let partial_left = |x| return_fn(x).flat_map(f);
+    let comp_left = m.clone().flat_map(partial_left);
+
+    // right identity
+    let partial_right = |x| f(x).flat_map(return_fn);
+    let comp_right = m.clone().flat_map(partial_right);
+
+    let mut left: Option<i32> = None;
+    let mut right: Option<i32> = None;
+
+    comp_left.subscribe(|a| left = Some(a));
+    comp_right.subscribe(|b| right = Some(b));
+
+    assert_eq!(left, right);
+  }
+
+  #[test]
+  fn flat_map_associative() {
+    let f = |i: i32| observable::of(i + 1);
+    let g = |i: i32| observable::of(i + 2);
+    let h = |i: i32| observable::of(i + 3);
+    let m = observable::of(0_i32);
+
+    // left association
+    let partial_left = |x| {
+      let partial = f(x).flat_map(g);
+      partial.flat_map(h)
+    };
+    let comp_left = m.clone().flat_map(partial_left);
+
+    // right association
+    let partial_right = |x| {
+      let partial = |y| g(y).flat_map(h);
+      f(x).flat_map(partial)
+    };
+    let comp_right = m.flat_map(partial_right);
+
+    let mut left: Option<i32> = None;
+    let mut right: Option<i32> = None;
+
+    comp_left.subscribe(|a| left = Some(a));
+    comp_right.subscribe(|b| right = Some(b));
+
+    assert_eq!(left, right);
   }
 }
