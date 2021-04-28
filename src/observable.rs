@@ -77,7 +77,7 @@ use ops::{
   take_while::TakeWhileOp,
   throttle_time::{ThrottleEdge, ThrottleTimeOp},
   zip::ZipOp,
-  Accum, AverageOp, CountOp, MinMaxOp, ReduceOp, SumOp,
+  Accum, AverageOp, CountOp, FlatMapOp, MinMaxOp, ReduceOp, SumOp,
 };
 use std::ops::{Add, Mul};
 use std::time::{Duration, Instant};
@@ -228,6 +228,25 @@ pub trait Observable: Sized {
   {
     FlattenOp {
       source: self,
+      marker: std::marker::PhantomData::<Inner>,
+    }
+  }
+
+  ///  Applies given function to each item emitted by this Observable, where
+  ///  that function returns an Observable that itself emits items. It then
+  ///  merges the emissions of these resulting Observables, emitting these
+  ///  merged results as its own sequence.
+  #[inline]
+  fn flat_map<Inner, B, F>(self, f: F) -> FlatMapOp<Self, Inner, F>
+  where
+    Inner: Observable<Item = B, Err = Self::Err>,
+    F: Fn(Self::Item) -> Inner,
+  {
+    FlattenOp {
+      source: MapOp {
+        source: self,
+        func: f,
+      },
       marker: std::marker::PhantomData::<Inner>,
     }
   }
