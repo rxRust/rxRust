@@ -10,7 +10,7 @@ Operators that originate new Observables.
 
 - [x] Create — create an Observable from scratch by calling observer methods programmatically
   - use `new` method in rxRust
-- [ ] Defer — do not create the Observable until the observer subscribes, and create a fresh Observable for each observer
+- [x] Defer — do not create the Observable until the observer subscribes, and create a fresh Observable for each observer
 - [x] Empty/Never/Throw — create Observables that have very precise and limited behavior
 - [ ] From — convert some other object or data structure into an Observable
   - [x] `from_iter`
