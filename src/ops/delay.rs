@@ -65,6 +65,7 @@ where
 mod tests {
   use super::*;
   use futures::executor::{LocalPool, ThreadPool};
+  use std::time::Instant;
   use std::{
     cell::RefCell,
     rc::Rc,
@@ -76,14 +77,14 @@ mod tests {
     let value = Arc::new(Mutex::new(0));
     let c_value = value.clone();
     let pool = ThreadPool::new().unwrap();
+    let stamp = Instant::now();
     observable::of(1)
       .delay(Duration::from_millis(50), pool)
       .into_shared()
-      .subscribe(move |v| {
+      .subscribe_blocking(move |v| {
         *value.lock().unwrap() = v;
       });
-    assert_eq!(*c_value.lock().unwrap(), 0);
-    std::thread::sleep(Duration::from_millis(60));
+    assert!(stamp.elapsed() > Duration::from_millis(50));
     assert_eq!(*c_value.lock().unwrap(), 1);
   }
 
@@ -98,7 +99,9 @@ mod tests {
         *c_value.borrow_mut() = v;
       });
     assert_eq!(*value.borrow(), 0);
+    let stamp = Instant::now();
     pool.run();
+    assert!(stamp.elapsed() > Duration::from_millis(50));
     assert_eq!(*value.borrow(), 1);
   }
 }

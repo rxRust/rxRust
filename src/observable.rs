@@ -19,6 +19,12 @@ pub use connectable_observable::{
   SharedConnectableObservable,
 };
 
+mod observable_block_all;
+pub use observable_block_all::*;
+
+mod observable_block;
+pub use observable_block::*;
+
 mod base;
 pub use base::*;
 
@@ -34,6 +40,7 @@ pub use observable_next::*;
 mod observable_comp;
 
 mod defer;
+
 pub use defer::*;
 
 use crate::prelude::*;

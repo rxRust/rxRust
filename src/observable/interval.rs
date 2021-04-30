@@ -102,18 +102,20 @@ mod tests {
 
   #[test]
   fn shared() {
-    let seconds = Arc::new(Mutex::new(0));
-    let c_seconds = seconds.clone();
+    let millis = Arc::new(Mutex::new(0));
+    let c_millis = millis.clone();
+    let stamp = Instant::now();
     let pool = ThreadPool::new().unwrap();
 
-    interval(Duration::from_millis(10), pool)
+    interval(Duration::from_millis(1), pool)
+      .take(5) // Will block forever if we don't limit emissions
       .into_shared()
-      .subscribe(move |_| {
-        *seconds.lock().unwrap() += 1;
+      .subscribe_blocking(move |_| {
+        *millis.lock().unwrap() += 1;
       });
 
-    std::thread::sleep(Duration::from_millis(58));
-    assert_eq!(*c_seconds.lock().unwrap(), 5);
+    assert_eq!(*c_millis.lock().unwrap(), 5);
+    assert!(stamp.elapsed() > Duration::from_millis(5));
   }
 
   #[test]
