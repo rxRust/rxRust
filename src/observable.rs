@@ -20,9 +20,11 @@ pub use connectable_observable::{
 };
 
 mod observable_block_all;
+#[cfg(test)]
 pub use observable_block_all::*;
 
 mod observable_block;
+#[cfg(test)]
 pub use observable_block::*;
 
 mod base;
