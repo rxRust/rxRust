@@ -120,6 +120,7 @@ where
 mod test {
   use super::*;
   use futures::executor::ThreadPool;
+  use std::time::{Duration, Instant};
 
   #[test]
   fn base_data_flow() {
@@ -163,19 +164,26 @@ mod test {
     use std::sync::{Arc, Mutex};
     let value = Arc::new(Mutex::new(0));
     let c_v = value.clone();
-    let mut subject = Subject::new();
+    let subject = Subject::new();
+    let mut subject_c = subject.clone();
+    let stamp = Instant::now();
+    pool.schedule(
+      move |_| {
+        subject_c.next(100);
+        subject_c.complete();
+      },
+      Some(Duration::from_millis(25)),
+      (),
+    );
     subject
       .clone()
       .into_shared()
       .observe_on(pool)
       .into_shared()
-      .subscribe(move |v: i32| {
+      .subscribe_blocking(move |v: i32| {
         *value.lock().unwrap() = v;
       });
-
-    subject.next(100);
-    std::thread::sleep(std::time::Duration::from_millis(1));
-
+    assert!(stamp.elapsed() > Duration::from_millis(25));
     assert_eq!(*c_v.lock().unwrap(), 100);
   }
 

@@ -1,15 +1,16 @@
+#![cfg(test)]
 use crate::prelude::*;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 #[derive(Clone)]
-pub struct ObserverBlock<N, Item, Err> {
+pub struct ObserverBlock<N, Item> {
   next: N,
   is_stopped: Arc<Mutex<bool>>,
-  marker: TypeHint<(*const Item, *const Err)>,
+  marker: TypeHint<*const Item>,
 }
 
-impl<Item, Err, N> ObserverBlock<N, Item, Err> {
+impl<Item, N> ObserverBlock<N, Item> {
   #[inline(always)]
   pub fn new(next: N) -> Self {
     ObserverBlock {
@@ -20,18 +21,16 @@ impl<Item, Err, N> ObserverBlock<N, Item, Err> {
   }
 }
 
-impl<Item, Err, N> Observer for ObserverBlock<N, Item, Err>
+impl<Item, N> Observer for ObserverBlock<N, Item>
 where
   N: FnMut(Item),
 {
   type Item = Item;
-  type Err = Err;
+  type Err = ();
   #[inline(always)]
   fn next(&mut self, value: Self::Item) { (self.next)(value); }
 
-  fn error(&mut self, _err: Self::Err) {
-    *self.is_stopped.lock().unwrap() = true;
-  }
+  fn error(&mut self, _err: ()) { *self.is_stopped.lock().unwrap() = true; }
 
   fn complete(&mut self) { *self.is_stopped.lock().unwrap() = true; }
 
@@ -63,9 +62,8 @@ pub trait SubscribeBlocking<'a, N> {
 
 impl<'a, S, N> SubscribeBlocking<'a, N> for Shared<S>
 where
-  S: SharedObservable,
+  S: SharedObservable<Err = ()>,
   N: FnMut(S::Item) + Send + Sync + 'static,
-  S::Err: 'static,
   S::Item: 'static,
 {
   type Unsub = S::Unsub;
