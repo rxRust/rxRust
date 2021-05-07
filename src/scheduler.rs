@@ -3,7 +3,9 @@ use async_std::prelude::FutureExt as AsyncFutureExt;
 use futures::future::{lazy, AbortHandle, FutureExt};
 use std::future::Future;
 
-use std::time::Duration;
+use futures::StreamExt;
+use std::sync::{Arc, RwLock};
+use std::time::{Duration, Instant};
 
 pub fn task_future<T>(
   task: impl FnOnce(T) + 'static,
@@ -31,6 +33,13 @@ pub trait SharedScheduler {
     self.spawn(f);
     handle
   }
+
+  fn schedule_repeating(
+    &self,
+    task: impl FnMut(usize) + Send + 'static,
+    time_between: Duration,
+    at: Option<Instant>,
+  ) -> SpawnHandle;
 }
 
 pub trait LocalScheduler {
@@ -43,16 +52,20 @@ pub trait LocalScheduler {
     task: impl FnOnce(T) + 'static,
     delay: Option<Duration>,
     state: T,
-  ) -> SpawnHandle {
-    let (f, handle) = task_future(task, state, delay);
-    self.spawn(f);
-    handle
-  }
+  ) -> SpawnHandle;
+
+  fn schedule_repeating(
+    &self,
+    task: impl FnMut(usize) + 'static,
+    delay: Duration,
+    at: Option<Instant>,
+  ) -> SpawnHandle;
 }
 
+#[derive(Clone)]
 pub struct SpawnHandle {
   pub handle: AbortHandle,
-  is_closed: bool,
+  is_closed: Arc<RwLock<bool>>,
 }
 
 impl SpawnHandle {
@@ -60,28 +73,36 @@ impl SpawnHandle {
   pub fn new(handle: AbortHandle) -> Self {
     SpawnHandle {
       handle,
-      is_closed: false,
+      is_closed: Arc::new(RwLock::new(false)),
     }
   }
 }
 
 impl SubscriptionLike for SpawnHandle {
   fn unsubscribe(&mut self) {
-    self.is_closed = true;
-    self.handle.abort();
+    let was_closed = *self.is_closed.read().unwrap();
+    if !was_closed {
+      *self.is_closed.write().unwrap() = true;
+      self.handle.abort();
+    }
   }
 
   #[inline]
-  fn is_closed(&self) -> bool { self.is_closed }
+  fn is_closed(&self) -> bool { *self.is_closed.read().unwrap() }
 }
 
 #[cfg(feature = "futures-scheduler")]
 mod futures_scheduler {
-  use super::*;
+  use crate::prelude::task_future;
+  use crate::scheduler::{
+    to_delayed_future, LocalScheduler, SharedScheduler, SpawnHandle,
+  };
   use futures::{
     executor::{LocalSpawner, ThreadPool},
     task::{LocalSpawnExt, SpawnExt},
+    Future, FutureExt,
   };
+  use std::time::{Duration, Instant};
 
   impl SharedScheduler for ThreadPool {
     fn spawn<Fut>(&self, future: Fut)
@@ -90,6 +111,18 @@ mod futures_scheduler {
     {
       SpawnExt::spawn(self, future).unwrap();
     }
+
+    fn schedule_repeating(
+      &self,
+      task: impl FnMut(usize) + Send + 'static,
+      time_between: Duration,
+      at: Option<Instant>,
+    ) -> SpawnHandle {
+      let (f, handle) =
+        futures::future::abortable(to_delayed_future(task, time_between, at));
+      SharedScheduler::spawn(self, f.map(|_| ()));
+      SpawnHandle::new(handle)
+    }
   }
 
   impl LocalScheduler for LocalSpawner {
@@ -97,9 +130,67 @@ mod futures_scheduler {
     where
       Fut: Future<Output = ()> + 'static,
     {
-      self.spawn_local(future).unwrap();
+      self.spawn_local(future.map(|_| ())).unwrap();
+    }
+
+    fn schedule<T: 'static>(
+      &self,
+      task: impl FnOnce(T) + 'static,
+      delay: Option<Duration>,
+      state: T,
+    ) -> SpawnHandle {
+      let (f, handle) = task_future(task, state, delay);
+      self.spawn_local(f).unwrap();
+      handle
+    }
+
+    fn schedule_repeating(
+      &self,
+      task: impl FnMut(usize) + 'static,
+      time_between: Duration,
+      at: Option<Instant>,
+    ) -> SpawnHandle {
+      let (f, handle) =
+        futures::future::abortable(to_delayed_future(task, time_between, at));
+      self.spawn_local(f.map(|_| ())).unwrap();
+      SpawnHandle::new(handle)
     }
   }
+}
+
+fn to_delayed_future(
+  task: impl FnMut(usize) + 'static,
+  time_between: Duration,
+  at: Option<Instant>,
+) -> impl Future<Output = ()> {
+  let now = Instant::now();
+  let delay = at.map(|inst| {
+    if inst > now {
+      inst - now
+    } else {
+      Duration::from_micros(0)
+    }
+  });
+  to_interval(task, time_between, delay.unwrap_or(time_between))
+}
+
+fn to_interval(
+  mut task: impl FnMut(usize) + 'static,
+  interval_duration: Duration,
+  delay: Duration,
+) -> impl Future<Output = ()> {
+  let mut number = 0;
+
+  futures::future::ready(())
+    .then(move |_| {
+      task(number);
+      async_std::stream::interval(interval_duration).for_each(move |_| {
+        number += 1;
+        task(number);
+        futures::future::ready(())
+      })
+    })
+    .delay(delay)
 }
 
 #[cfg(feature = "tokio-scheduler")]
@@ -115,6 +206,18 @@ mod tokio_scheduler {
     {
       Runtime::spawn(self, future);
     }
+
+    fn schedule_repeating(
+      &self,
+      task: impl FnMut(usize) + Send + 'static,
+      time_between: Duration,
+      at: Option<Instant>,
+    ) -> SpawnHandle {
+      let (f, handle) =
+        futures::future::abortable(to_delayed_future(task, time_between, at));
+      Runtime::spawn(self, f.map(|_| ()));
+      SpawnHandle::new(handle)
+    }
   }
 
   impl SharedScheduler for Arc<Runtime> {
@@ -123,6 +226,18 @@ mod tokio_scheduler {
       Fut: Future<Output = ()> + Send + 'static,
     {
       Runtime::spawn(self, future);
+    }
+
+    fn schedule_repeating(
+      &self,
+      task: impl FnMut(usize) + Send + 'static,
+      time_between: Duration,
+      at: Option<Instant>,
+    ) -> SpawnHandle {
+      let (f, handle) =
+        futures::future::abortable(to_delayed_future(task, time_between, at));
+      Runtime::spawn(self, f.map(|_| ()));
+      SpawnHandle::new(handle)
     }
   }
 }

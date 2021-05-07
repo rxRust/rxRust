@@ -158,7 +158,6 @@ where
     O: Observer<Item = Self::Item, Err = Self::Err> + 'static,
   {
     let subscription = subscriber.subscription.clone();
-
     let f = self.future.map(move |v| {
       LocalEmitter::emit(of::ResultEmitter(v.into()), subscriber)
     });

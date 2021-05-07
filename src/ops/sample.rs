@@ -176,7 +176,7 @@ where
 #[cfg(test)]
 mod test {
   use crate::prelude::*;
-  use futures::executor::LocalPool;
+  use crate::test_scheduler::ManualScheduler;
   use std::{
     cell::RefCell,
     rc::Rc,
@@ -186,24 +186,24 @@ mod test {
 
   #[test]
   fn sample_base() {
-    let mut pool = LocalPool::new();
+    let scheduler = ManualScheduler::now();
     let x = Rc::new(RefCell::new(vec![]));
 
     let interval =
-      observable::interval(Duration::from_millis(1), pool.spawner());
+      observable::interval(Duration::from_millis(1), scheduler.clone());
     {
       let x_c = x.clone();
       interval
         .take(100)
         .sample(observable::interval(
           Duration::from_millis(10),
-          pool.spawner(),
+          scheduler.clone(),
         ))
         .subscribe(move |v| {
           x_c.borrow_mut().push(v);
         });
 
-      pool.run();
+      scheduler.advance_and_run(Duration::from_millis(1), 100);
       assert_eq!(x.borrow().len(), 10);
     };
   }

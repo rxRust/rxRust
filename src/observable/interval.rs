@@ -1,11 +1,6 @@
 use crate::prelude::*;
 
-use async_std::prelude::FutureExt;
-use futures::prelude::*;
-use std::{
-  future::Future,
-  time::{Duration, Instant},
-};
+use std::time::{Duration, Instant};
 
 /// Creates an observable which will fire at `dur` time into the future,
 /// and will repeat every `dur` interval after.
@@ -15,7 +10,7 @@ pub fn interval<S>(
 ) -> ObservableBase<IntervalEmitter<S>> {
   ObservableBase::new(IntervalEmitter {
     dur,
-    at: Instant::now() + dur,
+    at: None,
     scheduler,
   })
 }
@@ -27,42 +22,18 @@ pub fn interval_at<S>(
   dur: Duration,
   scheduler: S,
 ) -> ObservableBase<IntervalEmitter<S>> {
-  ObservableBase::new(IntervalEmitter { scheduler, dur, at })
+  ObservableBase::new(IntervalEmitter {
+    scheduler,
+    dur,
+    at: Some(at),
+  })
 }
 
 #[derive(Clone)]
 pub struct IntervalEmitter<S> {
   scheduler: S,
   dur: Duration,
-  at: Instant,
-}
-
-impl<S> IntervalEmitter<S> {
-  fn interval_future(
-    &self,
-    mut observer: impl Observer<Item = usize, Err = ()>,
-  ) -> impl Future<Output = ()> {
-    let mut number = 0;
-    let now = Instant::now();
-    let delay = if self.at > now {
-      self.at - now
-    } else {
-      Duration::from_micros(0)
-    };
-    let dur = self.dur;
-
-    future::ready(())
-      .then(move |_| {
-        observer.next(number);
-        number += 1;
-        async_std::stream::interval(dur).for_each(move |_| {
-          observer.next(number);
-          number += 1;
-          future::ready(())
-        })
-      })
-      .delay(delay)
-  }
+  at: Option<Instant>,
 }
 
 impl<S> Emitter for IntervalEmitter<S> {
@@ -75,28 +46,35 @@ impl<S: SharedScheduler + 'static> SharedEmitter for IntervalEmitter<S> {
   where
     O: Observer<Item = Self::Item, Err = Self::Err> + Send + Sync + 'static,
   {
-    let future = self.interval_future(subscriber.observer);
-    let (future, handle) = futures::future::abortable(future);
-    self.scheduler.spawn(future.map(|_| ()));
-    subscriber.subscription.add(SpawnHandle::new(handle));
+    let mut observer = subscriber.observer;
+    let handle = self.scheduler.schedule_repeating(
+      move |i| observer.next(i),
+      self.dur,
+      self.at,
+    );
+    subscriber.subscription.add(handle);
   }
 }
 
 impl<S: LocalScheduler + 'static> LocalEmitter<'static> for IntervalEmitter<S> {
   fn emit<O>(self, subscriber: Subscriber<O, LocalSubscription>)
   where
-    O: Observer<Item = Self::Item, Err = Self::Err> + 'static,
+    O: Observer<Item = usize, Err = Self::Err> + 'static,
   {
-    let future = self.interval_future(subscriber.observer);
-    let (future, handle) = futures::future::abortable(future);
-    self.scheduler.spawn(future.map(|_| ()));
-    subscriber.subscription.add(SpawnHandle::new(handle));
+    let mut observer = subscriber.observer;
+    let handle = self.scheduler.schedule_repeating(
+      move |i| observer.next(i),
+      self.dur,
+      self.at,
+    );
+    subscriber.subscription.add(handle);
   }
 }
 
 #[cfg(test)]
 mod tests {
   use super::*;
+  use crate::test_scheduler::ManualScheduler;
   use futures::executor::{LocalPool, ThreadPool};
   use std::sync::{Arc, Mutex};
 
@@ -122,11 +100,32 @@ mod tests {
   fn local() {
     let mut local = LocalPool::new();
     let stamp = Instant::now();
+    let ticks = Arc::new(Mutex::new(0));
+    let ticks_c = Arc::clone(&ticks);
     interval(Duration::from_millis(1), local.spawner())
       .take(5)
-      .subscribe(|_| {});
-
+      .subscribe(move |_| (*ticks_c.lock().unwrap()) += 1);
     local.run();
+    assert_eq!(*ticks.lock().unwrap(), 5);
     assert!(stamp.elapsed() > Duration::from_millis(5));
+  }
+
+  #[test]
+  fn local_manual() {
+    let scheduler = ManualScheduler::now();
+    let ticks = Arc::new(Mutex::new(0));
+    let ticks_c = Arc::clone(&ticks);
+    let delay = Duration::from_millis(1);
+    interval(delay, scheduler.clone())
+      .take(5)
+      .subscribe(move |_| (*ticks_c.lock().unwrap()) += 1);
+    assert_eq!(0, *ticks.lock().unwrap());
+    scheduler.advance(delay * 2);
+    scheduler.run_tasks();
+    assert_eq!(2, *ticks.lock().unwrap());
+
+    scheduler.advance(delay * 3);
+    scheduler.run_tasks();
+    assert_eq!(5, *ticks.lock().unwrap());
   }
 }
