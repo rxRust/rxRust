@@ -196,36 +196,36 @@ where
 #[cfg(test)]
 mod tests {
   use super::*;
-  use futures::executor::LocalPool;
+  use crate::test_scheduler::ManualScheduler;
 
   #[test]
   fn smoke() {
     let x = Rc::new(RefCell::new(vec![]));
     let x_c = x.clone();
-    let mut pool = LocalPool::new();
+    let scheduler = ManualScheduler::now();
 
     let interval =
-      observable::interval(Duration::from_millis(5), pool.spawner());
-    let spawner = pool.spawner();
+      observable::interval(Duration::from_millis(5), scheduler.clone());
     let throttle_subscribe = |edge| {
       let x = x.clone();
       interval
         .clone()
         .take(5)
-        .throttle_time(Duration::from_millis(11), edge, spawner.clone())
+        .throttle_time(Duration::from_millis(11), edge, scheduler.clone())
         .subscribe(move |v| x.borrow_mut().push(v))
     };
 
     // tailing throttle
+
     let mut sub = throttle_subscribe(ThrottleEdge::Tailing);
-    pool.run();
+    scheduler.advance_and_run(Duration::from_millis(1), 25);
     sub.unsubscribe();
     assert_eq!(&*x_c.borrow(), &[2, 4]);
 
     // leading throttle
     x_c.borrow_mut().clear();
     throttle_subscribe(ThrottleEdge::Leading);
-    pool.run();
+    scheduler.advance_and_run(Duration::from_millis(1), 25);
     assert_eq!(&*x_c.borrow(), &[0, 3]);
   }
 

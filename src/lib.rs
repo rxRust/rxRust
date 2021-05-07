@@ -17,6 +17,9 @@
 #[cfg(test)]
 extern crate float_cmp;
 
+#[cfg(test)]
+pub mod test_scheduler;
+
 pub mod inner_deref;
 pub mod observable;
 pub mod observer;
