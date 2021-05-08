@@ -75,10 +75,20 @@ where
   type Item = Item;
   type Err = Err;
   fn next(&mut self, value: Item) {
-    self.observers.inner_deref_mut().drain_filter(|subscriber| {
-      subscriber.next(value.clone());
-      subscriber.is_finished()
-    });
+    {
+      let mut vec = self.observers.inner_deref_mut();
+      let not_done: Vec<O> = vec
+        .drain(..)
+        .map(|mut o| {
+          o.next(value.clone());
+          o
+        })
+        .filter(|o| !o.is_finished())
+        .collect();
+      for p in not_done {
+        vec.push(p);
+      }
+    }
   }
 
   fn error(&mut self, err: Err) {
