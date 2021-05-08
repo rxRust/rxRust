@@ -25,9 +25,8 @@ pub trait SharedBoxObservable {
 }
 
 #[doc(hidden)]
-macro box_observable_impl(
-  $subscription:ty, $source:ident, $($marker:ident +)* $lf: lifetime)
-{
+macro_rules! box_observable_impl {
+    ($subscription:ty, $source:ident, $($marker:ident +)* $lf: lifetime) => {
   type Item = $source::Item;
   type Err = $source::Err;
   fn box_subscribe(
@@ -39,6 +38,7 @@ macro box_observable_impl(
   ) -> Box<dyn SubscriptionLike + $($marker +)*>  {
     Box::new(self.actual_subscribe(subscriber))
   }
+}
 }
 
 impl<'a, T> BoxObservable<'a> for T
@@ -75,8 +75,8 @@ pub type SharedCloneBoxOp<Item, Err> =
   BoxOp<Box<dyn SharedBoxClone<Item = Item, Err = Err>>>;
 
 #[doc(hidden)]
-macro observable_impl(  $subscription:ty, $($marker:ident +)* $lf: lifetime)
-{
+macro_rules! observable_impl {
+    ($subscription:ty, $($marker:ident +)* $lf: lifetime) => {
   fn actual_subscribe<O>(
     self,
     subscriber: Subscriber<O, $subscription>,
@@ -87,6 +87,7 @@ macro observable_impl(  $subscription:ty, $($marker:ident +)* $lf: lifetime)
       subscription: subscriber.subscription,
     })
   }
+}
 }
 
 impl<'a, Item, Err> Observable for LocalBoxOp<'a, Item, Err> {

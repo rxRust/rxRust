@@ -16,35 +16,43 @@ pub trait Observer {
 }
 
 #[doc(hidden)]
-pub(crate) macro next_proxy_impl(
-  $item: ident, $($name:tt $($parentheses:tt)?) .+)
-{
+#[macro_export]
+macro_rules! next_proxy_impl {
+    ($item: ident, $($name:tt $($parentheses:tt)?) .+) => {
   #[inline]
   fn next(&mut self, value: $item) {
     self.$($name$($parentheses)?).+.next(value);
   }
 }
+}
 
 #[doc(hidden)]
-pub(crate) macro error_proxy_impl(
-  $err: ident, $($name:tt $($parentheses:tt)?) .+)
-{
+#[macro_export]
+macro_rules! error_proxy_impl {
+    ($err: ident, $($name:tt $($parentheses:tt)?) .+) => {
   #[inline]
   fn error(&mut self, err: $err) {
     self.$($name$($parentheses)?).+.error(err);
   }
 }
-
-#[doc(hidden)]
-pub(crate) macro complete_proxy_impl($($name:tt $($parentheses:tt)?) .+) {
-  #[inline]
-  fn complete(&mut self) { self.$($name$($parentheses)?).+.complete(); }
 }
 
 #[doc(hidden)]
-pub(crate) macro is_stopped_proxy_impl($($name:tt $($parentheses:tt)?) .+) {
+#[macro_export]
+macro_rules! complete_proxy_impl {
+    ($($name:tt $($parentheses:tt)?) .+) => {
+  #[inline]
+  fn complete(&mut self) { self.$($name$($parentheses)?).+.complete(); }
+}
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! is_stopped_proxy_impl {
+    ($($name:tt $($parentheses:tt)?) .+) => {
   #[inline]
   fn is_stopped(&self) -> bool { self.$($name$($parentheses)?).+.is_stopped() }
+}
 }
 
 impl<Item, Err, T> Observer for T

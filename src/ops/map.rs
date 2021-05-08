@@ -1,5 +1,5 @@
-use crate::observer::{complete_proxy_impl, error_proxy_impl};
 use crate::prelude::*;
+use crate::{complete_proxy_impl, error_proxy_impl};
 
 #[derive(Clone)]
 pub struct MapOp<S, M> {
@@ -8,7 +8,8 @@ pub struct MapOp<S, M> {
 }
 
 #[doc(hidden)]
-macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
+macro_rules! observable_impl {
+ ($subscription:ty, $($marker:ident +)* $lf: lifetime) => {
   fn actual_subscribe<O>(
     self,
     subscriber: Subscriber<O, $subscription>,
@@ -24,6 +25,7 @@ macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
       subscription: subscriber.subscription,
     })
   }
+}
 }
 
 impl<Item, S, M> Observable for MapOp<S, M>

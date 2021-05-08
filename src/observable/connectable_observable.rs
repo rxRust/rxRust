@@ -1,6 +1,5 @@
 use crate::prelude::*;
 use crate::subject::{LocalSubject, SharedSubject};
-use observable::observable_proxy_impl;
 use ops::ref_count::{RefCount, RefCountCreator};
 
 #[derive(Clone, Default)]
@@ -17,7 +16,7 @@ impl<Source, Subject: Default> ConnectableObservable<Source, Subject> {
     }
   }
 }
-observable_proxy_impl!(ConnectableObservable, Source, Subject);
+crate::observable_proxy_impl!(ConnectableObservable, Source, Subject);
 
 pub type LocalConnectableObservable<'a, S, Item, Err> =
   ConnectableObservable<S, LocalSubject<'a, Item, Err>>;
@@ -26,7 +25,8 @@ pub type SharedConnectableObservable<S, Item, Err> =
   ConnectableObservable<S, SharedSubject<Item, Err>>;
 
 #[doc(hidden)]
-macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
+macro_rules! observable_impl {
+    ($subscription:ty, $($marker:ident +)* $lf: lifetime) => {
   type Unsub = $subscription;
   #[inline(always)]
   fn actual_subscribe<O>(
@@ -36,6 +36,7 @@ macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
   where O: Observer<Item=Self::Item, Err= Self::Err> + $($marker +)* $lf {
     self.subject.actual_subscribe(subscriber)
   }
+}
 }
 
 impl<'a, S, Item, Err> LocalObservable<'a>

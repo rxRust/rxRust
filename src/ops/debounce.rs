@@ -1,5 +1,4 @@
 use crate::prelude::*;
-use observable::observable_proxy_impl;
 use std::{
   cell::RefCell,
   rc::Rc,
@@ -104,43 +103,45 @@ struct LocalDebounceObserver<O, S, Item>(
   Rc<RefCell<DebounceObserver<O, S, Item>>>,
 );
 
-macro impl_debounce_observer() {
-  fn next(&mut self, value: Self::Item) {
-    let mut c_inner = self.0.clone();
-    let mut inner = self.0.inner_deref_mut();
-    let updated = Some(Instant::now());
-    inner.last_updated = updated.clone();
-    inner.trailing_value = Some(value.clone());
-    let delay = inner.delay;
-    inner.scheduler.schedule(
-      move |last| {
-        let mut inner = c_inner.inner_deref_mut();
-        if let Some(value) = inner.trailing_value.clone() {
-          if inner.last_updated == last {
-            inner.observer.next(value);
-            inner.trailing_value = None;
+macro_rules! impl_debounce_observer {
+  () => {
+    fn next(&mut self, value: Self::Item) {
+      let mut c_inner = self.0.clone();
+      let mut inner = self.0.inner_deref_mut();
+      let updated = Some(Instant::now());
+      inner.last_updated = updated.clone();
+      inner.trailing_value = Some(value.clone());
+      let delay = inner.delay;
+      inner.scheduler.schedule(
+        move |last| {
+          let mut inner = c_inner.inner_deref_mut();
+          if let Some(value) = inner.trailing_value.clone() {
+            if inner.last_updated == last {
+              inner.observer.next(value);
+              inner.trailing_value = None;
+            }
           }
-        }
-      },
-      Some(delay),
-      inner.last_updated.clone(),
-    );
-  }
-  fn error(&mut self, err: Self::Err) {
-    let mut inner = self.0.inner_deref_mut();
-    inner.observer.error(err)
-  }
-  fn complete(&mut self) {
-    let mut inner = self.0.inner_deref_mut();
-    if let Some(value) = inner.trailing_value.take() {
-      inner.observer.next(value);
+        },
+        Some(delay),
+        inner.last_updated.clone(),
+      );
     }
-    inner.observer.complete();
-  }
-  fn is_stopped(&self) -> bool {
-    let inner = self.0.inner_deref();
-    inner.observer.is_stopped()
-  }
+    fn error(&mut self, err: Self::Err) {
+      let mut inner = self.0.inner_deref_mut();
+      inner.observer.error(err)
+    }
+    fn complete(&mut self) {
+      let mut inner = self.0.inner_deref_mut();
+      if let Some(value) = inner.trailing_value.take() {
+        inner.observer.next(value);
+      }
+      inner.observer.complete();
+    }
+    fn is_stopped(&self) -> bool {
+      let inner = self.0.inner_deref();
+      inner.observer.is_stopped()
+    }
+  };
 }
 
 impl<O, S> Observer for SharedDebounceObserver<O, S, O::Item>

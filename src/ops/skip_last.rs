@@ -1,6 +1,5 @@
 use crate::prelude::*;
-use observable::observable_proxy_impl;
-use observer::{complete_proxy_impl, error_proxy_impl, is_stopped_proxy_impl};
+use crate::{complete_proxy_impl, error_proxy_impl, is_stopped_proxy_impl};
 use std::collections::VecDeque;
 
 #[derive(Clone)]
@@ -10,7 +9,8 @@ pub struct SkipLastOp<S> {
 }
 
 #[doc(hidden)]
-macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
+macro_rules! observable_impl {
+  ($subscription:ty, $($marker:ident +)* $lf: lifetime) => {
   fn actual_subscribe<O>(
     self,
     subscriber: Subscriber<O, $subscription>,
@@ -26,6 +26,7 @@ macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
     };
     self.source.actual_subscribe(subscriber)
   }
+}
 }
 
 observable_proxy_impl!(SkipLastOp, S);

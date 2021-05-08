@@ -13,7 +13,8 @@ pub fn throw<Err>(e: Err) -> ObservableBase<ThrowEmitter<Err>> {
 pub struct ThrowEmitter<Err>(Err);
 
 #[doc(hidden)]
-macro throw_emitter($subscription:ty, $($marker:ident +)* $lf: lifetime) {
+macro_rules! throw_emitter {
+  ($subscription:ty, $($marker:ident +)* $lf: lifetime) => {
   #[inline]
   fn emit<O>(self, mut subscriber: Subscriber<O, $subscription>)
   where
@@ -21,6 +22,7 @@ macro throw_emitter($subscription:ty, $($marker:ident +)* $lf: lifetime) {
   {
     subscriber.error(self.0);
   }
+}
 }
 impl<Err> Emitter for ThrowEmitter<Err> {
   type Item = ();
@@ -56,13 +58,15 @@ pub fn empty<Item>() -> ObservableBase<EmptyEmitter<Item>> {
 pub struct EmptyEmitter<Item>(TypeHint<Item>);
 
 #[doc(hidden)]
-macro empty_emitter($subscription:ty, $($marker:ident +)* $lf: lifetime) {
-  #[inline]
-  fn emit<O>(self, mut subscriber: Subscriber<O, $subscription>)
-  where
-    O: Observer<Item=Self::Item,Err= Self::Err> + $($marker +)* $lf
-  {
-    subscriber.complete();
+macro_rules! empty_emitter {
+  ($subscription:ty, $($marker:ident +)* $lf: lifetime) => {
+    #[inline]
+    fn emit<O>(self, mut subscriber: Subscriber<O, $subscription>)
+    where
+      O: Observer<Item=Self::Item,Err= Self::Err> + $($marker +)* $lf
+    {
+      subscriber.complete();
+    }
   }
 }
 
@@ -89,13 +93,15 @@ pub fn never() -> ObservableBase<NeverEmitter> {
 pub struct NeverEmitter();
 
 #[doc(hidden)]
-macro never_emitter($subscription:ty, $($marker:ident +)* $lf: lifetime) {
+macro_rules! never_emitter {
+  ($subscription:ty, $($marker:ident +)* $lf: lifetime) => {
   #[inline]
   fn emit<O>(self, _subscriber: Subscriber<O, $subscription>)
   where
     O: Observer<Item=Self::Item,Err= Self::Err> + $($marker +)* $lf
   {
   }
+}
 }
 
 impl Emitter for NeverEmitter {

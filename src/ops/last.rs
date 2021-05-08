@@ -1,4 +1,4 @@
-use crate::observer::error_proxy_impl;
+use crate::error_proxy_impl;
 use crate::prelude::*;
 
 #[derive(Clone)]
@@ -16,7 +16,8 @@ where
 }
 
 #[doc(hidden)]
-macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
+macro_rules! observable_impl {
+  ($subscription:ty, $($marker:ident +)* $lf: lifetime) => {
   fn actual_subscribe<O>(
     self,
     subscriber: Subscriber<O, $subscription>,
@@ -31,6 +32,7 @@ macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
     };
     self.source.actual_subscribe(subscriber)
   }
+}
 }
 
 impl<'a, Item, S> LocalObservable<'a> for LastOp<S, Item>

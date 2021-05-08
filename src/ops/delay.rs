@@ -1,5 +1,4 @@
 use crate::prelude::*;
-use observable::observable_proxy_impl;
 use std::time::Duration;
 
 #[derive(Clone)]
@@ -11,22 +10,24 @@ pub struct DelayOp<S, SD> {
 
 observable_proxy_impl!(DelayOp, S, SD);
 
-macro impl_observable($op: ident, $subscriber: ident) {{
-  let delay = $op.delay;
-  let source = $op.source;
-  let scheduler = $op.scheduler;
-  let subscription = $subscriber.subscription.clone();
-  let c_subscription = subscription.clone();
-  let handle = scheduler.schedule(
-    move |_| {
-      c_subscription.add(source.actual_subscribe($subscriber));
-    },
-    Some(delay),
-    (),
-  );
-  subscription.add(handle);
-  subscription
-}}
+macro_rules! impl_observable {
+  ($op: ident, $subscriber: ident) => {{
+    let delay = $op.delay;
+    let source = $op.source;
+    let scheduler = $op.scheduler;
+    let subscription = $subscriber.subscription.clone();
+    let c_subscription = subscription.clone();
+    let handle = scheduler.schedule(
+      move |_| {
+        c_subscription.add(source.actual_subscribe($subscriber));
+      },
+      Some(delay),
+      (),
+    );
+    subscription.add(handle);
+    subscription
+  }};
+}
 impl<S, SD> SharedObservable for DelayOp<S, SD>
 where
   S: SharedObservable + Send + Sync + 'static,

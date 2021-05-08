@@ -1,6 +1,5 @@
-use crate::observer::{error_proxy_impl, is_stopped_proxy_impl};
 use crate::prelude::*;
-use observable::observable_proxy_impl;
+use crate::{error_proxy_impl, is_stopped_proxy_impl};
 
 #[derive(Clone)]
 pub struct DefaultIfEmptyOp<S>
@@ -13,7 +12,8 @@ where
 }
 
 #[doc(hidden)]
-macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
+macro_rules! observable_impl {
+    ($subscription:ty, $($marker:ident +)* $lf: lifetime) => {
   fn actual_subscribe<O>(
     self,
     subscriber: Subscriber<O, $subscription>,
@@ -29,6 +29,7 @@ macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
     };
     self.source.actual_subscribe(subscriber)
   }
+}
 }
 
 observable_proxy_impl!(DefaultIfEmptyOp, S);

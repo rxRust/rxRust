@@ -12,8 +12,9 @@ use crate::prelude::*;
 ///
 /// ```
 /// use rxrust::prelude::*;
+/// use rxrust::of_sequence;
 ///
-/// observable::of_sequence!(1, 2, 3)
+/// of_sequence!(1, 2, 3)
 ///   .subscribe(|v| {println!("{},", v)});
 ///
 /// // print log:
@@ -21,7 +22,9 @@ use crate::prelude::*;
 /// // 2
 /// // 3
 /// ```
-pub macro of_sequence( $( $item:expr ),* ) {
+#[macro_export]
+macro_rules! of_sequence {
+    ( $( $item:expr ),* ) => {
   {
     $crate::observable::create(|mut s| {
       $(
@@ -30,6 +33,7 @@ pub macro of_sequence( $( $item:expr ),* ) {
       s.complete();
     })
   }
+}
 }
 
 /// Creates an observable producing a single value.
@@ -56,7 +60,8 @@ pub fn of<Item>(v: Item) -> ObservableBase<OfEmitter<Item>> {
 pub struct OfEmitter<Item>(pub(crate) Item);
 
 #[doc(hidden)]
-macro of_emitter($subscription:ty, $($marker:ident +)* $lf: lifetime) {
+macro_rules! of_emitter {
+    ($subscription:ty, $($marker:ident +)* $lf: lifetime) => {
   fn emit<O>(self, mut subscriber: Subscriber<O, $subscription>)
   where
     O: Observer<Item=Self::Item,Err= Self::Err> + $($marker +)* $lf
@@ -64,6 +69,7 @@ macro of_emitter($subscription:ty, $($marker:ident +)* $lf: lifetime) {
       subscriber.next(self.0);
       subscriber.complete();
   }
+}
 }
 
 impl<Item> Emitter for OfEmitter<Item> {
@@ -109,7 +115,8 @@ pub fn of_result<Item, Err>(
 }
 
 #[doc(hidden)]
-macro of_result_emitter($subscription:ty, $($marker:ident +)* $lf: lifetime) {
+macro_rules! of_result_emitter {
+    ($subscription:ty, $($marker:ident +)* $lf: lifetime) => {
   fn emit<O>(self, mut subscriber: Subscriber<O, $subscription>)
   where
     O: Observer<Item=Self::Item,Err= Self::Err> + $($marker +)* $lf
@@ -120,6 +127,7 @@ macro of_result_emitter($subscription:ty, $($marker:ident +)* $lf: lifetime) {
       };
       subscriber.complete();
   }
+}
 }
 
 #[derive(Clone)]
@@ -163,7 +171,8 @@ pub fn of_option<Item>(o: Option<Item>) -> ObservableBase<OptionEmitter<Item>> {
 pub struct OptionEmitter<Item>(pub(crate) Option<Item>);
 
 #[doc(hidden)]
-macro of_option_emitter($subscription:ty, $($marker:ident +)* $lf: lifetime) {
+macro_rules! of_option_emitter {
+    ($subscription:ty, $($marker:ident +)* $lf: lifetime) => {
   fn emit<O>(self, mut subscriber: Subscriber<O, $subscription>)
   where
     O: Observer<Item=Self::Item,Err= Self::Err> + $($marker +)* $lf
@@ -173,6 +182,7 @@ macro of_option_emitter($subscription:ty, $($marker:ident +)* $lf: lifetime) {
       }
       subscriber.complete();
   }
+}
 }
 
 impl<Item> Emitter for OptionEmitter<Item> {
@@ -215,7 +225,8 @@ where
 pub struct CallableEmitter<F>(F);
 
 #[doc(hidden)]
-macro of_fn_emitter($subscription:ty, $($marker:ident +)* $lf: lifetime) {
+macro_rules! of_fn_emitter {
+    ($subscription:ty, $($marker:ident +)* $lf: lifetime) => {
   fn emit<O>(self, mut subscriber: Subscriber<O, $subscription>)
   where
     O: Observer<Item=Self::Item,Err= Self::Err> + $($marker +)* $lf
@@ -223,6 +234,7 @@ macro of_fn_emitter($subscription:ty, $($marker:ident +)* $lf: lifetime) {
       subscriber.next((self.0)());
       subscriber.complete();
   }
+}
 }
 
 impl<Item, F> Emitter for CallableEmitter<F>
@@ -333,7 +345,7 @@ mod test {
   #[test]
   fn of_macros() {
     let mut value = 0;
-    observable::of_sequence!(1, 2, 3).subscribe(|v| value += v);
+    of_sequence!(1, 2, 3).subscribe(|v| value += v);
 
     assert_eq!(value, 6);
   }

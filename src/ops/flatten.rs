@@ -1,7 +1,5 @@
-use crate::observer::{
-  complete_proxy_impl, error_proxy_impl, is_stopped_proxy_impl,
-};
 use crate::prelude::*;
+use crate::{complete_proxy_impl, error_proxy_impl, is_stopped_proxy_impl};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};

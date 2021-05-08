@@ -39,7 +39,8 @@ where
 pub struct IterEmitter<Iter>(Iter);
 
 #[doc(hidden)]
-macro iter_emitter($subscription:ty, $($marker:ident +)* $lf: lifetime) {
+macro_rules! iter_emitter {
+  ($subscription:ty, $($marker:ident +)* $lf: lifetime) => {
   fn emit<O>(self, mut subscriber: Subscriber<O, $subscription>)
   where
     O: Observer<Item=Self::Item, Err=Self::Err> + $($marker +)* $lf
@@ -55,6 +56,7 @@ macro iter_emitter($subscription:ty, $($marker:ident +)* $lf: lifetime) {
       subscriber.complete();
     }
   }
+}
 }
 
 impl<Iter, Item> Emitter for IterEmitter<Iter>

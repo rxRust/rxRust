@@ -11,8 +11,9 @@ pub struct TakeUntilOp<S, N> {
 }
 
 #[doc(hidden)]
-macro observable_impl($subscription:ty, $sharer:path, $mutability_enabler:path,
-                      $($marker:ident +)* $lf: lifetime) {
+macro_rules! observable_impl {
+    ($subscription:ty, $sharer:path, $mutability_enabler:path,
+                      $($marker:ident +)* $lf: lifetime) => {
   fn actual_subscribe<O>(
     self,
     subscriber: Subscriber<O, $subscription>,
@@ -38,6 +39,7 @@ macro observable_impl($subscription:ty, $sharer:path, $mutability_enabler:path,
     subscription.add(self.source.actual_subscribe(main_subscriber));
     subscription
   }
+}
 }
 
 observable_proxy_impl!(TakeUntilOp, S, N);

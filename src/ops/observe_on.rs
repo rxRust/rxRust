@@ -1,6 +1,5 @@
 use crate::prelude::*;
 use crate::scheduler::SharedScheduler;
-use observable::observable_proxy_impl;
 use std::{
   cell::RefCell,
   rc::Rc,
@@ -89,16 +88,18 @@ struct SharedObserver<O, SD: SharedScheduler> {
 }
 
 #[doc(hidden)]
-macro impl_observer($item: ident, $err: ident) {
-  fn next(&mut self, value: $item) {
-    self.observer_schedule(move |mut observer, v| observer.next(v), value)
-  }
-  fn error(&mut self, err: $err) {
-    self.observer_schedule(|mut observer, v| observer.error(v), err)
-  }
-  fn complete(&mut self) {
-    self.observer_schedule(|mut observer, _| observer.complete(), ())
-  }
+macro_rules! impl_observer {
+  ($item: ident, $err: ident) => {
+    fn next(&mut self, value: $item) {
+      self.observer_schedule(move |mut observer, v| observer.next(v), value)
+    }
+    fn error(&mut self, err: $err) {
+      self.observer_schedule(|mut observer, v| observer.error(v), err)
+    }
+    fn complete(&mut self) {
+      self.observer_schedule(|mut observer, _| observer.complete(), ())
+    }
+  };
 }
 
 impl<O, SD> SharedObserver<O, SD>

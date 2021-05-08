@@ -1,5 +1,4 @@
 use crate::prelude::*;
-use observable::observable_proxy_impl;
 
 /// Shared wrap the Observable， subscribe and accept subscribe in a safe mode
 /// by SharedObservable.

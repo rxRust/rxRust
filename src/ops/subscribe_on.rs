@@ -1,6 +1,5 @@
 use crate::prelude::*;
 use crate::scheduler::SharedScheduler;
-use observable::observable_proxy_impl;
 
 #[derive(Clone)]
 pub struct SubscribeOnOP<S, SD> {

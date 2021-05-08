@@ -1,5 +1,5 @@
-use crate::observer::{complete_proxy_impl, error_proxy_impl};
 use crate::prelude::*;
+use crate::{complete_proxy_impl, error_proxy_impl};
 
 #[derive(Clone)]
 pub struct FilterOp<S, F> {
@@ -8,8 +8,8 @@ pub struct FilterOp<S, F> {
 }
 
 #[doc(hidden)]
-macro observable_impl(
-  $subscription:ty, $source:ident, $($marker:ident +)* $lf: lifetime) {
+macro_rules! observable_impl {
+    ($subscription:ty, $source:ident, $($marker:ident +)* $lf: lifetime) => {
   type Unsub = $source::Unsub;
   fn actual_subscribe<O>(
     self,
@@ -25,6 +25,7 @@ macro observable_impl(
       subscription: subscriber.subscription,
     })
   }
+}
 }
 
 impl<S, F> Observable for FilterOp<S, F>

@@ -1,7 +1,5 @@
-use crate::observer::{
-  complete_proxy_impl, error_proxy_impl, is_stopped_proxy_impl,
-};
 use crate::prelude::*;
+use crate::{complete_proxy_impl, error_proxy_impl, is_stopped_proxy_impl};
 
 #[derive(Clone)]
 pub struct MapToOp<S, B> {
@@ -10,21 +8,23 @@ pub struct MapToOp<S, B> {
 }
 
 #[doc(hidden)]
-macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
-  fn actual_subscribe<O > (
-    self,
-    subscriber: Subscriber<O, $subscription>,
-  ) -> Self::Unsub
-  where O: Observer<Item=Self::Item,Err= Self::Err> + $($marker +)* $lf {
-    let value = self.value;
-    self.source.actual_subscribe(Subscriber {
-      observer: MapToObserver {
-        observer: subscriber.observer,
-        value,
-        marker: TypeHint::new(),
-      },
-      subscription: subscriber.subscription,
-    })
+macro_rules! observable_impl {
+    ($subscription:ty, $($marker:ident +)* $lf: lifetime) => {
+    fn actual_subscribe<O > (
+      self,
+      subscriber: Subscriber<O, $subscription>,
+    ) -> Self::Unsub
+    where O: Observer<Item=Self::Item,Err= Self::Err> + $($marker +)* $lf {
+      let value = self.value;
+      self.source.actual_subscribe(Subscriber {
+        observer: MapToObserver {
+          observer: subscriber.observer,
+          value,
+          marker: TypeHint::new(),
+        },
+        subscription: subscriber.subscription,
+      })
+    }
   }
 }
 
