@@ -1,5 +1,4 @@
 use crate::prelude::*;
-use observable::observable_proxy_impl;
 use std::{
   cell::RefCell,
   rc::Rc,
@@ -121,54 +120,56 @@ struct LocalThrottleObserver<O, S, Item>(
   Rc<RefCell<ThrottleObserver<O, S, Item, LocalSubscription>>>,
 );
 
-macro impl_throttle_observer() {
-  fn next(&mut self, value: Self::Item) {
-    let mut c_inner = self.0.clone();
-    let mut inner = self.0.inner_deref_mut();
-    if inner.edge == ThrottleEdge::Tailing {
-      inner.trailing_value = Some(value.clone());
-    }
+macro_rules! impl_throttle_observer {
+  () => {
+    fn next(&mut self, value: Self::Item) {
+      let mut c_inner = self.0.clone();
+      let mut inner = self.0.inner_deref_mut();
+      if inner.edge == ThrottleEdge::Tailing {
+        inner.trailing_value = Some(value.clone());
+      }
 
-    if inner.throttled.is_none() {
-      let delay = inner.delay;
-      let spawn_handle = inner.scheduler.schedule(
-        move |_| {
-          let mut inner = c_inner.inner_deref_mut();
-          if let Some(v) = inner.trailing_value.take() {
-            inner.observer.next(v);
-          }
-          if let Some(mut throttled) = inner.throttled.take() {
-            throttled.unsubscribe();
-          }
-        },
-        Some(delay),
-        (),
-      );
-      inner.throttled = Some(SpawnHandle::new(spawn_handle.handle.clone()));
-      inner.subscription.add(spawn_handle);
-      if inner.edge == ThrottleEdge::Leading {
-        inner.observer.next(value);
+      if inner.throttled.is_none() {
+        let delay = inner.delay;
+        let spawn_handle = inner.scheduler.schedule(
+          move |_| {
+            let mut inner = c_inner.inner_deref_mut();
+            if let Some(v) = inner.trailing_value.take() {
+              inner.observer.next(v);
+            }
+            if let Some(mut throttled) = inner.throttled.take() {
+              throttled.unsubscribe();
+            }
+          },
+          Some(delay),
+          (),
+        );
+        inner.throttled = Some(SpawnHandle::new(spawn_handle.handle.clone()));
+        inner.subscription.add(spawn_handle);
+        if inner.edge == ThrottleEdge::Leading {
+          inner.observer.next(value);
+        }
       }
     }
-  }
 
-  fn error(&mut self, err: Self::Err) {
-    let mut inner = self.0.inner_deref_mut();
-    inner.observer.error(err)
-  }
-
-  fn complete(&mut self) {
-    let mut inner = self.0.inner_deref_mut();
-    if let Some(value) = inner.trailing_value.take() {
-      inner.observer.next(value);
+    fn error(&mut self, err: Self::Err) {
+      let mut inner = self.0.inner_deref_mut();
+      inner.observer.error(err)
     }
-    inner.observer.complete();
-  }
 
-  fn is_stopped(&self) -> bool {
-    let inner = self.0.inner_deref();
-    inner.observer.is_stopped()
-  }
+    fn complete(&mut self) {
+      let mut inner = self.0.inner_deref_mut();
+      if let Some(value) = inner.trailing_value.take() {
+        inner.observer.next(value);
+      }
+      inner.observer.complete();
+    }
+
+    fn is_stopped(&self) -> bool {
+      let inner = self.0.inner_deref();
+      inner.observer.is_stopped()
+    }
+  };
 }
 
 impl<O, S> Observer for SharedThrottleObserver<O, S, O::Item>

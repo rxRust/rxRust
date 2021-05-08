@@ -1,7 +1,5 @@
-use crate::observer::{
-  complete_proxy_impl, error_proxy_impl, is_stopped_proxy_impl,
-};
 use crate::prelude::*;
+use crate::{complete_proxy_impl, error_proxy_impl, is_stopped_proxy_impl};
 
 #[derive(Clone)]
 pub struct ScanOp<Source, BinaryOp, OutputItem> {
@@ -18,7 +16,8 @@ pub struct ScanObserver<Observer, BinaryOp, OutputItem, InputItem> {
 }
 
 #[doc(hidden)]
-macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
+macro_rules! observable_impl {
+    ($subscription:ty, $($marker:ident +)* $lf: lifetime) => {
   fn actual_subscribe<O>(
     self,
     subscriber: Subscriber<O, $subscription>,
@@ -34,6 +33,7 @@ macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
       subscription: subscriber.subscription,
     })
   }
+}
 }
 
 impl<OutputItem, Source, BinaryOp> Observable

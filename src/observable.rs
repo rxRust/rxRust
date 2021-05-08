@@ -1,3 +1,4 @@
+#![macro_use]
 mod trivial;
 pub use trivial::*;
 
@@ -5,7 +6,7 @@ mod from_iter;
 pub use from_iter::{from_iter, repeat};
 
 mod of;
-pub use of::{of, of_fn, of_option, of_result, of_sequence};
+pub use of::{of, of_fn, of_option, of_result};
 
 pub(crate) mod from_future;
 pub use from_future::{from_future, from_future_result};
@@ -1174,13 +1175,9 @@ pub trait LocalObservable<'a>: Observable {
   ) -> Self::Unsub;
 }
 
-#[doc(hidden)]
-pub(crate) macro observable_proxy_impl(
-  $ty: ident
-  , $host: ident
-  $(, $lf: lifetime)?
-  $(, $generics: ident) *
-) {
+#[macro_export]
+macro_rules! observable_proxy_impl {
+    ($ty: ident, $host: ident$(, $lf: lifetime)?$(, $generics: ident) *) => {
   impl<$($lf, )? $host, $($generics ,)*> Observable
     for $ty<$($lf, )? $host, $($generics ,)*>
   where
@@ -1189,6 +1186,7 @@ pub(crate) macro observable_proxy_impl(
     type Item = $host::Item;
     type Err = $host::Err;
   }
+}
 }
 
 #[cfg(test)]
@@ -1203,7 +1201,6 @@ mod tests {
     s.clone().element_at(20).subscribe(|v| assert_eq!(v, 20));
     s.element_at(21).subscribe(|_| panic!());
   }
-
 
   #[test]
   fn bench_element_at() { do_bench_element_at(); }

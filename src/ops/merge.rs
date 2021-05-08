@@ -1,4 +1,4 @@
-use crate::observer::next_proxy_impl;
+use crate::next_proxy_impl;
 use crate::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;

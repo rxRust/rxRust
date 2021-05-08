@@ -1,6 +1,5 @@
 use crate::prelude::*;
-use observable::observable_proxy_impl;
-use observer::{complete_proxy_impl, error_proxy_impl, is_stopped_proxy_impl};
+use crate::{complete_proxy_impl, error_proxy_impl, is_stopped_proxy_impl};
 use std::{cmp::Eq, collections::HashSet, hash::Hash};
 
 #[derive(Clone)]
@@ -10,7 +9,8 @@ pub struct DistinctOp<S> {
 
 observable_proxy_impl!(DistinctOp, S);
 
-macro distinct_impl( $subscription:ty, $($marker:ident +)* $lf: lifetime) {
+macro_rules! distinct_impl {
+  ( $subscription:ty, $($marker:ident +)* $lf: lifetime) => {
   fn actual_subscribe<O>(
     self,
     subscriber: Subscriber<O, $subscription>,
@@ -25,6 +25,7 @@ macro distinct_impl( $subscription:ty, $($marker:ident +)* $lf: lifetime) {
     };
     self.source.actual_subscribe(subscriber)
   }
+}
 }
 
 impl<'a, S, Item> LocalObservable<'a> for DistinctOp<S>

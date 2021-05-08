@@ -19,7 +19,8 @@ impl<Emit> ObservableBase<Emit> {
 }
 
 #[doc(hidden)]
-macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
+macro_rules! observable_impl {
+    ($subscription:ty, $($marker:ident +)* $lf: lifetime) => {
   fn actual_subscribe<O>(
     self,
     subscriber: Subscriber<O, $subscription>,
@@ -29,6 +30,7 @@ macro observable_impl($subscription:ty, $($marker:ident +)* $lf: lifetime) {
     self.0.emit(subscriber);
     subscription
   }
+}
 }
 
 impl<Emit> Observable for ObservableBase<Emit>

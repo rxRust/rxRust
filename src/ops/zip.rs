@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use observer::{complete_proxy_impl, error_proxy_impl, is_stopped_proxy_impl};
+use crate::{complete_proxy_impl, error_proxy_impl, is_stopped_proxy_impl};
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::rc::Rc;

@@ -1,7 +1,5 @@
-use crate::observer::{
-  complete_proxy_impl, error_proxy_impl, is_stopped_proxy_impl,
-};
 use crate::prelude::*;
+use crate::{complete_proxy_impl, error_proxy_impl, is_stopped_proxy_impl};
 
 #[derive(Clone)]
 pub struct SkipWhileOp<S, F> {
@@ -10,9 +8,8 @@ pub struct SkipWhileOp<S, F> {
 }
 
 #[doc(hidden)]
-macro observable_impl(
-  $subscription:ty, $source:ident, $($marker:ident +)* $lf: lifetime)
-{
+macro_rules! observable_impl {
+    ($subscription:ty, $source:ident, $($marker:ident +)* $lf: lifetime) => {
   type Unsub = $source::Unsub;
   fn actual_subscribe<O>(
     self,
@@ -28,6 +25,7 @@ macro observable_impl(
     };
     self.source.actual_subscribe(subscriber)
   }
+}
 }
 
 impl<S, F> Observable for SkipWhileOp<S, F>
