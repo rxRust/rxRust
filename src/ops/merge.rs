@@ -115,13 +115,11 @@ where
 
 #[cfg(test)]
 mod test {
-  extern crate test;
   use crate::prelude::*;
   use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc, Mutex,
   };
-  use test::Bencher;
 
   #[test]
   fn odd_even_merge() {
@@ -238,6 +236,11 @@ mod test {
       res.push(v);
     });
   }
-  #[bench]
-  fn bench_merge(b: &mut Bencher) { b.iter(odd_even_merge); }
+
+  #[test]
+  fn bench() { do_bench(); }
+
+  benchmark_group!(do_bench, bench_merge);
+
+  fn bench_merge(b: &mut bencher::Bencher) { b.iter(odd_even_merge); }
 }

@@ -63,13 +63,11 @@ where
 
 #[cfg(test)]
 mod test {
-  extern crate test;
-
   use std::ops::Deref;
   use std::sync::{Arc, Mutex};
-  use test::Bencher;
 
   use crate::prelude::*;
+  use bencher::Bencher;
 
   #[test]
   fn no_results_before_deferred_subscribe() {
@@ -134,7 +132,11 @@ mod test {
     observable.clone().subscribe(|_| {});
   }
 
-  #[bench]
+  #[test]
+  fn bench() { do_bench(); }
+
+  benchmark_group!(do_bench, bench_deref);
+
   fn bench_deref(b: &mut Bencher) {
     b.iter(no_results_before_deferred_subscribe);
   }

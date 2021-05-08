@@ -97,9 +97,7 @@ where
 
 #[cfg(test)]
 mod test {
-  extern crate test;
   use super::*;
-  use test::Bencher;
 
   #[test]
   fn smoke() {
@@ -136,6 +134,11 @@ mod test {
     assert_eq!(first, 100);
     assert_eq!(second, 100);
   }
-  #[bench]
-  fn bench_connectable(b: &mut Bencher) { b.iter(smoke); }
+
+  #[test]
+  fn bench() { do_bench(); }
+
+  benchmark_group!(do_bench, bench_connectable);
+
+  fn bench_connectable(b: &mut bencher::Bencher) { b.iter(smoke); }
 }

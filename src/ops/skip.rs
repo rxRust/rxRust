@@ -80,9 +80,7 @@ where
 
 #[cfg(test)]
 mod test {
-  extern crate test;
   use crate::prelude::*;
-  use test::Bencher;
 
   #[test]
   fn base_function() {
@@ -134,6 +132,11 @@ mod test {
       .into_shared()
       .subscribe(|_| {});
   }
-  #[bench]
-  fn bench(b: &mut Bencher) { b.iter(base_function); }
+
+  #[test]
+  fn benchmark() { do_bench(); }
+
+  benchmark_group!(do_bench, bench);
+
+  fn bench(b: &mut bencher::Bencher) { b.iter(base_function); }
 }

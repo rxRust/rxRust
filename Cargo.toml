@@ -38,3 +38,4 @@ futures-scheduler = []
 
 [dev-dependencies]
 float-cmp = "0.8.0"
+bencher = "0.1.5"

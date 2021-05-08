@@ -81,9 +81,7 @@ where
 
 #[cfg(test)]
 mod test {
-  extern crate test;
   use crate::prelude::*;
-  use test::Bencher;
 
   #[test]
   fn map_types_mixed() {
@@ -111,6 +109,13 @@ mod test {
       .into_shared()
       .subscribe(|_| {});
   }
-  #[bench]
-  fn bench_map_types_mixed(b: &mut Bencher) { b.iter(map_types_mixed); }
+
+  #[test]
+  fn bench() { do_bench(); }
+
+  benchmark_group!(do_bench, bench_map_types_mixed);
+
+  fn bench_map_types_mixed(b: &mut bencher::Bencher) {
+    b.iter(map_types_mixed);
+  }
 }

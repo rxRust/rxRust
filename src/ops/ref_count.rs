@@ -201,9 +201,8 @@ where
 
 #[cfg(test)]
 mod test {
-  extern crate test;
   use crate::prelude::*;
-  use test::Bencher;
+
   #[test]
   fn smoke() {
     let mut accept1 = 0;
@@ -267,6 +266,11 @@ mod test {
       .into_shared()
       .subscribe(|_| {});
   }
-  #[bench]
-  fn bench_ref_count(b: &mut Bencher) { b.iter(smoke) }
+
+  #[test]
+  fn bench() { do_bench(); }
+
+  benchmark_group!(do_bench, bench_ref_count);
+
+  fn bench_ref_count(b: &mut bencher::Bencher) { b.iter(smoke) }
 }

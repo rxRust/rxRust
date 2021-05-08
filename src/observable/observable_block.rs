@@ -88,7 +88,6 @@ where
 
 #[cfg(test)]
 mod test {
-  extern crate test;
   use crate::prelude::*;
   use futures::executor::ThreadPool;
   use std::sync::{Arc, Mutex};

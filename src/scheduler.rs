@@ -195,11 +195,10 @@ mod tokio_scheduler {
 
 #[cfg(all(test, feature = "tokio-scheduler"))]
 mod test {
-  extern crate test;
   use crate::prelude::*;
+  use bencher::Bencher;
   use futures::executor::{LocalPool, ThreadPool};
   use std::sync::{Arc, Mutex};
-  use test::Bencher;
 
   fn waste_time(v: u32) -> u32 {
     (0..v)
@@ -208,7 +207,11 @@ mod test {
       .sum()
   }
 
-  #[bench]
+  #[test]
+  fn bench_pool() { do_bench_pool(); }
+
+  benchmark_group!(do_bench_pool, pool);
+
   fn pool(b: &mut Bencher) {
     let last = Arc::new(Mutex::new(0));
     b.iter(|| {
@@ -226,7 +229,11 @@ mod test {
     })
   }
 
-  #[bench]
+  #[test]
+  fn bench_local_thread() { do_bench_local_thread(); }
+
+  benchmark_group!(do_bench_local_thread, local_thread);
+
   fn local_thread(b: &mut Bencher) {
     let last = Arc::new(Mutex::new(0));
     b.iter(|| {
@@ -241,7 +248,11 @@ mod test {
     })
   }
 
-  #[bench]
+  #[test]
+  fn bench_tokio_basic() { do_bench_tokio_basic(); }
+
+  benchmark_group!(do_bench_tokio_basic, tokio_basic);
+
   fn tokio_basic(b: &mut Bencher) {
     use tokio::runtime;
     let last = Arc::new(Mutex::new(0));
@@ -260,7 +271,11 @@ mod test {
     })
   }
 
-  #[bench]
+  #[test]
+  fn bench_tokio_thread() { do_bench_tokio_thread(); }
+
+  benchmark_group!(do_bench_tokio_thread, tokio_thread);
+
   fn tokio_thread(b: &mut Bencher) {
     use tokio::runtime;
     let last = Arc::new(Mutex::new(0));
