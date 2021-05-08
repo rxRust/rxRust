@@ -1,21 +1,15 @@
-#![allow(incomplete_features)]
-#![feature(
-  external_doc,
-  min_specialization,
-  drain_filter,
-  test,
-  decl_macro,
-  generic_associated_types
-)]
-
 //! Reactive extensions library for Rust: a library for
 //! [Reactive Programming](http://reactivex.io/) using
 //! [Observable](crate::observable::Observable), to make
 //! it easier to compose asynchronous or callback-based code.
-#![doc(include = "../README.md")]
+//#![doc(include = "../README.md")]
 
 #[cfg(test)]
 extern crate float_cmp;
+
+#[cfg(test)]
+#[macro_use]
+extern crate bencher;
 
 #[cfg(test)]
 pub mod test_scheduler;

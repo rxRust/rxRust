@@ -1193,9 +1193,7 @@ pub(crate) macro observable_proxy_impl(
 
 #[cfg(test)]
 mod tests {
-  extern crate test;
   use super::*;
-  use test::Bencher;
 
   #[test]
   fn smoke_element_at() {
@@ -1206,8 +1204,13 @@ mod tests {
     s.element_at(21).subscribe(|_| panic!());
   }
 
-  #[bench]
-  fn element_at_bench(b: &mut Bencher) { b.iter(smoke_element_at); }
+
+  #[test]
+  fn bench_element_at() { do_bench_element_at(); }
+
+  benchmark_group!(do_bench_element_at, element_at_bench);
+
+  fn element_at_bench(b: &mut bencher::Bencher) { b.iter(smoke_element_at); }
 
   #[test]
   fn first() {
@@ -1222,8 +1225,12 @@ mod tests {
     assert_eq!(next_count, 1);
   }
 
-  #[bench]
-  fn first_bench(b: &mut Bencher) { b.iter(first); }
+  #[test]
+  fn bench_first() { do_bench_first(); }
+
+  benchmark_group!(do_bench_first, first_bench);
+
+  fn first_bench(b: &mut bencher::Bencher) { b.iter(first); }
 
   #[test]
   fn first_or() {
@@ -1247,8 +1254,12 @@ mod tests {
     assert_eq!(v, 100);
   }
 
-  #[bench]
-  fn first_or_bench(b: &mut Bencher) { b.iter(first_or); }
+  #[test]
+  fn bench_first_or() { do_bench_first_or(); }
+
+  benchmark_group!(do_bench_first_or, first_or_bench);
+
+  fn first_or_bench(b: &mut bencher::Bencher) { b.iter(first_or); }
 
   #[test]
   fn first_support_fork() {
@@ -1287,8 +1298,15 @@ mod tests {
       .ignore_elements()
       .subscribe(move |_| panic!());
   }
-  #[bench]
-  fn ignore_emements_bench(b: &mut Bencher) { b.iter(smoke_ignore_elements); }
+
+  #[test]
+  fn bench_ignore() { do_bench_ignore(); }
+
+  benchmark_group!(do_bench_ignore, ignore_emements_bench);
+
+  fn ignore_emements_bench(b: &mut bencher::Bencher) {
+    b.iter(smoke_ignore_elements);
+  }
 
   #[test]
   fn shared_ignore_elements() {
@@ -1307,6 +1325,11 @@ mod tests {
       .all(|v| v < 5)
       .subscribe(|b| assert!(!b));
   }
-  #[bench]
-  fn all_bench(b: &mut Bencher) { b.iter(smoke_all); }
+
+  #[test]
+  fn bench_all() { do_bench_all(); }
+
+  benchmark_group!(do_bench_all, all_bench);
+
+  fn all_bench(b: &mut bencher::Bencher) { b.iter(smoke_all); }
 }

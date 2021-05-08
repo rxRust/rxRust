@@ -66,10 +66,9 @@ where
 
 #[cfg(test)]
 mod test {
-  extern crate test;
   use crate::prelude::*;
+  use bencher::Bencher;
   use std::sync::{Arc, Mutex};
-  use test::Bencher;
 
   #[test]
   fn proxy_call() {
@@ -128,6 +127,11 @@ mod test {
     observable.clone().subscribe(|_: i32| {});
     observable.clone().subscribe(|_| {});
   }
-  #[bench]
+
+  #[test]
+  fn bench() { do_bench(); }
+
+  benchmark_group!(do_bench, bench_from_fn);
+
   fn bench_from_fn(b: &mut Bencher) { b.iter(proxy_call); }
 }

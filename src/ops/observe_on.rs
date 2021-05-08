@@ -168,14 +168,12 @@ where
 
 #[cfg(test)]
 mod test {
-  extern crate test;
   use crate::prelude::*;
   use futures::executor::{LocalPool, ThreadPool};
   use std::sync::{Arc, Mutex};
   use std::thread;
   use std::time::Duration;
   use std::{cell::RefCell, rc::Rc};
-  use test::Bencher;
 
   #[test]
   fn smoke() {
@@ -234,6 +232,10 @@ mod test {
     std::thread::sleep(Duration::from_millis(20));
     assert_eq!(c_emitted.lock().unwrap().len(), 0);
   }
-  #[bench]
-  fn bench_observe_on(b: &mut Bencher) { b.iter(smoke); }
+  #[test]
+  fn bench() { do_bench(); }
+
+  benchmark_group!(do_bench, bench_observe_on);
+
+  fn bench_observe_on(b: &mut bencher::Bencher) { b.iter(smoke); }
 }
