@@ -222,7 +222,7 @@ mod test {
     let mut accept1 = 0;
     let mut accept2 = 0;
     {
-      let mut subject = Subject::new();
+      let mut subject = LocalSubject::new();
       let ref_count = subject.clone().publish().ref_count();
       let mut s1 = ref_count.clone().subscribe(|v| accept1 = v);
       let mut s2 = ref_count.clone().subscribe(|v| accept2 = v);
@@ -240,7 +240,7 @@ mod test {
   fn fork_and_shared() {
     observable::of(1).publish().ref_count().subscribe(|_| {});
 
-    Subject::new()
+    SharedSubject::new()
       .publish()
       .ref_count()
       .into_shared()

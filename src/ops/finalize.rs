@@ -87,14 +87,14 @@ struct FinalizerSubscription<F> {
   func: F,
 }
 
-impl<F, Target> SubscriptionLike for FinalizerSubscription<F>
+impl<Target> SubscriptionLike
+  for FinalizerSubscription<Arc<Mutex<Option<Target>>>>
 where
-  F: InnerDerefMut<Target = Option<Target>>,
   Target: FnMut(),
 {
   fn unsubscribe(&mut self) {
     self.is_closed = true;
-    if let Some(mut func) = (self.func.inner_deref_mut()).take() {
+    if let Some(mut func) = (self.func.lock().unwrap()).take() {
       func()
     }
   }
@@ -103,10 +103,41 @@ where
   fn is_closed(&self) -> bool { self.is_closed }
 }
 
-impl<Item, Err, O, F, Target> Observer for FinalizerObserver<O, F>
+impl<Target> SubscriptionLike
+  for FinalizerSubscription<Rc<RefCell<Option<Target>>>>
+where
+  Target: FnMut(),
+{
+  fn unsubscribe(&mut self) {
+    self.is_closed = true;
+    if let Some(mut func) = (self.func.borrow_mut()).take() {
+      func()
+    }
+  }
+
+  #[inline]
+  fn is_closed(&self) -> bool { self.is_closed }
+}
+
+impl<Target> SubscriptionLike for FinalizerSubscription<Box<Option<Target>>>
+where
+  Target: FnMut(),
+{
+  fn unsubscribe(&mut self) {
+    self.is_closed = true;
+    if let Some(mut func) = (self.func).take() {
+      func()
+    }
+  }
+
+  #[inline]
+  fn is_closed(&self) -> bool { self.is_closed }
+}
+
+impl<Item, Err, O, Target> Observer
+  for FinalizerObserver<O, Arc<Mutex<Option<Target>>>>
 where
   O: Observer<Item = Item, Err = Err>,
-  F: InnerDerefMut<Target = Option<Target>>,
   Target: FnMut(),
 {
   type Item = Item;
@@ -116,14 +147,72 @@ where
 
   fn error(&mut self, err: Err) {
     self.observer.error(err);
-    if let Some(mut func) = (self.func.inner_deref_mut()).take() {
+    if let Some(mut func) = (self.func.lock().unwrap()).take() {
       func()
     }
   }
 
   fn complete(&mut self) {
     self.observer.complete();
-    if let Some(mut func) = (self.func.inner_deref_mut()).take() {
+    if let Some(mut func) = (self.func.lock().unwrap()).take() {
+      func()
+    }
+  }
+
+  #[inline]
+  fn is_stopped(&self) -> bool { self.observer.is_stopped() }
+}
+
+impl<Item, Err, O, Target> Observer
+  for FinalizerObserver<O, Rc<RefCell<Option<Target>>>>
+where
+  O: Observer<Item = Item, Err = Err>,
+  Target: FnMut(),
+{
+  type Item = Item;
+  type Err = Err;
+  #[inline]
+  fn next(&mut self, value: Item) { self.observer.next(value); }
+
+  fn error(&mut self, err: Err) {
+    self.observer.error(err);
+    if let Some(mut func) = (self.func.borrow_mut()).take() {
+      func()
+    }
+  }
+
+  fn complete(&mut self) {
+    self.observer.complete();
+    if let Some(mut func) = (self.func.borrow_mut()).take() {
+      func()
+    }
+  }
+
+  #[inline]
+  fn is_stopped(&self) -> bool { self.observer.is_stopped() }
+}
+
+impl<Item, Err, O, Target> Observer
+  for FinalizerObserver<O, Box<Option<Target>>>
+where
+  O: Observer<Item = Item, Err = Err>,
+  Target: FnMut(),
+{
+  type Item = Item;
+  type Err = Err;
+  #[inline]
+  fn next(&mut self, value: Item) { self.observer.next(value); }
+
+  fn error(&mut self, err: Err) {
+    self.observer.error(err);
+    if let Some(mut func) = (self.func).take() {
+      func()
+    }
+  }
+
+  fn complete(&mut self) {
+    self.observer.complete();
+    if let Some(mut func) = (self.func).take() {
       func()
     }
   }

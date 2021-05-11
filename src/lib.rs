@@ -1,5 +1,3 @@
-#![allow(incomplete_features)]
-#![feature(generic_associated_types)]
 //! Reactive extensions library for Rust: a library for
 //! [Reactive Programming](http://reactivex.io/) using
 //! [Observable](crate::observable::Observable), to make
@@ -15,7 +13,6 @@ extern crate bencher;
 #[cfg(test)]
 pub mod test_scheduler;
 
-pub mod inner_deref;
 pub mod observable;
 pub mod observer;
 pub mod ops;
@@ -27,7 +24,6 @@ pub mod subscription;
 pub mod type_hint;
 
 pub mod prelude {
-  pub use crate::inner_deref::{InnerDeref, InnerDerefMut};
   pub use crate::observable;
   pub use crate::observable::*;
   pub use crate::observer;

@@ -5,6 +5,9 @@ pub use local_subject::*;
 
 mod shared_subject;
 pub use shared_subject::*;
+use std::cell::RefCell;
+use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
 #[derive(Default, Clone)]
 pub struct Subject<V, S> {
@@ -12,51 +15,63 @@ pub struct Subject<V, S> {
   pub(crate) subscription: S,
 }
 
-impl<V, S, O> Subject<V, S>
-where
-  V: InnerDeref<Target = Vec<O>>,
-{
-  #[inline]
-  pub fn new() -> Self
-  where
-    Self: Default,
-  {
-    Self::default()
-  }
-  #[inline]
-  pub fn subscribed_size(&self) -> usize {
-    self.observers.observers.inner_deref().len()
-  }
-}
-
 impl<O, U: SubscriptionLike> SubscriptionLike for Subject<O, U> {
   #[inline]
-  fn is_closed(&self) -> bool { self.subscription.is_closed() }
+  fn unsubscribe(&mut self) { self.subscription.unsubscribe(); }
 
   #[inline]
-  fn unsubscribe(&mut self) { self.subscription.unsubscribe(); }
+  fn is_closed(&self) -> bool { self.subscription.is_closed() }
 }
 
-impl<Item, Err, U, O, V> Observer for Subject<V, U>
+macro_rules! impl_observer {
+  () => {
+    #[inline]
+    fn next(&mut self, value: Item) { self.observers.next(value) }
+
+    #[inline]
+    fn error(&mut self, err: Err) { self.observers.error(err) }
+
+    #[inline]
+    fn complete(&mut self) { self.observers.complete() }
+
+    #[inline]
+    fn is_stopped(&self) -> bool { self.observers.is_stopped() }
+  };
+}
+
+impl<Item, Err, U, O> Observer for Subject<Arc<Mutex<Vec<O>>>, U>
 where
-  V: InnerDerefMut<Target = Vec<O>>,
   O: Observer<Item = Item, Err = Err> + SubscriptionLike,
   Item: Clone,
   Err: Clone,
 {
   type Item = Item;
   type Err = Err;
-  #[inline]
-  fn next(&mut self, value: Item) { self.observers.next(value) }
 
-  #[inline]
-  fn error(&mut self, err: Err) { self.observers.error(err) }
+  impl_observer!();
+}
 
-  #[inline]
-  fn complete(&mut self) { self.observers.complete() }
+impl<Item, Err, U, O> Observer for Subject<Rc<RefCell<Vec<O>>>, U>
+where
+  O: Observer<Item = Item, Err = Err> + SubscriptionLike,
+  Item: Clone,
+  Err: Clone,
+{
+  type Item = Item;
+  type Err = Err;
 
-  #[inline]
-  fn is_stopped(&self) -> bool { self.observers.is_stopped() }
+  impl_observer!();
+}
+
+impl<Item, Err, U, O> Observer for Subject<Box<Vec<O>>, U>
+where
+  O: Observer<Item = Item, Err = Err> + SubscriptionLike,
+  Item: Clone,
+  Err: Clone,
+{
+  type Item = Item;
+  type Err = Err;
+  impl_observer!();
 }
 
 #[derive(Default, Clone)]
@@ -65,9 +80,8 @@ pub(crate) struct SubjectObserver<V> {
   is_stopped: bool,
 }
 
-impl<Item, Err, V, O> Observer for SubjectObserver<V>
+impl<Item, Err, O> Observer for SubjectObserver<Arc<Mutex<Vec<O>>>>
 where
-  V: InnerDerefMut<Target = Vec<O>>,
   O: Publisher<Item = Item, Err = Err>,
   Item: Clone,
   Err: Clone,
@@ -76,7 +90,7 @@ where
   type Err = Err;
   fn next(&mut self, value: Item) {
     {
-      let mut vec = self.observers.inner_deref_mut();
+      let mut vec = self.observers.lock().unwrap();
       let not_done: Vec<O> = vec
         .drain(..)
         .map(|mut o| {
@@ -92,7 +106,7 @@ where
   }
 
   fn error(&mut self, err: Err) {
-    let mut observers = self.observers.inner_deref_mut();
+    let mut observers = self.observers.lock().unwrap();
     observers
       .iter_mut()
       .for_each(|subscriber| subscriber.error(err.clone()));
@@ -101,7 +115,7 @@ where
   }
 
   fn complete(&mut self) {
-    let mut observers = self.observers.inner_deref_mut();
+    let mut observers = self.observers.lock().unwrap();
     observers
       .iter_mut()
       .for_each(|subscriber| subscriber.complete());
@@ -113,16 +127,124 @@ where
   fn is_stopped(&self) -> bool { self.is_stopped }
 }
 
-impl<V, O, S> Debug for Subject<V, S>
+impl<Item, Err, O> Observer for SubjectObserver<Rc<RefCell<Vec<O>>>>
 where
-  V: InnerDeref<Target = Vec<O>>,
+  O: Publisher<Item = Item, Err = Err>,
+  Item: Clone,
+  Err: Clone,
 {
+  type Item = Item;
+  type Err = Err;
+  fn next(&mut self, value: Item) {
+    {
+      let mut vec = self.observers.borrow_mut();
+      let not_done: Vec<O> = vec
+        .drain(..)
+        .map(|mut o| {
+          o.next(value.clone());
+          o
+        })
+        .filter(|o| !o.is_finished())
+        .collect();
+      for p in not_done {
+        vec.push(p);
+      }
+    }
+  }
+
+  fn error(&mut self, err: Err) {
+    let mut observers = self.observers.borrow_mut();
+    observers
+      .iter_mut()
+      .for_each(|subscriber| subscriber.error(err.clone()));
+    observers.clear();
+    self.is_stopped = true;
+  }
+
+  fn complete(&mut self) {
+    let mut observers = self.observers.borrow_mut();
+    observers
+      .iter_mut()
+      .for_each(|subscriber| subscriber.complete());
+    observers.clear();
+    self.is_stopped = true;
+  }
+
+  #[inline]
+  fn is_stopped(&self) -> bool { self.is_stopped }
+}
+
+impl<Item, Err, O> Observer for SubjectObserver<Box<Vec<O>>>
+where
+  O: Publisher<Item = Item, Err = Err>,
+  Item: Clone,
+  Err: Clone,
+{
+  type Item = Item;
+  type Err = Err;
+  fn next(&mut self, value: Item) {
+    {
+      let vec = &mut self.observers;
+      let not_done: Vec<O> = vec
+        .drain(..)
+        .map(|mut o| {
+          o.next(value.clone());
+          o
+        })
+        .filter(|o| !o.is_finished())
+        .collect();
+      for p in not_done {
+        vec.push(p);
+      }
+    }
+  }
+
+  fn error(&mut self, err: Err) {
+    let observers = &mut self.observers;
+    observers
+      .iter_mut()
+      .for_each(|subscriber| subscriber.error(err.clone()));
+    observers.clear();
+    self.is_stopped = true;
+  }
+
+  fn complete(&mut self) {
+    let observers = &mut self.observers;
+    observers
+      .iter_mut()
+      .for_each(|subscriber| subscriber.complete());
+    observers.clear();
+    self.is_stopped = true;
+  }
+
+  #[inline]
+  fn is_stopped(&self) -> bool { self.is_stopped }
+}
+impl<O, S> Debug for Subject<Arc<Mutex<Vec<O>>>, S> {
   fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
     f.debug_struct("LocalSubject")
       .field(
         "observer_count",
-        &self.observers.observers.inner_deref().len(),
+        &self.observers.observers.lock().unwrap().len(),
       )
+      .finish()
+  }
+}
+impl<O, S> Debug for Subject<Rc<RefCell<Vec<O>>>, S> {
+  fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    f.debug_struct("LocalSubject")
+      .field(
+        "observer_count",
+        &self.observers.observers.borrow_mut().len(),
+      )
+      .finish()
+  }
+}
+
+impl<O, S> Debug for Subject<Box<Vec<O>>, S> {
+  fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    f.debug_struct("LocalSubject")
+      .field("observer_count", &self.observers.observers.len())
       .finish()
   }
 }
@@ -136,7 +258,7 @@ mod test {
   fn base_data_flow() {
     let mut i = 0;
     {
-      let mut broadcast = Subject::new();
+      let mut broadcast = LocalSubject::new();
       broadcast.clone().subscribe(|v| i = v * 2);
       broadcast.next(1);
     }
@@ -146,7 +268,7 @@ mod test {
   #[test]
   #[should_panic]
   fn error() {
-    let mut broadcast = Subject::new();
+    let mut broadcast = LocalSubject::new();
     broadcast
       .clone()
       .subscribe_err(|_: i32| {}, |e: _| panic!("{}", e));
@@ -160,7 +282,7 @@ mod test {
     let mut i = 0;
 
     {
-      let mut subject = Subject::new();
+      let mut subject = LocalSubject::new();
       subject.clone().subscribe(|v| i = v).unsubscribe();
       subject.next(100);
     }
@@ -174,7 +296,7 @@ mod test {
     use std::sync::{Arc, Mutex};
     let value = Arc::new(Mutex::new(0));
     let c_v = value.clone();
-    let subject = Subject::new();
+    let subject = SharedSubject::new();
     let mut subject_c = subject.clone();
     let stamp = Instant::now();
     pool.schedule(

@@ -129,7 +129,7 @@ mod test {
     let mut numbers_store = vec![];
 
     {
-      let mut numbers = Subject::new();
+      let mut numbers = LocalSubject::new();
       // enabling multiple observers for even stream;
       let even = numbers.clone().filter(|v| *v % 2 == 0);
       // enabling multiple observers for odd stream;
@@ -154,7 +154,7 @@ mod test {
 
   #[test]
   fn merge_unsubscribe_work() {
-    let mut numbers = Subject::new();
+    let mut numbers = LocalSubject::new();
     // enabling multiple observers for even stream;
     let even = numbers.clone().filter(|v| *v % 2 == 0);
     // enabling multiple observers for odd stream;
@@ -172,8 +172,8 @@ mod test {
   fn completed_test() {
     let completed = Arc::new(AtomicBool::new(false));
     let c_clone = completed.clone();
-    let mut even = Subject::new();
-    let mut odd = Subject::new();
+    let mut even = LocalSubject::new();
+    let mut odd = LocalSubject::new();
 
     even.clone().merge(odd.clone()).subscribe_complete(
       |_: &()| {},
@@ -195,8 +195,8 @@ mod test {
     let cc = completed.clone();
     let error = Arc::new(Mutex::new(0));
     let ec = error.clone();
-    let mut even = Subject::new();
-    let mut odd = Subject::new();
+    let mut even = LocalSubject::new();
+    let mut odd = LocalSubject::new();
 
     even.clone().merge(odd.clone()).subscribe_all(
       |_: ()| {},

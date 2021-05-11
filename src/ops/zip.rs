@@ -207,9 +207,9 @@ mod test {
   fn complete() {
     let mut complete = false;
     {
-      let mut s1 = Subject::new();
+      let mut s1 = LocalSubject::new();
       s1.clone()
-        .zip(Subject::new())
+        .zip(LocalSubject::new())
         .subscribe_complete(|((), ())| {}, || complete = true);
 
       s1.complete();
@@ -217,8 +217,8 @@ mod test {
     assert!(!complete);
 
     {
-      let mut s1 = Subject::new();
-      let mut s2 = Subject::new();
+      let mut s1 = LocalSubject::new();
+      let mut s2 = LocalSubject::new();
       s1.clone()
         .zip(s2.clone())
         .subscribe_complete(|((), ())| {}, || complete = true);
