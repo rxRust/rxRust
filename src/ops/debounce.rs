@@ -103,47 +103,6 @@ struct LocalDebounceObserver<O, S, Item>(
   Rc<RefCell<DebounceObserver<O, S, Item>>>,
 );
 
-macro_rules! impl_debounce_observer {
-  () => {
-    fn next(&mut self, value: Self::Item) {
-      let mut c_inner = self.0.clone();
-      let mut inner = self.0.inner_deref_mut();
-      let updated = Some(Instant::now());
-      inner.last_updated = updated.clone();
-      inner.trailing_value = Some(value.clone());
-      let delay = inner.delay;
-      inner.scheduler.schedule(
-        move |last| {
-          let mut inner = c_inner.inner_deref_mut();
-          if let Some(value) = inner.trailing_value.clone() {
-            if inner.last_updated == last {
-              inner.observer.next(value);
-              inner.trailing_value = None;
-            }
-          }
-        },
-        Some(delay),
-        inner.last_updated.clone(),
-      );
-    }
-    fn error(&mut self, err: Self::Err) {
-      let mut inner = self.0.inner_deref_mut();
-      inner.observer.error(err)
-    }
-    fn complete(&mut self) {
-      let mut inner = self.0.inner_deref_mut();
-      if let Some(value) = inner.trailing_value.take() {
-        inner.observer.next(value);
-      }
-      inner.observer.complete();
-    }
-    fn is_stopped(&self) -> bool {
-      let inner = self.0.inner_deref();
-      inner.observer.is_stopped()
-    }
-  };
-}
-
 impl<O, S> Observer for SharedDebounceObserver<O, S, O::Item>
 where
   O: Observer + Send + 'static,
@@ -152,7 +111,42 @@ where
 {
   type Item = O::Item;
   type Err = O::Err;
-  impl_debounce_observer!();
+  fn next(&mut self, value: Self::Item) {
+    let c_inner = self.0.clone();
+    let mut inner = self.0.lock().unwrap();
+    let updated = Some(Instant::now());
+    inner.last_updated = updated.clone();
+    inner.trailing_value = Some(value.clone());
+    let delay = inner.delay;
+    inner.scheduler.schedule(
+      move |last| {
+        let mut inner = c_inner.lock().unwrap();
+        if let Some(value) = inner.trailing_value.clone() {
+          if inner.last_updated == last {
+            inner.observer.next(value);
+            inner.trailing_value = None;
+          }
+        }
+      },
+      Some(delay),
+      inner.last_updated.clone(),
+    );
+  }
+  fn error(&mut self, err: Self::Err) {
+    let mut inner = self.0.lock().unwrap();
+    inner.observer.error(err)
+  }
+  fn complete(&mut self) {
+    let mut inner = self.0.lock().unwrap();
+    if let Some(value) = inner.trailing_value.take() {
+      inner.observer.next(value);
+    }
+    inner.observer.complete();
+  }
+  fn is_stopped(&self) -> bool {
+    let inner = self.0.lock().unwrap();
+    inner.observer.is_stopped()
+  }
 }
 
 impl<O, S> Observer for LocalDebounceObserver<O, S, O::Item>
@@ -163,7 +157,42 @@ where
 {
   type Item = O::Item;
   type Err = O::Err;
-  impl_debounce_observer!();
+  fn next(&mut self, value: Self::Item) {
+    let c_inner = self.0.clone();
+    let mut inner = self.0.borrow_mut();
+    let updated = Some(Instant::now());
+    inner.last_updated = updated.clone();
+    inner.trailing_value = Some(value.clone());
+    let delay = inner.delay;
+    inner.scheduler.schedule(
+      move |last| {
+        let mut inner = c_inner.borrow_mut();
+        if let Some(value) = inner.trailing_value.clone() {
+          if inner.last_updated == last {
+            inner.observer.next(value);
+            inner.trailing_value = None;
+          }
+        }
+      },
+      Some(delay),
+      inner.last_updated.clone(),
+    );
+  }
+  fn error(&mut self, err: Self::Err) {
+    let mut inner = self.0.borrow_mut();
+    inner.observer.error(err)
+  }
+  fn complete(&mut self) {
+    let mut inner = self.0.borrow_mut();
+    if let Some(value) = inner.trailing_value.take() {
+      inner.observer.next(value);
+    }
+    inner.observer.complete();
+  }
+  fn is_stopped(&self) -> bool {
+    let inner = self.0.borrow();
+    inner.observer.is_stopped()
+  }
 }
 
 #[cfg(test)]

@@ -111,17 +111,17 @@ pub struct FlattenInnerObserver<O, S, St> {
   state: St,
 }
 
-impl<O, S, St, Item, Err> Observer for FlattenInnerObserver<O, S, St>
+impl<O, S, Item, Err> Observer
+  for FlattenInnerObserver<O, S, Arc<Mutex<FlattenState>>>
 where
   O: Observer<Item = Item, Err = Err>,
   S: SubscriptionLike,
-  St: InnerDerefMut<Target = FlattenState>,
 {
   type Item = Item;
   type Err = Err;
 
   fn next(&mut self, item: Self::Item) {
-    let state = self.state.inner_deref();
+    let state = self.state.lock().unwrap();
     let is_completed = state.is_completed;
     drop(state);
 
@@ -131,7 +131,7 @@ where
   }
 
   fn error(&mut self, err: Self::Err) {
-    let mut state = self.state.inner_deref_mut();
+    let mut state = self.state.lock().unwrap();
     let should_error = state.register_observable_error();
     drop(state);
 
@@ -142,7 +142,7 @@ where
   }
 
   fn complete(&mut self) {
-    let mut state = self.state.inner_deref_mut();
+    let mut state = self.state.lock().unwrap();
     let should_complete = state.register_observable_completed();
     drop(state);
 
@@ -153,11 +153,100 @@ where
   }
 
   fn is_stopped(&self) -> bool {
-    let state = self.state.inner_deref();
+    let state = self.state.lock().unwrap();
     state.is_completed()
   }
 }
 
+impl<O, S, Item, Err> Observer
+  for FlattenInnerObserver<O, S, Rc<RefCell<FlattenState>>>
+where
+  O: Observer<Item = Item, Err = Err>,
+  S: SubscriptionLike,
+{
+  type Item = Item;
+  type Err = Err;
+
+  fn next(&mut self, item: Self::Item) {
+    let state = self.state.borrow();
+    let is_completed = state.is_completed;
+    drop(state);
+
+    if !is_completed {
+      self.observer.next(item);
+    }
+  }
+
+  fn error(&mut self, err: Self::Err) {
+    let mut state = self.state.borrow_mut();
+    let should_error = state.register_observable_error();
+    drop(state);
+
+    if should_error {
+      self.observer.error(err);
+      self.subscription.unsubscribe();
+    }
+  }
+
+  fn complete(&mut self) {
+    let mut state = self.state.borrow_mut();
+    let should_complete = state.register_observable_completed();
+    drop(state);
+
+    if should_complete {
+      self.observer.complete();
+      self.subscription.unsubscribe();
+    }
+  }
+
+  fn is_stopped(&self) -> bool {
+    let state = self.state.borrow();
+    state.is_completed()
+  }
+}
+
+impl<O, S, Item, Err> Observer for FlattenInnerObserver<O, S, Box<FlattenState>>
+where
+  O: Observer<Item = Item, Err = Err>,
+  S: SubscriptionLike,
+{
+  type Item = Item;
+  type Err = Err;
+
+  fn next(&mut self, item: Self::Item) {
+    let state = &mut self.state;
+    let is_completed = state.is_completed;
+
+    if !is_completed {
+      self.observer.next(item);
+    }
+  }
+
+  fn error(&mut self, err: Self::Err) {
+    let state = &mut self.state;
+    let should_error = state.register_observable_error();
+
+    if should_error {
+      self.observer.error(err);
+      self.subscription.unsubscribe();
+    }
+  }
+
+  fn complete(&mut self) {
+    let state = &mut self.state;
+    let should_complete = state.register_observable_completed();
+
+    if should_complete {
+      self.observer.complete();
+      self.subscription.unsubscribe();
+    }
+  }
+
+  fn is_stopped(&self) -> bool {
+    let state = &self.state;
+    state.is_completed()
+  }
+}
 ////////////////////////////////////////////////////////////////////////////////
 // shared
 
@@ -341,7 +430,7 @@ mod test {
     let mut numbers_store = vec![];
 
     {
-      let mut sources = Subject::new();
+      let mut sources = LocalSubject::new();
 
       let numbers = sources.clone().flatten();
       let odd = numbers.clone().filter(|v: &i32| *v % 2 != 0);
@@ -364,7 +453,7 @@ mod test {
 
   #[test]
   fn flatten_unsubscribe_work() {
-    let mut source = Subject::new();
+    let mut source = LocalSubject::new();
 
     let sources = source.clone().map(|v| observable::from_iter(vec![v]));
     let numbers = sources.flatten();
@@ -385,9 +474,9 @@ mod test {
     let completed = Arc::new(AtomicBool::new(false));
     let c_clone = completed.clone();
 
-    let mut source = Subject::new();
-    let mut one = Subject::new();
-    let mut two = Subject::new();
+    let mut source = LocalSubject::new();
+    let mut one = LocalSubject::new();
+    let mut two = LocalSubject::new();
 
     let out = source.clone().flatten();
 
@@ -422,9 +511,9 @@ mod test {
     let error = Arc::new(Mutex::new(0));
     let ec = error.clone();
 
-    let mut source = Subject::new();
-    let mut even = Subject::new();
-    let mut odd = Subject::new();
+    let mut source = LocalSubject::new();
+    let mut even = LocalSubject::new();
+    let mut odd = LocalSubject::new();
 
     let output = source.clone().flatten();
 
@@ -451,7 +540,7 @@ mod test {
   fn flatten_local_and_shared() {
     let mut res = vec![];
 
-    let mut source = Subject::new();
+    let mut source = SharedSubject::new();
     let local1 = observable::of(1);
     let local2 = observable::of(2);
 

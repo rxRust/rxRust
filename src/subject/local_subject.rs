@@ -17,6 +17,20 @@ pub type LocalSubjectErrRef<'a, Item, Err> =
 pub type LocalSubjectRefAll<'a, Item, Err> =
   _LocalSubject<dyn Publisher<Item = &'a Item, Err = &'a Err> + 'a>;
 
+impl<'a, Item, Err> LocalSubject<'a, Item, Err> {
+  #[inline]
+  pub fn new() -> Self
+  where
+    Self: Default,
+  {
+    Self::default()
+  }
+  #[inline]
+  pub fn subscribed_size(&self) -> usize {
+    self.observers.observers.borrow().len()
+  }
+}
+
 impl<'a, Item, Err> Observable for LocalSubject<'a, Item, Err> {
   type Item = Item;
   type Err = Err;
@@ -25,7 +39,7 @@ impl<'a, Item, Err> Observable for LocalSubject<'a, Item, Err> {
 impl<'a, Item, Err> LocalObservable<'a> for LocalSubject<'a, Item, Err> {
   type Unsub = LocalSubscription;
   fn actual_subscribe<O: Observer<Item = Self::Item, Err = Self::Err> + 'a>(
-    mut self,
+    self,
     subscriber: Subscriber<O, LocalSubscription>,
   ) -> LocalSubscription {
     let subscription = subscriber.subscription.clone();
@@ -33,7 +47,7 @@ impl<'a, Item, Err> LocalObservable<'a> for LocalSubject<'a, Item, Err> {
     self
       .observers
       .observers
-      .inner_deref_mut()
+      .borrow_mut()
       .push(Box::new(subscriber));
     subscription
   }

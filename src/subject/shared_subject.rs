@@ -7,6 +7,20 @@ type SharedPublishers<Item, Err> =
 pub type SharedSubject<Item, Err> =
   Subject<SharedPublishers<Item, Err>, SharedSubscription>;
 
+impl<Item, Err> SharedSubject<Item, Err> {
+  #[inline]
+  pub fn new() -> Self
+  where
+    Self: Default,
+  {
+    Self::default()
+  }
+  #[inline]
+  pub fn subscribed_size(&self) -> usize {
+    self.observers.observers.lock().unwrap().len()
+  }
+}
+
 impl<Item, Err> Observable for SharedSubject<Item, Err> {
   type Item = Item;
   type Err = Err;
@@ -17,7 +31,7 @@ impl<Item, Err> SharedObservable for SharedSubject<Item, Err> {
   fn actual_subscribe<
     O: Observer<Item = Self::Item, Err = Self::Err> + Sync + Send + 'static,
   >(
-    mut self,
+    self,
     subscriber: Subscriber<O, SharedSubscription>,
   ) -> Self::Unsub {
     let subscription = subscriber.subscription.clone();
@@ -25,14 +39,14 @@ impl<Item, Err> SharedObservable for SharedSubject<Item, Err> {
     self
       .observers
       .observers
-      .inner_deref_mut()
+      .lock()
+      .unwrap()
       .push(Box::new(subscriber));
     subscription
   }
 }
 
 #[test]
-
 fn smoke() {
   let test_code = Arc::new(Mutex::new("".to_owned()));
   let mut subject = SharedSubject::new();

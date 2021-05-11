@@ -1,4 +1,6 @@
-use crate::inner_deref::InnerDerefMut;
+use std::cell::RefCell;
+use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
 /// An Observer is a consumer of values delivered by an Observable. One for each
 /// type of notification delivered by the Observable: `next`, `error`,
@@ -55,15 +57,50 @@ macro_rules! is_stopped_proxy_impl {
 }
 }
 
-impl<Item, Err, T> Observer for T
+impl<Item, Err, T> Observer for Arc<Mutex<T>>
 where
-  T: InnerDerefMut,
-  T::Target: Observer<Item = Item, Err = Err>,
+  T: Observer<Item = Item, Err = Err>,
 {
   type Item = Item;
   type Err = Err;
-  fn next(&mut self, value: Item) { self.inner_deref_mut().next(value) }
-  fn error(&mut self, err: Err) { self.inner_deref_mut().error(err); }
-  fn complete(&mut self) { self.inner_deref_mut().complete(); }
-  fn is_stopped(&self) -> bool { self.inner_deref().is_stopped() }
+  fn next(&mut self, value: Item) { self.lock().unwrap().next(value) }
+  fn error(&mut self, err: Err) { self.lock().unwrap().error(err); }
+  fn complete(&mut self) { self.lock().unwrap().complete(); }
+  fn is_stopped(&self) -> bool { self.lock().unwrap().is_stopped() }
+}
+
+impl<Item, Err, T> Observer for Rc<RefCell<T>>
+where
+  T: Observer<Item = Item, Err = Err>,
+{
+  type Item = Item;
+  type Err = Err;
+  fn next(&mut self, value: Item) { self.borrow_mut().next(value) }
+  fn error(&mut self, err: Err) { self.borrow_mut().error(err); }
+  fn complete(&mut self) { self.borrow_mut().complete(); }
+  fn is_stopped(&self) -> bool { self.borrow().is_stopped() }
+}
+
+impl<Item, Err, T> Observer for Box<T>
+where
+  T: Observer<Item = Item, Err = Err> + ?Sized,
+{
+  type Item = Item;
+  type Err = Err;
+  fn next(&mut self, value: Item) {
+    let s = &mut **self;
+    s.next(value)
+  }
+  fn error(&mut self, err: Err) {
+    let s = &mut **self;
+    s.error(err);
+  }
+  fn complete(&mut self) {
+    let s = &mut **self;
+    s.complete();
+  }
+  fn is_stopped(&self) -> bool {
+    let s = &**self;
+    s.is_stopped()
+  }
 }

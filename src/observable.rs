@@ -206,8 +206,8 @@ pub trait Observable: Sized {
   ///
   /// ```
   /// # use rxrust::prelude::*;
-  /// let mut source = Subject::new();
-  /// let numbers = Subject::new();
+  /// let mut source = LocalSubject::new();
+  /// let numbers = LocalSubject::new();
   /// // create a even stream by filter
   /// let even = numbers.clone().filter((|v| *v % 2 == 0) as fn(&i32) -> bool);
   /// // create an odd stream by filter
@@ -280,7 +280,7 @@ pub trait Observable: Sized {
   ///
   /// ```
   /// # use rxrust::prelude::*;
-  /// let numbers = Subject::new();
+  /// let numbers = LocalSubject::new();
   /// // create a even stream by filter
   /// let even = numbers.clone().filter(|v| *v % 2 == 0);
   /// // create an odd stream by filter

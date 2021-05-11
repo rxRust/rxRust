@@ -119,8 +119,8 @@ mod test {
     let mut next_count = 0;
     let mut completed_count = 0;
     {
-      let mut notifier = Subject::new();
-      let mut source = Subject::new();
+      let mut notifier = LocalSubject::new();
+      let mut source = LocalSubject::new();
       source
         .clone()
         .take_until(notifier.clone())
@@ -152,8 +152,8 @@ mod test {
     let next_count_mirror = next_count.clone();
     let completed_count = Arc::new(Mutex::new(0));
     let completed_count_mirror = completed_count.clone();
-    let mut notifier = Subject::new();
-    let mut source = Subject::new();
+    let mut notifier = SharedSubject::new();
+    let mut source = SharedSubject::new();
     source
       .clone()
       .take_until(notifier.clone())

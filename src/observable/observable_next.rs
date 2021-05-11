@@ -69,7 +69,7 @@ where
 fn raii() {
   let mut times = 0;
   {
-    let mut subject = Subject::new();
+    let mut subject = LocalSubject::new();
     {
       let _ = subject
         .clone()

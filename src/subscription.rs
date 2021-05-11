@@ -150,16 +150,43 @@ impl<T> Default for Inner<T> {
   }
 }
 
-impl<T> SubscriptionLike for T
+impl<T> SubscriptionLike for Arc<Mutex<T>>
 where
-  T: InnerDerefMut,
-  T::Target: SubscriptionLike,
+  T: SubscriptionLike,
 {
   #[inline]
-  fn unsubscribe(&mut self) { self.inner_deref_mut().unsubscribe() }
+  fn unsubscribe(&mut self) { self.lock().unwrap().unsubscribe() }
 
   #[inline]
-  fn is_closed(&self) -> bool { self.inner_deref().is_closed() }
+  fn is_closed(&self) -> bool { self.lock().unwrap().is_closed() }
+}
+
+impl<T> SubscriptionLike for Rc<RefCell<T>>
+where
+  T: SubscriptionLike,
+{
+  #[inline]
+  fn unsubscribe(&mut self) { self.borrow_mut().unsubscribe() }
+
+  #[inline]
+  fn is_closed(&self) -> bool { self.borrow().is_closed() }
+}
+
+impl<T: ?Sized> SubscriptionLike for Box<T>
+where
+  T: SubscriptionLike,
+{
+  #[inline]
+  fn unsubscribe(&mut self) {
+    let s = &mut **self;
+    s.unsubscribe()
+  }
+
+  #[inline]
+  fn is_closed(&self) -> bool {
+    let s = &**self;
+    s.is_closed()
+  }
 }
 
 /// Wrapper around a subscription which provides the
