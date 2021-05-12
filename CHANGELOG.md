@@ -1,11 +1,19 @@
 ## [Unreleased](https://github.com/rxRust/rxRust/compare/v0.12.0...HEAD)
+### Features
+- **tooling**: Make runnable on rust stable by
+1. Removing declarative macros
+2. Using bencher lib instead of nightly `test::Bencher`
+3. Remove use of drain_filter
+4. Remove InnerDeref using GAT
+
+### Breaking Changes
+- **Subject** remove factory method `Subject::new` and replace with `LocalSubject::new` as well as `SharedSubject::new`
 
 ## [0.12.0](https://github.com/rxRust/rxRust/compare/v0.11.0...HEAD)
 ### Features
 - **operator**: add `flatten` operator.
 
 ### Breaking Changes
-
 - **SharedObservable**:  rename `SharedObservable::to_shared` as `SharedObservable::into_shared`
 
 ## [0.11.0](https://github.com/rxRust/rxRust/compare/v0.10.0...HEAD)

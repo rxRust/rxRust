@@ -143,7 +143,7 @@ Specialty Observables that have more precisely-controlled subscription dynamics
 - [x] finish **Missing Features List** so that people can contribute easily
 - [ ] issues and pr's template
 - [ ] test, some discuss in https://github.com/orgs/rxRust/teams/core-developers/discussions/2
-  - [ ] virtual timer
+  - [x] virtual timer
   - [ ] taking mature work from others Rx projects.
   - [ ] having some real life representative algorithms implemented to measure over performance,
   - [ ] more complex test, not just `bool` or `i32`. Maybe bringing a mocking library?
