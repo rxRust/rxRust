@@ -1,4 +1,6 @@
-## [Unreleased](https://github.com/rxRust/rxRust/compare/v0.12.0...HEAD)
+## [Unreleased](https://github.com/rxRust/rxRust/compare/v0.13.0...HEAD)
+
+## [0.13.0](https://github.com/rxRust/rxRust/compare/v0.12.0...HEAD)
 ### Features
 - **tooling**: Make runnable on rust stable by
 1. Removing declarative macros
