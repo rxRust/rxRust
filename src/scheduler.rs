@@ -100,7 +100,9 @@ impl SubscriptionLike for SpawnHandle {
   }
 
   #[inline]
-  fn is_closed(&self) -> bool { *self.is_closed.read().unwrap() }
+  fn is_closed(&self) -> bool {
+    *self.is_closed.read().unwrap()
+  }
 }
 
 #[cfg(feature = "futures-scheduler")]
@@ -208,7 +210,9 @@ mod test {
   }
 
   #[test]
-  fn bench_pool() { do_bench_pool(); }
+  fn bench_pool() {
+    do_bench_pool();
+  }
 
   benchmark_group!(do_bench_pool, pool);
 
@@ -230,7 +234,9 @@ mod test {
   }
 
   #[test]
-  fn bench_local_thread() { do_bench_local_thread(); }
+  fn bench_local_thread() {
+    do_bench_local_thread();
+  }
 
   benchmark_group!(do_bench_local_thread, local_thread);
 
@@ -249,7 +255,9 @@ mod test {
   }
 
   #[test]
-  fn bench_tokio_basic() { do_bench_tokio_basic(); }
+  fn bench_tokio_basic() {
+    do_bench_tokio_basic();
+  }
 
   benchmark_group!(do_bench_tokio_basic, tokio_basic);
 
@@ -258,7 +266,7 @@ mod test {
     let last = Arc::new(Mutex::new(0));
     b.iter(|| {
       let c_last = last.clone();
-      let local = runtime::Builder::new().basic_scheduler().build().unwrap();
+      let local = runtime::Builder::new_current_thread().build().unwrap();
 
       observable::from_iter(0..1000)
         .observe_on(local)
@@ -272,7 +280,9 @@ mod test {
   }
 
   #[test]
-  fn bench_tokio_thread() { do_bench_tokio_thread(); }
+  fn bench_tokio_thread() {
+    do_bench_tokio_thread();
+  }
 
   benchmark_group!(do_bench_tokio_thread, tokio_thread);
 
@@ -281,10 +291,7 @@ mod test {
     let last = Arc::new(Mutex::new(0));
     b.iter(|| {
       let c_last = last.clone();
-      let pool = runtime::Builder::new()
-        .threaded_scheduler()
-        .build()
-        .unwrap();
+      let pool = runtime::Runtime::new().unwrap();
       observable::from_iter(0..1000)
         .observe_on(pool)
         .map(waste_time)

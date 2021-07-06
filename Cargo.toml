@@ -27,8 +27,8 @@ version="0.3.5"
 features= ["thread-pool"]
 
 [dependencies.tokio]
-version = "0.2.22"
-features = ["rt-threaded", "rt-core"]
+version = "1.0"
+features = ["rt-multi-thread", "rt"]
 optional = true
 
 [features]
