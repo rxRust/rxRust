@@ -100,9 +100,7 @@ impl SubscriptionLike for SpawnHandle {
   }
 
   #[inline]
-  fn is_closed(&self) -> bool {
-    *self.is_closed.read().unwrap()
-  }
+  fn is_closed(&self) -> bool { *self.is_closed.read().unwrap() }
 }
 
 #[cfg(feature = "futures-scheduler")]
@@ -210,9 +208,7 @@ mod test {
   }
 
   #[test]
-  fn bench_pool() {
-    do_bench_pool();
-  }
+  fn bench_pool() { do_bench_pool(); }
 
   benchmark_group!(do_bench_pool, pool);
 
@@ -234,9 +230,7 @@ mod test {
   }
 
   #[test]
-  fn bench_local_thread() {
-    do_bench_local_thread();
-  }
+  fn bench_local_thread() { do_bench_local_thread(); }
 
   benchmark_group!(do_bench_local_thread, local_thread);
 
@@ -255,9 +249,7 @@ mod test {
   }
 
   #[test]
-  fn bench_tokio_basic() {
-    do_bench_tokio_basic();
-  }
+  fn bench_tokio_basic() { do_bench_tokio_basic(); }
 
   benchmark_group!(do_bench_tokio_basic, tokio_basic);
 
@@ -280,9 +272,7 @@ mod test {
   }
 
   #[test]
-  fn bench_tokio_thread() {
-    do_bench_tokio_thread();
-  }
+  fn bench_tokio_thread() { do_bench_tokio_thread(); }
 
   benchmark_group!(do_bench_tokio_thread, tokio_thread);
 
