@@ -5,7 +5,7 @@ pub use trivial::*;
 mod from_iter;
 pub use from_iter::{from_iter, repeat};
 
-mod of;
+pub mod of;
 pub use of::{of, of_fn, of_option, of_result};
 
 pub(crate) mod from_future;
