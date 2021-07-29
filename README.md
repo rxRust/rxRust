@@ -19,9 +19,9 @@ rxrust = "0.10.0"
 use rxrust:: prelude::*;
 
 let mut numbers = observable::from_iter(0..10);
-// crate a even stream by filter
+// create an even stream by filter
 let even = numbers.clone().filter(|v| v % 2 == 0);
-// crate an odd stream by filter
+// create an odd stream by filter
 let odd = numbers.clone().filter(|v| v % 2 != 0);
 
 // merge odd and even stream again
@@ -70,7 +70,7 @@ observable::from_iter(0..10)
 
 ## Converts from a Future
 
-just use `observable::from_future` to convert a `Future` to an observable sequence.
+Just use `observable::from_future` to convert a `Future` to an observable sequence.
 
 ```rust
 use rxrust::prelude::*;
