@@ -34,6 +34,9 @@ pub use base::*;
 pub mod from_fn;
 pub use from_fn::*;
 
+pub mod timer;
+pub use timer::{timer, timer_at};
+
 mod observable_all;
 pub use observable_all::*;
 mod observable_err;
