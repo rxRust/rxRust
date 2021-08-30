@@ -1,11 +1,13 @@
 use crate::prelude::*;
 use std::time::{Duration, Instant};
 
-/**
-Returns an observable which will emit a single `item`
-once after a given `dur` using a given `scheduler`
- */
-pub fn timer<Item, S>(item: Item, dur: Duration, scheduler: S) -> ObservableBase<TimerEmitter<Item, S>> {
+// Returns an observable which will emit a single `item`
+// once after a given `dur` using a given `scheduler`
+pub fn timer<Item, S>(
+  item: Item,
+  dur: Duration,
+  scheduler: S,
+) -> ObservableBase<TimerEmitter<Item, S>> {
   ObservableBase::new(TimerEmitter {
     item,
     dur,
@@ -13,12 +15,15 @@ pub fn timer<Item, S>(item: Item, dur: Duration, scheduler: S) -> ObservableBase
   })
 }
 
-/**
-Returns an observable which will emit a single `item`
-once at a given timestamp `at` using a given `scheduler`.
-If timestamp `at` < `Instant::now()`, the observable will emit the item immediately
- */
-pub fn timer_at<Item, S>(item: Item, at: Instant, scheduler: S) -> ObservableBase<TimerEmitter<Item, S>> {
+// Returns an observable which will emit a single `item`
+// once at a given timestamp `at` using a given `scheduler`.
+// If timestamp `at` < `Instant::now()`, the observable will emit the item
+// immediately
+pub fn timer_at<Item, S>(
+  item: Item,
+  at: Instant,
+  scheduler: S,
+) -> ObservableBase<TimerEmitter<Item, S>> {
   let duration = get_duration_from_instant(at);
   ObservableBase::new(TimerEmitter {
     item,
@@ -27,10 +32,8 @@ pub fn timer_at<Item, S>(item: Item, at: Instant, scheduler: S) -> ObservableBas
   })
 }
 
-/**
-Calculates the duration between `Instant::now()` and a given `instant`.
-Returns `Duration::default()` when `instant` is a timestamp in the past
- */
+// Calculates the duration between `Instant::now()` and a given `instant`.
+// Returns `Duration::default()` when `instant` is a timestamp in the past
 fn get_duration_from_instant(instant: Instant) -> Duration {
   let now = Instant::now();
   match instant > now {
@@ -39,10 +42,9 @@ fn get_duration_from_instant(instant: Instant) -> Duration {
   }
 }
 
-/**
-Emitter for `observable::timer` and `observable::timer_at` holding the
-`item` that will be emitted, a `dur` when this will happen and the used `scheduler`
- */
+// Emitter for `observable::timer` and `observable::timer_at` holding the
+// `item` that will be emitted, a `dur` when this will happen and the used
+// `scheduler`
 pub struct TimerEmitter<Item, S> {
   item: Item,
   dur: Duration,
@@ -54,8 +56,13 @@ impl<Item, S> Emitter for TimerEmitter<Item, S> {
   type Err = ();
 }
 
-impl<Item: 'static, S: LocalScheduler + 'static> LocalEmitter<'static> for TimerEmitter<Item, S> {
-  fn emit<O>(self, subscriber: Subscriber<O, LocalSubscription>) where O: Observer<Item=Self::Item, Err=Self::Err> + 'static {
+impl<Item: 'static, S: LocalScheduler + 'static> LocalEmitter<'static>
+  for TimerEmitter<Item, S>
+{
+  fn emit<O>(self, subscriber: Subscriber<O, LocalSubscription>)
+  where
+    O: Observer<Item = Self::Item, Err = Self::Err> + 'static,
+  {
     let mut observer = subscriber.observer;
     let item = self.item;
     let dur = self.dur;
@@ -66,14 +73,20 @@ impl<Item: 'static, S: LocalScheduler + 'static> LocalEmitter<'static> for Timer
         observer.complete();
       },
       Some(dur),
-      1);
+      1,
+    );
 
     subscriber.subscription.add(handle);
   }
 }
 
-impl<Item: Send + 'static, S: SharedScheduler + 'static> SharedEmitter for TimerEmitter<Item, S> {
-  fn emit<O>(self, subscriber: Subscriber<O, SharedSubscription>) where O: Observer<Item=Self::Item, Err=Self::Err> + Send + Sync + 'static {
+impl<Item: Send + 'static, S: SharedScheduler + 'static> SharedEmitter
+  for TimerEmitter<Item, S>
+{
+  fn emit<O>(self, subscriber: Subscriber<O, SharedSubscription>)
+  where
+    O: Observer<Item = Self::Item, Err = Self::Err> + Send + Sync + 'static,
+  {
     let mut observer = subscriber.observer;
     let item = self.item;
     let dur = self.dur;
@@ -84,7 +97,8 @@ impl<Item: Send + 'static, S: SharedScheduler + 'static> SharedEmitter for Timer
         observer.complete();
       },
       Some(dur),
-      1);
+      1,
+    );
 
     subscriber.subscription.add(handle);
   }
@@ -94,9 +108,9 @@ impl<Item: Send + 'static, S: SharedScheduler + 'static> SharedEmitter for Timer
 mod tests {
   use crate::prelude::*;
   use futures::executor::{LocalPool, ThreadPool};
-  use std::time::{Duration, Instant};
-  use std::sync::atomic::{AtomicBool, Ordering, AtomicUsize, AtomicI32};
+  use std::sync::atomic::{AtomicBool, AtomicI32, AtomicUsize, Ordering};
   use std::sync::Arc;
+  use std::time::{Duration, Instant};
 
   #[test]
   fn timer_shall_emit_value() {
@@ -107,10 +121,9 @@ mod tests {
     let i_emitted_c = i_emitted.clone();
 
     observable::timer(val, Duration::from_millis(5), local.spawner())
-        .subscribe(move |n| {
-          i_emitted_c.store(n, Ordering::Relaxed);
-        }
-        );
+      .subscribe(move |n| {
+        i_emitted_c.store(n, Ordering::Relaxed);
+      });
 
     local.run();
 
@@ -126,11 +139,10 @@ mod tests {
     let i_emitted_c = i_emitted.clone();
 
     observable::timer(val, Duration::from_millis(5), pool)
-        .into_shared()
-        .subscribe_blocking(move |n| {
-          i_emitted_c.store(n, Ordering::Relaxed);
-        }
-        );
+      .into_shared()
+      .subscribe_blocking(move |n| {
+        i_emitted_c.store(n, Ordering::Relaxed);
+      });
 
     assert_eq!(val, i_emitted.load(Ordering::Relaxed));
   }
@@ -143,12 +155,10 @@ mod tests {
     let next_count_c = next_count.clone();
 
     observable::timer("aString", Duration::from_millis(5), local.spawner())
-        .subscribe(
-          move |_| {
-            let count = next_count_c.load(Ordering::Relaxed);
-            next_count_c.store(count + 1, Ordering::Relaxed);
-          }
-        );
+      .subscribe(move |_| {
+        let count = next_count_c.load(Ordering::Relaxed);
+        next_count_c.store(count + 1, Ordering::Relaxed);
+      });
 
     local.run();
 
@@ -163,13 +173,11 @@ mod tests {
     let next_count_c = next_count.clone();
 
     observable::timer("aString", Duration::from_millis(5), pool)
-        .into_shared()
-        .subscribe_blocking(
-          move |_| {
-            let count = next_count_c.load(Ordering::Relaxed);
-            next_count_c.store(count + 1, Ordering::Relaxed);
-          }
-        );
+      .into_shared()
+      .subscribe_blocking(move |_| {
+        let count = next_count_c.load(Ordering::Relaxed);
+        next_count_c.store(count + 1, Ordering::Relaxed);
+      });
 
     assert_eq!(next_count.load(Ordering::Relaxed), 1);
   }
@@ -182,12 +190,12 @@ mod tests {
     let is_completed_c = is_completed.clone();
 
     observable::timer("aString", Duration::from_millis(5), local.spawner())
-        .subscribe_complete(
-          |_| {},
-          move || {
-            is_completed_c.store(true, Ordering::Relaxed);
-          },
-        );
+      .subscribe_complete(
+        |_| {},
+        move || {
+          is_completed_c.store(true, Ordering::Relaxed);
+        },
+      );
 
     local.run();
 
@@ -202,14 +210,14 @@ mod tests {
     let is_completed_c = is_completed.clone();
 
     observable::timer("aString", Duration::from_millis(5), pool)
-        .into_shared()
-        .subscribe_blocking_all(
-          |_| {},
-          |_| {},
-          move || {
-            is_completed_c.store(true, Ordering::Relaxed);
-          },
-        );
+      .into_shared()
+      .subscribe_blocking_all(
+        |_| {},
+        |_| {},
+        move || {
+          is_completed_c.store(true, Ordering::Relaxed);
+        },
+      );
 
     assert_eq!(is_completed.load(Ordering::Relaxed), true);
   }
@@ -222,9 +230,7 @@ mod tests {
     let stamp = Instant::now();
 
     observable::timer("aString", duration.clone(), local.spawner())
-        .subscribe(
-          |_| {}
-        );
+      .subscribe(|_| {});
 
     local.run();
 
@@ -239,10 +245,8 @@ mod tests {
     let stamp = Instant::now();
 
     observable::timer("aString", duration.clone(), pool)
-        .into_shared()
-        .subscribe_blocking(
-          |_| {}
-        );
+      .into_shared()
+      .subscribe_blocking(|_| {});
 
     assert!(stamp.elapsed() >= duration);
   }
@@ -255,11 +259,14 @@ mod tests {
     let i_emitted = Arc::new(AtomicI32::new(0));
     let i_emitted_c = i_emitted.clone();
 
-    observable::timer_at(val, Instant::now() + Duration::from_millis(10), local.spawner())
-        .subscribe(move |n| {
-          i_emitted_c.store(n, Ordering::Relaxed);
-        }
-        );
+    observable::timer_at(
+      val,
+      Instant::now() + Duration::from_millis(10),
+      local.spawner(),
+    )
+    .subscribe(move |n| {
+      i_emitted_c.store(n, Ordering::Relaxed);
+    });
 
     local.run();
 
@@ -275,11 +282,10 @@ mod tests {
     let i_emitted_c = i_emitted.clone();
 
     observable::timer_at(val, Instant::now() + Duration::from_millis(10), pool)
-        .into_shared()
-        .subscribe_blocking(move |n| {
-          i_emitted_c.store(n, Ordering::Relaxed);
-        }
-        );
+      .into_shared()
+      .subscribe_blocking(move |n| {
+        i_emitted_c.store(n, Ordering::Relaxed);
+      });
 
     assert_eq!(val, i_emitted.load(Ordering::Relaxed));
   }
@@ -291,13 +297,15 @@ mod tests {
     let next_count = Arc::new(AtomicUsize::new(0));
     let next_count_c = next_count.clone();
 
-    observable::timer_at("aString", Instant::now() + Duration::from_millis(10), local.spawner())
-        .subscribe(
-          move |_| {
-            let count = next_count_c.load(Ordering::Relaxed);
-            next_count_c.store(count + 1, Ordering::Relaxed);
-          }
-        );
+    observable::timer_at(
+      "aString",
+      Instant::now() + Duration::from_millis(10),
+      local.spawner(),
+    )
+    .subscribe(move |_| {
+      let count = next_count_c.load(Ordering::Relaxed);
+      next_count_c.store(count + 1, Ordering::Relaxed);
+    });
 
     local.run();
 
@@ -311,13 +319,17 @@ mod tests {
     let is_completed = Arc::new(AtomicBool::new(false));
     let is_completed_c = is_completed.clone();
 
-    observable::timer_at("aString", Instant::now() + Duration::from_millis(10), local.spawner())
-        .subscribe_complete(
-          |_| {},
-          move || {
-            is_completed_c.store(true, Ordering::Relaxed);
-          },
-        );
+    observable::timer_at(
+      "aString",
+      Instant::now() + Duration::from_millis(10),
+      local.spawner(),
+    )
+    .subscribe_complete(
+      |_| {},
+      move || {
+        is_completed_c.store(true, Ordering::Relaxed);
+      },
+    );
 
     local.run();
 
@@ -333,9 +345,7 @@ mod tests {
     let execute_at = stamp + duration;
 
     observable::timer_at("aString", execute_at, local.spawner())
-        .subscribe(
-          |_| {}
-        );
+      .subscribe(|_| {});
 
     local.run();
 
@@ -354,12 +364,12 @@ mod tests {
     let execute_at = now - duration; // execute 1 sec in past
 
     observable::timer_at("aString", execute_at, local.spawner())
-        .subscribe_complete(
-          |_| {},
-          move || {
-            is_completed_c.store(true, Ordering::Relaxed);
-          },
-        );
+      .subscribe_complete(
+        |_| {},
+        move || {
+          is_completed_c.store(true, Ordering::Relaxed);
+        },
+      );
 
     local.run();
 
