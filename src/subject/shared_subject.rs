@@ -7,6 +7,9 @@ type SharedPublishers<Item, Err> =
 pub type SharedSubject<Item, Err> =
   Subject<SharedPublishers<Item, Err>, SharedSubscription>;
 
+pub type SharedBehaviorSubject<Item, Err> =
+  BehaviorSubject<SharedPublishers<Item, Err>, SharedSubscription, Item>;
+
 impl<Item, Err> SharedSubject<Item, Err> {
   #[inline]
   pub fn new() -> Self
@@ -43,6 +46,55 @@ impl<Item, Err> SharedObservable for SharedSubject<Item, Err> {
       .unwrap()
       .push(Box::new(subscriber));
     subscription
+  }
+}
+
+impl<Item, Err> Observable for SharedBehaviorSubject<Item, Err> {
+  type Item = Item;
+  type Err = Err;
+}
+
+impl<Item, Err> SharedObservable for SharedBehaviorSubject<Item, Err> {
+  type Unsub = SharedSubscription;
+  fn actual_subscribe<
+    O: Observer<Item = Self::Item, Err = Self::Err> + Sync + Send + 'static,
+  >(
+    self,
+    subscriber: Subscriber<O, SharedSubscription>,
+  ) -> Self::Unsub {
+    let subscription = subscriber.subscription.clone();
+    self.subscription.add(subscription.clone());
+
+    self
+      .observers
+      .observers
+      .lock()
+      .unwrap()
+      .push(Box::new(subscriber));
+
+    if !subscription.is_closed() {
+      self.observers.observers.lock().unwrap().last_mut().unwrap().next(self.value);
+    }
+
+    subscription
+  }
+}
+
+impl<Item, Err> SharedBehaviorSubject<Item, Err> {
+  #[inline]
+  pub fn new(value: Item) -> Self
+    where
+        Self: Default,
+  {
+    SharedBehaviorSubject {
+      observers: Default::default(),
+      subscription: Default::default(),
+      value,
+    }
+  }
+  #[inline]
+  pub fn subscribed_size(&self) -> usize {
+    self.observers.observers.lock().unwrap().len()
   }
 }
 
