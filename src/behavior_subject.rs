@@ -1,5 +1,4 @@
 use crate::observer::Observer;
-use crate::prelude::*;
 use crate::prelude::{Publisher, SubscriptionLike};
 use std::cell::RefCell;
 use std::fmt::{Debug, Formatter};
