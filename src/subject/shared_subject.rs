@@ -73,7 +73,14 @@ impl<Item, Err> SharedObservable for SharedBehaviorSubject<Item, Err> {
       .push(Box::new(subscriber));
 
     if !subscription.is_closed() {
-      self.observers.observers.lock().unwrap().last_mut().unwrap().next(self.value);
+      self
+        .observers
+        .observers
+        .lock()
+        .unwrap()
+        .last_mut()
+        .unwrap()
+        .next(self.value);
     }
 
     subscription
@@ -83,8 +90,8 @@ impl<Item, Err> SharedObservable for SharedBehaviorSubject<Item, Err> {
 impl<Item, Err> SharedBehaviorSubject<Item, Err> {
   #[inline]
   pub fn new(value: Item) -> Self
-    where
-        Self: Default,
+  where
+    Self: Default,
   {
     SharedBehaviorSubject {
       observers: Default::default(),
