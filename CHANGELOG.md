@@ -1,5 +1,6 @@
 ## [Unreleased](https://github.com/rxRust/rxRust/compare/v0.13.0...HEAD)
 - **operator**: add `timer` and `timer_at` operator.
+- **subject**: add `BehaviorSubject` subject.
 
 ## [0.13.0](https://github.com/rxRust/rxRust/compare/v0.12.0...HEAD)
 ### Features
