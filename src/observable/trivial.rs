@@ -110,12 +110,10 @@ impl Emitter for NeverEmitter {
 }
 
 impl<'a> LocalEmitter<'a> for NeverEmitter {
-  #[inline]
   never_emitter!(LocalSubscription, 'a);
 }
 
 impl SharedEmitter for NeverEmitter {
-  #[inline]
   never_emitter!(SharedSubscription, Send + Sync + 'static);
 }
 
