@@ -22,7 +22,7 @@ Operators that originate new Observables.
 - [x] Range — create an Observable that emits a range of sequential integers
 - [x] Repeat — create an Observable that emits a particular item or sequence of items repeatedly
 - [ ] Start — create an Observable that emits the return value of a function
-- [ ] Timer — create an Observable that emits a single item after a given delay
+- [x] Timer — create an Observable that emits a single item after a given delay
 
 ### Transforming Observables
 
