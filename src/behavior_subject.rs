@@ -260,7 +260,7 @@ mod test {
     let mut i = 0;
 
     {
-      let mut broadcast = LocalBehaviorSubject::new(42);
+      let broadcast = LocalBehaviorSubject::new(42);
       broadcast.clone().subscribe(|v| i = v * 2);
     }
 
@@ -291,7 +291,7 @@ mod test {
     let mut i = 0;
 
     {
-      let mut subject = LocalBehaviorSubject::new(42);
+      let subject = LocalBehaviorSubject::new(42);
       subject.clone().subscribe(|v| i = v).unsubscribe();
     }
 
