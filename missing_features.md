@@ -127,6 +127,13 @@ Specialty Observables that have more precisely-controlled subscription dynamics
 ### Operators to Convert Observables
 - [ ] To — convert an Observable into another object or data structure
 
+## Subjects
+
+- [ ] AsyncSubject — emits the last value (and only the last value) emitted by the source Observable, and only after that source Observable completes
+- [ ] BehaviorSubject — begins by emitting the item most recently emitted by the source Observable (or a seed/default value if none has yet been emitted) and then continues to emit any other items emitted later by the source Observable(s)
+- [ ] PublishSubject — emits to an observer only those items that are emitted by the source Observable(s) subsequent to the time of the subscription
+- [ ] ReplaySubject — emits to any observer all of the items that were emitted by the source Observable(s), regardless of when the observer subscribes
+
 ## Schedulers
 
 - [ ] maybe Redesign? How should rxRust work with Future's executor more naturally.
