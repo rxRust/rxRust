@@ -4,7 +4,8 @@ use std::rc::Rc;
 
 type RcPublishers<P> = Rc<RefCell<Vec<Box<P>>>>;
 type _LocalSubject<P> = Subject<RcPublishers<P>, LocalSubscription>;
-type _LocalBehaviorSubject<P, Item> = BehaviorSubject<RcPublishers<P>, LocalSubscription, Item>;
+type _LocalBehaviorSubject<P, Item> =
+  BehaviorSubject<RcPublishers<P>, LocalSubscription, Item>;
 
 pub type LocalSubject<'a, Item, Err> =
   _LocalSubject<dyn Publisher<Item = Item, Err = Err> + 'a>;
@@ -27,8 +28,10 @@ pub type LocalBehaviorSubjectRef<'a, Item, Err> =
 pub type LocalBehaviorSubjectErrRef<'a, Item, Err> =
   _LocalBehaviorSubject<dyn Publisher<Item = Item, Err = &'a Err> + 'a, Item>;
 
-pub type LocalBehaviorSubjectRefAll<'a, Item, Err> =
-  _LocalBehaviorSubject<dyn Publisher<Item = &'a Item, Err = &'a Err> + 'a, Item>;
+pub type LocalBehaviorSubjectRefAll<'a, Item, Err> = _LocalBehaviorSubject<
+  dyn Publisher<Item = &'a Item, Err = &'a Err> + 'a,
+  Item,
+>;
 
 impl<'a, Item, Err> LocalSubject<'a, Item, Err> {
   #[inline]
@@ -69,8 +72,8 @@ impl<'a, Item, Err> LocalObservable<'a> for LocalSubject<'a, Item, Err> {
 impl<'a, Item, Err> LocalBehaviorSubject<'a, Item, Err> {
   #[inline]
   pub fn new(value: Item) -> Self
-    where
-        Self: Default,
+  where
+    Self: Default,
   {
     LocalBehaviorSubject {
       observers: Default::default(),
@@ -89,7 +92,9 @@ impl<'a, Item, Err> Observable for LocalBehaviorSubject<'a, Item, Err> {
   type Err = Err;
 }
 
-impl<'a, Item, Err> LocalObservable<'a> for LocalBehaviorSubject<'a, Item, Err> {
+impl<'a, Item, Err> LocalObservable<'a>
+  for LocalBehaviorSubject<'a, Item, Err>
+{
   type Unsub = LocalSubscription;
   fn actual_subscribe<O: Observer<Item = Self::Item, Err = Self::Err> + 'a>(
     self,
@@ -99,13 +104,19 @@ impl<'a, Item, Err> LocalObservable<'a> for LocalBehaviorSubject<'a, Item, Err> 
     self.subscription.add(subscription.clone());
 
     self
+      .observers
+      .observers
+      .borrow_mut()
+      .push(Box::new(subscriber));
+
+    if !subscription.is_closed() {
+      self
         .observers
         .observers
         .borrow_mut()
-        .push(Box::new(subscriber));
-
-    if !subscription.is_closed() {
-      self.observers.observers.borrow_mut().last_mut().unwrap().next(self.value);
+        .last_mut()
+        .unwrap()
+        .next(self.value);
     }
 
     subscription
