@@ -29,7 +29,7 @@ Operators that originate new Observables.
 Operators that transform items that are emitted by an Observable.
 
 - [ ] Buffer — periodically gather items from an Observable into bundles and emit these bundles rather than emitting the items one at a time
-- [ ] FlatMap — transform the items emitted by an Observable into Observables, then flatten the emissions from those into a single Observable
+- [x] FlatMap — transform the items emitted by an Observable into Observables, then flatten the emissions from those into a single Observable
 - [ ] GroupBy — divide an Observable into a set of Observables that each emit a different group of items from the original Observable, organized by key
 - [x] Map — transform the items emitted by an Observable by applying a function to each item
 - [x] Scan — apply a function to each item emitted by an Observable, sequentially, and emit each successive value
@@ -48,7 +48,7 @@ Operators that selectively emit items from a source Observable.
 - [x] First — emit only the first item, or the first item that meets a condition, from an Observable
 - [x] IgnoreElements — do not emit any items from an Observable but mirror its termination notification
 - [x] Last — emit only the last item emitted by an Observable
-- [ ] Sample — emit the most recent item emitted by an Observable within periodic time intervals
+- [x] Sample — emit the most recent item emitted by an Observable within periodic time intervals
 - [x] Skip — suppress the first n items emitted by an Observable
 - [x] SkipLast — suppress the last n items emitted by an Observable
 - [x] SkipWhile — suppress items emitted by an Observable until a specified condition becomes false
@@ -81,7 +81,7 @@ A toolbox of useful Operators for working with Observables
 - [ ] Materialize/Dematerialize — represent both the items emitted and the notifications sent as emitted items, or reverse this process
 - [x] ObserveOn — specify the scheduler on which an observer will observe this Observable
 - [ ] Serialize — force an Observable to make serialized calls and to be well-behaved
-- [ ] Subscribe — operate upon the emissions and notifications from an Observable
+- [x] Subscribe — operate upon the emissions and notifications from an Observable
 - [x] SubscribeOn — specify the scheduler an Observable should use when it is subscribed to
 - [ ] TimeInterval — convert an Observable that emits items into one that emits indications of the amount of time elapsed between those emissions
 - [ ] Timeout — mirror the source Observable, but issue an error notification if a particular period of time elapses without any emitted items
@@ -97,8 +97,8 @@ Operators that evaluate one or more Observables or items emitted by Observables
 - [x] DefaultIfEmpty — emit items from the source Observable, or a default item if the source Observable emits nothing
 - [ ] SequenceEqual — determine whether two Observables emit the same sequence of items
 - [ ] SkipUntil — discard items emitted by an Observable until a second Observable emits an item
-- [ ] SkipWhile — discard items emitted by an Observable until a specified condition becomes false
-- [ ] TakeUntil — discard items emitted by an Observable after a second Observable emits an item or terminates
+- [x] SkipWhile — discard items emitted by an Observable until a specified condition becomes false
+- [x] TakeUntil — discard items emitted by an Observable after a second Observable emits an item or terminates
 - [x] TakeWhile — discard items emitted by an Observable after a specified condition becomes false
 
 ### Mathematical and Aggregate Operators
