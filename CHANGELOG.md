@@ -1,4 +1,5 @@
 ## [Unreleased](https://github.com/rxRust/rxRust/compare/v0.14.0...HEAD)
+- **operator**: add `group_by` operator.
 
 ## [0.14.0](https://github.com/rxRust/rxRust/releases/tag/v0.14.0)
 ## Features
