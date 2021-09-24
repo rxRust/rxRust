@@ -60,6 +60,7 @@ use ops::{
   filter_map::FilterMapOp,
   finalize::FinalizeOp,
   flatten::FlattenOp,
+  group_by::GroupByOp,
   last::LastOp,
   map::MapOp,
   map_to::MapToOp,
@@ -250,6 +251,50 @@ pub trait Observable: Sized {
         func: f,
       },
       marker: std::marker::PhantomData::<Inner>,
+    }
+  }
+
+  /// Groups items emited by the source Observable into Observables.
+  /// Each emited Observable emits items matching the key returned
+  /// by the discriminator function.
+  ///
+  /// # Example
+  ///
+  /// ```
+  /// use rxrust::prelude::*;
+  ///
+  /// #[derive(Clone)]
+  /// struct Person {
+  ///   name: String,
+  ///   age: u32,
+  /// }
+  ///
+  /// observable::from_iter([
+  ///   Person{ name: String::from("John"), age: 26 },
+  ///   Person{ name: String::from("Anne"), age: 28 },
+  ///   Person{ name: String::from("Gregory"), age: 24 },
+  ///   Person{ name: String::from("Alice"), age: 28 },
+  /// ])
+  /// .group_by(|person: &Person| person.age)
+  /// .subscribe(|group| {
+  ///   group
+  ///   .reduce(|acc, person| format!("{} {}", acc, person.name))
+  ///   .subscribe(|result| println!("{}", result));
+  /// });
+  ///
+  /// // Prints:
+  /// //  John
+  /// //  Anne Alice
+  /// //  Gregory
+  /// ```
+  #[inline]
+  fn group_by<D, Item, Key>(self, discr: D) -> GroupByOp<Self, D>
+  where
+    D: FnMut(&Item) -> Key,
+  {
+    GroupByOp {
+      source: self,
+      discr,
     }
   }
 
