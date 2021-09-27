@@ -20,7 +20,7 @@ macro_rules! observable_impl {
         observer: MapToObserver {
           observer: subscriber.observer,
           value,
-          marker: TypeHint::new(),
+          _marker: TypeHint::new(),
         },
         subscription: subscriber.subscription,
       })
@@ -60,7 +60,7 @@ where
 pub struct MapToObserver<O, B, Item> {
   observer: O,
   value: B,
-  marker: TypeHint<*const Item>,
+  _marker: TypeHint<*const Item>,
 }
 
 impl<Item, Err, O, B> Observer for MapToObserver<O, B, Item>

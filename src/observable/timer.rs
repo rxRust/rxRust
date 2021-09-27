@@ -199,7 +199,7 @@ mod tests {
 
     local.run();
 
-    assert_eq!(is_completed.load(Ordering::Relaxed), true);
+    assert!(is_completed.load(Ordering::Relaxed));
   }
 
   #[test]
@@ -219,7 +219,7 @@ mod tests {
         },
       );
 
-    assert_eq!(is_completed.load(Ordering::Relaxed), true);
+    assert!(is_completed.load(Ordering::Relaxed));
   }
 
   #[test]
@@ -229,8 +229,7 @@ mod tests {
     let duration = Duration::from_millis(50);
     let stamp = Instant::now();
 
-    observable::timer("aString", duration.clone(), local.spawner())
-      .subscribe(|_| {});
+    observable::timer("aString", duration, local.spawner()).subscribe(|_| {});
 
     local.run();
 
@@ -244,7 +243,7 @@ mod tests {
     let duration = Duration::from_millis(50);
     let stamp = Instant::now();
 
-    observable::timer("aString", duration.clone(), pool)
+    observable::timer("aString", duration, pool)
       .into_shared()
       .subscribe_blocking(|_| {});
 
@@ -333,7 +332,7 @@ mod tests {
 
     local.run();
 
-    assert_eq!(is_completed.load(Ordering::Relaxed), true);
+    assert!(is_completed.load(Ordering::Relaxed));
   }
 
   #[test]
@@ -374,6 +373,6 @@ mod tests {
     local.run();
 
     assert!(now.elapsed() < duration);
-    assert_eq!(is_completed.load(Ordering::Relaxed), true);
+    assert!(is_completed.load(Ordering::Relaxed));
   }
 }

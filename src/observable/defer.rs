@@ -123,13 +123,13 @@ mod test {
 
   #[test]
   fn fork_and_share() {
-    let observable = observable::defer(|| observable::empty());
+    let observable = observable::defer(observable::empty);
     observable.clone().into_shared().subscribe(|_: i32| {});
-    observable.clone().into_shared().subscribe(|_| {});
+    observable.into_shared().subscribe(|_| {});
 
-    let observable = observable::defer(|| observable::empty()).into_shared();
+    let observable = observable::defer(observable::empty).into_shared();
     observable.clone().subscribe(|_: i32| {});
-    observable.clone().subscribe(|_| {});
+    observable.subscribe(|_| {});
   }
 
   #[test]

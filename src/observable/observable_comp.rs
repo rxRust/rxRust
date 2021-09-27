@@ -5,7 +5,7 @@ pub struct ObserverComp<N, C, Item> {
   next: N,
   complete: C,
   is_stopped: bool,
-  marker: TypeHint<*const Item>,
+  _marker: TypeHint<*const Item>,
 }
 
 impl<N, C, Item> Observer for ObserverComp<N, C, Item>
@@ -60,7 +60,7 @@ where
       next,
       complete,
       is_stopped: false,
-      marker: TypeHint::new(),
+      _marker: TypeHint::new(),
     }));
     SubscriptionWrapper(unsub)
   }
@@ -86,7 +86,7 @@ where
       next,
       complete,
       is_stopped: false,
-      marker: TypeHint::new(),
+      _marker: TypeHint::new(),
     }));
     SubscriptionWrapper(unsub)
   }

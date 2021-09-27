@@ -69,7 +69,7 @@ impl LocalScheduler for ManualScheduler {
       task: Box::new(|| {
         task(state);
       }),
-      delay: delay.unwrap_or(Duration::from_micros(0)),
+      delay: delay.unwrap_or_else(|| Duration::from_micros(0)),
       start: (*self.clock.read().unwrap()).instant(),
       cancel: handle.clone(),
     });
@@ -90,7 +90,7 @@ impl LocalScheduler for ManualScheduler {
         delay,
         last_time: at
           .map(|t| t.sub(delay))
-          .unwrap_or((*self.clock.read().unwrap()).instant()),
+          .unwrap_or_else(|| (*self.clock.read().unwrap()).instant()),
         cancel: handle.clone(),
       },
     )));
@@ -179,8 +179,7 @@ mod tests {
     let scheduler = ManualScheduler::now();
     let invokes = Arc::new(Mutex::new(0));
     let invokes_c = invokes.clone();
-    let fut =
-      futures::future::lazy(move |_| *invokes_c.clone().lock().unwrap() += 1);
+    let fut = futures::future::lazy(move |_| *invokes_c.lock().unwrap() += 1);
     scheduler.spawn(fut);
     assert_eq!(1, *invokes.lock().unwrap());
   }
@@ -226,7 +225,7 @@ mod tests {
     let invokes_c = invokes.clone();
     let delay = Duration::from_millis(100);
     scheduler.schedule(
-      move |_| *invokes_c.clone().lock().unwrap() += 1,
+      move |_| *invokes_c.lock().unwrap() += 1,
       Some(delay),
       1,
     );
@@ -250,7 +249,7 @@ mod tests {
     let invokes_c = invokes.clone();
     let delay = Duration::from_millis(100);
     let mut handle = scheduler.schedule(
-      move |_| *invokes_c.clone().lock().unwrap() += 1,
+      move |_| *invokes_c.lock().unwrap() += 1,
       Some(delay),
       1,
     );

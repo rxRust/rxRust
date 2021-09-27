@@ -1,6 +1,7 @@
 #![cfg(test)]
 use crate::prelude::*;
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 #[derive(Clone)]
@@ -8,8 +9,8 @@ pub struct ObserverBlockAll<N, E, C, Item, Err> {
   next: N,
   error: E,
   complete: C,
-  is_stopped: Arc<Mutex<bool>>,
-  marker: TypeHint<(*const Item, *const Err)>,
+  is_stopped: Arc<AtomicBool>,
+  _marker: TypeHint<(*const Item, *const Err)>,
 }
 
 impl<Item, Err, N, E, C> ObserverBlockAll<N, E, C, Item, Err> {
@@ -19,8 +20,8 @@ impl<Item, Err, N, E, C> ObserverBlockAll<N, E, C, Item, Err> {
       next,
       error,
       complete,
-      is_stopped: Arc::new(Mutex::new(false)),
-      marker: TypeHint::new(),
+      is_stopped: Arc::new(AtomicBool::new(false)),
+      _marker: TypeHint::new(),
     }
   }
 }
@@ -38,16 +39,16 @@ where
 
   fn error(&mut self, err: Self::Err) {
     (self.error)(err);
-    *self.is_stopped.lock().unwrap() = true;
+    self.is_stopped.store(true, Ordering::Relaxed);
   }
 
   fn complete(&mut self) {
     (self.complete)();
-    *self.is_stopped.lock().unwrap() = true;
+    self.is_stopped.store(true, Ordering::Relaxed);
   }
 
   #[inline]
-  fn is_stopped(&self) -> bool { *self.is_stopped.lock().unwrap() }
+  fn is_stopped(&self) -> bool { self.is_stopped.load(Ordering::Relaxed) }
 }
 
 pub trait SubscribeBlockingAll<'a, N, E, C> {
@@ -96,17 +97,17 @@ where
   where
     Self: Sized,
   {
-    let stopped = Arc::new(Mutex::new(false));
+    let stopped = Arc::new(AtomicBool::new(false));
     let stopped_c = Arc::clone(&stopped);
     let subscriber = Subscriber::shared(ObserverBlockAll {
       next,
       error,
       complete,
       is_stopped: stopped,
-      marker: TypeHint::new(),
+      _marker: TypeHint::new(),
     });
     let sub = SubscriptionWrapper(self.0.actual_subscribe(subscriber));
-    while !*stopped_c.lock().unwrap() {
+    while !stopped_c.load(Ordering::Relaxed) {
       std::thread::sleep(Duration::from_millis(1))
     }
     sub

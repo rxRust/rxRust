@@ -103,7 +103,7 @@ where
   ObservableBase::new(FutureResultEmitter {
     future,
     scheduler,
-    marker: TypeHint::new(),
+    _marker: TypeHint::new(),
   })
 }
 
@@ -111,7 +111,7 @@ where
 pub struct FutureResultEmitter<F, S, Item, Err> {
   future: F,
   scheduler: S,
-  marker: TypeHint<(Item, Err)>,
+  _marker: TypeHint<(Item, Err)>,
 }
 
 impl<Item, S, Err, F> Emitter for FutureResultEmitter<F, S, Item, Err>

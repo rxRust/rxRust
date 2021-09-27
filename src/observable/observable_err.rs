@@ -5,7 +5,7 @@ pub struct ObserverErr<N, E, Item, Err> {
   next: N,
   error: E,
   is_stopped: bool,
-  marker: TypeHint<fn() -> (Item, Err)>,
+  _marker: TypeHint<fn() -> (Item, Err)>,
 }
 
 impl<Item, Err, N, E> Observer for ObserverErr<N, E, Item, Err>
@@ -34,7 +34,7 @@ impl<N, E, Item, Err> ObserverErr<N, E, Item, Err> {
       next,
       error,
       is_stopped: false,
-      marker: TypeHint::new(),
+      _marker: TypeHint::new(),
     }
   }
 }
@@ -70,7 +70,7 @@ where
       next,
       error,
       is_stopped: false,
-      marker: TypeHint::new(),
+      _marker: TypeHint::new(),
     }));
     SubscriptionWrapper(unsub)
   }
@@ -93,7 +93,7 @@ where
       next,
       error,
       is_stopped: false,
-      marker: TypeHint::new(),
+      _marker: TypeHint::new(),
     }));
     SubscriptionWrapper(unsub)
   }
