@@ -92,9 +92,7 @@ where
     }
   }
 
-  fn is_stopped(&self) -> bool {
-    self.borrow_mut().observer.is_stopped()
-  }
+  fn is_stopped(&self) -> bool { self.borrow_mut().observer.is_stopped() }
 }
 
 struct LocalInnerObserver<'a, O: Observer>(
@@ -136,9 +134,7 @@ where
   }
 
   #[inline]
-  fn is_stopped(&self) -> bool {
-    self.0.borrow_mut().observer.is_stopped()
-  }
+  fn is_stopped(&self) -> bool { self.0.borrow_mut().observer.is_stopped() }
 }
 
 impl<S> SharedObservable for MergeAllOp<S>
@@ -220,9 +216,7 @@ where
     }
   }
 
-  fn is_stopped(&self) -> bool {
-    self.lock().unwrap().observer.is_stopped()
-  }
+  fn is_stopped(&self) -> bool { self.lock().unwrap().observer.is_stopped() }
 }
 
 struct SharedInnerObserver<O: Observer>(Arc<Mutex<SharedMergeAllObserver<O>>>);
@@ -264,9 +258,7 @@ where
   }
 
   #[inline]
-  fn is_stopped(&self) -> bool {
-    self.0.lock().unwrap().observer.is_stopped()
-  }
+  fn is_stopped(&self) -> bool { self.0.lock().unwrap().observer.is_stopped() }
 }
 
 #[cfg(test)]

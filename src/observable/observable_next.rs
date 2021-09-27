@@ -4,7 +4,7 @@ use crate::prelude::*;
 pub struct ObserverN<N, Item> {
   next: N,
   is_stopped: bool,
-  marker: TypeHint<*const Item>,
+  _marker: TypeHint<*const Item>,
 }
 
 impl<Item, N> Observer for ObserverN<N, Item>
@@ -42,7 +42,7 @@ where
     let unsub = self.actual_subscribe(Subscriber::local(ObserverN {
       next,
       is_stopped: false,
-      marker: TypeHint::new(),
+      _marker: TypeHint::new(),
     }));
     SubscriptionWrapper(unsub)
   }
@@ -59,7 +59,7 @@ where
     let unsub = self.0.actual_subscribe(Subscriber::shared(ObserverN {
       next,
       is_stopped: false,
-      marker: TypeHint::new(),
+      _marker: TypeHint::new(),
     }));
     SubscriptionWrapper(unsub)
   }

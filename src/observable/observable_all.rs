@@ -6,7 +6,7 @@ pub struct ObserverAll<N, E, C, Item, Err> {
   error: E,
   complete: C,
   is_stopped: bool,
-  marker: TypeHint<(*const Item, *const Err)>,
+  _marker: TypeHint<(*const Item, *const Err)>,
 }
 
 impl<Item, Err, N, E, C> ObserverAll<N, E, C, Item, Err> {
@@ -17,7 +17,7 @@ impl<Item, Err, N, E, C> ObserverAll<N, E, C, Item, Err> {
       error,
       complete,
       is_stopped: false,
-      marker: TypeHint::new(),
+      _marker: TypeHint::new(),
     }
   }
 }
@@ -89,7 +89,7 @@ where
       error,
       complete,
       is_stopped: false,
-      marker: TypeHint::new(),
+      _marker: TypeHint::new(),
     });
     SubscriptionWrapper(self.actual_subscribe(subscriber))
   }
@@ -119,7 +119,7 @@ where
       error,
       complete,
       is_stopped: false,
-      marker: TypeHint::new(),
+      _marker: TypeHint::new(),
     });
     SubscriptionWrapper(self.0.actual_subscribe(subscriber))
   }

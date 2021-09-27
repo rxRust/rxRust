@@ -93,9 +93,7 @@ pub trait Observable: Sized {
 
   /// emit only the first item emitted by an Observable
   #[inline]
-  fn first(self) -> TakeOp<Self> {
-    self.take(1)
-  }
+  fn first(self) -> TakeOp<Self> { self.take(1) }
 
   /// emit only the first item emitted by an Observable
   #[inline]
@@ -139,9 +137,7 @@ pub trait Observable: Sized {
   /// notification
   #[inline]
   fn ignore_elements(self) -> FilterOp<Self, fn(&Self::Item) -> bool> {
-    fn always_false<Item>(_: &Item) -> bool {
-      false
-    }
+    fn always_false<Item>(_: &Item) -> bool { false }
     self.filter(always_false as fn(&Self::Item) -> bool)
   }
 
@@ -151,9 +147,7 @@ pub trait Observable: Sized {
   where
     F: Fn(Self::Item) -> bool,
   {
-    fn not(b: &bool) -> bool {
-      !b
-    }
+    fn not(b: &bool) -> bool { !b }
     self
       .map(pred)
       .filter(not as fn(&bool) -> bool)
@@ -925,9 +919,7 @@ pub trait Observable: Sized {
   /// // 5
   /// ```
   #[inline]
-  fn count(self) -> CountOp<Self, Self::Item> {
-    self.reduce(|acc, _v| acc + 1)
-  }
+  fn count(self) -> CountOp<Self, Self::Item> { self.reduce(|acc, _v| acc + 1) }
 
   /// Calculates the sum of numbers emitted by an source observable and emits
   /// this sum when source completes.
@@ -1159,9 +1151,7 @@ pub trait Observable: Sized {
   /// Returns an Observable that emits all items emitted by the source
   /// Observable that are distinct by comparison from previous items.
   #[inline]
-  fn distinct(self) -> DistinctOp<Self> {
-    DistinctOp { source: self }
-  }
+  fn distinct(self) -> DistinctOp<Self> { DistinctOp { source: self } }
 
   /// 'Zips up' two observable into a single observable of pairs.
   ///
@@ -1241,15 +1231,11 @@ mod tests {
   }
 
   #[test]
-  fn bench_element_at() {
-    do_bench_element_at();
-  }
+  fn bench_element_at() { do_bench_element_at(); }
 
   benchmark_group!(do_bench_element_at, element_at_bench);
 
-  fn element_at_bench(b: &mut bencher::Bencher) {
-    b.iter(smoke_element_at);
-  }
+  fn element_at_bench(b: &mut bencher::Bencher) { b.iter(smoke_element_at); }
 
   #[test]
   fn first() {
@@ -1265,15 +1251,11 @@ mod tests {
   }
 
   #[test]
-  fn bench_first() {
-    do_bench_first();
-  }
+  fn bench_first() { do_bench_first(); }
 
   benchmark_group!(do_bench_first, first_bench);
 
-  fn first_bench(b: &mut bencher::Bencher) {
-    b.iter(first);
-  }
+  fn first_bench(b: &mut bencher::Bencher) { b.iter(first); }
 
   #[test]
   fn first_or() {
@@ -1298,15 +1280,11 @@ mod tests {
   }
 
   #[test]
-  fn bench_first_or() {
-    do_bench_first_or();
-  }
+  fn bench_first_or() { do_bench_first_or(); }
 
   benchmark_group!(do_bench_first_or, first_or_bench);
 
-  fn first_or_bench(b: &mut bencher::Bencher) {
-    b.iter(first_or);
-  }
+  fn first_or_bench(b: &mut bencher::Bencher) { b.iter(first_or); }
 
   #[test]
   fn first_support_fork() {
@@ -1347,9 +1325,7 @@ mod tests {
   }
 
   #[test]
-  fn bench_ignore() {
-    do_bench_ignore();
-  }
+  fn bench_ignore() { do_bench_ignore(); }
 
   benchmark_group!(do_bench_ignore, ignore_emements_bench);
 
@@ -1376,13 +1352,9 @@ mod tests {
   }
 
   #[test]
-  fn bench_all() {
-    do_bench_all();
-  }
+  fn bench_all() { do_bench_all(); }
 
   benchmark_group!(do_bench_all, all_bench);
 
-  fn all_bench(b: &mut bencher::Bencher) {
-    b.iter(smoke_all);
-  }
+  fn all_bench(b: &mut bencher::Bencher) { b.iter(smoke_all); }
 }

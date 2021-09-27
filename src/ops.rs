@@ -450,7 +450,7 @@ mod test {
 
     // right identity
     let partial_right = |x| f(x).flat_map(return_fn);
-    let comp_right = m.clone().flat_map(partial_right);
+    let comp_right = m.flat_map(partial_right);
 
     let mut left: Option<i32> = None;
     let mut right: Option<i32> = None;

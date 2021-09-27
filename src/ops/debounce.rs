@@ -115,8 +115,8 @@ where
     let c_inner = self.0.clone();
     let mut inner = self.0.lock().unwrap();
     let updated = Some(Instant::now());
-    inner.last_updated = updated.clone();
-    inner.trailing_value = Some(value.clone());
+    inner.last_updated = updated;
+    inner.trailing_value = Some(value);
     let delay = inner.delay;
     inner.scheduler.schedule(
       move |last| {
@@ -129,7 +129,7 @@ where
         }
       },
       Some(delay),
-      inner.last_updated.clone(),
+      inner.last_updated,
     );
   }
   fn error(&mut self, err: Self::Err) {
@@ -161,8 +161,8 @@ where
     let c_inner = self.0.clone();
     let mut inner = self.0.borrow_mut();
     let updated = Some(Instant::now());
-    inner.last_updated = updated.clone();
-    inner.trailing_value = Some(value.clone());
+    inner.last_updated = updated;
+    inner.trailing_value = Some(value);
     let delay = inner.delay;
     inner.scheduler.schedule(
       move |last| {
@@ -175,7 +175,7 @@ where
         }
       },
       Some(delay),
-      inner.last_updated.clone(),
+      inner.last_updated,
     );
   }
   fn error(&mut self, err: Self::Err) {

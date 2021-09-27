@@ -1,13 +1,14 @@
 #![cfg(test)]
 use crate::prelude::*;
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 #[derive(Clone)]
 pub struct ObserverBlock<N, Item> {
   next: N,
-  is_stopped: Arc<Mutex<bool>>,
-  marker: TypeHint<*const Item>,
+  is_stopped: Arc<AtomicBool>,
+  _marker: TypeHint<*const Item>,
 }
 
 impl<Item, N> ObserverBlock<N, Item> {
@@ -15,8 +16,8 @@ impl<Item, N> ObserverBlock<N, Item> {
   pub fn new(next: N) -> Self {
     ObserverBlock {
       next,
-      is_stopped: Arc::new(Mutex::new(false)),
-      marker: TypeHint::new(),
+      is_stopped: Arc::new(AtomicBool::new(false)),
+      _marker: TypeHint::new(),
     }
   }
 }
@@ -30,12 +31,14 @@ where
   #[inline(always)]
   fn next(&mut self, value: Self::Item) { (self.next)(value); }
 
-  fn error(&mut self, _err: ()) { *self.is_stopped.lock().unwrap() = true; }
+  fn error(&mut self, _err: ()) {
+    self.is_stopped.store(true, Ordering::Relaxed);
+  }
 
-  fn complete(&mut self) { *self.is_stopped.lock().unwrap() = true; }
+  fn complete(&mut self) { self.is_stopped.store(true, Ordering::Relaxed) }
 
   #[inline]
-  fn is_stopped(&self) -> bool { *self.is_stopped.lock().unwrap() }
+  fn is_stopped(&self) -> bool { self.is_stopped.load(Ordering::Relaxed) }
 }
 
 pub trait SubscribeBlocking<'a, N> {
@@ -71,15 +74,15 @@ where
   where
     Self: Sized,
   {
-    let stopped = Arc::new(Mutex::new(false));
+    let stopped = Arc::new(AtomicBool::new(false));
     let stopped_c = Arc::clone(&stopped);
     let subscriber = Subscriber::shared(ObserverBlock {
       next,
       is_stopped: stopped,
-      marker: TypeHint::new(),
+      _marker: TypeHint::new(),
     });
     let sub = SubscriptionWrapper(self.actual_subscribe(subscriber));
-    while !*stopped_c.lock().unwrap() {
+    while !stopped_c.load(Ordering::Relaxed) {
       std::thread::sleep(Duration::from_millis(1))
     }
     sub
