@@ -313,6 +313,22 @@ pub trait Observable: Sized {
   /// Converts a higher-order Observable into a first-order Observable which
   /// concurrently delivers all values that are emitted on the inner
   /// Observables.
+  ///
+  /// # Example
+  ///
+  /// ```
+  /// # use rxrust::prelude::*;
+  /// # use futures::executor::LocalPool;
+  /// # use std::time::Duration;
+  /// let mut local = LocalPool::new();
+  /// observable::from_iter(
+  ///   (0..3)
+  ///     .map(|_| interval(Duration::from_millis(1), local.spawner()).take(5)),
+  /// )
+  /// .merge_all(2)
+  /// .subscribe(move |i| println!("{}", i));
+  /// local.run();
+  /// ```
   #[inline]
   fn merge_all(self, concurrent: usize) -> MergeAllOp<Self> {
     MergeAllOp {
