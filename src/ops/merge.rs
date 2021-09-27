@@ -10,8 +10,6 @@ pub struct MergeOp<S1, S2> {
   pub(crate) source2: S2,
 }
 
-pub struct SharedMergeOp<S1, S2>(MergeOp<S1, S2>);
-
 impl<S1, S2> Observable for MergeOp<S1, S2>
 where
   S1: Observable,
@@ -110,7 +108,9 @@ where
   }
 
   #[inline]
-  fn is_stopped(&self) -> bool { self.observer.is_stopped() }
+  fn is_stopped(&self) -> bool {
+    self.observer.is_stopped()
+  }
 }
 
 #[cfg(test)]
@@ -238,9 +238,13 @@ mod test {
   }
 
   #[test]
-  fn bench() { do_bench(); }
+  fn bench() {
+    do_bench();
+  }
 
   benchmark_group!(do_bench, bench_merge);
 
-  fn bench_merge(b: &mut bencher::Bencher) { b.iter(odd_even_merge); }
+  fn bench_merge(b: &mut bencher::Bencher) {
+    b.iter(odd_even_merge);
+  }
 }

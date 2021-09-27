@@ -1,4 +1,4 @@
-# rxRust: a zero cost Rust implementation of Reactive Extensions
+# rxRust: a Rust implementation of Reactive Extensions
 [![](https://docs.rs/rxrust/badge.svg)](https://docs.rs/rxrust/)
 [![codecov](https://codecov.io/gh/rxRust/rxRust/branch/master/graph/badge.svg)](https://codecov.io/gh/rxRust/rxRust)
 ![](https://github.com/rxRust/rxRust/workflows/test/badge.svg)
