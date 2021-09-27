@@ -12,6 +12,7 @@ pub mod last;
 pub mod map;
 pub mod map_to;
 pub mod merge;
+pub mod merge_all;
 pub mod observe_on;
 pub mod ref_count;
 pub mod sample;
