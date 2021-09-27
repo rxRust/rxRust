@@ -1,12 +1,12 @@
 ## [Unreleased](https://github.com/rxRust/rxRust/compare/v0.14.0...HEAD)
 
-## [0.14.0](https://github.com/rxRust/rxRust/compare/v0.14)
+## [0.14.0](https://github.com/rxRust/rxRust/releases/tag/v0.14.0)
 ## Features
 - **operator**: add `timer` and `timer_at` operator.
 - **subject**: add `BehaviorSubject` subject.
 - **operator**: add `merge_all` operator.
 
-## [0.13.0](https://github.com/rxRust/rxRust/compare/v0.13)
+## [0.13.0](https://github.com/rxRust/rxRust/releases/tag/v0.13.0)
 ### Features
 - **tooling**: Make runnable on rust stable by
 1. Removing declarative macros
@@ -17,14 +17,14 @@
 ### Breaking Changes
 - **Subject** remove factory method `Subject::new` and replace with `LocalSubject::new` as well as `SharedSubject::new`
 
-## [0.12.0](https://github.com/rxRust/rxRust/compare/v0.12)
+## [0.12.0](https://github.com/rxRust/rxRust/releases/tag/v0.12.0)
 ### Features
 - **operator**: add `flatten` operator.
 
 ### Breaking Changes
 - **SharedObservable**:  rename `SharedObservable::to_shared` as `SharedObservable::into_shared`
 
-## [0.11.0](https://github.com/rxRust/rxRust/compare/v0.11.0)
+## [0.11.0](https://github.com/rxRust/rxRust/releases/tag/v0.11.0)
 ### Features
 - **operator**: add `element_at` operator.
 - **operator**: add `ignore_elements` operator.
@@ -41,7 +41,7 @@
 
 - make `interval` mod public.
 
-## [0.10.0](https://github.com/rxRust/rxRust/compare/v0.10.0)
+## [0.10.0](https://github.com/rxRust/rxRust/releases/tag/v0.10.0)
 ### Features
 - **operator**: add `distinct` operator.
 - **operator**: add `debounce` operator.
