@@ -52,6 +52,7 @@ pub use observable_comp::*;
 use crate::ops::default_if_empty::DefaultIfEmptyOp;
 use ops::{
   box_it::{BoxOp, IntoBox},
+  buffer::{BufferWithCountOp, BufferWithCountOrTimerOp, BufferWithTimeOp},
   contains::ContainsOp,
   debounce::DebounceOp,
   delay::DelayOp,
@@ -1236,6 +1237,127 @@ pub trait Observable: Sized {
       source: self,
       is_empty: true,
       default_value,
+    }
+  }
+
+  /// Buffers emitted values of type T in a Vec<T> and
+  /// emits that Vec<T> as soon as the buffer's size equals
+  /// the given count.
+  /// On complete, if the buffer is not empty,
+  /// it will be emitted.
+  /// On error, the buffer will be discarded.
+  ///
+  /// The operator never returns an empty buffer.
+  ///
+  /// #Example
+  /// ```
+  /// use rxrust::prelude::*;
+  ///
+  /// observable::from_iter(0..6)
+  ///   .buffer_with_count(3)
+  ///   .subscribe(|vec| println!("{:?}", vec));
+  ///
+  /// // Prints:
+  /// // [0, 1, 2]
+  /// // [3, 4, 5]
+  /// ```
+  #[inline]
+  fn buffer_with_count(self, count: usize) -> BufferWithCountOp<Self> {
+    BufferWithCountOp {
+      source: self,
+      count,
+    }
+  }
+
+  /// Buffers emitted values of type T in a Vec<T> and
+  /// emits that Vec<T> periodically.
+  ///
+  /// On complete, if the buffer is not empty,
+  /// it will be emitted.
+  /// On error, the buffer will be discarded.
+  ///
+  /// The operator never returns an empty buffer.
+  ///
+  /// #Example
+  /// ```
+  /// use rxrust::prelude::*;
+  /// use std::time::Duration;
+  /// use futures::executor::ThreadPool;
+  ///
+  /// let pool = ThreadPool::new().unwrap();
+  ///
+  /// observable::create(|mut subscriber| {
+  ///   subscriber.next(0);
+  ///   subscriber.next(1);
+  ///   std::thread::sleep(Duration::from_millis(100));
+  ///   subscriber.next(2);
+  ///   subscriber.next(3);
+  ///   subscriber.complete();
+  /// })
+  ///   .buffer_with_time(Duration::from_millis(50), pool)
+  ///   .into_shared()
+  ///   .subscribe(|vec| println!("{:?}", vec));
+  ///
+  /// // Prints:
+  /// // [0, 1]
+  /// // [2, 3]
+  /// ```
+  #[inline]
+  fn buffer_with_time<S>(
+    self,
+    time: Duration,
+    scheduler: S,
+  ) -> BufferWithTimeOp<Self, S> {
+    BufferWithTimeOp {
+      source: self,
+      time,
+      scheduler,
+    }
+  }
+
+  /// Buffers emitted values of type T in a Vec<T> and
+  /// emits that Vec<T> either if the buffer's size equals count, or
+  /// periodically. This operator combines the functionality of
+  /// buffer_with_count and buffer_with_time.
+  ///
+  /// #Example
+  /// ```
+  /// use rxrust::prelude::*;
+  /// use std::time::Duration;
+  /// use futures::executor::ThreadPool;
+  ///
+  /// let pool = ThreadPool::new().unwrap();
+  ///
+  /// observable::create(|mut subscriber| {
+  ///   subscriber.next(0);
+  ///   subscriber.next(1);
+  ///   subscriber.next(2);
+  ///   std::thread::sleep(Duration::from_millis(100));
+  ///   subscriber.next(3);
+  ///   subscriber.next(4);
+  ///   subscriber.complete();
+  /// })
+  ///   .buffer_with_count_and_time(2, Duration::from_millis(50), pool)
+  ///   .into_shared()
+  ///   .subscribe(|vec| println!("{:?}", vec));
+  ///
+  /// // Prints:
+  /// // [0, 1]
+  /// // [2]
+  /// // [3, 4]
+  /// ```
+  #[inline]
+  fn buffer_with_count_and_time<S>(
+    self,
+    count: usize,
+    time: Duration,
+    scheduler: S,
+  ) -> BufferWithCountOrTimerOp<Self, S> {
+    BufferWithCountOrTimerOp {
+      source: self,
+      count,
+      time,
+      scheduler,
     }
   }
 }

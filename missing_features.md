@@ -29,6 +29,10 @@ Operators that originate new Observables.
 Operators that transform items that are emitted by an Observable.
 
 - [ ] Buffer — periodically gather items from an Observable into bundles and emit these bundles rather than emitting the items one at a time
+  - [ ] `buffer(bufferBoundaries)`
+  - [x] `buffer_with_count`
+  - [x] `buffer_with_time`
+  - [x] `buffer_with_count_and_time`
 - [x] FlatMap — transform the items emitted by an Observable into Observables, then flatten the emissions from those into a single Observable
 - [x] GroupBy — divide an Observable into a set of Observables that each emit a different group of items from the original Observable, organized by key
 - [x] Map — transform the items emitted by an Observable by applying a function to each item
