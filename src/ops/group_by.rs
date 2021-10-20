@@ -112,7 +112,7 @@ pub struct GroupByObserver<Obs, Source, Discr, Key, Item> {
   source: Source,
   discr: Discr,
   keys: HashSet<Key>,
-  marker: TypeHint<*const Item>,
+  _marker: TypeHint<*const Item>,
 }
 
 impl<'a, Obs, Source, Discr, Key, Item, Err> Observer
@@ -180,7 +180,7 @@ where
         source,
         discr: self.discr,
         keys: HashSet::new(),
-        marker: TypeHint::new(),
+        _marker: TypeHint::new(),
       },
       subscription: subscriber.subscription,
     })
@@ -209,7 +209,7 @@ where
         source,
         discr: self.discr,
         keys: HashSet::new(),
-        marker: TypeHint::new(),
+        _marker: TypeHint::new(),
       },
       subscription: subscriber.subscription,
     })
