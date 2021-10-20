@@ -1,4 +1,6 @@
-## [Unreleased](https://github.com/rxRust/rxRust/compare/v0.14.0...HEAD)
+## [Unreleased](https://github.com/rxRust/rxRust/compare/v0.15.0...HEAD)
+
+## [0.15.0](https://github.com/rxRust/rxRust/releases/tag/v0.15.0)
 ### Bug Fixes
 - **operator**: fix #160, `FlattenOp` not support chain `BoxOp` because unnecessary bounds to `Observable::Unsub`.
 ### Features
