@@ -1,4 +1,7 @@
 ## [Unreleased](https://github.com/rxRust/rxRust/compare/v0.14.0...HEAD)
+### Bug Fixes
+- **operator**: fix #160, `FlattenOp` not support chain `BoxOp` because unnecessary bounds to `Observable::Unsub`.
+### Features
 - **operator**: add `group_by` operator.
 - **operator**: add `buffer_with_count`, `buffer_with_time` and `buffer_with_count_and_time` operator.
 

@@ -352,7 +352,7 @@ pub struct FlattenLocalOuterObserver<Inner, O> {
 impl<'a, Inner, O, Item, Err> Observer for FlattenLocalOuterObserver<Inner, O>
 where
   O: Observer<Item = Item, Err = Err> + 'a,
-  Inner: LocalObservable<'a, Item = Item, Err = Err, Unsub = LocalSubscription>,
+  Inner: LocalObservable<'a, Item = Item, Err = Err>,
 {
   type Item = Inner;
   type Err = Err;
@@ -378,8 +378,7 @@ impl<'a, Outer, Inner, Item, Err> LocalObservable<'a>
   for FlattenOp<Outer, Inner>
 where
   Outer: LocalObservable<'a, Item = Inner, Err = Err>,
-  Inner:
-    LocalObservable<'a, Item = Item, Err = Err, Unsub = LocalSubscription> + 'a,
+  Inner: LocalObservable<'a, Item = Item, Err = Err> + 'a,
 {
   type Unsub = LocalSubscription;
 
