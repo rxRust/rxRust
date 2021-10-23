@@ -128,17 +128,15 @@ where
   type Err = Err;
   fn next(&mut self, value: Item) {
     {
-      let mut vec = self.observers.borrow_mut();
-      let not_done: Vec<O> = vec
-        .drain(..)
-        .map(|mut o| {
+      let any_finished = self.observers.borrow_mut().iter_mut().fold(
+        false,
+        |finished, o: &mut _| {
           o.next(value.clone());
-          o
-        })
-        .filter(|o| !o.is_finished())
-        .collect();
-      for p in not_done {
-        vec.push(p);
+          finished || o.is_finished()
+        },
+      );
+      if any_finished {
+        self.observers.borrow_mut().retain(|o| !o.is_finished());
       }
     }
   }
@@ -169,17 +167,16 @@ where
   type Item = Item;
   type Err = Err;
   fn next(&mut self, value: Item) {
-    let vec = &mut self.observers;
-    let not_done: Vec<O> = vec
-      .drain(..)
-      .map(|mut o| {
-        o.next(value.clone());
-        o
-      })
-      .filter(|o| !o.is_finished())
-      .collect();
-    for p in not_done {
-      vec.push(p);
+    let any_finished =
+      self
+        .observers
+        .iter_mut()
+        .fold(false, |finished, o: &mut _| {
+          o.next(value.clone());
+          finished || o.is_finished()
+        });
+    if any_finished {
+      self.observers.retain(|o| !o.is_finished());
     }
   }
 
@@ -308,5 +305,30 @@ mod test {
     });
     local.next(1);
     local.error(2);
+  }
+
+  #[test]
+  fn fix_recursive_next() {
+    let mut subject = LocalSubject::new();
+    let mut c_subject = subject.clone();
+
+    subject.clone().subscribe(move |i| {
+      if i < 1 {
+        c_subject.next(2)
+      }
+    });
+
+    subject.next(0);
+
+    let mut subject = SharedSubject::new();
+    let mut c_subject = subject.clone();
+
+    subject.clone().into_shared().subscribe(move |i| {
+      if i < 1 {
+        c_subject.next(2)
+      }
+    });
+
+    subject.next(0);
   }
 }
