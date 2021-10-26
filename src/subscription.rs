@@ -97,7 +97,7 @@ impl SubscriptionLike for SharedSubscription {
 
 pub trait Publisher: Observer + SubscriptionLike {
   #[inline]
-  fn is_finished(&self) -> bool { self.is_closed() || self.is_stopped() }
+  fn is_finished(&self) -> bool { self.is_closed() }
 }
 
 impl<T> Publisher for T where T: Observer + SubscriptionLike {}

@@ -36,9 +36,6 @@ where
   }
 
   fn complete(&mut self) { self.is_stopped.store(true, Ordering::Relaxed) }
-
-  #[inline]
-  fn is_stopped(&self) -> bool { self.is_stopped.load(Ordering::Relaxed) }
 }
 
 pub trait SubscribeBlocking<'a, N> {

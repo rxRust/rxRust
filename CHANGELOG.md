@@ -3,6 +3,9 @@
 - **operator**: add `skip_until` operator.
 - **operator**: add `combine_latest` operator.
 
+### Breaking Changes
+- **observer**: remove `Observer::is_stopped` method.
+
 ## [0.15.0](https://github.com/rxRust/rxRust/releases/tag/v0.15.0)
 ### Bug Fixes
 - **operator**: fix #160, `FlattenOp` not support chain `BoxOp` because unnecessary bounds to `Observable::Unsub`.

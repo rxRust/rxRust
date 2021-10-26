@@ -143,10 +143,6 @@ where
     }
     inner.observer.complete();
   }
-  fn is_stopped(&self) -> bool {
-    let inner = self.0.lock().unwrap();
-    inner.observer.is_stopped()
-  }
 }
 
 impl<O, S> Observer for LocalDebounceObserver<O, S, O::Item>
@@ -188,10 +184,6 @@ where
       inner.observer.next(value);
     }
     inner.observer.complete();
-  }
-  fn is_stopped(&self) -> bool {
-    let inner = self.0.borrow();
-    inner.observer.is_stopped()
   }
 }
 

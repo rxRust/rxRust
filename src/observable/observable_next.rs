@@ -3,7 +3,6 @@ use crate::prelude::*;
 #[derive(Clone)]
 pub struct ObserverN<N, Item> {
   next: N,
-  is_stopped: bool,
   _marker: TypeHint<*const Item>,
 }
 
@@ -16,10 +15,9 @@ where
   #[inline]
   fn next(&mut self, value: Self::Item) { (self.next)(value); }
   #[inline]
-  fn error(&mut self, _err: ()) { self.is_stopped = true; }
+  fn error(&mut self, _err: ()) {}
   #[inline]
-  fn complete(&mut self) { self.is_stopped = true; }
-  fn is_stopped(&self) -> bool { self.is_stopped }
+  fn complete(&mut self) {}
 }
 
 pub trait SubscribeNext<'a, N> {
@@ -41,7 +39,6 @@ where
   fn subscribe(self, next: N) -> SubscriptionWrapper<Self::Unsub> {
     let unsub = self.actual_subscribe(Subscriber::local(ObserverN {
       next,
-      is_stopped: false,
       _marker: TypeHint::new(),
     }));
     SubscriptionWrapper(unsub)
@@ -58,7 +55,6 @@ where
   fn subscribe(self, next: N) -> SubscriptionWrapper<Self::Unsub> {
     let unsub = self.0.actual_subscribe(Subscriber::shared(ObserverN {
       next,
-      is_stopped: false,
       _marker: TypeHint::new(),
     }));
     SubscriptionWrapper(unsub)

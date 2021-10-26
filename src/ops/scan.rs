@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use crate::{complete_proxy_impl, error_proxy_impl, is_stopped_proxy_impl};
+use crate::{complete_proxy_impl, error_proxy_impl};
 
 #[derive(Clone)]
 pub struct ScanOp<Source, BinaryOp, OutputItem> {
@@ -98,7 +98,6 @@ where
 
   error_proxy_impl!(Err, target_observer);
   complete_proxy_impl!(target_observer);
-  is_stopped_proxy_impl!(target_observer);
 }
 
 #[cfg(test)]

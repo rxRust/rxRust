@@ -5,7 +5,6 @@ pub struct ObserverAll<N, E, C, Item, Err> {
   next: N,
   error: E,
   complete: C,
-  is_stopped: bool,
   _marker: TypeHint<(*const Item, *const Err)>,
 }
 
@@ -16,7 +15,6 @@ impl<Item, Err, N, E, C> ObserverAll<N, E, C, Item, Err> {
       next,
       error,
       complete,
-      is_stopped: false,
       _marker: TypeHint::new(),
     }
   }
@@ -33,18 +31,9 @@ where
   #[inline(always)]
   fn next(&mut self, value: Self::Item) { (self.next)(value); }
 
-  fn error(&mut self, err: Self::Err) {
-    (self.error)(err);
-    self.is_stopped = true;
-  }
+  fn error(&mut self, err: Self::Err) { (self.error)(err); }
 
-  fn complete(&mut self) {
-    (self.complete)();
-    self.is_stopped = true;
-  }
-
-  #[inline]
-  fn is_stopped(&self) -> bool { self.is_stopped }
+  fn complete(&mut self) { (self.complete)(); }
 }
 
 pub trait SubscribeAll<'a, N, E, C> {
@@ -88,7 +77,6 @@ where
       next,
       error,
       complete,
-      is_stopped: false,
       _marker: TypeHint::new(),
     });
     SubscriptionWrapper(self.actual_subscribe(subscriber))
@@ -118,7 +106,6 @@ where
       next,
       error,
       complete,
-      is_stopped: false,
       _marker: TypeHint::new(),
     });
     SubscriptionWrapper(self.0.actual_subscribe(subscriber))

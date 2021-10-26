@@ -43,17 +43,16 @@ where
   fn error(&mut self, err: Err) {
     if !self.is_finished() {
       self.observer.error(err);
+      self.unsubscribe();
     }
   }
 
   fn complete(&mut self) {
     if !self.is_finished() {
       self.observer.complete();
+      self.unsubscribe();
     }
   }
-
-  #[inline]
-  fn is_stopped(&self) -> bool { self.observer.is_stopped() }
 }
 
 impl<O, U: SubscriptionLike> SubscriptionLike for Subscriber<O, U> {
