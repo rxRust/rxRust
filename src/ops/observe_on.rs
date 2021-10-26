@@ -35,8 +35,10 @@ where
     let observer = LocalObserver {
       observer: Rc::new(RefCell::new(observer)),
       scheduler: self.scheduler,
-      subscription: subscription.clone(),
+      subscription: LocalSubscription::default(),
     };
+
+    observer.subscription.add(subscription.clone());
 
     self.source.actual_subscribe(Subscriber {
       observer,
@@ -63,13 +65,14 @@ where
       observer,
       subscription,
     } = subscriber;
-    let subscriber = SharedObserver {
+    let observer = SharedObserver {
       observer: Arc::new(Mutex::new(observer)),
-      subscription: subscription.clone(),
+      subscription: SharedSubscription::default(),
       scheduler: self.scheduler,
     };
+    observer.subscription.add(subscription.clone());
     self.source.actual_subscribe(Subscriber {
-      observer: subscriber,
+      observer,
       subscription,
     })
   }
@@ -132,9 +135,6 @@ where
   type Item = Item;
   type Err = Err;
   impl_observer!(Item, Err);
-
-  #[inline]
-  fn is_stopped(&self) -> bool { self.observer.lock().unwrap().is_stopped() }
 }
 
 impl<O: 'static, SD: LocalScheduler + 'static> LocalObserver<O, SD> {
@@ -162,9 +162,6 @@ where
   type Item = Item;
   type Err = Err;
   impl_observer!(Item, Err);
-
-  #[inline]
-  fn is_stopped(&self) -> bool { self.observer.borrow().is_stopped() }
 }
 
 #[cfg(test)]

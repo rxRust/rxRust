@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use crate::{complete_proxy_impl, error_proxy_impl, is_stopped_proxy_impl};
+use crate::{complete_proxy_impl, error_proxy_impl};
 
 #[derive(Clone)]
 pub struct MapToOp<S, B> {
@@ -73,7 +73,6 @@ where
   fn next(&mut self, _: Item) { self.observer.next(self.value.clone()) }
   error_proxy_impl!(Err, observer);
   complete_proxy_impl!(observer);
-  is_stopped_proxy_impl!(observer);
 }
 
 #[cfg(test)]

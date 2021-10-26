@@ -72,9 +72,6 @@ where
   }
   error_proxy_impl!(Err, observer);
   complete_proxy_impl!(observer);
-
-  #[inline]
-  fn is_stopped(&self) -> bool { self.observer.is_stopped() }
 }
 
 #[cfg(test)]

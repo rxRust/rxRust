@@ -158,9 +158,6 @@ where
       func()
     }
   }
-
-  #[inline]
-  fn is_stopped(&self) -> bool { self.observer.is_stopped() }
 }
 
 impl<Item, Err, O, Target> Observer
@@ -187,9 +184,6 @@ where
       func()
     }
   }
-
-  #[inline]
-  fn is_stopped(&self) -> bool { self.observer.is_stopped() }
 }
 
 impl<Item, Err, O, Target> Observer
@@ -216,9 +210,6 @@ where
       func()
     }
   }
-
-  #[inline]
-  fn is_stopped(&self) -> bool { self.observer.is_stopped() }
 }
 
 #[cfg(test)]

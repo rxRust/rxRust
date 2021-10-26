@@ -106,9 +106,6 @@ where
       self.completed_one = true;
     }
   }
-
-  #[inline]
-  fn is_stopped(&self) -> bool { self.observer.is_stopped() }
 }
 
 #[cfg(test)]

@@ -33,9 +33,6 @@ macro_rules! impl_observer {
 
     #[inline]
     fn complete(&mut self) { self.observers.complete() }
-
-    #[inline]
-    fn is_stopped(&self) -> bool { self.observers.is_stopped() }
   };
 }
 
@@ -77,7 +74,6 @@ where
 #[derive(Default, Clone)]
 pub(crate) struct SubjectObserver<V> {
   pub(crate) observers: V,
-  is_stopped: bool,
 }
 
 impl<Item, Err, O> Observer for SubjectObserver<Arc<Mutex<Vec<O>>>>
@@ -111,7 +107,6 @@ where
       .iter_mut()
       .for_each(|subscriber| subscriber.error(err.clone()));
     observers.clear();
-    self.is_stopped = true;
   }
 
   fn complete(&mut self) {
@@ -120,11 +115,7 @@ where
       .iter_mut()
       .for_each(|subscriber| subscriber.complete());
     observers.clear();
-    self.is_stopped = true;
   }
-
-  #[inline]
-  fn is_stopped(&self) -> bool { self.is_stopped }
 }
 
 impl<Item, Err, O> Observer for SubjectObserver<Rc<RefCell<Vec<O>>>>
@@ -158,7 +149,6 @@ where
       .iter_mut()
       .for_each(|subscriber| subscriber.error(err.clone()));
     observers.clear();
-    self.is_stopped = true;
   }
 
   fn complete(&mut self) {
@@ -167,11 +157,7 @@ where
       .iter_mut()
       .for_each(|subscriber| subscriber.complete());
     observers.clear();
-    self.is_stopped = true;
   }
-
-  #[inline]
-  fn is_stopped(&self) -> bool { self.is_stopped }
 }
 
 impl<Item, Err, O> Observer for SubjectObserver<Box<Vec<O>>>
@@ -183,19 +169,17 @@ where
   type Item = Item;
   type Err = Err;
   fn next(&mut self, value: Item) {
-    {
-      let vec = &mut self.observers;
-      let not_done: Vec<O> = vec
-        .drain(..)
-        .map(|mut o| {
-          o.next(value.clone());
-          o
-        })
-        .filter(|o| !o.is_finished())
-        .collect();
-      for p in not_done {
-        vec.push(p);
-      }
+    let vec = &mut self.observers;
+    let not_done: Vec<O> = vec
+      .drain(..)
+      .map(|mut o| {
+        o.next(value.clone());
+        o
+      })
+      .filter(|o| !o.is_finished())
+      .collect();
+    for p in not_done {
+      vec.push(p);
     }
   }
 
@@ -205,7 +189,6 @@ where
       .iter_mut()
       .for_each(|subscriber| subscriber.error(err.clone()));
     observers.clear();
-    self.is_stopped = true;
   }
 
   fn complete(&mut self) {
@@ -214,11 +197,7 @@ where
       .iter_mut()
       .for_each(|subscriber| subscriber.complete());
     observers.clear();
-    self.is_stopped = true;
   }
-
-  #[inline]
-  fn is_stopped(&self) -> bool { self.is_stopped }
 }
 impl<O, S> Debug for Subject<Arc<Mutex<Vec<O>>>, S> {
   fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {

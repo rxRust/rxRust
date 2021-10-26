@@ -33,9 +33,6 @@ macro_rules! impl_behavior_observer {
 
     #[inline]
     fn complete(&mut self) { self.observers.complete() }
-
-    #[inline]
-    fn is_stopped(&self) -> bool { self.observers.is_stopped() }
   };
 }
 
@@ -77,7 +74,6 @@ where
 #[derive(Default, Clone)]
 pub(crate) struct BehaviorSubjectObserver<V> {
   pub(crate) observers: V,
-  is_stopped: bool,
 }
 
 impl<Item, Err, O> Observer for BehaviorSubjectObserver<Arc<Mutex<Vec<O>>>>
@@ -111,7 +107,6 @@ where
       .iter_mut()
       .for_each(|subscriber| subscriber.error(err.clone()));
     observers.clear();
-    self.is_stopped = true;
   }
 
   fn complete(&mut self) {
@@ -120,11 +115,7 @@ where
       .iter_mut()
       .for_each(|subscriber| subscriber.complete());
     observers.clear();
-    self.is_stopped = true;
   }
-
-  #[inline]
-  fn is_stopped(&self) -> bool { self.is_stopped }
 }
 
 impl<Item, Err, O> Observer for BehaviorSubjectObserver<Rc<RefCell<Vec<O>>>>
@@ -158,7 +149,6 @@ where
       .iter_mut()
       .for_each(|subscriber| subscriber.error(err.clone()));
     observers.clear();
-    self.is_stopped = true;
   }
 
   fn complete(&mut self) {
@@ -167,11 +157,7 @@ where
       .iter_mut()
       .for_each(|subscriber| subscriber.complete());
     observers.clear();
-    self.is_stopped = true;
   }
-
-  #[inline]
-  fn is_stopped(&self) -> bool { self.is_stopped }
 }
 
 impl<Item, Err, O> Observer for BehaviorSubjectObserver<Box<Vec<O>>>
@@ -205,7 +191,6 @@ where
       .iter_mut()
       .for_each(|subscriber| subscriber.error(err.clone()));
     observers.clear();
-    self.is_stopped = true;
   }
 
   fn complete(&mut self) {
@@ -214,11 +199,7 @@ where
       .iter_mut()
       .for_each(|subscriber| subscriber.complete());
     observers.clear();
-    self.is_stopped = true;
   }
-
-  #[inline]
-  fn is_stopped(&self) -> bool { self.is_stopped }
 }
 impl<O, S, V> Debug for BehaviorSubject<Arc<Mutex<Vec<O>>>, S, V> {
   fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {

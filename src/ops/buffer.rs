@@ -1,5 +1,5 @@
+use crate::error_proxy_impl;
 use crate::prelude::*;
-use crate::{error_proxy_impl, is_stopped_proxy_impl};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
@@ -108,8 +108,6 @@ where
   }
 
   error_proxy_impl!(Err, observer);
-
-  is_stopped_proxy_impl!(observer);
 }
 
 #[derive(Clone)]
@@ -223,8 +221,6 @@ where
   }
 
   complete_time_impl_local!(buffer, observer, handle);
-
-  is_stopped_proxy_impl!(observer);
 }
 
 impl<Source, Scheduler> SharedObservable for BufferWithTimeOp<Source, Scheduler>
@@ -334,8 +330,6 @@ where
   }
 
   complete_time_impl_shared!(buffer, observer, handle);
-
-  is_stopped_proxy_impl!(observer);
 }
 
 #[derive(Clone)]
@@ -437,8 +431,6 @@ where
   }
 
   complete_time_impl_local!(buffer, observer, handle);
-
-  is_stopped_proxy_impl!(observer);
 }
 
 impl<Source, Scheduler> SharedObservable
@@ -533,8 +525,6 @@ where
   }
 
   complete_time_impl_shared!(buffer, observer, handle);
-
-  is_stopped_proxy_impl!(observer);
 }
 
 #[cfg(test)]

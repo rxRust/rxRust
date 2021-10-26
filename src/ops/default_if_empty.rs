@@ -1,5 +1,5 @@
+use crate::error_proxy_impl;
 use crate::prelude::*;
-use crate::{error_proxy_impl, is_stopped_proxy_impl};
 
 #[derive(Clone)]
 pub struct DefaultIfEmptyOp<S>
@@ -80,8 +80,6 @@ where
   }
 
   error_proxy_impl!(Err, observer);
-
-  is_stopped_proxy_impl!(observer);
 }
 
 #[cfg(test)]

@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use crate::{complete_proxy_impl, error_proxy_impl, is_stopped_proxy_impl};
+use crate::{complete_proxy_impl, error_proxy_impl};
 use std::{cmp::Eq, collections::HashSet, hash::Hash};
 
 #[derive(Clone)]
@@ -66,7 +66,6 @@ where
   }
   complete_proxy_impl!(observer);
   error_proxy_impl!(Err, observer);
-  is_stopped_proxy_impl!(observer);
 }
 
 #[cfg(test)]

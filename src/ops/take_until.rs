@@ -30,7 +30,6 @@ macro_rules! observable_impl {
       observer: TakeUntilNotifierObserver {
         subscription: subscription.clone(),
         main_observer: shared_observer,
-        is_stopped: false,
         _p: TypeHint::new(),
       },
       subscription: subscription.clone(),
@@ -77,7 +76,6 @@ pub struct TakeUntilNotifierObserver<O, U, Item> {
   main_observer: O,
   // We need to unsubscribe everything as soon as notifier fired
   subscription: U,
-  is_stopped: bool,
   _p: TypeHint<Item>,
 }
 
@@ -97,14 +95,10 @@ where
   fn error(&mut self, err: Err) {
     self.main_observer.error(err);
     self.subscription.unsubscribe();
-    self.is_stopped = true;
   }
 
   #[inline]
-  fn complete(&mut self) { self.is_stopped = true; }
-
-  #[inline]
-  fn is_stopped(&self) -> bool { self.is_stopped }
+  fn complete(&mut self) { self.subscription.unsubscribe() }
 }
 
 #[cfg(test)]

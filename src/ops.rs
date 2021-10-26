@@ -444,7 +444,7 @@ mod test {
 
   #[test]
   fn flat_map_identity() {
-    let return_fn = |x| observable::of(x);
+    let return_fn = observable::of;
     let f = |x| observable::of(x + 1);
     let m = observable::of(0_i32);
 

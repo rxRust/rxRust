@@ -1,6 +1,8 @@
 {
+  "lldb.launch.sourceMap": {
+    "/rustc/09c42c45858d5f3aedfa670698275303a3d19afa": "/home/adoo/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust"
+  },
   "cSpell.words": [
     "rxfn"
-  ],
-  "editor.formatOnSave": true,
+  ]
 }

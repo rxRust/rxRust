@@ -73,9 +73,6 @@ where
     }
     self.observer.complete();
   }
-
-  #[inline]
-  fn is_stopped(&self) -> bool { self.observer.is_stopped() }
 }
 
 #[cfg(test)]

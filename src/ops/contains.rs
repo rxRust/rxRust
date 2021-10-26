@@ -1,5 +1,5 @@
+use crate::error_proxy_impl;
 use crate::prelude::*;
-use crate::{error_proxy_impl, is_stopped_proxy_impl};
 
 #[derive(Clone)]
 pub struct ContainsOp<S, Item> {
@@ -70,6 +70,7 @@ where
   fn next(&mut self, value: Item) {
     if !self.done && self.target == value {
       self.observer.next(true);
+      self.done = true;
       self.observer.complete();
     }
   }
@@ -77,12 +78,11 @@ where
   fn complete(&mut self) {
     if !self.done {
       self.observer.next(false);
+      self.observer.complete();
     }
-    self.observer.complete();
   }
 
   error_proxy_impl!(Err, observer);
-  is_stopped_proxy_impl!(observer);
 }
 
 #[cfg(test)]

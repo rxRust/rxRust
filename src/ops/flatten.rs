@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use crate::{complete_proxy_impl, error_proxy_impl, is_stopped_proxy_impl};
+use crate::{complete_proxy_impl, error_proxy_impl};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
@@ -151,11 +151,6 @@ where
       self.subscription.unsubscribe();
     }
   }
-
-  fn is_stopped(&self) -> bool {
-    let state = self.state.lock().unwrap();
-    state.is_completed()
-  }
 }
 
 impl<O, S, Item, Err> Observer
@@ -198,11 +193,6 @@ where
       self.subscription.unsubscribe();
     }
   }
-
-  fn is_stopped(&self) -> bool {
-    let state = self.state.borrow();
-    state.is_completed()
-  }
 }
 
 impl<O, S, Item, Err> Observer for FlattenInnerObserver<O, S, Box<FlattenState>>
@@ -240,11 +230,6 @@ where
       self.observer.complete();
       self.subscription.unsubscribe();
     }
-  }
-
-  fn is_stopped(&self) -> bool {
-    let state = &self.state;
-    state.is_completed()
   }
 }
 ////////////////////////////////////////////////////////////////////////////////
@@ -287,8 +272,6 @@ where
   error_proxy_impl!(Err, inner_observer);
 
   complete_proxy_impl!(inner_observer);
-
-  is_stopped_proxy_impl!(inner_observer);
 }
 
 impl<Outer, Inner, Item, Err> SharedObservable for FlattenOp<Outer, Inner>
@@ -370,8 +353,6 @@ where
   error_proxy_impl!(Err, inner_observer);
 
   complete_proxy_impl!(inner_observer);
-
-  is_stopped_proxy_impl!(inner_observer);
 }
 
 impl<'a, Outer, Inner, Item, Err> LocalObservable<'a>
