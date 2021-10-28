@@ -2,7 +2,7 @@ use crate::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-type RcPublishers<P> = Rc<RefCell<Vec<Box<P>>>>;
+type RcPublishers<P> = Rc<RefCell<SubjectObserver<Box<P>>>>;
 type _LocalSubject<P> = Subject<RcPublishers<P>, LocalSubscription>;
 type _LocalBehaviorSubject<P, Item> =
   BehaviorSubject<RcPublishers<P>, LocalSubscription, Item>;
@@ -42,9 +42,7 @@ impl<'a, Item, Err> LocalSubject<'a, Item, Err> {
     Self::default()
   }
   #[inline]
-  pub fn subscribed_size(&self) -> usize {
-    self.observers.observers.borrow().len()
-  }
+  pub fn subscribed_size(&self) -> usize { self.observers.borrow().len() }
 }
 
 impl<'a, Item, Err> Observable for LocalSubject<'a, Item, Err> {
@@ -60,11 +58,7 @@ impl<'a, Item, Err> LocalObservable<'a> for LocalSubject<'a, Item, Err> {
   ) -> LocalSubscription {
     let subscription = subscriber.subscription.clone();
     self.subscription.add(subscription.clone());
-    self
-      .observers
-      .observers
-      .borrow_mut()
-      .push(Box::new(subscriber));
+    self.observers.borrow_mut().push(Box::new(subscriber));
     subscription
   }
 }
@@ -76,14 +70,13 @@ impl<'a, Item, Err> LocalBehaviorSubject<'a, Item, Err> {
     Self: Default,
   {
     LocalBehaviorSubject {
-      observers: Default::default(),
-      subscription: Default::default(),
+      subject: Default::default(),
       value,
     }
   }
   #[inline]
   pub fn subscribed_size(&self) -> usize {
-    self.observers.observers.borrow().len()
+    self.subject.observers.borrow().len()
   }
 }
 
@@ -98,28 +91,12 @@ impl<'a, Item, Err> LocalObservable<'a>
   type Unsub = LocalSubscription;
   fn actual_subscribe<O: Observer<Item = Self::Item, Err = Self::Err> + 'a>(
     self,
-    subscriber: Subscriber<O, LocalSubscription>,
+    mut subscriber: Subscriber<O, LocalSubscription>,
   ) -> LocalSubscription {
-    let subscription = subscriber.subscription.clone();
-    self.subscription.add(subscription.clone());
-
-    self
-      .observers
-      .observers
-      .borrow_mut()
-      .push(Box::new(subscriber));
-
-    if !subscription.is_closed() {
-      self
-        .observers
-        .observers
-        .borrow_mut()
-        .last_mut()
-        .unwrap()
-        .next(self.value);
+    if !self.subject.is_closed() {
+      subscriber.observer.next(self.value);
     }
-
-    subscription
+    self.subject.actual_subscribe(subscriber)
   }
 }
 
