@@ -1,8 +1,11 @@
 use crate::prelude::*;
 use std::sync::{Arc, Mutex};
 
-type SharedPublishers<Item, Err> =
-  Arc<Mutex<Vec<Box<dyn Publisher<Item = Item, Err = Err> + Send + Sync>>>>;
+type SharedPublishers<Item, Err> = Arc<
+  Mutex<
+    SubjectObserver<Box<dyn Publisher<Item = Item, Err = Err> + Send + Sync>>,
+  >,
+>;
 
 pub type SharedSubject<Item, Err> =
   Subject<SharedPublishers<Item, Err>, SharedSubscription>;
@@ -20,7 +23,7 @@ impl<Item, Err> SharedSubject<Item, Err> {
   }
   #[inline]
   pub fn subscribed_size(&self) -> usize {
-    self.observers.observers.lock().unwrap().len()
+    self.observers.lock().unwrap().len()
   }
 }
 
@@ -39,12 +42,7 @@ impl<Item, Err> SharedObservable for SharedSubject<Item, Err> {
   ) -> Self::Unsub {
     let subscription = subscriber.subscription.clone();
     self.subscription.add(subscription.clone());
-    self
-      .observers
-      .observers
-      .lock()
-      .unwrap()
-      .push(Box::new(subscriber));
+    self.observers.lock().unwrap().push(Box::new(subscriber));
     subscription
   }
 }
@@ -60,30 +58,12 @@ impl<Item, Err> SharedObservable for SharedBehaviorSubject<Item, Err> {
     O: Observer<Item = Self::Item, Err = Self::Err> + Sync + Send + 'static,
   >(
     self,
-    subscriber: Subscriber<O, SharedSubscription>,
+    mut subscriber: Subscriber<O, SharedSubscription>,
   ) -> Self::Unsub {
-    let subscription = subscriber.subscription.clone();
-    self.subscription.add(subscription.clone());
-
-    self
-      .observers
-      .observers
-      .lock()
-      .unwrap()
-      .push(Box::new(subscriber));
-
-    if !subscription.is_closed() {
-      self
-        .observers
-        .observers
-        .lock()
-        .unwrap()
-        .last_mut()
-        .unwrap()
-        .next(self.value);
+    if !self.subject.is_closed() {
+      subscriber.observer.next(self.value);
     }
-
-    subscription
+    self.subject.actual_subscribe(subscriber)
   }
 }
 
@@ -94,14 +74,13 @@ impl<Item, Err> SharedBehaviorSubject<Item, Err> {
     Self: Default,
   {
     SharedBehaviorSubject {
-      observers: Default::default(),
-      subscription: Default::default(),
+      subject: Default::default(),
       value,
     }
   }
   #[inline]
   pub fn subscribed_size(&self) -> usize {
-    self.observers.observers.lock().unwrap().len()
+    self.subject.observers.lock().unwrap().len()
   }
 }
 

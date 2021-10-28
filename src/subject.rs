@@ -1,17 +1,13 @@
 use crate::prelude::*;
-use std::fmt::{Debug, Formatter};
 mod local_subject;
 pub use local_subject::*;
 
 mod shared_subject;
 pub use shared_subject::*;
-use std::cell::RefCell;
-use std::rc::Rc;
-use std::sync::{Arc, Mutex};
 
 #[derive(Default, Clone)]
-pub struct Subject<V, S> {
-  pub(crate) observers: SubjectObserver<V>,
+pub struct Subject<O, S> {
+  pub(crate) observers: O,
   pub(crate) subscription: S,
 }
 
@@ -23,207 +19,77 @@ impl<O, U: SubscriptionLike> SubscriptionLike for Subject<O, U> {
   fn is_closed(&self) -> bool { self.subscription.is_closed() }
 }
 
-macro_rules! impl_observer {
-  () => {
-    #[inline]
-    fn next(&mut self, value: Item) { self.observers.next(value) }
-
-    #[inline]
-    fn error(&mut self, err: Err) { self.observers.error(err) }
-
-    #[inline]
-    fn complete(&mut self) { self.observers.complete() }
-  };
-}
-
-impl<Item, Err, U, O> Observer for Subject<Arc<Mutex<Vec<O>>>, U>
+impl<Item, Err, U, O> Observer for Subject<O, U>
 where
-  O: Observer<Item = Item, Err = Err> + SubscriptionLike,
+  O: Observer<Item = Item, Err = Err>,
   Item: Clone,
   Err: Clone,
 {
   type Item = Item;
   type Err = Err;
 
-  impl_observer!();
+  #[inline]
+  fn next(&mut self, value: Item) { self.observers.next(value) }
+
+  #[inline]
+  fn error(&mut self, err: Err) { self.observers.error(err) }
+
+  #[inline]
+  fn complete(&mut self) { self.observers.complete() }
 }
 
-impl<Item, Err, U, O> Observer for Subject<Rc<RefCell<Vec<O>>>, U>
+#[derive(Clone)]
+pub struct SubjectObserver<O> {
+  pub(crate) observers: Vec<O>,
+}
+
+impl<O: Publisher> Observer for SubjectObserver<O>
 where
-  O: Observer<Item = Item, Err = Err> + SubscriptionLike,
-  Item: Clone,
-  Err: Clone,
+  O::Item: Clone,
+  O::Err: Clone,
 {
-  type Item = Item;
-  type Err = Err;
-
-  impl_observer!();
-}
-
-impl<Item, Err, U, O> Observer for Subject<Box<Vec<O>>, U>
-where
-  O: Observer<Item = Item, Err = Err> + SubscriptionLike,
-  Item: Clone,
-  Err: Clone,
-{
-  type Item = Item;
-  type Err = Err;
-  impl_observer!();
-}
-
-#[derive(Default, Clone)]
-pub(crate) struct SubjectObserver<V> {
-  pub(crate) observers: V,
-}
-
-impl<Item, Err, O> Observer for SubjectObserver<Arc<Mutex<Vec<O>>>>
-where
-  O: Publisher<Item = Item, Err = Err>,
-  Item: Clone,
-  Err: Clone,
-{
-  type Item = Item;
-  type Err = Err;
-  fn next(&mut self, value: Item) {
-    {
-      let mut vec = self.observers.lock().unwrap();
-      let not_done: Vec<O> = vec
-        .drain(..)
-        .map(|mut o| {
-          o.next(value.clone());
-          o
-        })
-        .filter(|o| !o.is_finished())
-        .collect();
-      for p in not_done {
-        vec.push(p);
-      }
-    }
-  }
-
-  fn error(&mut self, err: Err) {
-    let mut observers = self.observers.lock().unwrap();
-    observers
-      .iter_mut()
-      .for_each(|subscriber| subscriber.error(err.clone()));
-    observers.clear();
-  }
-
-  fn complete(&mut self) {
-    let mut observers = self.observers.lock().unwrap();
-    observers
-      .iter_mut()
-      .for_each(|subscriber| subscriber.complete());
-    observers.clear();
-  }
-}
-
-impl<Item, Err, O> Observer for SubjectObserver<Rc<RefCell<Vec<O>>>>
-where
-  O: Publisher<Item = Item, Err = Err>,
-  Item: Clone,
-  Err: Clone,
-{
-  type Item = Item;
-  type Err = Err;
-  fn next(&mut self, value: Item) {
-    {
-      let any_finished = self.observers.borrow_mut().iter_mut().fold(
-        false,
-        |finished, o: &mut _| {
-          o.next(value.clone());
-          finished || o.is_finished()
-        },
-      );
-      if any_finished {
-        self.observers.borrow_mut().retain(|o| !o.is_finished());
-      }
-    }
-  }
-
-  fn error(&mut self, err: Err) {
-    let mut observers = self.observers.borrow_mut();
-    observers
-      .iter_mut()
-      .for_each(|subscriber| subscriber.error(err.clone()));
-    observers.clear();
-  }
-
-  fn complete(&mut self) {
-    let mut observers = self.observers.borrow_mut();
-    observers
-      .iter_mut()
-      .for_each(|subscriber| subscriber.complete());
-    observers.clear();
-  }
-}
-
-impl<Item, Err, O> Observer for SubjectObserver<Box<Vec<O>>>
-where
-  O: Publisher<Item = Item, Err = Err>,
-  Item: Clone,
-  Err: Clone,
-{
-  type Item = Item;
-  type Err = Err;
-  fn next(&mut self, value: Item) {
-    let any_finished =
-      self
-        .observers
-        .iter_mut()
-        .fold(false, |finished, o: &mut _| {
-          o.next(value.clone());
-          finished || o.is_finished()
-        });
+  type Item = O::Item;
+  type Err = O::Err;
+  fn next(&mut self, value: Self::Item) {
+    let any_finished = self.observers.iter_mut().fold(false, |finished, o| {
+      o.next(value.clone());
+      finished || o.is_finished()
+    });
     if any_finished {
       self.observers.retain(|o| !o.is_finished());
     }
   }
 
-  fn error(&mut self, err: Err) {
-    let observers = &mut self.observers;
-    observers
+  fn error(&mut self, err: Self::Err) {
+    self
+      .observers
       .iter_mut()
       .for_each(|subscriber| subscriber.error(err.clone()));
-    observers.clear();
+    self.observers.clear();
   }
 
   fn complete(&mut self) {
-    let observers = &mut self.observers;
-    observers
+    self
+      .observers
       .iter_mut()
       .for_each(|subscriber| subscriber.complete());
-    observers.clear();
-  }
-}
-impl<O, S> Debug for Subject<Arc<Mutex<Vec<O>>>, S> {
-  fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-    f.debug_struct("LocalSubject")
-      .field(
-        "observer_count",
-        &self.observers.observers.lock().unwrap().len(),
-      )
-      .finish()
-  }
-}
-impl<O, S> Debug for Subject<Rc<RefCell<Vec<O>>>, S> {
-  fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-    f.debug_struct("LocalSubject")
-      .field(
-        "observer_count",
-        &self.observers.observers.borrow_mut().len(),
-      )
-      .finish()
+    self.observers.clear();
   }
 }
 
-impl<O, S> Debug for Subject<Box<Vec<O>>, S> {
-  fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-    f.debug_struct("LocalSubject")
-      .field("observer_count", &self.observers.observers.len())
-      .finish()
-  }
+impl<O> Default for SubjectObserver<O> {
+  fn default() -> Self { SubjectObserver { observers: vec![] } }
 }
+
+impl<O> std::ops::Deref for SubjectObserver<O> {
+  type Target = Vec<O>;
+  fn deref(&self) -> &Self::Target { &self.observers }
+}
+
+impl<O> std::ops::DerefMut for SubjectObserver<O> {
+  fn deref_mut(&mut self) -> &mut Self::Target { &mut self.observers }
+}
+
 #[cfg(test)]
 mod test {
   use super::*;
@@ -318,7 +184,7 @@ mod test {
       }
     });
 
-    subject.next(0);
+    subject.observers.next(0);
 
     let mut subject = SharedSubject::new();
     let mut c_subject = subject.clone();
