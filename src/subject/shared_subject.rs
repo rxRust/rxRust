@@ -1,17 +1,29 @@
-use crate::prelude::*;
+use crate::{behavior_subject::BehaviorSubject, prelude::*};
 use std::sync::{Arc, Mutex};
 
-type SharedPublishers<Item, Err> = Arc<
-  Mutex<
-    SubjectObserver<Box<dyn Publisher<Item = Item, Err = Err> + Send + Sync>>,
+//todo use atomic bool replace Box<dyn Publisher<Item = Item, Err = Err> + Send
+// + Sync>
+pub struct SharedSubject<Item, Err>(
+  Arc<
+    Mutex<
+      Subject<
+        Box<dyn Observer<Item = Item, Err = Err> + Send + Sync>,
+        Arc<Mutex<SingleSubscription>>,
+      >,
+    >,
   >,
->;
+);
 
-pub type SharedSubject<Item, Err> =
-  Subject<SharedPublishers<Item, Err>, SharedSubscription>;
-
-pub type SharedBehaviorSubject<Item, Err> =
-  BehaviorSubject<SharedPublishers<Item, Err>, SharedSubscription, Item>;
+pub struct SharedBehaviorSubject<Item, Err>(
+  Arc<
+    Mutex<
+      BehaviorSubject<
+        Box<dyn Observer<Item = Item, Err = Err> + Send + Sync>,
+        Arc<Mutex<SingleSubscription>>,
+      >,
+    >,
+  >,
+);
 
 impl<Item, Err> SharedSubject<Item, Err> {
   #[inline]
@@ -23,7 +35,7 @@ impl<Item, Err> SharedSubject<Item, Err> {
   }
   #[inline]
   pub fn subscribed_size(&self) -> usize {
-    self.observers.lock().unwrap().len()
+    self.0.lock().unwrap().subscribed_size()
   }
 }
 
@@ -33,17 +45,12 @@ impl<Item, Err> Observable for SharedSubject<Item, Err> {
 }
 
 impl<Item, Err> SharedObservable for SharedSubject<Item, Err> {
-  type Unsub = SharedSubscription;
-  fn actual_subscribe<
+  type Unsub = Arc<Mutex<SingleSubscription>>;
+  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
+  where
     O: Observer<Item = Self::Item, Err = Self::Err> + Sync + Send + 'static,
-  >(
-    self,
-    subscriber: Subscriber<O, SharedSubscription>,
-  ) -> Self::Unsub {
-    let subscription = subscriber.subscription.clone();
-    self.subscription.add(subscription.clone());
-    self.observers.lock().unwrap().push(Box::new(subscriber));
-    subscription
+  {
+    self.0.lock().unwrap().subscribe(Box::new(observer))
   }
 }
 
@@ -52,36 +59,86 @@ impl<Item, Err> Observable for SharedBehaviorSubject<Item, Err> {
   type Err = Err;
 }
 
-impl<Item, Err> SharedObservable for SharedBehaviorSubject<Item, Err> {
-  type Unsub = SharedSubscription;
-  fn actual_subscribe<
+impl<Item, Err> SharedObservable for SharedBehaviorSubject<Item, Err>
+where
+  Item: Clone,
+  Err: Clone,
+{
+  type Unsub = Arc<Mutex<SingleSubscription>>;
+  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
+  where
     O: Observer<Item = Self::Item, Err = Self::Err> + Sync + Send + 'static,
-  >(
-    self,
-    mut subscriber: Subscriber<O, SharedSubscription>,
-  ) -> Self::Unsub {
-    if !self.subject.is_closed() {
-      subscriber.observer.next(self.value);
+  {
+    let mut inner = self.0.lock().unwrap();
+    if !inner.subject.is_closed() {
+      let v = inner.value.clone();
+      inner.subject.next(v);
     }
-    self.subject.actual_subscribe(subscriber)
+    inner.subject.subscribe(Box::new(observer))
   }
 }
 
 impl<Item, Err> SharedBehaviorSubject<Item, Err> {
   #[inline]
-  pub fn new(value: Item) -> Self
-  where
-    Self: Default,
-  {
-    SharedBehaviorSubject {
+  pub fn new(value: Item) -> Self {
+    SharedBehaviorSubject(Arc::new(Mutex::new(BehaviorSubject {
       subject: Default::default(),
       value,
-    }
+    })))
   }
-  #[inline]
-  pub fn subscribed_size(&self) -> usize {
-    self.subject.observers.lock().unwrap().len()
-  }
+}
+
+impl<Item, Err> Default for SharedSubject<Item, Err> {
+  fn default() -> Self { Self(Default::default()) }
+}
+
+impl<Item, Err> Clone for SharedSubject<Item, Err> {
+  fn clone(&self) -> Self { Self(self.0.clone()) }
+}
+
+impl<Item, Err> Clone for SharedBehaviorSubject<Item, Err> {
+  fn clone(&self) -> Self { Self(self.0.clone()) }
+}
+
+impl<Item, Err> Observer for SharedSubject<Item, Err>
+where
+  Item: Clone,
+  Err: Clone,
+{
+  type Item = Item;
+
+  type Err = Err;
+
+  fn next(&mut self, value: Self::Item) { self.0.lock().unwrap().next(value) }
+
+  fn error(&mut self, err: Self::Err) { self.0.lock().unwrap().error(err) }
+
+  fn complete(&mut self) { self.0.lock().unwrap().complete() }
+}
+
+impl<Item, Err> Observer for SharedBehaviorSubject<Item, Err>
+where
+  Item: Clone,
+  Err: Clone,
+{
+  type Item = Item;
+
+  type Err = Err;
+
+  fn next(&mut self, value: Self::Item) { self.0.lock().unwrap().next(value) }
+
+  fn error(&mut self, err: Self::Err) { self.0.lock().unwrap().error(err) }
+
+  fn complete(&mut self) { self.0.lock().unwrap().complete() }
+}
+
+impl<Item, Err> SubscriptionLike for SharedSubject<Item, Err> {
+  fn unsubscribe(&mut self) { self.0.lock().unwrap().unsubscribe() }
+
+  fn is_closed(&self) -> bool { self.0.lock().unwrap().is_closed() }
+}
+impl<Item, Err> TearDownSize for SharedSubject<Item, Err> {
+  fn teardown_size(&self) -> usize { self.0.lock().unwrap().observers.len() }
 }
 
 #[test]

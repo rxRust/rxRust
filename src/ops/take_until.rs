@@ -10,46 +10,34 @@ pub struct TakeUntilOp<S, N> {
   pub(crate) notifier: N,
 }
 
-#[doc(hidden)]
-macro_rules! observable_impl {
-    ($subscription:ty, $sharer:path, $mutability_enabler:path,
-                      $($marker:ident +)* $lf: lifetime) => {
-  fn actual_subscribe<O>(
-    self,
-    subscriber: Subscriber<O, $subscription>,
-  ) -> Self::Unsub
-  where O: Observer<Item=Self::Item, Err= Self::Err> + $($marker +)* $lf {
-    let  subscription = subscriber.subscription;
-    // We need to keep a reference to the observer from two places
-    let shared_observer = $sharer($mutability_enabler(subscriber.observer));
-    let main_subscriber = Subscriber {
-      observer: shared_observer.clone(),
-      subscription: subscription.clone(),
-    };
-    let notifier_subscriber = Subscriber {
-      observer: TakeUntilNotifierObserver {
-        subscription: subscription.clone(),
-        main_observer: shared_observer,
-        _p: TypeHint::new(),
-      },
-      subscription: subscription.clone(),
-    };
-    subscription.add(self.notifier.actual_subscribe(notifier_subscriber));
-    subscription.add(self.source.actual_subscribe(main_subscriber));
-    subscription
-  }
-}
-}
-
 observable_proxy_impl!(TakeUntilOp, S, N);
 
 impl<'a, S, N> LocalObservable<'a> for TakeUntilOp<S, N>
 where
   S: LocalObservable<'a> + 'a,
   N: LocalObservable<'a, Err = S::Err> + 'a,
+  N::Unsub: 'static,
+  S::Unsub: 'static,
 {
   type Unsub = LocalSubscription;
-  observable_impl!(LocalSubscription, Rc::new, RefCell::new, 'a);
+  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
+  where
+    O: Observer<Item = Self::Item, Err = Self::Err> + 'a,
+  {
+    let subscription = LocalSubscription::default();
+    // We need to keep a reference to the observer from two places
+    let shared_observer = Rc::new(RefCell::new(observer));
+
+    subscription.add(self.notifier.actual_subscribe(
+      TakeUntilNotifierObserver {
+        subscription: subscription.clone(),
+        main_observer: shared_observer.clone(),
+        _p: TypeHint::new(),
+      },
+    ));
+    subscription.add(self.source.actual_subscribe(shared_observer));
+    subscription
+  }
 }
 
 impl<S, N> SharedObservable for TakeUntilOp<S, N>
@@ -62,12 +50,24 @@ where
   N::Unsub: Send + Sync,
 {
   type Unsub = SharedSubscription;
-  observable_impl!(
-    SharedSubscription,
-    Arc::new,
-    Mutex::new,
-    Send + Sync + 'static
-  );
+  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
+  where
+    O: Observer<Item = Self::Item, Err = Self::Err> + Sync + Send + 'static,
+  {
+    let subscription = SharedSubscription::default();
+    // We need to keep a reference to the observer from two places
+    let shared_observer = Arc::new(Mutex::new(observer));
+
+    subscription.add(self.notifier.actual_subscribe(
+      TakeUntilNotifierObserver {
+        subscription: subscription.clone(),
+        main_observer: shared_observer.clone(),
+        _p: TypeHint::new(),
+      },
+    ));
+    subscription.add(self.source.actual_subscribe(shared_observer));
+    subscription
+  }
 }
 
 pub struct TakeUntilNotifierObserver<O, U, Item> {

@@ -124,19 +124,19 @@ where
   Item: Clone + 'a,
   Err: Clone + 'a,
 {
-  type Unsub = RefCountSubscription<LocalSubscription, S::Unsub>;
-  fn actual_subscribe<O: Observer<Item = Self::Item, Err = Self::Err> + 'a>(
-    self,
-    subscriber: Subscriber<O, LocalSubscription>,
-  ) -> Self::Unsub {
+  type Unsub = RefCountSubscription<LocalSubject<'a, Item, Err>, S::Unsub>;
+  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
+  where
+    O: Observer<Item = Self::Item, Err = Self::Err> + 'a,
+  {
     let mut inner = (self.0).0.borrow_mut();
-    inner.connectable.clone().actual_subscribe(subscriber);
+    inner.connectable.clone().actual_subscribe(observer);
     if inner.connection.is_none() {
       inner.connection = Some(inner.connectable.clone().connect());
     }
     let connection = inner.connection.as_ref().unwrap().clone();
     RefCountSubscription {
-      subscription: inner.connectable.subject.subscription.clone(),
+      subscription: inner.connectable.subject.clone(),
       connection,
     }
   }
@@ -157,21 +157,19 @@ where
   Item: Clone + Send + Sync + 'static,
   Err: Clone + Send + Sync + 'static,
 {
-  type Unsub = RefCountSubscription<SharedSubscription, S::Unsub>;
-  fn actual_subscribe<
+  type Unsub = RefCountSubscription<SharedSubject<Item, Err>, S::Unsub>;
+  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
+  where
     O: Observer<Item = Self::Item, Err = Self::Err> + Sync + Send + 'static,
-  >(
-    self,
-    subscriber: Subscriber<O, SharedSubscription>,
-  ) -> Self::Unsub {
+  {
     let mut inner = (self.0).0.lock().unwrap();
-    inner.connectable.clone().actual_subscribe(subscriber);
+    inner.connectable.clone().actual_subscribe(observer);
     if inner.connection.is_none() {
       inner.connection = Some(inner.connectable.clone().connect());
     }
     let connection = inner.connection.as_ref().unwrap().clone();
     RefCountSubscription {
-      subscription: inner.connectable.subject.subscription.clone(),
+      subscription: inner.connectable.subject.clone(),
       connection,
     }
   }

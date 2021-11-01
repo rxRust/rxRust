@@ -20,7 +20,6 @@ pub mod ops;
 pub mod scheduler;
 pub mod shared;
 pub mod subject;
-pub mod subscriber;
 pub mod subscription;
 pub mod type_hint;
 
@@ -35,7 +34,6 @@ pub mod prelude {
   pub use crate::shared;
   pub use crate::subject;
   pub use crate::subject::*;
-  pub use crate::subscriber::Subscriber;
   pub use crate::subscription;
   pub use crate::subscription::*;
   pub use crate::type_hint::TypeHint;

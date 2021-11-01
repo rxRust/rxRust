@@ -1,5 +1,4 @@
 use crate::prelude::*;
-use crate::{complete_proxy_impl, error_proxy_impl};
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::rc::Rc;
@@ -30,24 +29,24 @@ where
   B: LocalObservable<'a, Err = A::Err>,
   A::Item: 'a,
   B::Item: 'a,
+  A::Unsub: 'static,
+  B::Unsub: 'static,
 {
   type Unsub = LocalSubscription;
-  fn actual_subscribe<O: Observer<Item = Self::Item, Err = Self::Err> + 'a>(
-    self,
-    subscriber: Subscriber<O, LocalSubscription>,
-  ) -> Self::Unsub {
-    let sub = subscriber.subscription;
-    let o_zip = ZipObserver::new(subscriber.observer, sub.clone());
+  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
+  where
+    O: Observer<Item = Self::Item, Err = Self::Err> + 'a,
+  {
+    let sub = LocalSubscription::default();
+    let o_zip = ZipObserver::new(observer, sub.clone());
     let o_zip = Rc::new(RefCell::new(o_zip));
-    sub.add(self.a.actual_subscribe(Subscriber {
-      observer: AObserver(o_zip.clone(), TypeHint::new()),
-      subscription: LocalSubscription::default(),
-    }));
+    sub.add(
+      self
+        .a
+        .actual_subscribe(AObserver(o_zip.clone(), TypeHint::new())),
+    );
 
-    sub.add(self.b.actual_subscribe(Subscriber {
-      observer: BObserver(o_zip, TypeHint::new()),
-      subscription: LocalSubscription::default(),
-    }));
+    sub.add(self.b.actual_subscribe(BObserver(o_zip, TypeHint::new())));
     sub
   }
 }
@@ -62,24 +61,20 @@ where
   B::Unsub: Send + Sync,
 {
   type Unsub = SharedSubscription;
-  fn actual_subscribe<
+  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
+  where
     O: Observer<Item = Self::Item, Err = Self::Err> + Sync + Send + 'static,
-  >(
-    self,
-    subscriber: Subscriber<O, SharedSubscription>,
-  ) -> Self::Unsub {
-    let sub = subscriber.subscription;
-    let o_zip = ZipObserver::new(subscriber.observer, sub.clone());
+  {
+    let sub = SharedSubscription::default();
+    let o_zip = ZipObserver::new(observer, sub.clone());
     let o_zip = Arc::new(Mutex::new(o_zip));
-    sub.add(self.a.actual_subscribe(Subscriber {
-      observer: AObserver(o_zip.clone(), TypeHint::new()),
-      subscription: SharedSubscription::default(),
-    }));
+    sub.add(
+      self
+        .a
+        .actual_subscribe(AObserver(o_zip.clone(), TypeHint::new())),
+    );
 
-    sub.add(self.b.actual_subscribe(Subscriber {
-      observer: BObserver(o_zip, TypeHint::new()),
-      subscription: SharedSubscription::default(),
-    }));
+    sub.add(self.b.actual_subscribe(BObserver(o_zip, TypeHint::new())));
     sub
   }
 }
@@ -160,8 +155,9 @@ where
   type Err = Err;
   fn next(&mut self, value: A) { self.0.next(ZipItem::ItemA(value)); }
 
-  error_proxy_impl!(Err, 0);
-  complete_proxy_impl!(0);
+  fn error(&mut self, err: Self::Err) { self.0.error(err) }
+
+  fn complete(&mut self) { self.0.complete() }
 }
 
 struct BObserver<O, A>(O, TypeHint<A>);
@@ -174,8 +170,9 @@ where
   type Err = Err;
   fn next(&mut self, value: B) { self.0.next(ZipItem::ItemB(value)); }
 
-  error_proxy_impl!(Err, 0);
-  complete_proxy_impl!(0);
+  fn error(&mut self, err: Self::Err) { self.0.error(err) }
+
+  fn complete(&mut self) { self.0.complete() }
 }
 
 #[cfg(test)]

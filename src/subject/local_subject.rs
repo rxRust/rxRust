@@ -2,48 +2,36 @@ use crate::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-type RcPublishers<P> = Rc<RefCell<SubjectObserver<Box<P>>>>;
-type _LocalSubject<P> = Subject<RcPublishers<P>, LocalSubscription>;
-type _LocalBehaviorSubject<P, Item> =
-  BehaviorSubject<RcPublishers<P>, LocalSubscription, Item>;
+pub struct _LocalSubject<O: Observer>(
+  Rc<RefCell<Subject<O, Rc<RefCell<SingleSubscription>>>>>,
+);
+pub struct _LocalBehaviorSubject<O: Observer>(
+  Rc<RefCell<BehaviorSubject<O, Rc<RefCell<SingleSubscription>>>>>,
+);
 
 pub type LocalSubject<'a, Item, Err> =
-  _LocalSubject<dyn Publisher<Item = Item, Err = Err> + 'a>;
+  _LocalSubject<Box<dyn Observer<Item = Item, Err = Err> + 'a>>;
 
 pub type LocalSubjectRef<'a, Item, Err> =
-  _LocalSubject<dyn Publisher<Item = &'a Item, Err = Err> + 'a>;
+  _LocalSubject<Box<dyn Observer<Item = &'a Item, Err = Err> + 'a>>;
 
 pub type LocalSubjectErrRef<'a, Item, Err> =
-  _LocalSubject<dyn Publisher<Item = Item, Err = &'a Err> + 'a>;
+  _LocalSubject<Box<dyn Observer<Item = Item, Err = &'a Err> + 'a>>;
 
 pub type LocalSubjectRefAll<'a, Item, Err> =
-  _LocalSubject<dyn Publisher<Item = &'a Item, Err = &'a Err> + 'a>;
+  _LocalSubject<Box<dyn Observer<Item = &'a Item, Err = &'a Err> + 'a>>;
 
 pub type LocalBehaviorSubject<'a, Item, Err> =
-  _LocalBehaviorSubject<dyn Publisher<Item = Item, Err = Err> + 'a, Item>;
+  _LocalBehaviorSubject<Box<dyn Observer<Item = Item, Err = Err> + 'a>>;
 
 pub type LocalBehaviorSubjectRef<'a, Item, Err> =
-  _LocalBehaviorSubject<dyn Publisher<Item = &'a Item, Err = Err> + 'a, Item>;
+  _LocalBehaviorSubject<Box<dyn Observer<Item = &'a Item, Err = Err> + 'a>>;
 
 pub type LocalBehaviorSubjectErrRef<'a, Item, Err> =
-  _LocalBehaviorSubject<dyn Publisher<Item = Item, Err = &'a Err> + 'a, Item>;
+  _LocalBehaviorSubject<Box<dyn Observer<Item = Item, Err = &'a Err> + 'a>>;
 
-pub type LocalBehaviorSubjectRefAll<'a, Item, Err> = _LocalBehaviorSubject<
-  dyn Publisher<Item = &'a Item, Err = &'a Err> + 'a,
-  Item,
->;
-
-impl<'a, Item, Err> LocalSubject<'a, Item, Err> {
-  #[inline]
-  pub fn new() -> Self
-  where
-    Self: Default,
-  {
-    Self::default()
-  }
-  #[inline]
-  pub fn subscribed_size(&self) -> usize { self.observers.borrow().len() }
-}
+pub type LocalBehaviorSubjectRefAll<'a, Item, Err> =
+  _LocalBehaviorSubject<Box<dyn Observer<Item = &'a Item, Err = &'a Err> + 'a>>;
 
 impl<'a, Item, Err> Observable for LocalSubject<'a, Item, Err> {
   type Item = Item;
@@ -51,32 +39,12 @@ impl<'a, Item, Err> Observable for LocalSubject<'a, Item, Err> {
 }
 
 impl<'a, Item, Err> LocalObservable<'a> for LocalSubject<'a, Item, Err> {
-  type Unsub = LocalSubscription;
-  fn actual_subscribe<O: Observer<Item = Self::Item, Err = Self::Err> + 'a>(
-    self,
-    subscriber: Subscriber<O, LocalSubscription>,
-  ) -> LocalSubscription {
-    let subscription = subscriber.subscription.clone();
-    self.subscription.add(subscription.clone());
-    self.observers.borrow_mut().push(Box::new(subscriber));
-    subscription
-  }
-}
-
-impl<'a, Item, Err> LocalBehaviorSubject<'a, Item, Err> {
-  #[inline]
-  pub fn new(value: Item) -> Self
+  type Unsub = Rc<RefCell<SingleSubscription>>;
+  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
   where
-    Self: Default,
+    O: Observer<Item = Self::Item, Err = Self::Err> + 'a,
   {
-    LocalBehaviorSubject {
-      subject: Default::default(),
-      value,
-    }
-  }
-  #[inline]
-  pub fn subscribed_size(&self) -> usize {
-    self.subject.observers.borrow().len()
+    self.0.borrow_mut().subscribe(Box::new(observer))
   }
 }
 
@@ -85,19 +53,99 @@ impl<'a, Item, Err> Observable for LocalBehaviorSubject<'a, Item, Err> {
   type Err = Err;
 }
 
-impl<'a, Item, Err> LocalObservable<'a>
+impl<'a, Item: Clone, Err> LocalObservable<'a>
   for LocalBehaviorSubject<'a, Item, Err>
 {
-  type Unsub = LocalSubscription;
-  fn actual_subscribe<O: Observer<Item = Self::Item, Err = Self::Err> + 'a>(
-    self,
-    mut subscriber: Subscriber<O, LocalSubscription>,
-  ) -> LocalSubscription {
-    if !self.subject.is_closed() {
-      subscriber.observer.next(self.value);
+  type Unsub = Rc<RefCell<SingleSubscription>>;
+  fn actual_subscribe<O>(self, mut observer: O) -> Self::Unsub
+  where
+    O: Observer<Item = Self::Item, Err = Self::Err> + 'a,
+  {
+    if !self.0.borrow().subject.is_closed() {
+      observer.next(self.0.borrow_mut().value.clone());
     }
-    self.subject.actual_subscribe(subscriber)
+    self.0.borrow_mut().subject.subscribe(Box::new(observer))
   }
+}
+
+impl<O: Observer> _LocalSubject<O> {
+  #[inline]
+  pub fn new() -> Self { _LocalSubject(<_>::default()) }
+}
+
+impl<O: Observer> _LocalBehaviorSubject<O> {
+  #[inline]
+  pub fn new(value: O::Item) -> Self {
+    _LocalBehaviorSubject(Rc::new(RefCell::new(BehaviorSubject {
+      subject: <_>::default(),
+      value,
+    })))
+  }
+}
+
+impl<O: Observer> Clone for _LocalSubject<O> {
+  fn clone(&self) -> Self { _LocalSubject(self.0.clone()) }
+}
+
+impl<O: Observer> Clone for _LocalBehaviorSubject<O> {
+  fn clone(&self) -> Self { _LocalBehaviorSubject(self.0.clone()) }
+}
+
+impl<O: Observer> Observer for _LocalSubject<O>
+where
+  O::Item: Clone,
+  O::Err: Clone,
+{
+  type Item = O::Item;
+  type Err = O::Err;
+
+  fn next(&mut self, v: Self::Item) { self.0.borrow_mut().next(v); }
+
+  fn error(&mut self, err: Self::Err) { self.0.borrow_mut().error(err); }
+
+  fn complete(&mut self) { self.0.borrow_mut().complete() }
+}
+
+impl<O: Observer> SubscriptionLike for _LocalSubject<O> {
+  fn unsubscribe(&mut self) { self.0.borrow_mut().unsubscribe() }
+
+  fn is_closed(&self) -> bool { self.0.borrow().is_closed() }
+}
+
+impl<O: Observer> TearDownSize for _LocalSubject<O> {
+  fn teardown_size(&self) -> usize { self.0.borrow().observers.len() }
+}
+impl<O: Observer> Observer for _LocalBehaviorSubject<O>
+where
+  O::Item: Clone,
+  O::Err: Clone,
+{
+  type Item = O::Item;
+  type Err = O::Err;
+
+  fn next(&mut self, v: Self::Item) { self.0.borrow_mut().subject.next(v); }
+
+  fn error(&mut self, err: Self::Err) {
+    self.0.borrow_mut().subject.error(err);
+  }
+
+  fn complete(&mut self) { self.0.borrow_mut().subject.complete() }
+}
+
+impl<O: Observer> SubscriptionLike for _LocalBehaviorSubject<O> {
+  fn unsubscribe(&mut self) { self.0.borrow_mut().unsubscribe() }
+
+  fn is_closed(&self) -> bool { self.0.borrow().is_closed() }
+}
+
+impl<O: Observer> TearDownSize for _LocalBehaviorSubject<O> {
+  #[inline]
+  fn teardown_size(&self) -> usize { self.0.borrow().subject.subscribed_size() }
+}
+
+impl<O: Observer> Default for _LocalSubject<O> {
+  #[inline]
+  fn default() -> Self { Self(<_>::default()) }
 }
 
 #[cfg(test)]
@@ -114,7 +162,7 @@ mod test {
       });
       subject.next(2);
 
-      assert_eq!(subject.subscribed_size(), 1);
+      assert_eq!(subject.teardown_size(), 1);
     }
     assert_eq!(test_code, 2);
   }

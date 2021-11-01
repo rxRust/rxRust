@@ -1,5 +1,4 @@
 use crate::prelude::*;
-use crate::{complete_proxy_impl, error_proxy_impl};
 
 use std::{clone::Clone, cmp::Eq, collections::HashSet, hash::Hash};
 
@@ -24,8 +23,10 @@ where
       self.observer.next(value);
     }
   }
-  error_proxy_impl!(Err, observer);
-  complete_proxy_impl!(observer);
+
+  fn error(&mut self, err: Self::Err) { self.observer.error(err) }
+
+  fn complete(&mut self) { self.observer.complete() }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -55,20 +56,14 @@ where
   Key: Hash + Clone + Eq + 'a,
 {
   type Unsub = Source::Unsub;
-  fn actual_subscribe<O>(
-    self,
-    subscriber: Subscriber<O, LocalSubscription>,
-  ) -> Self::Unsub
+  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
   where
     O: Observer<Item = Self::Item, Err = Self::Err> + 'a,
   {
-    self.source.actual_subscribe(Subscriber {
-      observer: GroupObserver {
-        observer: subscriber.observer,
-        discr: self.discr,
-        key: self.key,
-      },
-      subscription: subscriber.subscription,
+    self.source.actual_subscribe(GroupObserver {
+      observer,
+      discr: self.discr,
+      key: self.key,
     })
   }
 }
@@ -82,20 +77,14 @@ where
   Key: Hash + Clone + Eq + Send + Sync + 'static,
 {
   type Unsub = Source::Unsub;
-  fn actual_subscribe<O>(
-    self,
-    subscriber: Subscriber<O, SharedSubscription>,
-  ) -> Self::Unsub
+  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
   where
     O: Observer<Item = Self::Item, Err = Self::Err> + Send + Sync + 'static,
   {
-    self.source.actual_subscribe(Subscriber {
-      observer: GroupObserver {
-        observer: subscriber.observer,
-        discr: self.discr,
-        key: self.key,
-      },
-      subscription: subscriber.subscription,
+    self.source.actual_subscribe(GroupObserver {
+      observer,
+      discr: self.discr,
+      key: self.key,
     })
   }
 }
@@ -133,8 +122,10 @@ where
       self.observer.next(GroupObservable { source, discr, key });
     };
   }
-  error_proxy_impl!(Err, observer);
-  complete_proxy_impl!(observer);
+
+  fn error(&mut self, err: Self::Err) { self.observer.error(err) }
+
+  fn complete(&mut self) { self.observer.complete() }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -164,23 +155,17 @@ where
   Key: 'a + Hash + Clone + Eq,
 {
   type Unsub = Source::Unsub;
-  fn actual_subscribe<O>(
-    self,
-    subscriber: Subscriber<O, LocalSubscription>,
-  ) -> Self::Unsub
+  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
   where
     O: Observer<Item = Self::Item, Err = Self::Err> + 'a,
   {
     let source = self.source.clone();
-    self.source.actual_subscribe(Subscriber {
-      observer: GroupByObserver {
-        observer: subscriber.observer,
-        source,
-        discr: self.discr,
-        keys: HashSet::new(),
-        _marker: TypeHint::new(),
-      },
-      subscription: subscriber.subscription,
+    self.source.actual_subscribe(GroupByObserver {
+      observer,
+      source,
+      discr: self.discr,
+      keys: HashSet::new(),
+      _marker: TypeHint::new(),
     })
   }
 }
@@ -193,23 +178,17 @@ where
   Key: 'a + Hash + Clone + Eq + Send + Sync + 'static,
 {
   type Unsub = Source::Unsub;
-  fn actual_subscribe<O>(
-    self,
-    subscriber: Subscriber<O, SharedSubscription>,
-  ) -> Self::Unsub
+  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
   where
     O: Observer<Item = Self::Item, Err = Self::Err> + Send + Sync + 'static,
   {
     let source = self.source.clone();
-    self.source.actual_subscribe(Subscriber {
-      observer: GroupByObserver {
-        observer: subscriber.observer,
-        source,
-        discr: self.discr,
-        keys: HashSet::new(),
-        _marker: TypeHint::new(),
-      },
-      subscription: subscriber.subscription,
+    self.source.actual_subscribe(GroupByObserver {
+      observer,
+      source,
+      discr: self.discr,
+      keys: HashSet::new(),
+      _marker: TypeHint::new(),
     })
   }
 }

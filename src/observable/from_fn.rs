@@ -5,62 +5,51 @@ use crate::prelude::*;
 /// new values can be `next`ed, or an `error` method can be called to raise
 /// an error, or `complete` can be called to notify of a successful
 /// completion.
-pub fn create<F, O, U, Item, Err>(
-  subscribe: F,
-) -> ObservableBase<FnEmitter<F, Item, Err>>
+pub fn create<F, Item, Err>(subscribe: F) -> ObservableFn<F, Item, Err>
 where
-  F: FnOnce(Subscriber<O, U>),
-  O: Observer<Item = Item, Err = Err>,
-  U: SubscriptionLike,
+  F: FnOnce(&mut dyn Observer<Item = Item, Err = Err>),
 {
-  ObservableBase::new(FnEmitter(subscribe, TypeHint::new()))
+  ObservableFn(subscribe, TypeHint::new())
 }
 
 #[derive(Clone)]
-pub struct FnEmitter<F, Item, Err>(F, TypeHint<(Item, Err)>);
+pub struct ObservableFn<F, Item, Err>(F,  TypeHint<(Item, Err)>);
 
-impl<F, Item, Err> Emitter for FnEmitter<F, Item, Err> {
+impl<F, Item, Err> Observable for ObservableFn<F, Item, Err>
+where
+  F: FnOnce(&mut dyn Observer<Item = Item, Err = Err>),
+{
   type Item = Item;
   type Err = Err;
 }
 
-impl<'a, F, Item, Err> LocalEmitter<'a> for FnEmitter<F, Item, Err>
+impl<'a, F, Item, Err> LocalObservable<'a> for ObservableFn<F, Item, Err>
 where
-  F: FnOnce(
-    Subscriber<
-      Box<dyn Observer<Item = Item, Err = Err> + 'a>,
-      Box<dyn SubscriptionLike + 'a>,
-    >,
-  ),
+  F: FnOnce(&mut dyn Observer<Item =Item, Err =Err>),
 {
-  fn emit<O>(self, subscriber: Subscriber<O, LocalSubscription>)
+  type Unsub = SingleSubscription;
+
+  fn actual_subscribe<O>(self, mut observer: O) -> Self::Unsub
   where
-    O: Observer<Item = Self::Item, Err = Self::Err> + 'a,
+    O: Observer<Item = Item, Err = Err> + 'a,
   {
-    (self.0)(Subscriber {
-      observer: Box::new(subscriber.observer),
-      subscription: Box::new(subscriber.subscription),
-    })
+    (self.0)(&mut observer);
+    SingleSubscription::default()
   }
 }
 
-impl<F, Item, Err> SharedEmitter for FnEmitter<F, Item, Err>
+impl<F, Item, Err> SharedObservable for ObservableFn<F, Item , Err>
 where
-  F: FnOnce(
-    Subscriber<
-      Box<dyn Observer<Item = Item, Err = Err> + Send + Sync + 'static>,
-      SharedSubscription,
-    >,
-  ),
+  F: FnOnce(&mut dyn Observer<Item = Item, Err = Err>),
 {
-  fn emit<O>(self, subscriber: Subscriber<O, SharedSubscription>)
+  type Unsub = SingleSubscription;
+
+  fn actual_subscribe<O>(self, mut observer: O) -> Self::Unsub
   where
     O: Observer<Item = Self::Item, Err = Self::Err> + Send + Sync + 'static,
   {
-    (self.0)(Subscriber {
-      observer: Box::new(subscriber.observer),
-      subscription: subscriber.subscription,
-    })
+    (self.0)(&mut observer);
+    SingleSubscription::default()
   }
 }
 
@@ -79,14 +68,16 @@ mod test {
     let c_err = err.clone();
     let c_complete = complete.clone();
 
-    observable::create(|mut subscriber| {
-      subscriber.next(&1);
-      subscriber.next(&2);
-      subscriber.next(&3);
-      subscriber.complete();
-      subscriber.next(&3);
-      subscriber.error("never dispatch error");
-    })
+    observable::create(
+      |mut subscriber| {
+        subscriber.next(1);
+        subscriber.next(2);
+        subscriber.next(3);
+        subscriber.complete();
+        subscriber.next(3);
+        subscriber.error("never dispatch error");
+      },
+    )
     .into_shared()
     .subscribe_all(
       move |_| *next.lock().unwrap() += 1,

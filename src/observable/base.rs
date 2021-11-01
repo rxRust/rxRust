@@ -5,8 +5,11 @@ pub trait Emitter {
   type Err;
 }
 
+// todo: can we merge local & shared emitter
+// and generic `O` type should be associated type?
 pub trait LocalEmitter<'a>: Emitter {
-  fn emit<O>(self, subscriber: Subscriber<O, LocalSubscription>)
+  type Unsub: SubscriptionLike;
+  fn emit<O>(self, observer: O) -> Self::Unsub
   where
     O: Observer<Item = Self::Item, Err = Self::Err> + 'a;
 }
@@ -16,21 +19,6 @@ pub struct ObservableBase<Emit>(Emit);
 
 impl<Emit> ObservableBase<Emit> {
   pub fn new(emitter: Emit) -> Self { ObservableBase(emitter) }
-}
-
-#[doc(hidden)]
-macro_rules! observable_impl {
-    ($subscription:ty, $($marker:ident +)* $lf: lifetime) => {
-  fn actual_subscribe<O>(
-    self,
-    subscriber: Subscriber<O, $subscription>,
-  ) -> Self::Unsub
-  where O: Observer<Item=Self::Item,Err= Self::Err> + $($marker +)* $lf {
-    let subscription = subscriber.subscription.clone();
-    self.0.emit(subscriber);
-    subscription
-  }
-}
 }
 
 impl<Emit> Observable for ObservableBase<Emit>
@@ -45,14 +33,26 @@ impl<'a, Emit> LocalObservable<'a> for ObservableBase<Emit>
 where
   Emit: LocalEmitter<'a>,
 {
-  type Unsub = LocalSubscription;
-  observable_impl!(LocalSubscription, 'a);
+  type Unsub = Emit::Unsub;
+
+  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
+  where
+    O: observer::Observer<Item = Emit::Item, Err = Emit::Err> + 'a,
+  {
+    self.0.emit(observer)
+  }
 }
 
 impl<Emit> SharedObservable for ObservableBase<Emit>
 where
   Emit: SharedEmitter,
 {
-  type Unsub = SharedSubscription;
-  observable_impl!(SharedSubscription, Send + Sync + 'static);
+  type Unsub = Emit::Unsub;
+
+  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
+  where
+    O: Observer<Item = Emit::Item, Err = Emit::Err> + Send + Sync + 'static,
+  {
+    self.0.emit(observer)
+  }
 }

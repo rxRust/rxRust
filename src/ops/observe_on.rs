@@ -26,24 +26,15 @@ where
     O: Observer<Item = Self::Item, Err = Self::Err> + 'static,
   >(
     self,
-    subscriber: Subscriber<O, LocalSubscription>,
+    observer: O,
   ) -> Self::Unsub {
-    let Subscriber {
-      observer,
-      subscription,
-    } = subscriber;
     let observer = LocalObserver {
       observer: Rc::new(RefCell::new(observer)),
       scheduler: self.scheduler,
       subscription: LocalSubscription::default(),
     };
 
-    observer.subscription.add(subscription.clone());
-
-    self.source.actual_subscribe(Subscriber {
-      observer,
-      subscription,
-    })
+    self.source.actual_subscribe(observer)
   }
 }
 
@@ -59,22 +50,14 @@ where
     O: Observer<Item = Self::Item, Err = Self::Err> + Sync + Send + 'static,
   >(
     self,
-    subscriber: Subscriber<O, SharedSubscription>,
+    observer: O,
   ) -> Self::Unsub {
-    let Subscriber {
-      observer,
-      subscription,
-    } = subscriber;
     let observer = SharedObserver {
       observer: Arc::new(Mutex::new(observer)),
       subscription: SharedSubscription::default(),
       scheduler: self.scheduler,
     };
-    observer.subscription.add(subscription.clone());
-    self.source.actual_subscribe(Subscriber {
-      observer,
-      subscription,
-    })
+    self.source.actual_subscribe(observer)
   }
 }
 

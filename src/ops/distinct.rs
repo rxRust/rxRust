@@ -1,5 +1,4 @@
 use crate::prelude::*;
-use crate::{complete_proxy_impl, error_proxy_impl};
 use std::{cmp::Eq, collections::HashSet, hash::Hash};
 
 #[derive(Clone)]
@@ -13,17 +12,13 @@ macro_rules! distinct_impl {
   ( $subscription:ty, $($marker:ident +)* $lf: lifetime) => {
   fn actual_subscribe<O>(
     self,
-    subscriber: Subscriber<O, $subscription>,
+    observer: O,
   ) -> Self::Unsub
   where O: Observer<Item=Self::Item,Err= Self::Err> + $($marker +)* $lf {
-    let subscriber = Subscriber {
-      observer: DistinctObserver {
-        observer: subscriber.observer,
-        seen: HashSet::new(),
-      },
-      subscription: subscriber.subscription,
-    };
-    self.source.actual_subscribe(subscriber)
+    self.source.actual_subscribe(DistinctObserver {
+      observer,
+      seen: HashSet::new(),
+    })
   }
 }
 }
@@ -64,8 +59,10 @@ where
       self.observer.next(value);
     }
   }
-  complete_proxy_impl!(observer);
-  error_proxy_impl!(Err, observer);
+
+  fn error(&mut self, err: Self::Err) { self.observer.error(err) }
+
+  fn complete(&mut self) { self.observer.complete() }
 }
 
 #[cfg(test)]

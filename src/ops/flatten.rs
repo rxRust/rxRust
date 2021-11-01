@@ -1,5 +1,4 @@
 use crate::prelude::*;
-use crate::{complete_proxy_impl, error_proxy_impl};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
@@ -251,7 +250,7 @@ pub struct FlattenSharedOuterObserver<Inner, O> {
 impl<Inner, O, Item, Err> Observer for FlattenSharedOuterObserver<Inner, O>
 where
   O: Observer<Item = Item, Err = Err> + Sync + Send + 'static,
-  Inner: SharedObservable<Item = Item, Err = Err, Unsub = SharedSubscription>,
+  Inner: SharedObservable<Item = Item, Err = Err>,
 {
   type Item = Inner;
   type Err = Err;
@@ -263,41 +262,34 @@ where
     state.register_new_observable();
     drop(state);
 
-    self.subscription.add(value.actual_subscribe(Subscriber {
-      observer: self.inner_observer.clone(),
-      subscription: SharedSubscription::default(),
-    }));
+    self
+      .subscription
+      .add(value.actual_subscribe(self.inner_observer.clone()));
   }
 
-  error_proxy_impl!(Err, inner_observer);
+  fn error(&mut self, err: Self::Err) { self.inner_observer.error(err) }
 
-  complete_proxy_impl!(inner_observer);
+  fn complete(&mut self) { self.inner_observer.complete() }
 }
 
 impl<Outer, Inner, Item, Err> SharedObservable for FlattenOp<Outer, Inner>
 where
   Outer: SharedObservable<Item = Inner, Err = Err>,
-  Outer::Unsub: Send + Sync,
-  Inner: SharedObservable<Item = Item, Err = Err, Unsub = SharedSubscription>
-    + Send
-    + Sync
-    + 'static,
+  Outer::Unsub: Send + Sync + 'static,
+  Inner: SharedObservable<Item = Item, Err = Err> + Send + Sync + 'static,
 {
   type Unsub = SharedSubscription;
 
-  fn actual_subscribe<O>(
-    self,
-    subscriber: Subscriber<O, SharedSubscription>,
-  ) -> Self::Unsub
+  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
   where
     O: Observer<Item = Self::Item, Err = Self::Err> + Sync + Send + 'static,
   {
     let state = Arc::new(Mutex::new(FlattenState::new()));
 
-    let subscription = subscriber.subscription;
+    let subscription = SharedSubscription::default();
 
     let inner_observer = Arc::new(Mutex::new(FlattenInnerObserver {
-      observer: subscriber.observer,
+      observer,
       subscription: subscription.clone(),
       state: state.clone(),
     }));
@@ -309,8 +301,7 @@ where
       state,
     };
 
-    subscription
-      .add(self.source.actual_subscribe(Subscriber::shared(observer)));
+    subscription.add(self.source.actual_subscribe(observer));
 
     subscription
   }
@@ -336,6 +327,7 @@ impl<'a, Inner, O, Item, Err> Observer for FlattenLocalOuterObserver<Inner, O>
 where
   O: Observer<Item = Item, Err = Err> + 'a,
   Inner: LocalObservable<'a, Item = Item, Err = Err>,
+  Inner::Unsub: 'static,
 {
   type Item = Inner;
   type Err = Err;
@@ -345,14 +337,14 @@ where
     state.register_new_observable();
     drop(state);
 
-    self.subscription.add(
-      value.actual_subscribe(Subscriber::local(self.inner_observer.clone())),
-    );
+    self
+      .subscription
+      .add(value.actual_subscribe(self.inner_observer.clone()));
   }
 
-  error_proxy_impl!(Err, inner_observer);
+  fn error(&mut self, err: Self::Err) { self.inner_observer.error(err) }
 
-  complete_proxy_impl!(inner_observer);
+  fn complete(&mut self) { self.inner_observer.complete() }
 }
 
 impl<'a, Outer, Inner, Item, Err> LocalObservable<'a>
@@ -360,22 +352,20 @@ impl<'a, Outer, Inner, Item, Err> LocalObservable<'a>
 where
   Outer: LocalObservable<'a, Item = Inner, Err = Err>,
   Inner: LocalObservable<'a, Item = Item, Err = Err> + 'a,
+  Outer::Unsub: 'static,
+  Inner::Unsub: 'static,
 {
   type Unsub = LocalSubscription;
 
-  fn actual_subscribe<O>(
-    self,
-    subscriber: Subscriber<O, LocalSubscription>,
-  ) -> Self::Unsub
+  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
   where
     O: Observer<Item = Self::Item, Err = Self::Err> + 'a,
   {
     let state = Rc::new(RefCell::new(FlattenState::new()));
-
-    let subscription = subscriber.subscription;
+    let subscription = LocalSubscription::default();
 
     let inner_observer = Rc::new(RefCell::new(FlattenInnerObserver {
-      observer: subscriber.observer,
+      observer,
       subscription: subscription.clone(),
       state: state.clone(),
     }));
@@ -387,7 +377,7 @@ where
       state,
     };
 
-    subscription.add(self.source.actual_subscribe(Subscriber::local(observer)));
+    subscription.add(self.source.actual_subscribe(observer));
 
     subscription
   }

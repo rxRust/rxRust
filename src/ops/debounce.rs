@@ -28,7 +28,7 @@ where
     O: Observer<Item = Self::Item, Err = Self::Err> + 'static,
   >(
     self,
-    subscriber: Subscriber<O, LocalSubscription>,
+    observer: O,
   ) -> Self::Unsub {
     let Self {
       source,
@@ -36,18 +36,15 @@ where
       duration,
     } = self;
 
-    source.actual_subscribe(Subscriber {
-      observer: LocalDebounceObserver(Rc::new(RefCell::new(
-        DebounceObserver {
-          observer: subscriber.observer,
-          delay: duration,
-          scheduler,
-          trailing_value: None,
-          last_updated: None,
-        },
-      ))),
-      subscription: subscriber.subscription,
-    })
+    source.actual_subscribe(LocalDebounceObserver(Rc::new(RefCell::new(
+      DebounceObserver {
+        observer,
+        delay: duration,
+        scheduler,
+        trailing_value: None,
+        last_updated: None,
+      },
+    ))))
   }
 }
 impl<S, SD> SharedObservable for DebounceOp<S, SD>
@@ -57,33 +54,25 @@ where
   SD: SharedScheduler + Send + 'static,
 {
   type Unsub = S::Unsub;
-  fn actual_subscribe<
+  fn actual_subscribe<O>(self, observer: O) -> S::Unsub
+  where
     O: Observer<Item = Self::Item, Err = Self::Err> + Sync + Send + 'static,
-  >(
-    self,
-    subscriber: Subscriber<O, SharedSubscription>,
-  ) -> S::Unsub {
+  {
     let Self {
       source,
       duration,
       scheduler,
     } = self;
-    let Subscriber {
-      observer,
-      subscription,
-    } = subscriber;
-    source.actual_subscribe(Subscriber {
-      observer: SharedDebounceObserver(Arc::new(Mutex::new(
-        DebounceObserver {
-          observer,
-          scheduler,
-          trailing_value: None,
-          delay: duration,
-          last_updated: None,
-        },
-      ))),
-      subscription,
-    })
+
+    source.actual_subscribe(SharedDebounceObserver(Arc::new(Mutex::new(
+      DebounceObserver {
+        observer,
+        scheduler,
+        trailing_value: None,
+        delay: duration,
+        last_updated: None,
+      },
+    ))))
   }
 }
 

@@ -59,11 +59,11 @@ where
     next: N,
     error: E,
   ) -> SubscriptionWrapper<Self::Unsub> {
-    let unsub = self.actual_subscribe(Subscriber::local(ObserverErr {
+    let unsub = self.actual_subscribe(ObserverErr {
       next,
       error,
       _marker: TypeHint::new(),
-    }));
+    });
     SubscriptionWrapper(unsub)
   }
 }
@@ -81,11 +81,11 @@ where
   where
     Self: Sized,
   {
-    let unsub = self.0.actual_subscribe(Subscriber::shared(ObserverErr {
+    let unsub = self.0.actual_subscribe(ObserverErr {
       next,
       error,
       _marker: TypeHint::new(),
-    }));
+    });
     SubscriptionWrapper(unsub)
   }
 }

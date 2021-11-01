@@ -1,5 +1,4 @@
 use crate::prelude::*;
-use crate::{complete_proxy_impl, error_proxy_impl};
 
 #[derive(Clone)]
 pub struct MapOp<S, M> {
@@ -12,17 +11,14 @@ macro_rules! observable_impl {
  ($subscription:ty, $($marker:ident +)* $lf: lifetime) => {
   fn actual_subscribe<O>(
     self,
-    subscriber: Subscriber<O, $subscription>,
+    observer: O
   ) -> Self::Unsub
   where O: Observer<Item=Self::Item, Err=Self::Err> + $($marker +)* $lf {
     let map = self.func;
-    self.source.actual_subscribe(Subscriber {
-      observer: MapObserver {
-        observer: subscriber.observer,
-        map,
-        _marker: TypeHint::new(),
-      },
-      subscription: subscriber.subscription,
+    self.source.actual_subscribe(MapObserver {
+      observer,
+      map,
+      _marker: TypeHint::new(),
     })
   }
 }
@@ -72,8 +68,10 @@ where
   type Item = Item;
   type Err = Err;
   fn next(&mut self, value: Item) { self.observer.next((self.map)(value)) }
-  error_proxy_impl!(Err, observer);
-  complete_proxy_impl!(observer);
+
+  fn error(&mut self, err: Self::Err) { self.observer.error(err) }
+
+  fn complete(&mut self) { self.observer.complete() }
 }
 
 #[cfg(test)]

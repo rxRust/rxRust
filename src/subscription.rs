@@ -1,9 +1,7 @@
-use crate::prelude::*;
 use smallvec::SmallVec;
 use std::{
   any::Any,
   cell::RefCell,
-  fmt::{Debug, Formatter},
   rc::Rc,
   sync::{Arc, Mutex},
 };
@@ -18,16 +16,12 @@ pub trait SubscriptionLike {
   fn is_closed(&self) -> bool;
 }
 
-impl Debug for Box<dyn SubscriptionLike> {
-  fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-    f.debug_struct("Box<dyn SubscriptionLike>")
-      .field("is_closed", &self.is_closed())
-      .finish()
-  }
-}
+// todo provide LocalRef/SharedRef generic type for all subscription type.
 
-#[derive(Clone, Debug, Default)]
-pub struct LocalSubscription(Rc<RefCell<Inner<Box<dyn SubscriptionLike>>>>);
+#[derive(Clone, Default)]
+pub struct LocalSubscription(
+  Rc<RefCell<MultiSubscription<Box<dyn SubscriptionLike>>>>,
+);
 
 impl LocalSubscription {
   pub fn add<S: SubscriptionLike + 'static>(&self, subscription: S) {
@@ -60,9 +54,15 @@ impl SubscriptionLike for LocalSubscription {
   fn is_closed(&self) -> bool { self.0.is_closed() }
 }
 
-#[derive(Clone, Debug, Default)]
+impl<S: SubscriptionLike + ?Sized> SubscriptionLike for Box<S> {
+  #[inline]
+  fn unsubscribe(&mut self) { (&mut **self).unsubscribe() }
+  #[inline]
+  fn is_closed(&self) -> bool { (&**self).is_closed() }
+}
+#[derive(Clone, Default)]
 pub struct SharedSubscription(
-  Arc<Mutex<Inner<Box<dyn SubscriptionLike + Send + Sync>>>>,
+  Arc<Mutex<MultiSubscription<Box<dyn SubscriptionLike + Send + Sync>>>>,
 );
 
 impl SharedSubscription {
@@ -95,28 +95,12 @@ impl SubscriptionLike for SharedSubscription {
   fn is_closed(&self) -> bool { self.0.is_closed() }
 }
 
-pub trait Publisher: Observer + SubscriptionLike {
-  #[inline]
-  fn is_finished(&self) -> bool { self.is_closed() }
-}
-
-impl<T> Publisher for T where T: Observer + SubscriptionLike {}
-
-struct Inner<T> {
+pub struct MultiSubscription<T> {
   closed: bool,
   teardown: SmallVec<[T; 1]>,
 }
 
-impl<T> Debug for Inner<T> {
-  fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-    f.debug_struct("Inner")
-      .field("closed", &self.closed)
-      .field("teardown_count", &self.teardown.len())
-      .finish()
-  }
-}
-
-impl<T: SubscriptionLike> SubscriptionLike for Inner<T> {
+impl<T: SubscriptionLike> SubscriptionLike for MultiSubscription<T> {
   #[inline(always)]
   fn is_closed(&self) -> bool { self.closed }
 
@@ -130,7 +114,7 @@ impl<T: SubscriptionLike> SubscriptionLike for Inner<T> {
   }
 }
 
-impl<T: SubscriptionLike> Inner<T> {
+impl<T: SubscriptionLike> MultiSubscription<T> {
   fn add(&mut self, mut v: T) {
     if self.closed {
       v.unsubscribe();
@@ -141,51 +125,12 @@ impl<T: SubscriptionLike> Inner<T> {
   }
 }
 
-impl<T> Default for Inner<T> {
+impl<T> Default for MultiSubscription<T> {
   fn default() -> Self {
-    Inner {
+    MultiSubscription {
       closed: false,
       teardown: SmallVec::new(),
     }
-  }
-}
-
-impl<T> SubscriptionLike for Arc<Mutex<T>>
-where
-  T: SubscriptionLike,
-{
-  #[inline]
-  fn unsubscribe(&mut self) { self.lock().unwrap().unsubscribe() }
-
-  #[inline]
-  fn is_closed(&self) -> bool { self.lock().unwrap().is_closed() }
-}
-
-impl<T> SubscriptionLike for Rc<RefCell<T>>
-where
-  T: SubscriptionLike,
-{
-  #[inline]
-  fn unsubscribe(&mut self) { self.borrow_mut().unsubscribe() }
-
-  #[inline]
-  fn is_closed(&self) -> bool { self.borrow().is_closed() }
-}
-
-impl<T: ?Sized> SubscriptionLike for Box<T>
-where
-  T: SubscriptionLike,
-{
-  #[inline]
-  fn unsubscribe(&mut self) {
-    let s = &mut **self;
-    s.unsubscribe()
-  }
-
-  #[inline]
-  fn is_closed(&self) -> bool {
-    let s = &**self;
-    s.is_closed()
   }
 }
 
@@ -241,6 +186,55 @@ impl<T: SubscriptionLike> SubscriptionGuard<T> {
 impl<T: SubscriptionLike> Drop for SubscriptionGuard<T> {
   #[inline]
   fn drop(&mut self) { self.0.unsubscribe() }
+}
+
+#[derive(Default, Clone)]
+pub struct SingleSubscription(bool);
+
+impl SubscriptionLike for SingleSubscription {
+  #[inline]
+  fn unsubscribe(&mut self) { self.0 = true; }
+
+  #[inline]
+  fn is_closed(&self) -> bool { self.0 }
+}
+
+pub struct ProxySubscription<T: SubscriptionLike>(Option<T>);
+
+impl<T: SubscriptionLike> ProxySubscription<T> {
+  pub fn proxy(&mut self, proxy: T) -> Option<T> { self.0.replace(proxy) }
+}
+
+impl<T: SubscriptionLike> SubscriptionLike for ProxySubscription<T> {
+  fn unsubscribe(&mut self) {
+    if let Some(s) = &mut self.0 {
+      s.unsubscribe()
+    }
+  }
+
+  fn is_closed(&self) -> bool {
+    self.0.as_ref().map_or(false, |s| s.is_closed())
+  }
+}
+
+impl<T: SubscriptionLike> SubscriptionLike for Arc<Mutex<T>> {
+  #[inline]
+  fn unsubscribe(&mut self) { self.lock().unwrap().unsubscribe() }
+
+  #[inline]
+  fn is_closed(&self) -> bool { self.lock().unwrap().is_closed() }
+}
+
+impl<T: SubscriptionLike> SubscriptionLike for Rc<RefCell<T>> {
+  #[inline]
+  fn unsubscribe(&mut self) { self.borrow_mut().unsubscribe() }
+
+  #[inline]
+  fn is_closed(&self) -> bool { self.borrow().is_closed() }
+}
+
+impl<T: SubscriptionLike> Default for ProxySubscription<T> {
+  fn default() -> Self { Self(Default::default()) }
 }
 
 #[cfg(test)]

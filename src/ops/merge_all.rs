@@ -21,29 +21,28 @@ where
   type Err = S::Err;
 }
 
-impl<'a, S> LocalObservable<'a> for MergeAllOp<S>
+impl<'a, S, Item> LocalObservable<'a> for MergeAllOp<S>
 where
-  S: LocalObservable<'a>,
-  S::Item: LocalObservable<'a, Err = S::Err> + 'a,
+  S: LocalObservable<'a, Item = Item>,
+  Item: LocalObservable<'a, Err = S::Err> + 'a,
+  Item::Unsub: 'static,
 {
   type Unsub = S::Unsub;
-  fn actual_subscribe<O: Observer<Item = Self::Item, Err = Self::Err> + 'a>(
-    self,
-    subscriber: Subscriber<O, LocalSubscription>,
-  ) -> Self::Unsub {
+  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
+  where
+    O: Observer<Item = Self::Item, Err = Self::Err> + 'a,
+  {
     self
       .source
       .map(|v| v.box_it())
-      .actual_subscribe(Subscriber::local(Rc::new(RefCell::new(
-        LocalMergeAllObserver {
-          observer: subscriber.observer,
-          subscribed: 0,
-          concurrent: self.concurrent,
-          subscription: subscriber.subscription,
-          buffer: <_>::default(),
-          completed: false,
-        },
-      ))))
+      .actual_subscribe(Rc::new(RefCell::new(LocalMergeAllObserver {
+        observer,
+        subscribed: 0,
+        concurrent: self.concurrent,
+        subscription: LocalSubscription::default(),
+        buffer: <_>::default(),
+        completed: false,
+      })))
   }
 }
 
@@ -66,11 +65,9 @@ where
   fn next(&mut self, value: Self::Item) {
     let mut inner = self.borrow_mut();
     if inner.subscribed < inner.concurrent {
-      inner.subscription.add(
-        value.actual_subscribe(Subscriber::local(LocalInnerObserver(
-          self.clone(),
-        ))),
-      );
+      inner
+        .subscription
+        .add(value.actual_subscribe(LocalInnerObserver(self.clone())));
       inner.subscribed += 1;
     } else {
       inner.buffer.push_back(value);
@@ -119,9 +116,9 @@ where
     let mut inner = self.0.borrow_mut();
 
     if let Some(o) = inner.buffer.pop_front() {
-      inner.subscription.add(o.actual_subscribe(Subscriber::local(
-        LocalInnerObserver(self.0.clone()),
-      )));
+      inner
+        .subscription
+        .add(o.actual_subscribe(LocalInnerObserver(self.0.clone())));
     } else {
       inner.subscribed -= 1;
       if inner.completed && inner.subscribed == 0 {
@@ -142,25 +139,21 @@ where
 {
   type Unsub = S::Unsub;
 
-  fn actual_subscribe<
+  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
+  where
     O: Observer<Item = Self::Item, Err = Self::Err> + Sync + Send + 'static,
-  >(
-    self,
-    subscriber: Subscriber<O, SharedSubscription>,
-  ) -> Self::Unsub {
+  {
     self
       .source
       .map(|v| v.box_it())
-      .actual_subscribe(Subscriber::shared(Arc::new(Mutex::new(
-        SharedMergeAllObserver {
-          observer: subscriber.observer,
-          subscribed: 0,
-          concurrent: self.concurrent,
-          subscription: subscriber.subscription,
-          buffer: <_>::default(),
-          completed: false,
-        },
-      ))))
+      .actual_subscribe(Arc::new(Mutex::new(SharedMergeAllObserver {
+        observer,
+        subscribed: 0,
+        concurrent: self.concurrent,
+        subscription: SharedSubscription::default(),
+        buffer: <_>::default(),
+        completed: false,
+      })))
   }
 }
 
@@ -185,11 +178,7 @@ where
     if inner.subscribed < inner.concurrent {
       inner
         .subscription
-        .add(
-          value.actual_subscribe(Subscriber::shared(SharedInnerObserver(
-            self.clone(),
-          ))),
-        );
+        .add(value.actual_subscribe(SharedInnerObserver(self.clone())));
       inner.subscribed += 1;
     } else {
       inner.buffer.push_back(value);
@@ -238,9 +227,7 @@ where
     if let Some(o) = inner.buffer.pop_front() {
       inner
         .subscription
-        .add(o.actual_subscribe(Subscriber::shared(SharedInnerObserver(
-          self.0.clone(),
-        ))));
+        .add(o.actual_subscribe(SharedInnerObserver(self.0.clone())));
     } else {
       inner.subscribed -= 1;
       if inner.completed && inner.subscribed == 0 {

@@ -1,4 +1,3 @@
-use crate::error_proxy_impl;
 use crate::prelude::*;
 
 #[derive(Clone)]
@@ -20,17 +19,13 @@ macro_rules! observable_impl {
   ($subscription:ty, $($marker:ident +)* $lf: lifetime) => {
   fn actual_subscribe<O>(
     self,
-    subscriber: Subscriber<O, $subscription>,
+    observer:O,
   ) -> Self::Unsub
   where O: Observer<Item=Self::Item,Err= Self::Err> + $($marker +)* $lf {
-    let subscriber = Subscriber {
-      observer: LastObserver {
-        observer: subscriber.observer,
-        last: self.last,
-      },
-      subscription: subscriber.subscription,
-    };
-    self.source.actual_subscribe(subscriber)
+    self.source.actual_subscribe(LastObserver {
+      observer,
+      last: self.last,
+    })
   }
 }
 }
@@ -66,7 +61,9 @@ where
   type Item = Item;
   type Err = Err;
   fn next(&mut self, value: Item) { self.last = Some(value); }
-  error_proxy_impl!(Err, observer);
+
+  fn error(&mut self, err: Self::Err) { self.observer.error(err) }
+
   fn complete(&mut self) {
     if let Some(v) = &self.last {
       self.observer.next(v.clone())

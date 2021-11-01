@@ -1,13 +1,15 @@
 use crate::observer::Observer;
 use crate::prelude::{Subject, SubscriptionLike};
 
-#[derive(Default, Clone)]
-pub struct BehaviorSubject<O, U, V> {
+#[derive(Clone)]
+pub struct BehaviorSubject<O: Observer, U: SubscriptionLike> {
   pub(crate) subject: Subject<O, U>,
-  pub(crate) value: V,
+  pub(crate) value: O::Item,
 }
 
-impl<O, U: SubscriptionLike, V> SubscriptionLike for BehaviorSubject<O, U, V> {
+impl<O: Observer, U: SubscriptionLike> SubscriptionLike
+  for BehaviorSubject<O, U>
+{
   #[inline]
   fn unsubscribe(&mut self) { self.subject.unsubscribe(); }
 
@@ -15,11 +17,12 @@ impl<O, U: SubscriptionLike, V> SubscriptionLike for BehaviorSubject<O, U, V> {
   fn is_closed(&self) -> bool { self.subject.is_closed() }
 }
 
-impl<O, U> Observer for BehaviorSubject<O, U, O::Item>
+impl<O, U> Observer for BehaviorSubject<O, U>
 where
   O: Observer,
   O::Item: Clone,
   O::Err: Clone,
+  U: SubscriptionLike,
 {
   type Item = O::Item;
   type Err = O::Err;
@@ -36,7 +39,6 @@ where
   #[inline]
   fn complete(&mut self) { self.subject.complete() }
 }
-
 #[cfg(test)]
 mod test {
   use crate::prelude::*;
@@ -126,10 +128,7 @@ mod test {
   fn subject_subscribe_subject() {
     let mut local = LocalBehaviorSubject::new(42);
     let local2 = LocalBehaviorSubject::new(42);
-    local.clone().actual_subscribe(Subscriber {
-      observer: local2.subject.observers,
-      subscription: local2.subject.subscription,
-    });
+    local.clone().actual_subscribe(local2);
     local.next(1);
     local.error(2);
   }

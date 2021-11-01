@@ -51,11 +51,11 @@ where
     Self: Sized,
     S::Item: 'a,
   {
-    let unsub = self.actual_subscribe(Subscriber::local(ObserverComp {
+    let unsub = self.actual_subscribe(ObserverComp {
       next,
       complete,
       _marker: TypeHint::new(),
-    }));
+    });
     SubscriptionWrapper(unsub)
   }
 }
@@ -76,11 +76,11 @@ where
   where
     Self: Sized,
   {
-    let unsub = self.0.actual_subscribe(Subscriber::shared(ObserverComp {
+    let unsub = self.0.actual_subscribe(ObserverComp {
       next,
       complete,
       _marker: TypeHint::new(),
-    }));
+    });
     SubscriptionWrapper(unsub)
   }
 }
