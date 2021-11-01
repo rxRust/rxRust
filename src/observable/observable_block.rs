@@ -73,12 +73,12 @@ where
   {
     let stopped = Arc::new(AtomicBool::new(false));
     let stopped_c = Arc::clone(&stopped);
-    let subscriber = Subscriber::shared(ObserverBlock {
+    let observer = ObserverBlock {
       next,
       is_stopped: stopped,
       _marker: TypeHint::new(),
-    });
-    let sub = SubscriptionWrapper(self.actual_subscribe(subscriber));
+    };
+    let sub = SubscriptionWrapper(self.actual_subscribe(observer));
     while !stopped_c.load(Ordering::Relaxed) {
       std::thread::sleep(Duration::from_millis(1))
     }

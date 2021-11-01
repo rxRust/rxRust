@@ -5,45 +5,38 @@ pub use local_subject::*;
 mod shared_subject;
 pub use shared_subject::*;
 
-#[derive(Default, Clone)]
-pub struct Subject<O, S> {
-  pub(crate) observers: O,
-  pub(crate) subscription: S,
+#[derive(Clone)]
+pub struct Subject<O: Observer, S: SubscriptionLike> {
+  pub(crate) observers: Vec<SubjectObserver<O, S>>,
+  pub(crate) subscription: SingleSubscription,
 }
 
-impl<O, U: SubscriptionLike> SubscriptionLike for Subject<O, U> {
+impl<O: Observer, U: SubscriptionLike> SubscriptionLike for Subject<O, U> {
   #[inline]
-  fn unsubscribe(&mut self) { self.subscription.unsubscribe(); }
+  fn unsubscribe(&mut self) {
+    self
+      .observers
+      .iter_mut()
+      .for_each(|o| o.subscription.unsubscribe());
+    self.observers.clear();
+    self.subscription.unsubscribe();
+  }
 
   #[inline]
   fn is_closed(&self) -> bool { self.subscription.is_closed() }
 }
 
-impl<Item, Err, U, O> Observer for Subject<O, U>
-where
-  O: Observer<Item = Item, Err = Err>,
-  Item: Clone,
-  Err: Clone,
-{
-  type Item = Item;
-  type Err = Err;
-
-  #[inline]
-  fn next(&mut self, value: Item) { self.observers.next(value) }
-
-  #[inline]
-  fn error(&mut self, err: Err) { self.observers.error(err) }
-
-  #[inline]
-  fn complete(&mut self) { self.observers.complete() }
+impl<O: Observer, U: SubscriptionLike> Subject<O, U> {
+  fn subscribed_size(&self) -> usize { self.observers.len() }
 }
 
 #[derive(Clone)]
-pub struct SubjectObserver<O> {
-  pub(crate) observers: Vec<O>,
+pub(crate) struct SubjectObserver<O: Observer, S: SubscriptionLike> {
+  pub observer: O,
+  pub subscription: S,
 }
 
-impl<O: Publisher> Observer for SubjectObserver<O>
+impl<O: Observer, S: SubscriptionLike> Observer for Subject<O, S>
 where
   O::Item: Clone,
   O::Err: Clone,
@@ -52,11 +45,11 @@ where
   type Err = O::Err;
   fn next(&mut self, value: Self::Item) {
     let any_finished = self.observers.iter_mut().fold(false, |finished, o| {
-      o.next(value.clone());
-      finished || o.is_finished()
+      o.observer.next(value.clone());
+      finished || o.subscription.is_closed()
     });
     if any_finished {
-      self.observers.retain(|o| !o.is_finished());
+      self.observers.retain(|o| !o.subscription.is_closed());
     }
   }
 
@@ -64,7 +57,7 @@ where
     self
       .observers
       .iter_mut()
-      .for_each(|subscriber| subscriber.error(err.clone()));
+      .for_each(|subscriber| subscriber.observer.error(err.clone()));
     self.observers.clear();
   }
 
@@ -72,22 +65,34 @@ where
     self
       .observers
       .iter_mut()
-      .for_each(|subscriber| subscriber.complete());
+      .for_each(|subscriber| subscriber.observer.complete());
     self.observers.clear();
   }
 }
 
-impl<O> Default for SubjectObserver<O> {
-  fn default() -> Self { SubjectObserver { observers: vec![] } }
+impl<O: Observer, S: SubscriptionLike> Default for Subject<O, S> {
+  fn default() -> Self {
+    Subject {
+      observers: vec![],
+      subscription: Default::default(),
+    }
+  }
 }
 
-impl<O> std::ops::Deref for SubjectObserver<O> {
-  type Target = Vec<O>;
-  fn deref(&self) -> &Self::Target { &self.observers }
-}
-
-impl<O> std::ops::DerefMut for SubjectObserver<O> {
-  fn deref_mut(&mut self) -> &mut Self::Target { &mut self.observers }
+impl<O, U> Subject<O, U>
+where
+  O: Observer,
+  U: SubscriptionLike + Default + Clone,
+{
+  fn subscribe(&mut self, observer: O) -> U {
+    let subscription = U::default();
+    let observer = SubjectObserver {
+      observer,
+      subscription: subscription.clone(),
+    };
+    self.observers.push(observer);
+    subscription
+  }
 }
 
 #[cfg(test)]
@@ -100,7 +105,7 @@ mod test {
   fn base_data_flow() {
     let mut i = 0;
     {
-      let mut broadcast = LocalSubject::new();
+      let mut broadcast = LocalSubject::default();
       broadcast.clone().subscribe(|v| i = v * 2);
       broadcast.next(1);
     }
@@ -165,10 +170,7 @@ mod test {
   fn subject_subscribe_subject() {
     let mut local = LocalSubject::new();
     let local2 = LocalSubject::new();
-    local.clone().actual_subscribe(Subscriber {
-      observer: local2.observers,
-      subscription: local2.subscription,
-    });
+    local.clone().actual_subscribe(local2);
     local.next(1);
     local.error(2);
   }
@@ -184,7 +186,7 @@ mod test {
       }
     });
 
-    subject.observers.next(0);
+    subject.next(0);
 
     let mut subject = SharedSubject::new();
     let mut c_subject = subject.clone();

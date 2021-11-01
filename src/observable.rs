@@ -1442,11 +1442,10 @@ pub trait Observable: Sized {
 }
 
 pub trait LocalObservable<'a>: Observable {
-  type Unsub: SubscriptionLike + 'static;
-  fn actual_subscribe<O: Observer<Item = Self::Item, Err = Self::Err> + 'a>(
-    self,
-    subscriber: Subscriber<O, LocalSubscription>,
-  ) -> Self::Unsub;
+  type Unsub: SubscriptionLike;
+  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
+  where
+    O: Observer<Item = Self::Item, Err = Self::Err> + 'a;
 }
 
 #[macro_export]

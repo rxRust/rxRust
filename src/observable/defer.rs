@@ -39,11 +39,12 @@ where
   F: FnOnce() -> Emit,
   Emit: LocalObservable<'a> + observable::Observable<Item = Item, Err = Err>,
 {
-  fn emit<O>(self, subscriber: Subscriber<O, LocalSubscription>)
+  type Unsub = Emit::Unsub;
+  fn emit<O>(self, observer: O) -> Self::Unsub
   where
     O: Observer<Item = Self::Item, Err = Self::Err> + 'a,
   {
-    (self.0)().actual_subscribe(subscriber);
+    (self.0)().actual_subscribe(observer)
   }
 }
 
@@ -53,11 +54,12 @@ where
   F: FnOnce() -> Emit,
   Emit: SharedObservable + observable::Observable<Item = Item, Err = Err>,
 {
-  fn emit<O>(self, subscriber: Subscriber<O, SharedSubscription>)
+  type Unsub = Emit::Unsub;
+  fn emit<O>(self, observer: O) -> Self::Unsub
   where
     O: Observer<Item = Self::Item, Err = Self::Err> + Send + Sync + 'static,
   {
-    (self.0)().actual_subscribe(subscriber);
+    (self.0)().actual_subscribe(observer)
   }
 }
 

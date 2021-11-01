@@ -1,4 +1,3 @@
-use crate::error_proxy_impl;
 use crate::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -34,14 +33,13 @@ where
 {
   type Unsub = S::Unsub;
 
-  fn actual_subscribe<O: Observer<Item = Self::Item, Err = Self::Err> + 'a>(
-    self,
-    subscriber: Subscriber<O, LocalSubscription>,
-  ) -> Self::Unsub {
-    self.source.actual_subscribe(Subscriber {
-      observer: BufferWithCountObserver::new(subscriber.observer, self.count),
-      subscription: subscriber.subscription,
-    })
+  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
+  where
+    O: Observer<Item = Self::Item, Err = Self::Err> + 'a,
+  {
+    self
+      .source
+      .actual_subscribe(BufferWithCountObserver::new(observer, self.count))
   }
 }
 
@@ -52,16 +50,13 @@ where
 {
   type Unsub = S::Unsub;
 
-  fn actual_subscribe<
+  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
+  where
     O: Observer<Item = Self::Item, Err = Self::Err> + Sync + Send + 'static,
-  >(
-    self,
-    subscriber: Subscriber<O, SharedSubscription>,
-  ) -> Self::Unsub {
-    self.source.actual_subscribe(Subscriber {
-      observer: BufferWithCountObserver::new(subscriber.observer, self.count),
-      subscription: subscriber.subscription,
-    })
+  {
+    self
+      .source
+      .actual_subscribe(BufferWithCountObserver::new(observer, self.count))
   }
 }
 
@@ -107,7 +102,7 @@ where
     self.observer.complete();
   }
 
-  error_proxy_impl!(Err, observer);
+  fn error(&mut self, err: Self::Err) { self.observer.error(err) }
 }
 
 #[derive(Clone)]
@@ -128,20 +123,15 @@ where
 {
   type Unsub = Source::Unsub;
 
-  fn actual_subscribe<
+  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
+  where
     O: Observer<Item = Self::Item, Err = Self::Err> + 'static,
-  >(
-    self,
-    subscriber: Subscriber<O, LocalSubscription>,
-  ) -> Self::Unsub {
-    self.source.actual_subscribe(Subscriber {
-      observer: BufferWithTimeObserver::new(
-        subscriber.observer,
-        self.time,
-        self.scheduler,
-      ),
-      subscription: subscriber.subscription,
-    })
+  {
+    self.source.actual_subscribe(BufferWithTimeObserver::new(
+      observer,
+      self.time,
+      self.scheduler,
+    ))
   }
 }
 
@@ -231,21 +221,17 @@ where
 {
   type Unsub = Source::Unsub;
 
-  fn actual_subscribe<O>(
-    self,
-    subscriber: Subscriber<O, SharedSubscription>,
-  ) -> Self::Unsub
+  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
   where
     O: Observer<Item = Self::Item, Err = Self::Err> + Sync + Send + 'static,
   {
-    self.source.actual_subscribe(Subscriber {
-      observer: BufferWithTimeObserverShared::new(
-        subscriber.observer,
+    self
+      .source
+      .actual_subscribe(BufferWithTimeObserverShared::new(
+        observer,
         self.time,
         self.scheduler,
-      ),
-      subscription: subscriber.subscription,
-    })
+      ))
   }
 }
 
@@ -355,17 +341,16 @@ where
     O: Observer<Item = Self::Item, Err = Self::Err> + 'static,
   >(
     self,
-    subscriber: Subscriber<O, LocalSubscription>,
+    observer: O,
   ) -> Self::Unsub {
-    self.source.actual_subscribe(Subscriber {
-      observer: BufferWithCountOrTimerObserver::new(
-        subscriber.observer,
+    self
+      .source
+      .actual_subscribe(BufferWithCountOrTimerObserver::new(
+        observer,
         self.count,
         self.time,
         self.scheduler,
-      ),
-      subscription: subscriber.subscription,
-    })
+      ))
   }
 }
 
@@ -446,17 +431,16 @@ where
     O: Observer<Item = Self::Item, Err = Self::Err> + Sync + Send + 'static,
   >(
     self,
-    subscriber: Subscriber<O, SharedSubscription>,
+    observer: O,
   ) -> Self::Unsub {
-    self.source.actual_subscribe(Subscriber {
-      observer: BufferWithCountOrTimerObserverShared::new(
-        subscriber.observer,
+    self
+      .source
+      .actual_subscribe(BufferWithCountOrTimerObserverShared::new(
+        observer,
         self.count,
         self.time,
         self.scheduler,
-      ),
-      subscription: subscriber.subscription,
-    })
+      ))
   }
 }
 

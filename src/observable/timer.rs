@@ -59,48 +59,44 @@ impl<Item, S> Emitter for TimerEmitter<Item, S> {
 impl<Item: 'static, S: LocalScheduler + 'static> LocalEmitter<'static>
   for TimerEmitter<Item, S>
 {
-  fn emit<O>(self, subscriber: Subscriber<O, LocalSubscription>)
+  type Unsub = SpawnHandle;
+  fn emit<O>(self, mut observer: O) -> Self::Unsub
   where
     O: Observer<Item = Self::Item, Err = Self::Err> + 'static,
   {
-    let mut observer = subscriber.observer;
     let item = self.item;
     let dur = self.dur;
 
-    let handle = self.scheduler.schedule(
+    self.scheduler.schedule(
       move |_| {
         observer.next(item);
         observer.complete();
       },
       Some(dur),
       1,
-    );
-
-    subscriber.subscription.add(handle);
+    )
   }
 }
 
 impl<Item: Send + 'static, S: SharedScheduler + 'static> SharedEmitter
   for TimerEmitter<Item, S>
 {
-  fn emit<O>(self, subscriber: Subscriber<O, SharedSubscription>)
+  type Unsub = SpawnHandle;
+  fn emit<O>(self, mut observer: O) -> Self::Unsub
   where
     O: Observer<Item = Self::Item, Err = Self::Err> + Send + Sync + 'static,
   {
-    let mut observer = subscriber.observer;
     let item = self.item;
     let dur = self.dur;
 
-    let handle = self.scheduler.schedule(
+    self.scheduler.schedule(
       move |_| {
         observer.next(item);
         observer.complete();
       },
       Some(dur),
       1,
-    );
-
-    subscriber.subscription.add(handle);
+    )
   }
 }
 

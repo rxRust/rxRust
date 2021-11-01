@@ -32,12 +32,10 @@ where
 {
   type Unsub = Unsub;
 
-  fn actual_subscribe<
+  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
+  where
     O: Observer<Item = Self::Item, Err = Self::Err> + 'static,
-  >(
-    self,
-    subscriber: Subscriber<O, LocalSubscription>,
-  ) -> Self::Unsub {
+  {
     let Self {
       source,
       duration,
@@ -45,20 +43,17 @@ where
       scheduler,
     } = self;
 
-    source.actual_subscribe(Subscriber {
-      observer: LocalThrottleObserver(Rc::new(RefCell::new(
-        ThrottleObserver {
-          observer: subscriber.observer,
-          edge,
-          delay: duration,
-          trailing_value: None,
-          throttled: None,
-          subscription: subscriber.subscription.clone(),
-          scheduler,
-        },
-      ))),
-      subscription: subscriber.subscription,
-    })
+    source.actual_subscribe(LocalThrottleObserver(Rc::new(RefCell::new(
+      ThrottleObserver {
+        observer,
+        edge,
+        delay: duration,
+        trailing_value: None,
+        throttled: None,
+        subscription: LocalSubscription::default(),
+        scheduler,
+      },
+    ))))
   }
 }
 
@@ -69,36 +64,28 @@ where
   SD: SharedScheduler + Send + 'static,
 {
   type Unsub = S::Unsub;
-  fn actual_subscribe<
+  fn actual_subscribe<O>(self, observer: O) -> S::Unsub
+  where
     O: Observer<Item = Self::Item, Err = Self::Err> + Sync + Send + 'static,
-  >(
-    self,
-    subscriber: Subscriber<O, SharedSubscription>,
-  ) -> S::Unsub {
+  {
     let Self {
       source,
       duration,
       edge,
       scheduler,
     } = self;
-    let Subscriber {
-      observer,
-      subscription,
-    } = subscriber;
-    source.actual_subscribe(Subscriber {
-      observer: SharedThrottleObserver(Arc::new(Mutex::new(
-        ThrottleObserver {
-          observer,
-          edge,
-          delay: duration,
-          trailing_value: None,
-          throttled: None,
-          subscription: subscription.clone(),
-          scheduler,
-        },
-      ))),
-      subscription,
-    })
+
+    source.actual_subscribe(SharedThrottleObserver(Arc::new(Mutex::new(
+      ThrottleObserver {
+        observer,
+        edge,
+        delay: duration,
+        trailing_value: None,
+        throttled: None,
+        subscription: SharedSubscription::default(),
+        scheduler,
+      },
+    ))))
   }
 }
 

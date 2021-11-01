@@ -16,19 +16,15 @@ where
   S::Unsub: Send + Sync,
 {
   type Unsub = SharedSubscription;
-  fn actual_subscribe<
+  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
+  where
     O: Observer<Item = Self::Item, Err = Self::Err> + Sync + Send + 'static,
-  >(
-    self,
-    subscriber: Subscriber<O, SharedSubscription>,
-  ) -> Self::Unsub {
+  {
     let source = self.source;
-    let subscription = subscriber.subscription.clone();
+    let subscription = SharedSubscription::default();
+    let c_subscription = subscription.clone();
     let handle = self.scheduler.schedule(
-      move |_| {
-        let subscription = subscriber.subscription.clone();
-        subscription.add(source.actual_subscribe(subscriber))
-      },
+      move |_| c_subscription.add(source.actual_subscribe(observer)),
       None,
       (),
     );
@@ -43,19 +39,16 @@ where
   SD: LocalScheduler,
 {
   type Unsub = LocalSubscription;
-  fn actual_subscribe<
+  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
+  where
     O: Observer<Item = Self::Item, Err = Self::Err> + 'static,
-  >(
-    self,
-    subscriber: Subscriber<O, LocalSubscription>,
-  ) -> Self::Unsub {
+  {
     let source = self.source;
-    let subscription = subscriber.subscription.clone();
+
+    let subscription = LocalSubscription::default();
+    let c_subscription = subscription.clone();
     let handle = self.scheduler.schedule(
-      move |_| {
-        let subscription = subscriber.subscription.clone();
-        subscription.add(source.actual_subscribe(subscriber))
-      },
+      move |_| c_subscription.add(source.actual_subscribe(observer)),
       None,
       (),
     );

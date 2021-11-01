@@ -10,24 +10,6 @@ pub struct DelayOp<S, SD> {
 
 observable_proxy_impl!(DelayOp, S, SD);
 
-macro_rules! impl_observable {
-  ($op: ident, $subscriber: ident) => {{
-    let delay = $op.delay;
-    let source = $op.source;
-    let scheduler = $op.scheduler;
-    let subscription = $subscriber.subscription.clone();
-    let c_subscription = subscription.clone();
-    let handle = scheduler.schedule(
-      move |_| {
-        c_subscription.add(source.actual_subscribe($subscriber));
-      },
-      Some(delay),
-      (),
-    );
-    subscription.add(handle);
-    subscription
-  }};
-}
 impl<S, SD> SharedObservable for DelayOp<S, SD>
 where
   S: SharedObservable + Send + Sync + 'static,
@@ -35,13 +17,21 @@ where
   SD: SharedScheduler,
 {
   type Unsub = SharedSubscription;
-  fn actual_subscribe<
+  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
+  where
     O: Observer<Item = Self::Item, Err = Self::Err> + Sync + Send + 'static,
-  >(
-    self,
-    subscriber: Subscriber<O, SharedSubscription>,
-  ) -> Self::Unsub {
-    impl_observable!(self, subscriber)
+  {
+    let subscription = SharedSubscription::default();
+    let c_subscription = subscription.clone();
+    let handle = self.scheduler.schedule(
+      move |_| {
+        c_subscription.add(self.source.actual_subscribe(observer));
+      },
+      Some(self.delay),
+      (),
+    );
+    subscription.add(handle);
+    subscription
   }
 }
 
@@ -52,13 +42,21 @@ where
   SD: LocalScheduler,
 {
   type Unsub = LocalSubscription;
-  fn actual_subscribe<
+  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
+  where
     O: Observer<Item = Self::Item, Err = Self::Err> + 'static,
-  >(
-    self,
-    subscriber: Subscriber<O, LocalSubscription>,
-  ) -> Self::Unsub {
-    impl_observable!(self, subscriber)
+  {
+    let subscription = LocalSubscription::default();
+    let c_subscription = subscription.clone();
+    let handle = self.scheduler.schedule(
+      move |_| {
+        c_subscription.add(self.source.actual_subscribe(observer));
+      },
+      Some(self.delay),
+      (),
+    );
+    subscription.add(handle);
+    subscription
   }
 }
 

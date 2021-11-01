@@ -1,32 +1,14 @@
 use crate::prelude::*;
-use crate::{complete_proxy_impl, error_proxy_impl};
+use std::{
+  cell::RefCell,
+  rc::Rc,
+  sync::{Arc, Mutex},
+};
 
 #[derive(Clone)]
 pub struct TakeWhileOp<S, F> {
   pub(crate) source: S,
   pub(crate) callback: F,
-}
-
-#[doc(hidden)]
-macro_rules! observable_impl {
-  ($subscription:ty, $source:ident, $($marker:ident +)* $lf: lifetime) => {
-  type Unsub = $source::Unsub;
-  fn actual_subscribe<O>(
-    self,
-    subscriber: Subscriber<O, $subscription>,
-  ) -> Self::Unsub
-  where O: Observer<Item=Self::Item,Err= Self::Err> + $($marker +)* $lf {
-    let subscriber = Subscriber {
-      observer: TakeWhileObserver {
-        observer: subscriber.observer,
-        subscription: subscriber.subscription.clone(),
-        callback: self.callback,
-      },
-      subscription: subscriber.subscription,
-    };
-    self.source.actual_subscribe(subscriber)
-  }
-}
 }
 
 impl<S, F> Observable for TakeWhileOp<S, F>
@@ -42,8 +24,25 @@ impl<'a, S, F> LocalObservable<'a> for TakeWhileOp<S, F>
 where
   S: LocalObservable<'a>,
   F: FnMut(&S::Item) -> bool + 'a,
+  S::Unsub: 'a,
 {
-  observable_impl!(LocalSubscription, S, 'a);
+  type Unsub = Rc<RefCell<ProxySubscription<S::Unsub>>>;
+
+  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
+  where
+    O: Observer<Item = Self::Item, Err = Self::Err> + 'a,
+  {
+    let subscription = Rc::new(RefCell::new(ProxySubscription::default()));
+    let observer = TakeWhileObserver {
+      observer,
+      subscription: subscription.clone(),
+      callback: self.callback,
+    };
+    subscription
+      .borrow_mut()
+      .proxy(self.source.actual_subscribe(observer));
+    subscription
+  }
 }
 
 impl<S, F> SharedObservable for TakeWhileOp<S, F>
@@ -51,7 +50,24 @@ where
   S: SharedObservable,
   F: FnMut(&S::Item) -> bool + Send + Sync + 'static,
 {
-  observable_impl!(SharedSubscription, S, Send + Sync + 'static);
+  type Unsub = Arc<Mutex<ProxySubscription<S::Unsub>>>;
+
+  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
+  where
+    O: Observer<Item = Self::Item, Err = Self::Err> + Sync + Send + 'static,
+  {
+    let subscription = Arc::new(Mutex::new(ProxySubscription::default()));
+    let observer = TakeWhileObserver {
+      observer,
+      subscription: subscription.clone(),
+      callback: self.callback,
+    };
+    subscription
+      .lock()
+      .unwrap()
+      .proxy(self.source.actual_subscribe(observer));
+    subscription
+  }
 }
 
 pub struct TakeWhileObserver<O, S, F> {
@@ -76,8 +92,10 @@ where
       self.subscription.unsubscribe();
     }
   }
-  error_proxy_impl!(Err, observer);
-  complete_proxy_impl!(observer);
+
+  fn error(&mut self, err: Self::Err) { self.observer.error(err) }
+
+  fn complete(&mut self) { self.observer.complete() }
 }
 
 #[cfg(test)]

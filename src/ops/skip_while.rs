@@ -1,5 +1,4 @@
 use crate::prelude::*;
-use crate::{complete_proxy_impl, error_proxy_impl};
 
 #[derive(Clone)]
 pub struct SkipWhileOp<S, F> {
@@ -13,17 +12,14 @@ macro_rules! observable_impl {
   type Unsub = $source::Unsub;
   fn actual_subscribe<O>(
     self,
-    subscriber: Subscriber<O, $subscription>,
+    observer:O,
   ) -> Self::Unsub
   where O: Observer<Item=Self::Item,Err= Self::Err> + $($marker +)* $lf {
-    let subscriber = Subscriber {
-      observer: SkipWhileObserver {
-        observer: subscriber.observer,
-        callback: self.callback,
-      },
-      subscription: subscriber.subscription,
-    };
-    self.source.actual_subscribe(subscriber)
+
+    self.source.actual_subscribe(SkipWhileObserver {
+      observer,
+      callback: self.callback,
+    })
   }
 }
 }
@@ -70,8 +66,10 @@ where
       self.observer.next(value);
     }
   }
-  error_proxy_impl!(Err, observer);
-  complete_proxy_impl!(observer);
+
+  fn error(&mut self, err: Self::Err) { self.observer.error(err) }
+
+  fn complete(&mut self) { self.observer.complete() }
 }
 
 #[cfg(test)]

@@ -1,4 +1,3 @@
-use crate::error_proxy_impl;
 use crate::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -34,24 +33,21 @@ where
     O: Observer<Item = Self::Item, Err = Self::Err> + Send + Sync + 'static,
   >(
     self,
-    subscriber: Subscriber<O, SharedSubscription>,
+    observer: O,
   ) -> Self::Unsub {
-    let subscription = subscriber.subscription;
+    let subscription = SharedSubscription::default();
     let source_observer = Arc::new(Mutex::new(SampleObserver {
-      observer: subscriber.observer,
+      observer,
       value: Option::None,
       subscription: subscription.clone(),
       done: false,
     }));
 
-    subscription.add(self.sampling.actual_subscribe(Subscriber {
-      observer: SamplingObserver(source_observer.clone(), TypeHint::new()),
-      subscription: SharedSubscription::default(),
-    }));
-    subscription.add(self.source.actual_subscribe(Subscriber {
-      observer: source_observer,
-      subscription: SharedSubscription::default(),
-    }));
+    subscription.add(self.sampling.actual_subscribe(SamplingObserver(
+      source_observer.clone(),
+      TypeHint::new(),
+    )));
+    subscription.add(self.source.actual_subscribe(source_observer));
     subscription
   }
 }
@@ -60,28 +56,27 @@ impl<'a, Source, Sampling> LocalObservable<'a> for SampleOp<Source, Sampling>
 where
   Source: LocalObservable<'a> + 'a,
   Sampling: LocalObservable<'a, Err = Source::Err> + 'a,
+  Source::Unsub: 'static,
+  Sampling::Unsub: 'static,
 {
   type Unsub = LocalSubscription;
   fn actual_subscribe<O: Observer<Item = Self::Item, Err = Self::Err> + 'a>(
     self,
-    subscriber: Subscriber<O, LocalSubscription>,
+    observer: O,
   ) -> Self::Unsub {
-    let subscription = subscriber.subscription;
+    let subscription = LocalSubscription::default();
     let source_observer = Rc::new(RefCell::new(SampleObserver {
-      observer: subscriber.observer,
+      observer,
       value: Option::None,
       subscription: subscription.clone(),
       done: false,
     }));
 
-    subscription.add(self.sampling.actual_subscribe(Subscriber {
-      observer: SamplingObserver(source_observer.clone(), TypeHint::new()),
-      subscription: LocalSubscription::default(),
-    }));
-    subscription.add(self.source.actual_subscribe(Subscriber {
-      observer: source_observer,
-      subscription: LocalSubscription::default(),
-    }));
+    subscription.add(self.sampling.actual_subscribe(SamplingObserver(
+      source_observer.clone(),
+      TypeHint::new(),
+    )));
+    subscription.add(self.source.actual_subscribe(source_observer));
     subscription
   }
 }
@@ -116,7 +111,7 @@ where
   type Err = Err;
   fn next(&mut self, value: Item) { self.value = Some(value); }
 
-  error_proxy_impl!(Err, observer);
+  fn error(&mut self, err: Self::Err) { self.observer.error(err) }
 
   fn complete(&mut self) {
     if !self.done {
@@ -162,12 +157,12 @@ where
 
   fn next(&mut self, _: Item2) { self.0.drain_value(); }
 
-  error_proxy_impl!(Err, 0);
-
   fn complete(&mut self) {
     self.0.drain_value();
     self.0.complete();
   }
+
+  fn error(&mut self, err: Self::Err) { self.0.error(err) }
 }
 
 #[cfg(test)]

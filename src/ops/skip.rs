@@ -1,5 +1,10 @@
+use std::{
+  cell::RefCell,
+  rc::Rc,
+  sync::{Arc, Mutex},
+};
+
 use crate::prelude::*;
-use crate::{complete_proxy_impl, error_proxy_impl};
 
 #[derive(Clone)]
 pub struct SkipOp<S> {
@@ -7,44 +12,53 @@ pub struct SkipOp<S> {
   pub(crate) count: u32,
 }
 
-#[doc(hidden)]
-macro_rules! observable_impl {
-    ($subscription:ty, $($marker:ident +)* $lf: lifetime) => {
-  fn actual_subscribe<O>(
-    self,
-    subscriber: Subscriber<O, $subscription>,
-  ) -> Self::Unsub
-  where O: Observer<Item=Self::Item,Err= Self::Err> + $($marker +)* $lf {
-    let subscriber = Subscriber {
-      observer: SkipObserver {
-        observer: subscriber.observer,
-        subscription: subscriber.subscription.clone(),
-        count: self.count,
-        hits: 0,
-      },
-      subscription: subscriber.subscription,
-    };
-    self.source.actual_subscribe(subscriber)
-  }
-}
-}
-
 observable_proxy_impl!(SkipOp, S);
 
 impl<'a, S> LocalObservable<'a> for SkipOp<S>
 where
   S: LocalObservable<'a>,
+  S::Unsub: 'a,
 {
-  type Unsub = S::Unsub;
-  observable_impl!(LocalSubscription, 'a);
+  type Unsub = Rc<RefCell<ProxySubscription<S::Unsub>>>;
+
+  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
+  where
+    O: Observer<Item = Self::Item, Err = Self::Err> + 'a,
+  {
+    let subscription = Rc::new(RefCell::new(ProxySubscription::default()));
+    subscription
+      .borrow_mut()
+      .proxy(self.source.actual_subscribe(SkipObserver {
+        observer,
+        subscription: subscription.clone(),
+        count: self.count,
+        hits: 0,
+      }));
+    subscription
+  }
 }
 
-impl<S> SharedObservable for SkipOp<S>
+impl<'a, S> SharedObservable for SkipOp<S>
 where
   S: SharedObservable,
 {
-  type Unsub = S::Unsub;
-  observable_impl!(SharedSubscription, Send + Sync + 'static);
+  type Unsub = Arc<Mutex<ProxySubscription<S::Unsub>>>;
+  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
+  where
+    O: Observer<Item = Self::Item, Err = Self::Err> + Send + Sync + 'static,
+  {
+    let subscription = Arc::new(Mutex::new(ProxySubscription::default()));
+    subscription
+      .lock()
+      .unwrap()
+      .proxy(self.source.actual_subscribe(SkipObserver {
+        observer,
+        subscription: subscription.clone(),
+        count: self.count,
+        hits: 0,
+      }));
+    subscription
+  }
 }
 
 pub struct SkipObserver<O, S> {
@@ -72,8 +86,9 @@ where
     }
   }
 
-  error_proxy_impl!(Err, observer);
-  complete_proxy_impl!(observer);
+  fn error(&mut self, err: Self::Err) { self.observer.error(err) }
+
+  fn complete(&mut self) { self.observer.complete() }
 }
 
 #[cfg(test)]

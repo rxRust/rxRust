@@ -1,4 +1,3 @@
-use crate::error_proxy_impl;
 use crate::prelude::*;
 use std::collections::VecDeque;
 
@@ -13,18 +12,14 @@ macro_rules! observable_impl {
   ($subscription:ty, $($marker:ident +)* $lf: lifetime) => {
   fn actual_subscribe<O>(
     self,
-    subscriber: Subscriber<O, $subscription>,
+    observer: O,
   ) -> Self::Unsub
   where O: Observer<Item=Self::Item,Err= Self::Err> + $($marker +)* $lf {
-    let subscriber = Subscriber {
-      observer: TakeLastObserver {
-        observer: subscriber.observer,
-        count: self.count,
-        queue: VecDeque::new(),
-      },
-      subscription: subscriber.subscription,
-    };
-    self.source.actual_subscribe(subscriber)
+    self.source.actual_subscribe(TakeLastObserver {
+      observer,
+      count: self.count,
+      queue: VecDeque::new(),
+    })
   }
 }
 }
@@ -66,7 +61,9 @@ where
       self.queue.pop_front();
     }
   }
-  error_proxy_impl!(Err, observer);
+
+  fn error(&mut self, err: Self::Err) { self.observer.error(err) }
+
   fn complete(&mut self) {
     for value in self.queue.drain(..) {
       self.observer.next(value);

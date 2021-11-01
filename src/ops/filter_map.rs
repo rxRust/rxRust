@@ -1,5 +1,4 @@
 use crate::prelude::*;
-use crate::{complete_proxy_impl, error_proxy_impl};
 
 #[derive(Clone)]
 pub struct FilterMapOp<S, F> {
@@ -12,16 +11,13 @@ macro_rules! observable_impl {
     ($subscription:ty, $($marker:ident +)* $lf: lifetime) => {
   fn actual_subscribe<O>(
     self,
-    subscriber: Subscriber<O, $subscription>,
+    observer: O,
   ) -> Self::Unsub
   where O: Observer<Item=Self::Item,Err= Self::Err> + $($marker +)* $lf {
-    self.source.actual_subscribe(Subscriber {
-      observer: FilterMapObserver {
-        down_observer: subscriber.observer,
-        f: self.f,
-        _marker: TypeHint::new(),
-      },
-      subscription: subscriber.subscription,
+    self.source.actual_subscribe(FilterMapObserver {
+      down_observer: observer,
+      f: self.f,
+      _marker: TypeHint::new(),
     })
   }
 }
@@ -74,8 +70,10 @@ where
       self.down_observer.next(v)
     }
   }
-  error_proxy_impl!(Err, down_observer);
-  complete_proxy_impl!(down_observer);
+
+  fn error(&mut self, err: Self::Err) { self.down_observer.error(err) }
+
+  fn complete(&mut self) { self.down_observer.complete() }
 }
 
 #[cfg(test)]

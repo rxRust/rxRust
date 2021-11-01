@@ -1,4 +1,3 @@
-use crate::next_proxy_impl;
 use crate::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -23,27 +22,23 @@ impl<'a, S1, S2> LocalObservable<'a> for MergeOp<S1, S2>
 where
   S1: LocalObservable<'a>,
   S2: LocalObservable<'a, Item = S1::Item, Err = S1::Err>,
+  S1::Unsub: 'static,
+  S2::Unsub: 'static,
 {
   type Unsub = LocalSubscription;
 
-  fn actual_subscribe<O: Observer<Item = Self::Item, Err = Self::Err> + 'a>(
-    self,
-    subscriber: Subscriber<O, LocalSubscription>,
-  ) -> Self::Unsub {
-    let subscription = subscriber.subscription;
+  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
+  where
+    O: Observer<Item = Self::Item, Err = Self::Err> + 'a,
+  {
+    let subscription = LocalSubscription::default();
     let merge_observer = Rc::new(RefCell::new(MergeObserver {
-      observer: subscriber.observer,
+      observer,
       subscription: subscription.clone(),
       completed_one: false,
     }));
-    subscription.add(self.source1.actual_subscribe(Subscriber {
-      observer: merge_observer.clone(),
-      subscription: LocalSubscription::default(),
-    }));
-    subscription.add(self.source2.actual_subscribe(Subscriber {
-      observer: merge_observer,
-      subscription: LocalSubscription::default(),
-    }));
+    subscription.add(self.source1.actual_subscribe(merge_observer.clone()));
+    subscription.add(self.source2.actual_subscribe(merge_observer));
     subscription
   }
 }
@@ -55,26 +50,18 @@ where
   S1::Unsub: Send + Sync,
 {
   type Unsub = SharedSubscription;
-  fn actual_subscribe<
+  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
+  where
     O: Observer<Item = Self::Item, Err = Self::Err> + Sync + Send + 'static,
-  >(
-    self,
-    subscriber: Subscriber<O, SharedSubscription>,
-  ) -> Self::Unsub {
-    let subscription = subscriber.subscription;
+  {
+    let subscription = SharedSubscription::default();
     let merge_observer = Arc::new(Mutex::new(MergeObserver {
-      observer: subscriber.observer,
+      observer,
       subscription: subscription.clone(),
       completed_one: false,
     }));
-    subscription.add(self.source1.actual_subscribe(Subscriber {
-      observer: merge_observer.clone(),
-      subscription: SharedSubscription::default(),
-    }));
-    subscription.add(self.source2.actual_subscribe(Subscriber {
-      observer: merge_observer,
-      subscription: SharedSubscription::default(),
-    }));
+    subscription.add(self.source1.actual_subscribe(merge_observer.clone()));
+    subscription.add(self.source2.actual_subscribe(merge_observer));
     subscription
   }
 }
@@ -93,7 +80,9 @@ where
 {
   type Item = Item;
   type Err = Err;
-  next_proxy_impl!(Item, observer);
+
+  fn next(&mut self, value: Item) { self.observer.next(value) }
+
   fn error(&mut self, err: Err) {
     self.observer.error(err);
     self.subscription.unsubscribe();

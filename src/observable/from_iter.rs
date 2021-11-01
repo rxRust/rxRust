@@ -38,27 +38,6 @@ where
 #[derive(Clone)]
 pub struct IterEmitter<Iter>(Iter);
 
-#[doc(hidden)]
-macro_rules! iter_emitter {
-  ($subscription:ty, $($marker:ident +)* $lf: lifetime) => {
-  fn emit<O>(self, mut subscriber: Subscriber<O, $subscription>)
-  where
-    O: Observer<Item=Self::Item, Err=Self::Err> + $($marker +)* $lf
-  {
-    for v in self.0.into_iter() {
-      if !subscriber.is_finished() {
-        subscriber.next(v);
-      } else {
-        break;
-      }
-    }
-    if !subscriber.is_finished() {
-      subscriber.complete();
-    }
-  }
-}
-}
-
 impl<Iter, Item> Emitter for IterEmitter<Iter>
 where
   Iter: IntoIterator<Item = Item>,
@@ -71,14 +50,32 @@ impl<'a, Iter, Item> LocalEmitter<'a> for IterEmitter<Iter>
 where
   Iter: IntoIterator<Item = Item>,
 {
-  iter_emitter!(LocalSubscription, 'a);
+  type Unsub = SingleSubscription;
+
+  fn emit<O>(self, mut observer: O) -> Self::Unsub
+  where
+    O: Observer<Item = Self::Item, Err = Self::Err> + 'a,
+  {
+    self.0.into_iter().for_each(|v| observer.next(v));
+    observer.complete();
+    SingleSubscription::default()
+  }
 }
 
 impl<Iter, Item> SharedEmitter for IterEmitter<Iter>
 where
   Iter: IntoIterator<Item = Item>,
 {
-  iter_emitter!(SharedSubscription, Send + Sync + 'static);
+  type Unsub = SingleSubscription;
+
+  fn emit<O>(self, mut observer: O) -> Self::Unsub
+  where
+    O: Observer<Item = Self::Item, Err = Self::Err> + Send + Sync + 'static,
+  {
+    self.0.into_iter().for_each(|v| observer.next(v));
+    observer.complete();
+    SingleSubscription::default()
+  }
 }
 
 /// Creates an observable producing same value repeated N times.

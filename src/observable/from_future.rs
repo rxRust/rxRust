@@ -53,18 +53,17 @@ where
   F: Future<Output = Item> + Send + Sync + 'static,
   S: SharedScheduler,
 {
-  fn emit<O>(self, subscriber: Subscriber<O, SharedSubscription>)
+  type Unsub = SpawnHandle;
+  fn emit<O>(self, observer: O) -> Self::Unsub
   where
     O: Observer<Item = Self::Item, Err = Self::Err> + Send + Sync + 'static,
   {
-    let subscription = subscriber.subscription.clone();
-
     let f = self
       .future
-      .map(move |v| SharedEmitter::emit(of::OfEmitter(v), subscriber));
+      .map(move |v| SharedEmitter::emit(of::OfEmitter(v), observer));
     let (future, handle) = futures::future::abortable(f);
     self.scheduler.spawn(future.map(|_| ()));
-    subscription.add(SpawnHandle::new(handle))
+    SpawnHandle::new(handle)
   }
 }
 
@@ -73,18 +72,17 @@ where
   F: Future<Output = Item> + 'static,
   S: LocalScheduler,
 {
-  fn emit<O>(self, subscriber: Subscriber<O, LocalSubscription>)
+  type Unsub = SpawnHandle;
+  fn emit<O>(self, observer: O) -> Self::Unsub
   where
     O: Observer<Item = Self::Item, Err = Self::Err> + 'static,
   {
-    let subscription = subscriber.subscription.clone();
-
     let f = self
       .future
-      .map(move |v| LocalEmitter::emit(of::OfEmitter(v), subscriber));
+      .map(move |v| LocalEmitter::emit(of::OfEmitter(v), observer));
     let (future, handle) = futures::future::abortable(f);
     self.scheduler.spawn(future.map(|_| ()));
-    subscription.add(SpawnHandle::new(handle))
+    SpawnHandle::new(handle)
   }
 }
 
@@ -131,18 +129,17 @@ where
   <F as Future>::Output: Into<Result<Item, Err>>,
   S: SharedScheduler,
 {
-  fn emit<O>(self, subscriber: Subscriber<O, SharedSubscription>)
+  type Unsub = SpawnHandle;
+  fn emit<O>(self, observer: O) -> Self::Unsub
   where
     O: Observer<Item = Self::Item, Err = Self::Err> + Send + Sync + 'static,
   {
-    let subscription = subscriber.subscription.clone();
-
-    let f = self.future.map(move |v| {
-      SharedEmitter::emit(of::ResultEmitter(v.into()), subscriber)
-    });
+    let f = self
+      .future
+      .map(move |v| SharedEmitter::emit(of::ResultEmitter(v.into()), observer));
     let (future, handle) = futures::future::abortable(f);
     self.scheduler.spawn(future.map(|_| ()));
-    subscription.add(SpawnHandle::new(handle))
+    SpawnHandle::new(handle)
   }
 }
 
@@ -153,17 +150,17 @@ where
   <F as Future>::Output: Into<Result<Item, Err>>,
   S: LocalScheduler,
 {
-  fn emit<O>(self, subscriber: Subscriber<O, LocalSubscription>)
+  type Unsub = SpawnHandle;
+  fn emit<O>(self, observer: O) -> Self::Unsub
   where
     O: Observer<Item = Self::Item, Err = Self::Err> + 'static,
   {
-    let subscription = subscriber.subscription.clone();
-    let f = self.future.map(move |v| {
-      LocalEmitter::emit(of::ResultEmitter(v.into()), subscriber)
-    });
+    let f = self
+      .future
+      .map(move |v| LocalEmitter::emit(of::ResultEmitter(v.into()), observer));
     let (future, handle) = futures::future::abortable(f);
     self.scheduler.spawn(future.map(|_| ()));
-    subscription.add(SpawnHandle::new(handle))
+    SpawnHandle::new(handle)
   }
 }
 

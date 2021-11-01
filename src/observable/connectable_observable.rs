@@ -24,36 +24,34 @@ pub type LocalConnectableObservable<'a, S, Item, Err> =
 pub type SharedConnectableObservable<S, Item, Err> =
   ConnectableObservable<S, SharedSubject<Item, Err>>;
 
-#[doc(hidden)]
-macro_rules! observable_impl {
-    ($subscription:ty, $($marker:ident +)* $lf: lifetime) => {
-  type Unsub = $subscription;
-  #[inline(always)]
-  fn actual_subscribe<O>(
-    self,
-    subscriber: Subscriber<O, $subscription>,
-  ) -> Self::Unsub
-  where O: Observer<Item=Self::Item, Err= Self::Err> + $($marker +)* $lf {
-    self.subject.actual_subscribe(subscriber)
-  }
-}
-}
-
 impl<'a, S, Item, Err> LocalObservable<'a>
   for LocalConnectableObservable<'a, S, Item, Err>
 where
   S: LocalObservable<'a, Item = Item, Err = Err>,
 {
-  observable_impl!(LocalSubscription, 'a);
+  type Unsub = S::Unsub;
+
+  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
+  where
+    O: Observer<Item = Self::Item, Err = Self::Err> + 'a,
+  {
+    self.source.actual_subscribe(observer)
+  }
 }
 
 impl<S, Item, Err> SharedObservable
   for SharedConnectableObservable<S, Item, Err>
 where
   S: SharedObservable<Item = Item, Err = Err>,
-  S: SharedObservable<Item = Item, Err = Err>,
 {
-  observable_impl!(SharedSubscription, Send + Sync + 'static);
+  type Unsub = S::Unsub;
+
+  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
+  where
+    O: Observer<Item = Self::Item, Err = Self::Err> + Sync + Send + 'static,
+  {
+    self.source.actual_subscribe(observer)
+  }
 }
 
 impl<Source, Subject> ConnectableObservable<Source, Subject>
@@ -75,10 +73,7 @@ where
   Err: Clone + 'a,
 {
   pub fn connect(self) -> S::Unsub {
-    self.source.actual_subscribe(Subscriber {
-      observer: self.subject.observers,
-      subscription: self.subject.subscription,
-    })
+    self.source.actual_subscribe(self.subject)
   }
 }
 
@@ -89,10 +84,7 @@ where
   Err: Clone + Send + Sync + 'static,
 {
   pub fn connect(self) -> S::Unsub {
-    self.source.actual_subscribe(Subscriber {
-      observer: self.subject.observers,
-      subscription: self.subject.subscription,
-    })
+    self.source.actual_subscribe(self.subject)
   }
 }
 

@@ -73,13 +73,12 @@ where
   where
     Self: Sized,
   {
-    let subscriber = Subscriber::local(ObserverAll {
+    SubscriptionWrapper(self.actual_subscribe(ObserverAll {
       next,
       error,
       complete,
       _marker: TypeHint::new(),
-    });
-    SubscriptionWrapper(self.actual_subscribe(subscriber))
+    }))
   }
 }
 
@@ -102,13 +101,12 @@ where
   where
     Self: Sized,
   {
-    let subscriber = Subscriber::shared(ObserverAll {
+    SubscriptionWrapper(self.0.actual_subscribe(ObserverAll {
       next,
       error,
       complete,
       _marker: TypeHint::new(),
-    });
-    SubscriptionWrapper(self.0.actual_subscribe(subscriber))
+    }))
   }
 }
 

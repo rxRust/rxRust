@@ -1,4 +1,3 @@
-use crate::error_proxy_impl;
 use crate::prelude::*;
 
 #[derive(Clone)]
@@ -16,18 +15,14 @@ macro_rules! observable_impl {
     ($subscription:ty, $($marker:ident +)* $lf: lifetime) => {
   fn actual_subscribe<O>(
     self,
-    subscriber: Subscriber<O, $subscription>,
+    observer: O,
   ) -> Self::Unsub
   where O: Observer<Item=Self::Item,Err= Self::Err> + $($marker +)* $lf {
-    let subscriber = Subscriber {
-      observer: DefaultIfEmptyObserver {
-        observer: subscriber.observer,
-        is_empty: self.is_empty,
-        default_value: self.default_value,
-      },
-      subscription: subscriber.subscription,
-    };
-    self.source.actual_subscribe(subscriber)
+    self.source.actual_subscribe(DefaultIfEmptyObserver {
+      observer,
+      is_empty: self.is_empty,
+      default_value: self.default_value,
+    })
   }
 }
 }
@@ -72,14 +67,14 @@ where
     }
   }
 
+  fn error(&mut self, err: Self::Err) { self.observer.error(err) }
+
   fn complete(&mut self) {
     if self.is_empty {
       self.observer.next(self.default_value.clone());
     }
     self.observer.complete()
   }
-
-  error_proxy_impl!(Err, observer);
 }
 
 #[cfg(test)]
