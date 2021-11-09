@@ -1,10 +1,4 @@
-use crate::prelude::*;
-use std::{
-  cell::RefCell,
-  rc::Rc,
-  sync::{Arc, Mutex},
-};
-
+use crate::{impl_helper::*, impl_local_shared_both, prelude::*};
 #[derive(Clone)]
 pub struct TakeWhileOp<S, F> {
   pub(crate) source: S,
@@ -20,54 +14,27 @@ where
   type Err = S::Err;
 }
 
-impl<'a, S, F> LocalObservable<'a> for TakeWhileOp<S, F>
-where
-  S: LocalObservable<'a>,
-  F: FnMut(&S::Item) -> bool + 'a,
-  S::Unsub: 'a,
-{
-  type Unsub = Rc<RefCell<ProxySubscription<S::Unsub>>>;
-
-  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
-  where
-    O: Observer<Item = Self::Item, Err = Self::Err> + 'a,
-  {
-    let subscription = Rc::new(RefCell::new(ProxySubscription::default()));
+impl_local_shared_both! {
+  impl<S, F> TakeWhileOp<S, F>;
+  type Unsub = @ctx::Rc<ProxySubscription<S::Unsub>>;
+  macro method($self: ident, $observer: ident, $ctx: ident) {
+    let subscription = $ctx::Rc::own(ProxySubscription::default());
     let observer = TakeWhileObserver {
-      observer,
+      observer: $observer,
       subscription: subscription.clone(),
-      callback: self.callback,
+      callback: $self.callback,
     };
-    subscription
-      .borrow_mut()
-      .proxy(self.source.actual_subscribe(observer));
+    let s = $self.source.actual_subscribe(observer);
+    subscription.rc_deref_mut().proxy(s);
     subscription
   }
-}
-
-impl<S, F> SharedObservable for TakeWhileOp<S, F>
-where
-  S: SharedObservable,
-  F: FnMut(&S::Item) -> bool + Send + Sync + 'static,
-{
-  type Unsub = Arc<Mutex<ProxySubscription<S::Unsub>>>;
-
-  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
   where
-    O: Observer<Item = Self::Item, Err = Self::Err> + Sync + Send + 'static,
-  {
-    let subscription = Arc::new(Mutex::new(ProxySubscription::default()));
-    let observer = TakeWhileObserver {
-      observer,
-      subscription: subscription.clone(),
-      callback: self.callback,
-    };
-    subscription
-      .lock()
-      .unwrap()
-      .proxy(self.source.actual_subscribe(observer));
-    subscription
-  }
+    S: @ctx::Observable,
+    @ctx::local_only(
+      F: FnMut(&S::Item) -> bool + 'o,
+      S::Unsub: 'o
+    )
+    @ctx::shared_only(F: FnMut(&S::Item) -> bool + Send + Sync + 'static )
 }
 
 pub struct TakeWhileObserver<O, S, F> {
@@ -132,7 +99,7 @@ mod test {
   }
 
   #[test]
-  fn ininto_shared() {
+  fn into_shared() {
     observable::from_iter(0..100)
       .take_while(|v| v < &5)
       .take_while(|v| v < &5)

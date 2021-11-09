@@ -1,10 +1,5 @@
-use crate::prelude::*;
-use std::{
-  cell::RefCell,
-  rc::Rc,
-  sync::{Arc, Mutex},
-  time::Duration,
-};
+use crate::{impl_helper::*, impl_local_shared_both, prelude::*};
+use std::time::Duration;
 
 /// Config to define leading and trailing behavior for throttle
 #[derive(PartialEq, Clone, Copy)]
@@ -21,195 +16,109 @@ pub struct ThrottleTimeOp<S, SD> {
   pub(crate) edge: ThrottleEdge,
 }
 
-observable_proxy_impl!(ThrottleTimeOp, S, SD);
-
-impl<Item, Err, S, SD, Unsub> LocalObservable<'static> for ThrottleTimeOp<S, SD>
-where
-  S: LocalObservable<'static, Item = Item, Err = Err, Unsub = Unsub>,
-  Unsub: SubscriptionLike + 'static,
-  Item: Clone + 'static,
-  SD: LocalScheduler + 'static,
-{
-  type Unsub = Unsub;
-
-  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
-  where
-    O: Observer<Item = Self::Item, Err = Self::Err> + 'static,
-  {
-    let Self {
-      source,
-      duration,
-      edge,
-      scheduler,
-    } = self;
-
-    source.actual_subscribe(LocalThrottleObserver(Rc::new(RefCell::new(
-      ThrottleObserver {
-        observer,
-        edge,
-        delay: duration,
-        trailing_value: None,
-        throttled: None,
-        subscription: LocalSubscription::default(),
-        scheduler,
-      },
-    ))))
-  }
+impl<S: Observable, SD> Observable for ThrottleTimeOp<S, SD> {
+  type Item = S::Item;
+  type Err = S::Err;
 }
 
-impl<S, SD> SharedObservable for ThrottleTimeOp<S, SD>
-where
-  S: SharedObservable,
-  S::Item: Clone + Send + 'static,
-  SD: SharedScheduler + Send + 'static,
-{
+impl_local_shared_both! {
+  impl<S, SD> ThrottleTimeOp<S, SD>;
   type Unsub = S::Unsub;
-  fn actual_subscribe<O>(self, observer: O) -> S::Unsub
-  where
-    O: Observer<Item = Self::Item, Err = Self::Err> + Sync + Send + 'static,
-  {
+  macro method($self: ident, $observer: ident, $ctx: ident) {
     let Self {
       source,
       duration,
       edge,
       scheduler,
-    } = self;
+    } = $self;
 
-    source.actual_subscribe(SharedThrottleObserver(Arc::new(Mutex::new(
+    source.actual_subscribe($ctx::Rc::own(
       ThrottleObserver {
-        observer,
+        observer: $observer,
         edge,
         delay: duration,
         trailing_value: None,
         throttled: None,
-        subscription: SharedSubscription::default(),
+        subscription: ProxySubscription::default(),
         scheduler,
       },
-    ))))
+    ))
   }
+  where
+    @ctx::local_only('o: 'static,)
+    S: @ctx::Observable,
+    SD: @ctx::Scheduler @ctx::shared_only(+ Send) + 'static,
+    S::Item: Clone @ctx::shared_only(+ Send) + 'static
 }
 
-struct ThrottleObserver<O, S, Item, Sub> {
-  scheduler: S,
+struct ThrottleObserver<O: Observer, SD> {
+  scheduler: SD,
   observer: O,
   edge: ThrottleEdge,
   delay: Duration,
-  trailing_value: Option<Item>,
+  trailing_value: Option<O::Item>,
   throttled: Option<SpawnHandle>,
-  subscription: Sub,
+  subscription: ProxySubscription<SpawnHandle>,
 }
 
-struct SharedThrottleObserver<O, S, Item>(
-  Arc<Mutex<ThrottleObserver<O, S, Item, SharedSubscription>>>,
-);
+macro_rules! impl_observer {
+  ($rc: ident, $sd: ident $(,$send: ident)?) => {
+    impl<O, SD> Observer for $rc<ThrottleObserver<O, SD>>
+    where
+      O: Observer $(+ $send)? + 'static,
+      SD: $sd $(+ $send)? + 'static,
+      O::Item: Clone $(+ $send)? + 'static,
+    {
+      type Item = O::Item;
+      type Err = O::Err;
+      fn next(&mut self, value: Self::Item) {
+        let c_inner = self.clone();
+        let mut inner = self.rc_deref_mut();
+        if inner.edge == ThrottleEdge::Tailing {
+          inner.trailing_value = Some(value.clone());
+        }
 
-struct LocalThrottleObserver<O, S, Item>(
-  Rc<RefCell<ThrottleObserver<O, S, Item, LocalSubscription>>>,
-);
-
-impl<O, S> Observer for SharedThrottleObserver<O, S, O::Item>
-where
-  O: Observer + Send + 'static,
-  S: SharedScheduler + Send + 'static,
-  O::Item: Clone + Send + 'static,
-{
-  type Item = O::Item;
-  type Err = O::Err;
-  fn next(&mut self, value: Self::Item) {
-    let c_inner = self.0.clone();
-    let mut inner = self.0.lock().unwrap();
-    if inner.edge == ThrottleEdge::Tailing {
-      inner.trailing_value = Some(value.clone());
-    }
-
-    if inner.throttled.is_none() {
-      let delay = inner.delay;
-      let spawn_handle = inner.scheduler.schedule(
-        move |_| {
-          let mut inner = c_inner.lock().unwrap();
-          if let Some(v) = inner.trailing_value.take() {
-            inner.observer.next(v);
+        if inner.throttled.is_none() {
+          let delay = inner.delay;
+          let spawn_handle = inner.scheduler.schedule(
+            move |_| {
+              let mut inner = c_inner.rc_deref_mut();
+              if let Some(v) = inner.trailing_value.take() {
+                inner.observer.next(v);
+              }
+              if let Some(mut throttled) = inner.throttled.take() {
+                throttled.unsubscribe();
+              }
+            },
+            Some(delay),
+            (),
+          );
+          inner.throttled = Some(SpawnHandle::new(spawn_handle.handle.clone()));
+          inner.subscription.proxy(spawn_handle);
+          if inner.edge == ThrottleEdge::Leading {
+            inner.observer.next(value);
           }
-          if let Some(mut throttled) = inner.throttled.take() {
-            throttled.unsubscribe();
-          }
-        },
-        Some(delay),
-        (),
-      );
-      inner.throttled = Some(SpawnHandle::new(spawn_handle.handle.clone()));
-      inner.subscription.add(spawn_handle);
-      if inner.edge == ThrottleEdge::Leading {
-        inner.observer.next(value);
+        }
+      }
+
+      fn error(&mut self, err: Self::Err) {
+        let mut inner = self.rc_deref_mut();
+        inner.observer.error(err)
+      }
+
+      fn complete(&mut self) {
+        let mut inner = self.rc_deref_mut();
+        if let Some(value) = inner.trailing_value.take() {
+          inner.observer.next(value);
+        }
+        inner.observer.complete();
       }
     }
-  }
-
-  fn error(&mut self, err: Self::Err) {
-    let mut inner = self.0.lock().unwrap();
-    inner.observer.error(err)
-  }
-
-  fn complete(&mut self) {
-    let mut inner = self.0.lock().unwrap();
-    if let Some(value) = inner.trailing_value.take() {
-      inner.observer.next(value);
-    }
-    inner.observer.complete();
-  }
+  };
 }
 
-impl<O, S> Observer for LocalThrottleObserver<O, S, O::Item>
-where
-  O: Observer + 'static,
-  S: LocalScheduler + 'static,
-  O::Item: Clone + 'static,
-{
-  type Item = O::Item;
-  type Err = O::Err;
-  fn next(&mut self, value: Self::Item) {
-    let c_inner = self.0.clone();
-    let mut inner = self.0.borrow_mut();
-    if inner.edge == ThrottleEdge::Tailing {
-      inner.trailing_value = Some(value.clone());
-    }
-
-    if inner.throttled.is_none() {
-      let delay = inner.delay;
-      let spawn_handle = inner.scheduler.schedule(
-        move |_| {
-          let mut inner = c_inner.borrow_mut();
-          if let Some(v) = inner.trailing_value.take() {
-            inner.observer.next(v);
-          }
-          if let Some(mut throttled) = inner.throttled.take() {
-            throttled.unsubscribe();
-          }
-        },
-        Some(delay),
-        (),
-      );
-      inner.throttled = Some(SpawnHandle::new(spawn_handle.handle.clone()));
-      inner.subscription.add(spawn_handle);
-      if inner.edge == ThrottleEdge::Leading {
-        inner.observer.next(value);
-      }
-    }
-  }
-
-  fn error(&mut self, err: Self::Err) {
-    let mut inner = self.0.borrow_mut();
-    inner.observer.error(err)
-  }
-
-  fn complete(&mut self) {
-    let mut inner = self.0.borrow_mut();
-    if let Some(value) = inner.trailing_value.take() {
-      inner.observer.next(value);
-    }
-    inner.observer.complete();
-  }
-}
+impl_observer!(MutRc, LocalScheduler);
+impl_observer!(MutArc, SharedScheduler, Send);
 
 #[cfg(test)]
 mod tests {
@@ -218,7 +127,7 @@ mod tests {
 
   #[test]
   fn smoke() {
-    let x = Rc::new(RefCell::new(vec![]));
+    let x = MutRc::own(vec![]);
     let x_c = x.clone();
     let scheduler = ManualScheduler::now();
 
@@ -230,7 +139,7 @@ mod tests {
         .clone()
         .take(5)
         .throttle_time(Duration::from_millis(11), edge, scheduler.clone())
-        .subscribe(move |v| x.borrow_mut().push(v))
+        .subscribe(move |v| x.rc_deref_mut().push(v))
     };
 
     // tailing throttle
@@ -238,13 +147,13 @@ mod tests {
     let mut sub = throttle_subscribe(ThrottleEdge::Tailing);
     scheduler.advance_and_run(Duration::from_millis(1), 25);
     sub.unsubscribe();
-    assert_eq!(&*x_c.borrow(), &[2, 4]);
+    assert_eq!(&*x_c.rc_deref(), &[2, 4]);
 
     // leading throttle
-    x_c.borrow_mut().clear();
+    x_c.rc_deref_mut().clear();
     throttle_subscribe(ThrottleEdge::Leading);
     scheduler.advance_and_run(Duration::from_millis(1), 25);
-    assert_eq!(&*x_c.borrow(), &[0, 3]);
+    assert_eq!(&*x_c.rc_deref(), &[0, 3]);
   }
 
   #[test]

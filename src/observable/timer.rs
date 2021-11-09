@@ -1,4 +1,4 @@
-use crate::prelude::*;
+use crate::{impl_helper::*, impl_local_shared_both, prelude::*};
 use std::time::{Duration, Instant};
 
 // Returns an observable which will emit a single `item`
@@ -7,12 +7,12 @@ pub fn timer<Item, S>(
   item: Item,
   dur: Duration,
   scheduler: S,
-) -> ObservableBase<TimerEmitter<Item, S>> {
-  ObservableBase::new(TimerEmitter {
+) -> TimerObservable<Item, S> {
+  TimerObservable {
     item,
     dur,
     scheduler,
-  })
+  }
 }
 
 // Returns an observable which will emit a single `item`
@@ -23,13 +23,13 @@ pub fn timer_at<Item, S>(
   item: Item,
   at: Instant,
   scheduler: S,
-) -> ObservableBase<TimerEmitter<Item, S>> {
+) -> TimerObservable<Item, S> {
   let duration = get_duration_from_instant(at);
-  ObservableBase::new(TimerEmitter {
+  TimerObservable {
     item,
     dur: duration,
     scheduler,
-  })
+  }
 }
 
 // Calculates the duration between `Instant::now()` and a given `instant`.
@@ -45,59 +45,35 @@ fn get_duration_from_instant(instant: Instant) -> Duration {
 // Emitter for `observable::timer` and `observable::timer_at` holding the
 // `item` that will be emitted, a `dur` when this will happen and the used
 // `scheduler`
-pub struct TimerEmitter<Item, S> {
+pub struct TimerObservable<Item, S> {
   item: Item,
   dur: Duration,
   scheduler: S,
 }
 
-impl<Item, S> Emitter for TimerEmitter<Item, S> {
+impl<Item, S> Observable for TimerObservable<Item, S> {
   type Item = Item;
   type Err = ();
 }
 
-impl<Item: 'static, S: LocalScheduler + 'static> LocalEmitter<'static>
-  for TimerEmitter<Item, S>
-{
+impl_local_shared_both! {
+  impl<Item, S> TimerObservable<Item, S>;
   type Unsub = SpawnHandle;
-  fn emit<O>(self, mut observer: O) -> Self::Unsub
-  where
-    O: Observer<Item = Self::Item, Err = Self::Err> + 'static,
-  {
-    let item = self.item;
-    let dur = self.dur;
-
-    self.scheduler.schedule(
+  macro method($self:ident, $observer: ident, $ctx: ident) {
+    $self.scheduler.schedule(
       move |_| {
-        observer.next(item);
-        observer.complete();
+        $observer.next($self.item);
+        $observer.complete();
       },
-      Some(dur),
+      Some($self.dur),
       1,
     )
   }
-}
-
-impl<Item: Send + 'static, S: SharedScheduler + 'static> SharedEmitter
-  for TimerEmitter<Item, S>
-{
-  type Unsub = SpawnHandle;
-  fn emit<O>(self, mut observer: O) -> Self::Unsub
   where
-    O: Observer<Item = Self::Item, Err = Self::Err> + Send + Sync + 'static,
-  {
-    let item = self.item;
-    let dur = self.dur;
+    @ctx::local_only('o: 'static,)
+    S: @ctx::Scheduler + 'static,
+    Item: @ctx::shared_only(Send +) 'static
 
-    self.scheduler.schedule(
-      move |_| {
-        observer.next(item);
-        observer.complete();
-      },
-      Some(dur),
-      1,
-    )
-  }
 }
 
 #[cfg(test)]

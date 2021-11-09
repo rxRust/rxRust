@@ -15,10 +15,7 @@ pub mod interval;
 pub use interval::{interval, interval_at};
 
 pub(crate) mod connectable_observable;
-pub use connectable_observable::{
-  ConnectableObservable, LocalConnectableObservable,
-  SharedConnectableObservable,
-};
+pub use connectable_observable::{Connect, ConnectableObservable};
 
 mod observable_block_all;
 #[cfg(test)]
@@ -27,9 +24,6 @@ pub use observable_block_all::*;
 mod observable_block;
 #[cfg(test)]
 pub use observable_block::*;
-
-mod base;
-pub use base::*;
 
 pub mod from_fn;
 pub use from_fn::*;
@@ -69,7 +63,6 @@ use ops::{
   merge::MergeOp,
   merge_all::MergeAllOp,
   observe_on::ObserveOnOp,
-  ref_count::{RefCount, RefCountCreator},
   sample::SampleOp,
   scan::ScanOp,
   skip::SkipOp,
@@ -257,8 +250,8 @@ pub trait Observable: Sized {
     }
   }
 
-  /// Groups items emited by the source Observable into Observables.
-  /// Each emited Observable emits items matching the key returned
+  /// Groups items emitted by the source Observable into Observables.
+  /// Each emitted Observable emits items matching the key returned
   /// by the discriminator function.
   ///
   /// # Example
@@ -1070,10 +1063,7 @@ pub trait Observable: Sized {
   /// subscribe to the Observable before the Observable begins emitting items.
   #[inline]
   fn publish<Subject: Default>(self) -> ConnectableObservable<Self, Subject> {
-    ConnectableObservable {
-      source: self,
-      subject: Subject::default(),
-    }
+    ConnectableObservable::new(self)
   }
 
   /// Returns a new Observable that multicast (shares) the original
@@ -1083,15 +1073,14 @@ pub trait Observable: Sized {
   /// Because the Observable is multicasting it makes the stream `hot`.
   /// This is an alias for `publish().ref_count()`
   #[inline]
-  fn share<Subject, Inner>(
+  fn share<Subject>(
     self,
-  ) -> RefCount<Inner, ConnectableObservable<Self, Subject>>
+  ) -> <ConnectableObservable<Self, Subject> as Connect>::R
   where
-    Inner: RefCountCreator<Connectable = ConnectableObservable<Self, Subject>>,
     Subject: Default,
-    Self: Clone,
+    ConnectableObservable<Self, Subject>: Connect,
   {
-    self.publish::<Subject>().ref_count::<Inner>()
+    self.publish::<Subject>().into_ref_count()
   }
 
   /// Delays the emission of items from the source Observable by a given timeout
@@ -1448,20 +1437,6 @@ pub trait LocalObservable<'a>: Observable {
     O: Observer<Item = Self::Item, Err = Self::Err> + 'a;
 }
 
-#[macro_export]
-macro_rules! observable_proxy_impl {
-    ($ty: ident, $host: ident$(, $lf: lifetime)?$(, $generics: ident) *) => {
-  impl<$($lf, )? $host, $($generics ,)*> Observable
-    for $ty<$($lf, )? $host, $($generics ,)*>
-  where
-    $host: Observable
-  {
-    type Item = $host::Item;
-    type Err = $host::Err;
-  }
-}
-}
-
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -1550,7 +1525,7 @@ mod tests {
   fn first_or_support_fork() {
     let mut default = 0;
     let mut default2 = 0;
-    let o = observable::create(|mut subscriber| {
+    let o = observable::create(|subscriber| {
       subscriber.complete();
     })
     .first_or(100);

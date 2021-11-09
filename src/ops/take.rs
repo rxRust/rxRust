@@ -1,10 +1,4 @@
-use std::{
-  cell::RefCell,
-  rc::Rc,
-  sync::{Arc, Mutex},
-};
-
-use crate::prelude::*;
+use crate::{impl_helper::*, impl_local_shared_both, prelude::*};
 
 #[derive(Clone)]
 pub struct TakeOp<S> {
@@ -12,56 +6,31 @@ pub struct TakeOp<S> {
   pub(crate) count: u32,
 }
 
-observable_proxy_impl!(TakeOp, S);
-
-impl<'a, S> LocalObservable<'a> for TakeOp<S>
-where
-  S: LocalObservable<'a>,
-  S::Unsub: 'static,
-{
-  type Unsub = Rc<RefCell<ProxySubscription<S::Unsub>>>;
-
-  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
-  where
-    O: Observer<Item = Self::Item, Err = Self::Err> + 'a,
-  {
-    let subscription = Rc::new(RefCell::new(ProxySubscription::default()));
-    let observer = TakeObserver {
-      observer,
-      subscription: subscription.clone(),
-      count: self.count,
-      hits: 0,
-    };
-    subscription
-      .borrow_mut()
-      .proxy(self.source.actual_subscribe(observer));
-    subscription
-  }
+impl<S: Observable> Observable for TakeOp<S> {
+  type Item = S::Item;
+  type Err = S::Err;
 }
 
-impl<S> SharedObservable for TakeOp<S>
-where
-  S: SharedObservable,
-{
-  type Unsub = Arc<Mutex<ProxySubscription<S::Unsub>>>;
-
-  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
-  where
-    O: Observer<Item = Self::Item, Err = Self::Err> + Sync + Send + 'static,
-  {
-    let subscription = Arc::new(Mutex::new(ProxySubscription::default()));
-    let observer = TakeObserver {
-      observer,
-      subscription: subscription.clone(),
-      count: self.count,
-      hits: 0,
-    };
-    subscription
-      .lock()
-      .unwrap()
-      .proxy(self.source.actual_subscribe(observer));
-    subscription
-  }
+impl_local_shared_both! {
+ impl<S> TakeOp<S>;
+ type Unsub = @ctx::Rc<ProxySubscription<S::Unsub>>;
+ macro method($self: ident, $observer: ident, $ctx: ident) {
+   let subscription = $ctx::Rc::own(ProxySubscription::default());
+   let observer = TakeObserver {
+     observer: $observer,
+     subscription: subscription.clone(),
+     count: $self.count,
+     hits: 0,
+   };
+   let u = $self.source.actual_subscribe(observer);
+   subscription
+     .rc_deref_mut()
+     .proxy(u);
+   subscription
+ }
+ where
+  @ctx::local_only(S::Unsub: 'o,)
+  S: @ctx::Observable
 }
 
 pub struct TakeObserver<O, S> {

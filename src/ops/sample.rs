@@ -1,7 +1,4 @@
-use crate::prelude::*;
-use std::cell::RefCell;
-use std::rc::Rc;
-use std::sync::{Arc, Mutex};
+use crate::{impl_helper::*, impl_local_shared_both, prelude::*};
 
 #[derive(Clone)]
 pub struct SampleOp<S, N> {
@@ -18,98 +15,53 @@ where
   type Err = Source::Err;
 }
 
-impl<Source, Sampling> SharedObservable for SampleOp<Source, Sampling>
-where
-  Source: SharedObservable,
-  Source::Item: Send + Sync + 'static + Clone,
-  Source::Unsub: Send + Sync,
-  Source::Err: Send + Sync + 'static,
-  Sampling: SharedObservable<Err = Source::Err>,
-  Sampling::Item: Send + Sync + 'static + Clone,
-  Sampling::Unsub: Send + Sync,
-{
-  type Unsub = SharedSubscription;
-  fn actual_subscribe<
-    O: Observer<Item = Self::Item, Err = Self::Err> + Send + Sync + 'static,
-  >(
-    self,
-    observer: O,
-  ) -> Self::Unsub {
-    let subscription = SharedSubscription::default();
-    let source_observer = Arc::new(Mutex::new(SampleObserver {
-      observer,
+impl_local_shared_both! {
+  impl<Source, Sampling> SampleOp<Source, Sampling>;
+  type Unsub = @ctx::RcMultiSubscription;
+  macro method($self: ident, $observer: ident, $ctx: ident) {
+    let subscription =  $ctx::RcMultiSubscription::default();
+    let source_observer = $ctx::Rc::own(SampleObserver {
+      observer: $observer,
       value: Option::None,
       subscription: subscription.clone(),
       done: false,
-    }));
+    });
 
-    subscription.add(self.sampling.actual_subscribe(SamplingObserver(
+    subscription.add($self.sampling.actual_subscribe(SamplingObserver(
       source_observer.clone(),
       TypeHint::new(),
     )));
-    subscription.add(self.source.actual_subscribe(source_observer));
+    subscription.add($self.source.actual_subscribe(source_observer));
     subscription
   }
-}
-
-impl<'a, Source, Sampling> LocalObservable<'a> for SampleOp<Source, Sampling>
-where
-  Source: LocalObservable<'a> + 'a,
-  Sampling: LocalObservable<'a, Err = Source::Err> + 'a,
-  Source::Unsub: 'static,
-  Sampling::Unsub: 'static,
-{
-  type Unsub = LocalSubscription;
-  fn actual_subscribe<O: Observer<Item = Self::Item, Err = Self::Err> + 'a>(
-    self,
-    observer: O,
-  ) -> Self::Unsub {
-    let subscription = LocalSubscription::default();
-    let source_observer = Rc::new(RefCell::new(SampleObserver {
-      observer,
-      value: Option::None,
-      subscription: subscription.clone(),
-      done: false,
-    }));
-
-    subscription.add(self.sampling.actual_subscribe(SamplingObserver(
-      source_observer.clone(),
-      TypeHint::new(),
-    )));
-    subscription.add(self.source.actual_subscribe(source_observer));
-    subscription
-  }
+  where
+    @ctx::shared_only(
+      Source::Item: Send + Sync + 'static,
+      Sampling::Item: 'static,
+    )
+    @ctx::local_only(Sampling::Item: 'o,)
+    Source: @ctx::Observable,
+    Sampling: @ctx::Observable<Err=Source::Err>,
+    Source::Unsub: 'static,
+    Sampling::Unsub: 'static
 }
 
 #[derive(Clone)]
-struct SampleObserver<Item, O, Unsub> {
+struct SampleObserver<O: Observer, Unsub> {
   observer: O,
-  value: Option<Item>,
+  value: Option<O::Item>,
   subscription: Unsub,
   done: bool,
 }
 
-impl<Item, O, Unsub> SampleObserver<Item, O, Unsub> {
-  fn drain_value<Err>(&mut self)
-  where
-    O: Observer<Item = Item, Err = Err>,
-  {
-    if self.done || self.value.is_none() {
-      return;
-    }
-    let value = self.value.take().unwrap();
-    self.observer.next(value);
-  }
-}
-
-impl<Item, Err, O, Unsub> Observer for SampleObserver<Item, O, Unsub>
+impl<O, Unsub> Observer for SampleObserver<O, Unsub>
 where
-  O: Observer<Item = Item, Err = Err>,
+  O: Observer,
   Unsub: SubscriptionLike,
 {
-  type Item = Item;
-  type Err = Err;
-  fn next(&mut self, value: Item) { self.value = Some(value); }
+  type Item = O::Item;
+  type Err = O::Err;
+  fn next(&mut self, value: Self::Item) { self.value = Some(value); }
 
   fn error(&mut self, err: Self::Err) { self.observer.error(err) }
 
@@ -125,27 +77,39 @@ trait DrainValue<Item, Err> {
   fn drain_value(&mut self);
 }
 
-impl<Item, Err, O, Unsub> DrainValue<Item, Err>
-  for Rc<RefCell<SampleObserver<Item, O, Unsub>>>
+impl<O, Unsub> DrainValue<O::Item, O::Err> for SampleObserver<O, Unsub>
 where
-  O: Observer<Item = Item, Err = Err>,
+  O: Observer,
 {
   fn drain_value(&mut self) {
-    let mut val = self.borrow_mut();
+    if self.done || self.value.is_none() {
+      return;
+    }
+    let value = self.value.take().unwrap();
+    self.observer.next(value);
+  }
+}
+
+impl<O, Unsub> DrainValue<O::Item, O::Err> for MutRc<SampleObserver<O, Unsub>>
+where
+  O: Observer,
+{
+  fn drain_value(&mut self) {
+    let mut val = self.rc_deref_mut();
     val.drain_value();
   }
 }
 
-impl<Item, Err, O, Unsub> DrainValue<Item, Err>
-  for Arc<Mutex<SampleObserver<Item, O, Unsub>>>
+impl<O, Unsub> DrainValue<O::Item, O::Err> for MutArc<SampleObserver<O, Unsub>>
 where
-  O: Observer<Item = Item, Err = Err>,
+  O: Observer,
 {
   fn drain_value(&mut self) {
-    let mut val = self.lock().unwrap();
+    let mut val = self.rc_deref_mut();
     val.drain_value();
   }
 }
+
 struct SamplingObserver<Item, O>(O, TypeHint<*const Item>);
 
 impl<Item, Item2, Err, O> Observer for SamplingObserver<Item2, O>

@@ -1,7 +1,3 @@
-use std::cell::RefCell;
-use std::rc::Rc;
-use std::sync::{Arc, Mutex};
-
 /// An Observer is a consumer of values delivered by an Observable. One for each
 /// type of notification delivered by the Observable: `next`, `error`,
 /// and `complete`.
@@ -14,28 +10,6 @@ pub trait Observer {
   fn next(&mut self, value: Self::Item);
   fn error(&mut self, err: Self::Err);
   fn complete(&mut self);
-}
-
-impl<Item, Err, T> Observer for Arc<Mutex<T>>
-where
-  T: Observer<Item = Item, Err = Err>,
-{
-  type Item = Item;
-  type Err = Err;
-  fn next(&mut self, value: Item) { self.lock().unwrap().next(value) }
-  fn error(&mut self, err: Err) { self.lock().unwrap().error(err); }
-  fn complete(&mut self) { self.lock().unwrap().complete(); }
-}
-
-impl<Item, Err, T> Observer for Rc<RefCell<T>>
-where
-  T: Observer<Item = Item, Err = Err>,
-{
-  type Item = Item;
-  type Err = Err;
-  fn next(&mut self, value: Item) { self.borrow_mut().next(value) }
-  fn error(&mut self, err: Err) { self.borrow_mut().error(err); }
-  fn complete(&mut self) { self.borrow_mut().complete(); }
 }
 
 impl<Item, Err, T> Observer for Box<T>

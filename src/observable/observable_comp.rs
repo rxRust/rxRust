@@ -4,6 +4,7 @@ use crate::prelude::*;
 pub struct ObserverComp<N, C, Item> {
   next: N,
   complete: C,
+  is_stopped: bool,
   _marker: TypeHint<*const Item>,
 }
 
@@ -15,10 +16,19 @@ where
   type Item = Item;
   type Err = ();
   #[inline]
-  fn next(&mut self, value: Item) { (self.next)(value); }
+  fn next(&mut self, value: Item) {
+    if !self.is_stopped {
+      (self.next)(value);
+    }
+  }
   #[inline]
-  fn error(&mut self, _err: ()) {}
-  fn complete(&mut self) { (self.complete)(); }
+  fn error(&mut self, _err: ()) { self.is_stopped = true; }
+  fn complete(&mut self) {
+    if !self.is_stopped {
+      (self.complete)();
+      self.is_stopped = true;
+    }
+  }
 }
 
 pub trait SubscribeComplete<'a, N, C> {
@@ -54,6 +64,7 @@ where
     let unsub = self.actual_subscribe(ObserverComp {
       next,
       complete,
+      is_stopped: false,
       _marker: TypeHint::new(),
     });
     SubscriptionWrapper(unsub)
@@ -79,6 +90,7 @@ where
     let unsub = self.0.actual_subscribe(ObserverComp {
       next,
       complete,
+      is_stopped: false,
       _marker: TypeHint::new(),
     });
     SubscriptionWrapper(unsub)

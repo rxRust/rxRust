@@ -1,8 +1,5 @@
-use crate::prelude::*;
-use std::cell::RefCell;
-use std::rc::Rc;
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use crate::{impl_helper::*, impl_local_shared_both, prelude::*};
+use std::{ops::DerefMut, time::Duration};
 
 #[derive(Clone)]
 pub struct BufferWithCountOp<S> {
@@ -10,54 +7,26 @@ pub struct BufferWithCountOp<S> {
   pub(crate) count: usize,
 }
 
-#[doc(hidden)]
-macro_rules! buffer_op_observable_impl {
-  ($ty: ident, $host: ident$(, $lf: lifetime)?$(, $generics: ident) *) => {
-    impl<$($lf, )? $host, $($generics ,)*> Observable
-    for $ty<$($lf, )? $host, $($generics ,)*>
-    where
-      $host: Observable
-    {
-      type Item = Vec<$host::Item>;
-      type Err = $host::Err;
-    }
-  }
+impl<S: Observable> Observable for BufferWithCountOp<S> {
+  type Item = Vec<S::Item>;
+  type Err = S::Err;
 }
 
-buffer_op_observable_impl!(BufferWithCountOp, S);
-
-impl<'a, S> LocalObservable<'a> for BufferWithCountOp<S>
-where
-  S: LocalObservable<'a>,
-  S::Item: 'a,
-{
+impl_local_shared_both! {
+  impl<S> BufferWithCountOp<S>;
   type Unsub = S::Unsub;
-
-  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
-  where
-    O: Observer<Item = Self::Item, Err = Self::Err> + 'a,
-  {
-    self
-      .source
-      .actual_subscribe(BufferWithCountObserver::new(observer, self.count))
+  macro method($self: ident, $observer: ident, $ctx: ident) {
+    $self
+    .source
+    .actual_subscribe(BufferWithCountObserver{
+      observer: $observer,
+      buffer: vec![],
+      count:$self.count
+    })
   }
-}
-
-impl<S> SharedObservable for BufferWithCountOp<S>
-where
-  S: SharedObservable,
-  S::Item: Send + Sync + 'static,
-{
-  type Unsub = S::Unsub;
-
-  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
   where
-    O: Observer<Item = Self::Item, Err = Self::Err> + Sync + Send + 'static,
-  {
-    self
-      .source
-      .actual_subscribe(BufferWithCountObserver::new(observer, self.count))
-  }
+    S: @ctx::Observable,
+    S::Item: @ctx::shared_only(Send + Sync + 'static) @ctx::local_only('o)
 }
 
 #[derive(Clone)]
@@ -65,16 +34,6 @@ pub struct BufferWithCountObserver<O, Item> {
   observer: O,
   buffer: Vec<Item>,
   count: usize,
-}
-
-impl<O, Item> BufferWithCountObserver<O, Item> {
-  fn new(observer: O, count: usize) -> BufferWithCountObserver<O, Item> {
-    BufferWithCountObserver {
-      observer,
-      buffer: vec![],
-      count,
-    }
-  }
 }
 
 impl<O, Item, Err> Observer for BufferWithCountObserver<O, Item>
@@ -112,210 +71,112 @@ pub struct BufferWithTimeOp<Source, Scheduler> {
   pub(crate) scheduler: Scheduler,
 }
 
-buffer_op_observable_impl!(BufferWithTimeOp, S, Scheduler);
-
-impl<Source, Scheduler> LocalObservable<'static>
-  for BufferWithTimeOp<Source, Scheduler>
-where
-  Source: LocalObservable<'static>,
-  Source::Item: 'static,
-  Scheduler: LocalScheduler + 'static,
-{
-  type Unsub = Source::Unsub;
-
-  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
-  where
-    O: Observer<Item = Self::Item, Err = Self::Err> + 'static,
-  {
-    self.source.actual_subscribe(BufferWithTimeObserver::new(
-      observer,
-      self.time,
-      self.scheduler,
-    ))
-  }
-}
-
 #[derive(Clone)]
-pub struct BufferWithTimeObserver<O, Item> {
-  observer: Rc<RefCell<O>>,
-  buffer: Rc<RefCell<Vec<Item>>>,
-  handle: SpawnHandle,
+pub struct BufferWithTimeObserver<O, B, U> {
+  observer: O,
+  buffer: B,
+  handler: U,
 }
 
-impl<O, Item> BufferWithTimeObserver<O, Item>
-where
-  O: Observer<Item = Vec<Item>> + 'static,
-  Item: 'static,
-{
-  fn new<S>(
-    observer: O,
-    time: Duration,
-    scheduler: S,
-  ) -> BufferWithTimeObserver<O, Item>
-  where
-    S: LocalScheduler + 'static,
-  {
-    let observer = Rc::new(RefCell::new(observer));
+macro_rules! new_buffer_time_observer {
+  ($observer:ident, $scheduler: expr, $time: expr,  $ctx: ident) => {{
+    let observer = $ctx::Rc::own($observer);
     let mut observer_c = observer.clone();
-
-    let buffer = Rc::new(RefCell::new(vec![]));
+    let buffer = $ctx::Rc::own(vec![]);
     let buffer_c = buffer.clone();
 
-    let handle = scheduler.schedule_repeating(
+    let handler = $scheduler.schedule_repeating(
       move |_| {
-        if !buffer_c.borrow().is_empty() {
-          observer_c.next(buffer_c.take());
+        let b = &mut *buffer_c.rc_deref_mut();
+        if !b.is_empty() {
+          observer_c.next(std::mem::take(b));
         }
       },
-      time,
+      $time,
       None,
     );
-
+    let handler = $ctx::Rc::own(handler);
     BufferWithTimeObserver {
       observer,
       buffer,
-      handle,
+      handler,
     }
-  }
+  }};
 }
 
-#[doc(hidden)]
-macro_rules! complete_time_impl_local {
-  ($buffer:tt, $observer:tt, $handle:tt) => {
-    fn complete(&mut self) {
-      let buffer = self.$buffer.take();
-      if !buffer.is_empty() {
-        self.$observer.next(buffer);
-      }
-
-      self.$handle.unsubscribe();
-      self.$observer.complete();
-    }
-  };
+impl<S: Observable, SD> Observable for BufferWithTimeOp<S, SD> {
+  type Item = Vec<S::Item>;
+  type Err = S::Err;
 }
 
-impl<O, Item, Err> Observer for BufferWithTimeObserver<O, Item>
-where
-  O: Observer<Item = Vec<Item>, Err = Err>,
-{
-  type Item = Item;
-  type Err = Err;
-
-  fn next(&mut self, value: Self::Item) {
-    self.buffer.borrow_mut().push(value);
-  }
-
-  fn error(&mut self, err: Self::Err) {
-    self.handle.unsubscribe();
-    self.observer.error(err);
-  }
-
-  complete_time_impl_local!(buffer, observer, handle);
-}
-
-impl<Source, Scheduler> SharedObservable for BufferWithTimeOp<Source, Scheduler>
-where
-  Source: SharedObservable,
-  <Source as Observable>::Item: Send + Sync + 'static,
-  Scheduler: SharedScheduler,
-{
-  type Unsub = Source::Unsub;
-
-  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
-  where
-    O: Observer<Item = Self::Item, Err = Self::Err> + Sync + Send + 'static,
-  {
-    self
-      .source
-      .actual_subscribe(BufferWithTimeObserverShared::new(
-        observer,
-        self.time,
-        self.scheduler,
-      ))
-  }
-}
-
-#[derive(Clone)]
-pub struct BufferWithTimeObserverShared<O, Item> {
-  observer: Arc<Mutex<O>>,
-  buffer: Arc<Mutex<Vec<Item>>>,
-  handle: SpawnHandle,
-}
-
-impl<O, Item> BufferWithTimeObserverShared<O, Item>
-where
-  O: Observer<Item = Vec<Item>> + Send + Sync + 'static,
-  Item: Send + Sync + 'static,
-{
-  fn new<S>(
-    observer: O,
-    time: Duration,
-    scheduler: S,
-  ) -> BufferWithTimeObserverShared<O, Item>
-  where
-    S: SharedScheduler,
-  {
-    let observer = Arc::new(Mutex::new(observer));
-    let mut observer_c = observer.clone();
-
-    let buffer = Arc::new(Mutex::new(vec![]));
-    let buffer_c = buffer.clone();
-
-    let handle = scheduler.schedule_repeating(
-      move |_| {
-        let mut buffer = buffer_c.lock().unwrap();
-        let buffer = std::mem::take(&mut *buffer);
-        if !buffer.is_empty() {
-          observer_c.next(buffer);
-        }
-      },
-      time,
-      None,
+impl_local_shared_both! {
+  impl<Source, SD> BufferWithTimeOp<Source, SD>;
+  type Unsub = TimeSubscription<@ctx::Rc<SpawnHandle>, Source::Unsub>;
+  macro method($self:ident, $observer: ident, $ctx: ident) {
+    let observer = new_buffer_time_observer!(
+      $observer, $self.scheduler, $self.time, $ctx
     );
-
-    BufferWithTimeObserverShared {
-      observer,
-      buffer,
-      handle,
-    }
+    let handler = observer.handler.clone();
+    let subscription = $self.source.actual_subscribe(observer);
+    TimeSubscription{ handler, subscription }
   }
+  where
+    @ctx::local_only('o: 'static,)
+    Source: @ctx::Observable,
+    Source::Item: @ctx::shared_only(Send + Sync +) 'static,
+    SD: @ctx::Scheduler + 'static,
 }
 
-#[doc(hidden)]
-macro_rules! complete_time_impl_shared {
-  ($buffer:tt, $observer:tt, $handle:tt) => {
-    fn complete(&mut self) {
-      let mut buffer = self.$buffer.lock().unwrap();
-      let buffer = std::mem::take(&mut *buffer);
-
-      if !buffer.is_empty() {
-        self.$observer.next(buffer);
-      }
-
-      self.$handle.unsubscribe();
-      self.$observer.complete();
-    }
-  };
+pub struct TimeSubscription<H, U> {
+  handler: H,
+  subscription: U,
 }
 
-impl<O, Item, Err> Observer for BufferWithTimeObserverShared<O, Item>
+impl<U: SubscriptionLike, H: SubscriptionLike> SubscriptionLike
+  for TimeSubscription<H, U>
+{
+  fn unsubscribe(&mut self) {
+    self.handler.unsubscribe();
+    self.subscription.unsubscribe();
+  }
+
+  fn is_closed(&self) -> bool { self.handler.is_closed() }
+}
+
+impl<O, B, U, Item, Err> Observer for BufferWithTimeObserver<O, B, U>
 where
   O: Observer<Item = Vec<Item>, Err = Err>,
+  B: RcDerefMut + 'static,
+  U: SubscriptionLike,
+  for<'r> B::Target<'r>: DerefMut<Target = O::Item>,
 {
   type Item = Item;
   type Err = Err;
 
   fn next(&mut self, value: Self::Item) {
-    let mut buffer = self.buffer.lock().unwrap();
-    (*buffer).push(value);
+    if !self.handler.is_closed() {
+      self.buffer.rc_deref_mut().push(value);
+    }
   }
 
   fn error(&mut self, err: Self::Err) {
-    self.handle.unsubscribe();
-    self.observer.error(err);
+    if !self.handler.is_closed() {
+      self.handler.unsubscribe();
+      self.observer.error(err);
+    }
   }
 
-  complete_time_impl_shared!(buffer, observer, handle);
+  fn complete(&mut self) {
+    if !self.handler.is_closed() {
+      let buffer = std::mem::take(&mut *self.buffer.rc_deref_mut());
+      if !buffer.is_empty() {
+        self.observer.next(buffer);
+      }
+
+      self.handler.unsubscribe();
+      self.observer.complete();
+    }
+  }
 }
 
 #[derive(Clone)]
@@ -326,189 +187,71 @@ pub struct BufferWithCountOrTimerOp<Source, Scheduler> {
   pub(crate) scheduler: Scheduler,
 }
 
-buffer_op_observable_impl!(BufferWithCountOrTimerOp, S, Scheduler);
+impl<S: Observable, SD> Observable for BufferWithCountOrTimerOp<S, SD> {
+  type Item = Vec<S::Item>;
+  type Err = S::Err;
+}
 
-impl<Source, Scheduler> LocalObservable<'static>
-  for BufferWithCountOrTimerOp<Source, Scheduler>
-where
-  Source: LocalObservable<'static>,
-  Source::Item: 'static,
-  Scheduler: LocalScheduler + 'static,
-{
-  type Unsub = Source::Unsub;
-
-  fn actual_subscribe<
-    O: Observer<Item = Self::Item, Err = Self::Err> + 'static,
-  >(
-    self,
-    observer: O,
-  ) -> Self::Unsub {
-    self
+impl_local_shared_both! {
+  impl<Source, SD> BufferWithCountOrTimerOp<Source, SD>;
+  type Unsub = TimeSubscription<@ctx::Rc<SpawnHandle>, Source::Unsub>;
+  macro method($self:ident, $observer: ident, $ctx: ident) {
+    let observer = new_buffer_time_observer!(
+      $observer,
+      $self.scheduler,
+      $self.time,
+      $ctx
+    );
+    let handler = observer.handler.clone();
+    let subscription = $self
       .source
-      .actual_subscribe(BufferWithCountOrTimerObserver::new(
+      .actual_subscribe(BufferWithCountOrTimerObserver {
         observer,
-        self.count,
-        self.time,
-        self.scheduler,
-      ))
+        count: $self.count,
+      });
+      TimeSubscription{ handler, subscription }
   }
+  where
+    @ctx::local_only('o: 'static,)
+    Source: @ctx::Observable,
+    // Source::Unsub: 'static,
+    Source::Item: @ctx::shared_only(Send + Sync +) 'static,
+    SD: @ctx::Scheduler + 'static,
 }
 
 #[derive(Clone)]
-pub struct BufferWithCountOrTimerObserver<O, Item> {
-  observer: Rc<RefCell<O>>,
-  buffer: Rc<RefCell<Vec<Item>>>,
+pub struct BufferWithCountOrTimerObserver<O, B, U> {
+  observer: BufferWithTimeObserver<O, B, U>,
   count: usize,
-  handle: SpawnHandle,
 }
 
-impl<O, Item> BufferWithCountOrTimerObserver<O, Item> {
-  fn new<S>(observer: O, count: usize, time: Duration, scheduler: S) -> Self
-  where
-    O: Observer<Item = Vec<Item>> + 'static,
-    Item: 'static,
-    S: LocalScheduler + 'static,
-  {
-    let observer = Rc::new(RefCell::new(observer));
-    let mut observer_c = observer.clone();
-
-    let buffer = Rc::new(RefCell::new(vec![]));
-    let buffer_c = buffer.clone();
-
-    let handle = scheduler.schedule_repeating(
-      move |_| {
-        if buffer_c.borrow().is_empty() {
-          observer_c.next(buffer_c.take());
-        }
-      },
-      time,
-      None,
-    );
-
-    BufferWithCountOrTimerObserver {
-      observer,
-      buffer,
-      count,
-      handle,
-    }
-  }
-}
-
-impl<O, Item, Err> Observer for BufferWithCountOrTimerObserver<O, Item>
+impl<O, B, U, Item> Observer for BufferWithCountOrTimerObserver<O, B, U>
 where
-  O: Observer<Item = Vec<Item>, Err = Err>,
+  O: Observer<Item = Vec<Item>>,
+  B: RcDerefMut + 'static,
+  for<'r> B::Target<'r>: DerefMut<Target = O::Item>,
+  U: SubscriptionLike,
 {
   type Item = Item;
-  type Err = Err;
+  type Err = O::Err;
 
   fn next(&mut self, value: Self::Item) {
-    self.buffer.borrow_mut().push(value);
+    if !self.observer.handler.is_closed() {
+      self.observer.next(value);
 
-    if self.buffer.borrow().len() >= self.count {
-      let buffer = self.buffer.take();
-      self.observer.borrow_mut().next(buffer);
+      let mut rc_buffer = self.observer.buffer.rc_deref_mut();
+      if rc_buffer.len() >= self.count {
+        let buffer = std::mem::take(&mut *rc_buffer);
+        self.observer.observer.next(buffer);
+      }
     }
   }
 
-  fn error(&mut self, err: Self::Err) {
-    self.handle.unsubscribe();
-    self.observer.error(err);
-  }
+  #[inline]
+  fn error(&mut self, err: Self::Err) { self.observer.error(err); }
 
-  complete_time_impl_local!(buffer, observer, handle);
-}
-
-impl<Source, Scheduler> SharedObservable
-  for BufferWithCountOrTimerOp<Source, Scheduler>
-where
-  Source: SharedObservable,
-  Source::Item: Send + Sync + 'static,
-  Scheduler: SharedScheduler,
-{
-  type Unsub = Source::Unsub;
-
-  fn actual_subscribe<
-    O: Observer<Item = Self::Item, Err = Self::Err> + Sync + Send + 'static,
-  >(
-    self,
-    observer: O,
-  ) -> Self::Unsub {
-    self
-      .source
-      .actual_subscribe(BufferWithCountOrTimerObserverShared::new(
-        observer,
-        self.count,
-        self.time,
-        self.scheduler,
-      ))
-  }
-}
-
-#[derive(Clone)]
-pub struct BufferWithCountOrTimerObserverShared<O, Item> {
-  observer: Arc<Mutex<O>>,
-  buffer: Arc<Mutex<Vec<Item>>>,
-  count: usize,
-  handle: SpawnHandle,
-}
-
-impl<O, Item> BufferWithCountOrTimerObserverShared<O, Item> {
-  fn new<S>(observer: O, count: usize, time: Duration, scheduler: S) -> Self
-  where
-    O: Observer<Item = Vec<Item>> + Send + Sync + 'static,
-    Item: Send + Sync + 'static,
-    S: SharedScheduler,
-  {
-    let observer = Arc::new(Mutex::new(observer));
-    let mut observer_c = observer.clone();
-
-    let buffer = Arc::new(Mutex::new(vec![]));
-    let buffer_c = buffer.clone();
-
-    let handle = scheduler.schedule_repeating(
-      move |_| {
-        let mut buffer = buffer_c.lock().unwrap();
-        if !buffer.is_empty() {
-          let buffer = std::mem::take(&mut *buffer);
-          observer_c.next(buffer);
-        }
-      },
-      time,
-      None,
-    );
-
-    BufferWithCountOrTimerObserverShared {
-      observer,
-      buffer,
-      count,
-      handle,
-    }
-  }
-}
-
-impl<O, Item, Err> Observer for BufferWithCountOrTimerObserverShared<O, Item>
-where
-  O: Observer<Item = Vec<Item>, Err = Err>,
-{
-  type Item = Item;
-  type Err = Err;
-
-  fn next(&mut self, value: Self::Item) {
-    let mut buffer = self.buffer.lock().unwrap();
-    (*buffer).push(value);
-
-    if buffer.len() >= self.count {
-      let buffer = std::mem::take(&mut *buffer);
-      self.observer.next(buffer);
-    }
-  }
-
-  fn error(&mut self, err: Self::Err) {
-    self.handle.unsubscribe();
-    self.observer.error(err);
-  }
-
-  complete_time_impl_shared!(buffer, observer, handle);
+  #[inline]
+  fn complete(&mut self) { self.observer.complete() }
 }
 
 #[cfg(test)]
@@ -555,7 +298,7 @@ mod tests {
     let is_completed = Rc::new(AtomicBool::new(false));
     let is_completed_c = is_completed.clone();
 
-    observable::create(|mut subscriber| {
+    observable::create(|subscriber| {
       subscriber.next(0);
       subscriber.next(1);
       subscriber.next(2);
@@ -579,7 +322,7 @@ mod tests {
     let mut actual = vec![];
     let mut err_called = false;
 
-    observable::create(|mut subscriber| {
+    observable::create(|subscriber| {
       subscriber.next(0);
       subscriber.next(1);
       subscriber.next(2);
@@ -616,7 +359,7 @@ mod tests {
   fn it_shall_not_block_with_error_on_time_local() {
     let mut local = LocalPool::new();
 
-    observable::create(|mut subscriber| {
+    observable::create(|subscriber| {
       subscriber.next(0);
       subscriber.next(1);
       subscriber.next(2);
@@ -641,7 +384,7 @@ mod tests {
     let is_completed = Arc::new(AtomicBool::new(false));
     let is_completed_c = is_completed.clone();
 
-    observable::create(|mut subscriber| {
+    observable::create(|subscriber| {
       let sleep = Duration::from_millis(100);
       subscriber.next(0);
       subscriber.next(1);
@@ -679,7 +422,7 @@ mod tests {
     let error_called = Arc::new(AtomicBool::new(false));
     let error_called_c = error_called.clone();
 
-    observable::create(|mut subscriber| {
+    observable::create(|subscriber| {
       let sleep = Duration::from_millis(100);
       subscriber.next(0);
       subscriber.next(1);
@@ -738,7 +481,7 @@ mod tests {
     let error_called = Rc::new(AtomicBool::new(false));
     let error_called_c = error_called.clone();
 
-    observable::create(|mut subscriber| {
+    observable::create(|subscriber| {
       subscriber.next(0);
       subscriber.next(1);
       subscriber.next(2);
@@ -769,7 +512,7 @@ mod tests {
     let is_completed = Arc::new(AtomicBool::new(false));
     let is_completed_c = is_completed.clone();
 
-    observable::create(|mut subscriber| {
+    observable::create(|subscriber| {
       let sleep = Duration::from_millis(100);
       subscriber.next(0);
       subscriber.next(1);
@@ -805,7 +548,7 @@ mod tests {
     let error_called = Arc::new(AtomicBool::new(false));
     let error_called_c = error_called.clone();
 
-    observable::create(|mut subscriber| {
+    observable::create(|subscriber| {
       let sleep = Duration::from_millis(100);
       subscriber.next(0);
       subscriber.next(1);

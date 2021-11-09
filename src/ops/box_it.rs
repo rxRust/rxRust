@@ -27,7 +27,10 @@ macro_rules! box_observable_impl {
   type Err = $source::Err;
   fn box_subscribe(
     self: Box<Self>,
-    observer: Box<dyn Observer<Item=Self::Item,Err= Self::Err> + $($marker +)* $lf>,
+    observer: Box<
+                dyn Observer<Item=Self::Item,Err= Self::Err>
+                + $($marker +)* $lf
+                >,
   ) -> Box<dyn SubscriptionLike + $($marker +)*>  {
     Box::new(self.actual_subscribe(observer))
   }

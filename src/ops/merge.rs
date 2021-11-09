@@ -1,7 +1,4 @@
-use crate::prelude::*;
-use std::cell::RefCell;
-use std::rc::Rc;
-use std::sync::{Arc, Mutex};
+use crate::{impl_helper::*, impl_local_shared_both, prelude::*};
 
 #[derive(Clone)]
 pub struct MergeOp<S1, S2> {
@@ -18,52 +15,25 @@ where
   type Err = S1::Err;
 }
 
-impl<'a, S1, S2> LocalObservable<'a> for MergeOp<S1, S2>
-where
-  S1: LocalObservable<'a>,
-  S2: LocalObservable<'a, Item = S1::Item, Err = S1::Err>,
-  S1::Unsub: 'static,
-  S2::Unsub: 'static,
-{
-  type Unsub = LocalSubscription;
-
-  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
-  where
-    O: Observer<Item = Self::Item, Err = Self::Err> + 'a,
-  {
-    let subscription = LocalSubscription::default();
-    let merge_observer = Rc::new(RefCell::new(MergeObserver {
-      observer,
+impl_local_shared_both! {
+  impl<S1, S2> MergeOp<S1, S2>;
+  type Unsub = @ctx::RcMultiSubscription;
+  macro method($self: ident, $observer: ident, $ctx: ident) {
+    let subscription = $ctx::RcMultiSubscription::default();
+    let merge_observer = $ctx::Rc::own(MergeObserver {
+      observer: $observer,
       subscription: subscription.clone(),
       completed_one: false,
-    }));
-    subscription.add(self.source1.actual_subscribe(merge_observer.clone()));
-    subscription.add(self.source2.actual_subscribe(merge_observer));
+    });
+    subscription.add($self.source1.actual_subscribe(merge_observer.clone()));
+    subscription.add($self.source2.actual_subscribe(merge_observer));
     subscription
   }
-}
-
-impl<S1, S2> SharedObservable for MergeOp<S1, S2>
-where
-  S1: SharedObservable,
-  S2: SharedObservable<Item = S1::Item, Err = S1::Err, Unsub = S1::Unsub>,
-  S1::Unsub: Send + Sync,
-{
-  type Unsub = SharedSubscription;
-  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
   where
-    O: Observer<Item = Self::Item, Err = Self::Err> + Sync + Send + 'static,
-  {
-    let subscription = SharedSubscription::default();
-    let merge_observer = Arc::new(Mutex::new(MergeObserver {
-      observer,
-      subscription: subscription.clone(),
-      completed_one: false,
-    }));
-    subscription.add(self.source1.actual_subscribe(merge_observer.clone()));
-    subscription.add(self.source2.actual_subscribe(merge_observer));
-    subscription
-  }
+    S1: @ctx::Observable,
+    S2: @ctx::Observable<Item=S1::Item, Err=S1::Err>,
+    S1::Unsub: 'static,
+    S2::Unsub: 'static
 }
 
 #[derive(Clone)]
@@ -200,7 +170,7 @@ mod test {
 
   #[test]
   fn merge_fork() {
-    let o = observable::create(|mut s| {
+    let o = observable::create(|s| {
       s.next(1);
       s.next(2);
       s.error(());
