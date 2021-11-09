@@ -1,5 +1,6 @@
 pub mod box_it;
 pub mod buffer;
+pub mod combine_latest;
 pub mod contains;
 pub mod debounce;
 pub mod default_if_empty;
