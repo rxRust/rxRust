@@ -1,4 +1,4 @@
-use crate::prelude::*;
+use crate::{impl_local_shared_both, prelude::*};
 
 /// Creates an observable that will on subscription defer to another observable
 /// that is supplied by a supplier-function which will be run once at each
@@ -16,51 +16,32 @@ use crate::prelude::*;
 ///   });
 /// // Prints: Hi!\nHello!\n
 /// ```
-pub fn defer<F, Item, Err, Emit>(
-  observable_supplier: F,
-) -> ObservableBase<DeferEmitter<F, Item, Err>>
+pub fn defer<F, U>(observable_supplier: F) -> ObservableDeref<F>
 where
-  F: FnOnce() -> ObservableBase<Emit>,
-  Emit: Emitter,
+  F: FnOnce() -> U,
 {
-  ObservableBase::new(DeferEmitter(observable_supplier, TypeHint::new()))
+  ObservableDeref(observable_supplier)
 }
 
 #[derive(Clone)]
-pub struct DeferEmitter<F, Item, Err>(F, TypeHint<(Item, Err)>);
+pub struct ObservableDeref<F>(F);
 
-impl<F, Item, Err> Emitter for DeferEmitter<F, Item, Err> {
-  type Item = Item;
-  type Err = Err;
+impl<F, U> Observable for ObservableDeref<F>
+where
+  F: FnOnce() -> U,
+  U: Observable,
+{
+  type Item = U::Item;
+  type Err = U::Err;
 }
 
-impl<'a, F, Emit, Item, Err> LocalEmitter<'a> for DeferEmitter<F, Item, Err>
-where
-  F: FnOnce() -> Emit,
-  Emit: LocalObservable<'a> + observable::Observable<Item = Item, Err = Err>,
-{
-  type Unsub = Emit::Unsub;
-  fn emit<O>(self, observer: O) -> Self::Unsub
-  where
-    O: Observer<Item = Self::Item, Err = Self::Err> + 'a,
-  {
-    (self.0)().actual_subscribe(observer)
-  }
-}
-
-impl<F, Item: 'static, Emit, Err: 'static> SharedEmitter
-  for DeferEmitter<F, Item, Err>
-where
-  F: FnOnce() -> Emit,
-  Emit: SharedObservable + observable::Observable<Item = Item, Err = Err>,
-{
-  type Unsub = Emit::Unsub;
-  fn emit<O>(self, observer: O) -> Self::Unsub
-  where
-    O: Observer<Item = Self::Item, Err = Self::Err> + Send + Sync + 'static,
-  {
-    (self.0)().actual_subscribe(observer)
-  }
+impl_local_shared_both! {
+ impl<F, U> ObservableDeref<F>;
+ type Unsub = U::Unsub;
+ macro method($self: ident, $observer: ident, $ctx: ident) {
+  ($self.0)().actual_subscribe($observer)
+ }
+ where F: FnOnce()-> U, U: @ctx::Observable
 }
 
 #[cfg(test)]

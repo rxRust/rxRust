@@ -1,5 +1,4 @@
-use crate::prelude::*;
-use crate::scheduler::SharedScheduler;
+use crate::{impl_helper::*, impl_local_shared_both, prelude::*};
 
 #[derive(Clone)]
 pub struct SubscribeOnOP<S, SD> {
@@ -7,54 +6,30 @@ pub struct SubscribeOnOP<S, SD> {
   pub(crate) scheduler: SD,
 }
 
-observable_proxy_impl!(SubscribeOnOP, S, SD);
-
-impl<'a, S, SD> SharedObservable for SubscribeOnOP<S, SD>
-where
-  S: SharedObservable + Send + 'static,
-  SD: SharedScheduler + Send + 'static,
-  S::Unsub: Send + Sync,
-{
-  type Unsub = SharedSubscription;
-  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
-  where
-    O: Observer<Item = Self::Item, Err = Self::Err> + Sync + Send + 'static,
-  {
-    let source = self.source;
-    let subscription = SharedSubscription::default();
-    let c_subscription = subscription.clone();
-    let handle = self.scheduler.schedule(
-      move |_| c_subscription.add(source.actual_subscribe(observer)),
-      None,
-      (),
-    );
-    subscription.add(handle);
-    subscription
-  }
+impl<S: Observable, SD> Observable for SubscribeOnOP<S, SD> {
+  type Item = S::Item;
+  type Err = S::Err;
 }
 
-impl<S, SD> LocalObservable<'static> for SubscribeOnOP<S, SD>
-where
-  S: LocalObservable<'static> + 'static,
-  SD: LocalScheduler,
-{
-  type Unsub = LocalSubscription;
-  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
-  where
-    O: Observer<Item = Self::Item, Err = Self::Err> + 'static,
-  {
-    let source = self.source;
-
-    let subscription = LocalSubscription::default();
+impl_local_shared_both! {
+  impl<S, SD> SubscribeOnOP<S, SD>;
+  type Unsub = @ctx::RcMultiSubscription;
+  macro method($self: ident, $observer: ident, $ctx: ident) {
+    let source = $self.source;
+    let subscription = $ctx::RcMultiSubscription::default();
     let c_subscription = subscription.clone();
-    let handle = self.scheduler.schedule(
-      move |_| c_subscription.add(source.actual_subscribe(observer)),
+    let handle = $self.scheduler.schedule(
+      move |_| c_subscription.add(source.actual_subscribe($observer)),
       None,
       (),
     );
     subscription.add(handle);
     subscription
   }
+  where
+    @ctx::local_only('o: 'static,)
+    S: @ctx::Observable @ctx::shared_only(+ Send) + 'static,
+    SD: @ctx::Scheduler
 }
 
 #[cfg(test)]

@@ -1,4 +1,4 @@
-use crate::prelude::*;
+use crate::{impl_local_shared_both, prelude::*};
 use std::collections::VecDeque;
 
 #[derive(Clone)]
@@ -7,40 +7,24 @@ pub struct TakeLastOp<S> {
   pub(crate) count: usize,
 }
 
-#[doc(hidden)]
-macro_rules! observable_impl {
-  ($subscription:ty, $($marker:ident +)* $lf: lifetime) => {
-  fn actual_subscribe<O>(
-    self,
-    observer: O,
-  ) -> Self::Unsub
-  where O: Observer<Item=Self::Item,Err= Self::Err> + $($marker +)* $lf {
-    self.source.actual_subscribe(TakeLastObserver {
-      observer,
-      count: self.count,
+impl<S: Observable> Observable for TakeLastOp<S> {
+  type Item = S::Item;
+  type Err = S::Err;
+}
+
+impl_local_shared_both! {
+  impl<S> TakeLastOp<S>;
+  type Unsub = S::Unsub;
+  macro method($self: ident, $observer: ident, $ctx: ident) {
+    $self.source.actual_subscribe(TakeLastObserver {
+      observer: $observer,
+      count: $self.count,
       queue: VecDeque::new(),
     })
   }
-}
-}
-
-observable_proxy_impl!(TakeLastOp, S);
-
-impl<'a, S> LocalObservable<'a> for TakeLastOp<S>
-where
-  S: LocalObservable<'a> + 'a,
-{
-  type Unsub = S::Unsub;
-  observable_impl!(LocalSubscription, 'a);
-}
-
-impl<S> SharedObservable for TakeLastOp<S>
-where
-  S: SharedObservable,
-  S::Item: Send + Sync + 'static,
-{
-  type Unsub = S::Unsub;
-  observable_impl!(SharedSubscription, Send + Sync + 'static);
+  where
+    @ctx::shared_only(S::Item: Send + Sync + 'static ,)
+    S: @ctx::Observable @ctx::local_only( + 'o)
 }
 
 pub struct TakeLastObserver<O, Item> {

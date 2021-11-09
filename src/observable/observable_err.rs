@@ -4,6 +4,7 @@ use crate::prelude::*;
 pub struct ObserverErr<N, E, Item, Err> {
   next: N,
   error: E,
+  is_stopped: bool,
   _marker: TypeHint<fn() -> (Item, Err)>,
 }
 
@@ -15,21 +16,19 @@ where
   type Item = Item;
   type Err = Err;
   #[inline]
-  fn next(&mut self, err: Item) { (self.next)(err); }
-  fn error(&mut self, err: Err) { (self.error)(err); }
-  #[inline]
-  fn complete(&mut self) {}
-}
-
-impl<N, E, Item, Err> ObserverErr<N, E, Item, Err> {
-  #[inline(always)]
-  pub fn new(next: N, error: E) -> Self {
-    ObserverErr {
-      next,
-      error,
-      _marker: TypeHint::new(),
+  fn next(&mut self, err: Item) {
+    if !self.is_stopped {
+      (self.next)(err);
     }
   }
+  fn error(&mut self, err: Err) {
+    if !self.is_stopped {
+      (self.error)(err);
+      self.is_stopped = true;
+    }
+  }
+  #[inline]
+  fn complete(&mut self) { self.is_stopped = true; }
 }
 
 pub trait SubscribeErr<'a, N, E> {
@@ -62,6 +61,7 @@ where
     let unsub = self.actual_subscribe(ObserverErr {
       next,
       error,
+      is_stopped: false,
       _marker: TypeHint::new(),
     });
     SubscriptionWrapper(unsub)
@@ -84,6 +84,7 @@ where
     let unsub = self.0.actual_subscribe(ObserverErr {
       next,
       error,
+      is_stopped: false,
       _marker: TypeHint::new(),
     });
     SubscriptionWrapper(unsub)

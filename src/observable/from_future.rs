@@ -1,4 +1,4 @@
-use crate::prelude::*;
+use crate::{impl_helper::*, impl_local_shared_both, prelude::*};
 use futures::FutureExt;
 use observable::of;
 use std::future::Future;
@@ -21,26 +21,23 @@ use std::future::Future;
 /// ```
 /// If your `Future` poll an `Result` type value, and you want dispatch the
 /// error by rxrust, you can use [`from_future_result`]
-pub fn from_future<F, Item, S>(
-  f: F,
-  scheduler: S,
-) -> ObservableBase<FutureEmitter<F, S>>
+pub fn from_future<F, Item, S>(f: F, scheduler: S) -> FutureObservable<F, S>
 where
   F: Future<Output = Item>,
 {
-  ObservableBase::new(FutureEmitter {
+  FutureObservable {
     future: f,
     scheduler,
-  })
+  }
 }
 
 #[derive(Clone)]
-pub struct FutureEmitter<F, S> {
+pub struct FutureObservable<F, S> {
   future: F,
   scheduler: S,
 }
 
-impl<Item, F, S> Emitter for FutureEmitter<F, S>
+impl<Item, F, S> Observable for FutureObservable<F, S>
 where
   F: Future<Output = Item>,
 {
@@ -48,42 +45,21 @@ where
   type Err = ();
 }
 
-impl<Item, F, S> SharedEmitter for FutureEmitter<F, S>
-where
-  F: Future<Output = Item> + Send + Sync + 'static,
-  S: SharedScheduler,
-{
+impl_local_shared_both! {
+  impl<F, Item, S> FutureObservable<F, S>;
   type Unsub = SpawnHandle;
-  fn emit<O>(self, observer: O) -> Self::Unsub
-  where
-    O: Observer<Item = Self::Item, Err = Self::Err> + Send + Sync + 'static,
-  {
-    let f = self
+  macro method($self: ident, $observer: ident, $ctx: ident) {
+    let f = $self
       .future
-      .map(move |v| SharedEmitter::emit(of::OfEmitter(v), observer));
+      .map(move |v| $ctx::actual_subscribe(of::of(v), $observer));
     let (future, handle) = futures::future::abortable(f);
-    self.scheduler.spawn(future.map(|_| ()));
+    $self.scheduler.spawn(future.map(|_| ()));
     SpawnHandle::new(handle)
   }
-}
-
-impl<Item, F, S> LocalEmitter<'static> for FutureEmitter<F, S>
-where
-  F: Future<Output = Item> + 'static,
-  S: LocalScheduler,
-{
-  type Unsub = SpawnHandle;
-  fn emit<O>(self, observer: O) -> Self::Unsub
   where
-    O: Observer<Item = Self::Item, Err = Self::Err> + 'static,
-  {
-    let f = self
-      .future
-      .map(move |v| LocalEmitter::emit(of::OfEmitter(v), observer));
-    let (future, handle) = futures::future::abortable(f);
-    self.scheduler.spawn(future.map(|_| ()));
-    SpawnHandle::new(handle)
-  }
+    @ctx::local_only('o: 'static,)
+    F: Future<Output = Item> @ctx::shared_only(+ Send + Sync) + 'static,
+    S: @ctx::Scheduler
 }
 
 /// Converts a `Future` to an observable sequence like
@@ -93,26 +69,26 @@ where
 pub fn from_future_result<F, S, Item, Err>(
   future: F,
   scheduler: S,
-) -> ObservableBase<FutureResultEmitter<F, S, Item, Err>>
+) -> FutureResultObservable<F, S, Item, Err>
 where
   F: Future,
   <F as Future>::Output: Into<Result<Item, Err>>,
 {
-  ObservableBase::new(FutureResultEmitter {
+  FutureResultObservable {
     future,
     scheduler,
     _marker: TypeHint::new(),
-  })
+  }
 }
 
 #[derive(Clone)]
-pub struct FutureResultEmitter<F, S, Item, Err> {
+pub struct FutureResultObservable<F, S, Item, Err> {
   future: F,
   scheduler: S,
   _marker: TypeHint<(Item, Err)>,
 }
 
-impl<Item, S, Err, F> Emitter for FutureResultEmitter<F, S, Item, Err>
+impl<Item, S, Err, F> Observable for FutureResultObservable<F, S, Item, Err>
 where
   F: Future,
   <F as Future>::Output: Into<Result<Item, Err>>,
@@ -121,47 +97,23 @@ where
   type Err = Err;
 }
 
-impl<Item, Err, S, F> SharedEmitter for FutureResultEmitter<F, S, Item, Err>
-where
-  Item: Send + Sync + 'static,
-  Err: Send + Sync + 'static,
-  F: Future + Send + Clone + Sync + 'static,
-  <F as Future>::Output: Into<Result<Item, Err>>,
-  S: SharedScheduler,
-{
+impl_local_shared_both! {
+  impl<Item, Err, S, F> FutureResultObservable<F, S, Item, Err>;
   type Unsub = SpawnHandle;
-  fn emit<O>(self, observer: O) -> Self::Unsub
-  where
-    O: Observer<Item = Self::Item, Err = Self::Err> + Send + Sync + 'static,
-  {
-    let f = self
+  macro method($self: ident, $observer: ident, $ctx: ident) {
+    let f = $self
       .future
-      .map(move |v| SharedEmitter::emit(of::ResultEmitter(v.into()), observer));
+      .map(move |v|$ctx::actual_subscribe( of::of_result(v.into()), $observer));
     let (future, handle) = futures::future::abortable(f);
-    self.scheduler.spawn(future.map(|_| ()));
+    $self.scheduler.spawn(future.map(|_| ()));
     SpawnHandle::new(handle)
   }
-}
-
-impl<Item, Err, S, F> LocalEmitter<'static>
-  for FutureResultEmitter<F, S, Item, Err>
-where
-  F: Future + 'static,
-  <F as Future>::Output: Into<Result<Item, Err>>,
-  S: LocalScheduler,
-{
-  type Unsub = SpawnHandle;
-  fn emit<O>(self, observer: O) -> Self::Unsub
   where
-    O: Observer<Item = Self::Item, Err = Self::Err> + 'static,
-  {
-    let f = self
-      .future
-      .map(move |v| LocalEmitter::emit(of::ResultEmitter(v.into()), observer));
-    let (future, handle) = futures::future::abortable(f);
-    self.scheduler.spawn(future.map(|_| ()));
-    SpawnHandle::new(handle)
-  }
+    @ctx::local_only('o: 'static,)
+    S: @ctx::Scheduler,
+    F: Future @ctx::shared_only(+ Send + Sync) + 'static,
+    <F as Future>::Output: Into<Result<Item, Err>>,
+    S: @ctx::Scheduler
 }
 
 #[cfg(test)]

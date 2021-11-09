@@ -1,4 +1,4 @@
-use crate::prelude::*;
+use crate::{impl_local_shared_both, prelude::*};
 use std::{cmp::Eq, collections::HashSet, hash::Hash};
 
 #[derive(Clone)]
@@ -6,41 +6,26 @@ pub struct DistinctOp<S> {
   pub(crate) source: S,
 }
 
-observable_proxy_impl!(DistinctOp, S);
+impl<S: Observable> Observable for DistinctOp<S> {
+  type Item = S::Item;
+  type Err = S::Err;
+}
 
-macro_rules! distinct_impl {
-  ( $subscription:ty, $($marker:ident +)* $lf: lifetime) => {
-  fn actual_subscribe<O>(
-    self,
-    observer: O,
-  ) -> Self::Unsub
-  where O: Observer<Item=Self::Item,Err= Self::Err> + $($marker +)* $lf {
-    self.source.actual_subscribe(DistinctObserver {
-      observer,
+impl_local_shared_both! {
+  impl<S> DistinctOp<S>;
+  type Unsub = S::Unsub;
+  macro method($self: ident, $observer: ident, $ctx: ident) {
+    $self.source.actual_subscribe(DistinctObserver {
+      observer: $observer,
       seen: HashSet::new(),
     })
   }
+  where
+    S: @ctx::Observable,
+    S::Item: Eq + Hash + Clone
+      @ctx::local_only(+ 'o)
+      @ctx::shared_only(+ Send + Sync + 'static)
 }
-}
-
-impl<'a, S, Item> LocalObservable<'a> for DistinctOp<S>
-where
-  S: LocalObservable<'a, Item = Item>,
-  Item: 'a + Eq + Hash + Clone,
-{
-  type Unsub = S::Unsub;
-  distinct_impl!(LocalSubscription,'a);
-}
-
-impl<S, Item> SharedObservable for DistinctOp<S>
-where
-  S: SharedObservable<Item = Item>,
-  Item: Hash + Eq + Clone + Send + Sync + 'static,
-{
-  type Unsub = S::Unsub;
-  distinct_impl!(SharedSubscription, Send + Sync + 'static);
-}
-
 struct DistinctObserver<O, Item> {
   observer: O,
   seen: HashSet<Item>,

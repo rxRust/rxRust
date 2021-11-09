@@ -1,10 +1,5 @@
+use crate::prelude::{MutArc, MutRc, RcDerefMut};
 use smallvec::SmallVec;
-use std::{
-  any::Any,
-  cell::RefCell,
-  rc::Rc,
-  sync::{Arc, Mutex},
-};
 
 /// Subscription returns from `Observable.subscribe(Subscriber)` to allow
 ///  unsubscribing.
@@ -16,42 +11,8 @@ pub trait SubscriptionLike {
   fn is_closed(&self) -> bool;
 }
 
-// todo provide LocalRef/SharedRef generic type for all subscription type.
-
-#[derive(Clone, Default)]
-pub struct LocalSubscription(
-  Rc<RefCell<MultiSubscription<Box<dyn SubscriptionLike>>>>,
-);
-
-impl LocalSubscription {
-  pub fn add<S: SubscriptionLike + 'static>(&self, subscription: S) {
-    if !self.is_same(&subscription) {
-      self.0.borrow_mut().add(Box::new(subscription))
-    }
-  }
-
-  fn is_same(&self, other: &dyn Any) -> bool {
-    if let Some(other) = other.downcast_ref::<Self>() {
-      Rc::ptr_eq(&self.0, &other.0)
-    } else {
-      false
-    }
-  }
-}
-
-impl TearDownSize for LocalSubscription {
-  fn teardown_size(&self) -> usize { self.0.borrow().teardown.len() }
-}
-
 pub trait TearDownSize: SubscriptionLike {
   fn teardown_size(&self) -> usize;
-}
-
-impl SubscriptionLike for LocalSubscription {
-  #[inline]
-  fn unsubscribe(&mut self) { self.0.unsubscribe() }
-  #[inline]
-  fn is_closed(&self) -> bool { self.0.is_closed() }
 }
 
 impl<S: SubscriptionLike + ?Sized> SubscriptionLike for Box<S> {
@@ -60,41 +21,11 @@ impl<S: SubscriptionLike + ?Sized> SubscriptionLike for Box<S> {
   #[inline]
   fn is_closed(&self) -> bool { (&**self).is_closed() }
 }
-#[derive(Clone, Default)]
-pub struct SharedSubscription(
-  Arc<Mutex<MultiSubscription<Box<dyn SubscriptionLike + Send + Sync>>>>,
-);
 
-impl SharedSubscription {
-  pub fn add<S: SubscriptionLike + Send + Sync + 'static>(
-    &self,
-    subscription: S,
-  ) {
-    if !self.is_same(&subscription) {
-      self.0.lock().unwrap().add(Box::new(subscription));
-    }
-  }
-
-  fn is_same(&self, other: &dyn Any) -> bool {
-    if let Some(other) = other.downcast_ref::<Self>() {
-      Arc::ptr_eq(&self.0, &other.0)
-    } else {
-      false
-    }
-  }
-}
-
-impl TearDownSize for SharedSubscription {
-  fn teardown_size(&self) -> usize { self.0.lock().unwrap().teardown.len() }
-}
-
-impl SubscriptionLike for SharedSubscription {
-  #[inline]
-  fn unsubscribe(&mut self) { self.0.unsubscribe(); }
-  #[inline]
-  fn is_closed(&self) -> bool { self.0.is_closed() }
-}
-
+pub type SharedSubscription =
+  MutArc<MultiSubscription<Box<dyn SubscriptionLike + Send + Sync>>>;
+pub type LocalSubscription =
+  MutRc<MultiSubscription<Box<dyn SubscriptionLike>>>;
 pub struct MultiSubscription<T> {
   closed: bool,
   teardown: SmallVec<[T; 1]>,
@@ -115,13 +46,25 @@ impl<T: SubscriptionLike> SubscriptionLike for MultiSubscription<T> {
 }
 
 impl<T: SubscriptionLike> MultiSubscription<T> {
-  fn add(&mut self, mut v: T) {
+  pub fn add(&mut self, mut v: T) {
     if self.closed {
       v.unsubscribe();
     } else {
       self.teardown.retain(|v| !v.is_closed());
       self.teardown.push(v);
     }
+  }
+}
+
+impl LocalSubscription {
+  pub fn add<S: SubscriptionLike + 'static>(&self, s: S) {
+    self.rc_deref_mut().add(Box::new(s));
+  }
+}
+
+impl SharedSubscription {
+  pub fn add<S: SubscriptionLike + Send + Sync + 'static>(&self, s: S) {
+    self.rc_deref_mut().add(Box::new(s));
   }
 }
 
@@ -132,6 +75,11 @@ impl<T> Default for MultiSubscription<T> {
       teardown: SmallVec::new(),
     }
   }
+}
+
+impl<T: SubscriptionLike> TearDownSize for MultiSubscription<T> {
+  #[inline]
+  fn teardown_size(&self) -> usize { self.teardown.len() }
 }
 
 /// Wrapper around a subscription which provides the
@@ -217,28 +165,13 @@ impl<T: SubscriptionLike> SubscriptionLike for ProxySubscription<T> {
   }
 }
 
-impl<T: SubscriptionLike> SubscriptionLike for Arc<Mutex<T>> {
-  #[inline]
-  fn unsubscribe(&mut self) { self.lock().unwrap().unsubscribe() }
-
-  #[inline]
-  fn is_closed(&self) -> bool { self.lock().unwrap().is_closed() }
-}
-
-impl<T: SubscriptionLike> SubscriptionLike for Rc<RefCell<T>> {
-  #[inline]
-  fn unsubscribe(&mut self) { self.borrow_mut().unsubscribe() }
-
-  #[inline]
-  fn is_closed(&self) -> bool { self.borrow().is_closed() }
-}
-
 impl<T: SubscriptionLike> Default for ProxySubscription<T> {
   fn default() -> Self { Self(Default::default()) }
 }
 
 #[cfg(test)]
 mod test {
+
   use super::*;
   #[test]
   fn add_remove_for_local() {
@@ -247,24 +180,24 @@ mod test {
     let l2 = LocalSubscription::default();
     let l3 = LocalSubscription::default();
     local.add(l1);
-    assert_eq!(local.0.borrow().teardown.len(), 1);
+    assert_eq!(local.teardown_size(), 1);
     local.add(l2);
-    assert_eq!(local.0.borrow().teardown.len(), 2);
+    assert_eq!(local.teardown_size(), 2);
     local.add(l3);
-    assert_eq!(local.0.borrow().teardown.len(), 3);
+    assert_eq!(local.teardown_size(), 3);
   }
 
   #[test]
   fn add_remove_for_shared() {
-    let local = SharedSubscription::default();
+    let shared = SharedSubscription::default();
     let l1 = SharedSubscription::default();
     let l2 = SharedSubscription::default();
     let l3 = SharedSubscription::default();
-    local.add(l1);
-    assert_eq!(local.0.lock().unwrap().teardown.len(), 1);
-    local.add(l2);
-    assert_eq!(local.0.lock().unwrap().teardown.len(), 2);
-    local.add(l3);
-    assert_eq!(local.0.lock().unwrap().teardown.len(), 3);
+    shared.add(l1);
+    assert_eq!(shared.teardown_size(), 1);
+    shared.add(l2);
+    assert_eq!(shared.teardown_size(), 2);
+    shared.add(l3);
+    assert_eq!(shared.teardown_size(), 3);
   }
 }

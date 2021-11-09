@@ -1,13 +1,25 @@
-use crate::observer::Observer;
-use crate::prelude::{Subject, SubscriptionLike};
+use crate::prelude::*;
 
-#[derive(Clone)]
-pub struct BehaviorSubject<O: Observer, U: SubscriptionLike> {
+pub struct BehaviorSubject<O: Observer + ?Sized, U: SubscriptionLike> {
   pub(crate) subject: Subject<O, U>,
   pub(crate) value: O::Item,
 }
 
-impl<O: Observer, U: SubscriptionLike> SubscriptionLike
+pub type LocalBehaviorSubject<'a, Item, Err> = MutRc<
+  BehaviorSubject<
+    dyn Observer<Item = Item, Err = Err> + 'a,
+    MutRc<SingleSubscription>,
+  >,
+>;
+
+pub type SharedBehaviorSubject<Item, Err> = MutArc<
+  BehaviorSubject<
+    dyn Observer<Item = Item, Err = Err> + Send + Sync,
+    MutArc<SingleSubscription>,
+  >,
+>;
+
+impl<O: Observer + ?Sized, U: SubscriptionLike> SubscriptionLike
   for BehaviorSubject<O, U>
 {
   #[inline]
@@ -19,7 +31,7 @@ impl<O: Observer, U: SubscriptionLike> SubscriptionLike
 
 impl<O, U> Observer for BehaviorSubject<O, U>
 where
-  O: Observer,
+  O: Observer + ?Sized,
   O::Item: Clone,
   O::Err: Clone,
   U: SubscriptionLike,
@@ -39,6 +51,83 @@ where
   #[inline]
   fn complete(&mut self) { self.subject.complete() }
 }
+
+impl<O: Observer + ?Sized, U: SubscriptionLike> TearDownSize
+  for BehaviorSubject<O, U>
+{
+  #[inline]
+  fn teardown_size(&self) -> usize { self.subject.teardown_size() }
+}
+
+impl<O, S> BehaviorSubject<O, S>
+where
+  O: Observer + ?Sized,
+  S: SubscriptionLike,
+{
+  pub fn new(value: O::Item) -> Self {
+    Self {
+      subject: <_>::default(),
+      value,
+    }
+  }
+}
+
+impl<Item, Err> Observable for SharedBehaviorSubject<Item, Err> {
+  type Item = Item;
+  type Err = Err;
+}
+
+impl<Item, Err> SharedObservable for SharedBehaviorSubject<Item, Err>
+where
+  Item: Clone,
+  Err: Clone,
+{
+  type Unsub = MutArc<SingleSubscription>;
+  fn actual_subscribe<O>(self, mut observer: O) -> Self::Unsub
+  where
+    O: Observer<Item = Self::Item, Err = Self::Err> + Sync + Send + 'static,
+  {
+    if !self.rc_deref().subject.is_closed() {
+      observer.next(self.rc_deref().value.clone());
+    }
+    let o = Box::new(observer);
+    self.rc_deref_mut().subject.subscribe(o)
+  }
+}
+
+impl<Item, Err> SharedBehaviorSubject<Item, Err> {
+  #[inline]
+  pub fn new(value: Item) -> Self { MutArc::own(BehaviorSubject::new(value)) }
+}
+
+impl<'a, Item, Err> Observable for LocalBehaviorSubject<'a, Item, Err> {
+  type Item = Item;
+  type Err = Err;
+}
+
+impl<'a, Item: Clone, Err> LocalObservable<'a>
+  for LocalBehaviorSubject<'a, Item, Err>
+{
+  type Unsub = MutRc<SingleSubscription>;
+  fn actual_subscribe<O>(self, mut observer: O) -> Self::Unsub
+  where
+    O: Observer<Item = Self::Item, Err = Self::Err> + 'a,
+  {
+    if !self.rc_deref().subject.is_closed() {
+      observer.next(self.rc_deref().value.clone());
+    }
+    self
+      .rc_deref_mut()
+      .subject
+      .subscribe(Box::new(Box::new(observer)))
+  }
+}
+
+impl<'a, Item, Err> LocalBehaviorSubject<'a, Item, Err> {
+  #[inline]
+  pub fn new(value: Item) -> Self { MutRc::own(BehaviorSubject::new(value)) }
+}
+
 #[cfg(test)]
 mod test {
   use crate::prelude::*;

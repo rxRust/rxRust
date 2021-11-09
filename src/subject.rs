@@ -1,17 +1,70 @@
 use crate::prelude::*;
-mod local_subject;
-pub use local_subject::*;
+pub mod behavior_subject;
+pub use behavior_subject::*;
 
-mod shared_subject;
-pub use shared_subject::*;
-
-#[derive(Clone)]
-pub struct Subject<O: Observer, S: SubscriptionLike> {
-  pub(crate) observers: Vec<SubjectObserver<O, S>>,
+pub struct Subject<O: Observer + ?Sized, S: SubscriptionLike> {
+  pub(crate) observers: Vec<SubjectObserver<Box<O>, S>>,
   pub(crate) subscription: SingleSubscription,
 }
 
-impl<O: Observer, U: SubscriptionLike> SubscriptionLike for Subject<O, U> {
+//todo use atomic bool replace Box<dyn Publisher<Item = Item, Err = Err> + Send
+// + Sync>
+pub type SharedSubject<Item, Err> = MutArc<
+  Subject<
+    dyn Observer<Item = Item, Err = Err> + Send + Sync,
+    MutArc<SingleSubscription>,
+  >,
+>;
+
+pub type LocalSubject<'a, Item, Err> = MutRc<
+  Subject<dyn Observer<Item = Item, Err = Err> + 'a, MutRc<SingleSubscription>>,
+>;
+
+impl<Item, Err> SharedSubject<Item, Err> {
+  #[inline]
+  pub fn new() -> Self { Self::default() }
+}
+
+impl<Item, Err> Observable for SharedSubject<Item, Err> {
+  type Item = Item;
+  type Err = Err;
+}
+
+impl<Item, Err> SharedObservable for SharedSubject<Item, Err> {
+  type Unsub = MutArc<SingleSubscription>;
+  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
+  where
+    O: Observer<Item = Self::Item, Err = Self::Err> + Sync + Send + 'static,
+  {
+    self.rc_deref_mut().subscribe(Box::new(observer))
+  }
+}
+
+impl<'a, Item, Err> Observable for LocalSubject<'a, Item, Err> {
+  type Item = Item;
+  type Err = Err;
+}
+
+impl<'a, Item, Err> LocalObservable<'a> for LocalSubject<'a, Item, Err> {
+  type Unsub = MutRc<SingleSubscription>;
+  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
+  where
+    O: Observer<Item = Self::Item, Err = Self::Err> + 'a,
+  {
+    self.rc_deref_mut().subscribe(Box::new(observer))
+  }
+}
+
+impl<'a, Item, Err> LocalSubject<'a, Item, Err> {
+  #[inline]
+  pub fn new() -> Self { Self::default() }
+}
+
+impl<O, U> SubscriptionLike for Subject<O, U>
+where
+  O: Observer + ?Sized,
+  U: SubscriptionLike,
+{
   #[inline]
   fn unsubscribe(&mut self) {
     self
@@ -26,8 +79,13 @@ impl<O: Observer, U: SubscriptionLike> SubscriptionLike for Subject<O, U> {
   fn is_closed(&self) -> bool { self.subscription.is_closed() }
 }
 
-impl<O: Observer, U: SubscriptionLike> Subject<O, U> {
-  fn subscribed_size(&self) -> usize { self.observers.len() }
+impl<O, U> TearDownSize for Subject<O, U>
+where
+  O: Observer + ?Sized,
+  U: SubscriptionLike,
+{
+  #[inline]
+  fn teardown_size(&self) -> usize { self.observers.len() }
 }
 
 #[derive(Clone)]
@@ -36,20 +94,29 @@ pub(crate) struct SubjectObserver<O: Observer, S: SubscriptionLike> {
   pub subscription: S,
 }
 
-impl<O: Observer, S: SubscriptionLike> Observer for Subject<O, S>
+impl<O, S> Observer for Subject<O, S>
 where
+  O: Observer + ?Sized,
   O::Item: Clone,
   O::Err: Clone,
+  S: SubscriptionLike,
 {
   type Item = O::Item;
   type Err = O::Err;
   fn next(&mut self, value: Self::Item) {
-    let any_finished = self.observers.iter_mut().fold(false, |finished, o| {
-      o.observer.next(value.clone());
-      finished || o.subscription.is_closed()
-    });
-    if any_finished {
-      self.observers.retain(|o| !o.subscription.is_closed());
+    if !self.subscription.is_closed() {
+      let any_finished =
+        self.observers.iter_mut().fold(false, |finished, o| {
+          if !o.subscription.is_closed() {
+            o.observer.next(value.clone());
+          }
+          finished || o.subscription.is_closed()
+        });
+      if any_finished {
+        self.observers.retain(|o| !o.subscription.is_closed());
+      }
+    } else {
+      self.observers.clear();
     }
   }
 
@@ -70,7 +137,7 @@ where
   }
 }
 
-impl<O: Observer, S: SubscriptionLike> Default for Subject<O, S> {
+impl<O: Observer + ?Sized, S: SubscriptionLike> Default for Subject<O, S> {
   fn default() -> Self {
     Subject {
       observers: vec![],
@@ -81,10 +148,10 @@ impl<O: Observer, S: SubscriptionLike> Default for Subject<O, S> {
 
 impl<O, U> Subject<O, U>
 where
-  O: Observer,
+  O: Observer + ?Sized,
   U: SubscriptionLike + Default + Clone,
 {
-  fn subscribe(&mut self, observer: O) -> U {
+  fn subscribe(&mut self, observer: Box<O>) -> U {
     let subscription = U::default();
     let observer = SubjectObserver {
       observer,
@@ -100,6 +167,19 @@ mod test {
   use super::*;
   use futures::executor::ThreadPool;
   use std::time::{Duration, Instant};
+
+  #[test]
+  fn smoke() {
+    let test_code = MutArc::own("".to_owned());
+    let mut subject = SharedSubject::new();
+    let c_test_code = test_code.clone();
+    subject.clone().into_shared().subscribe(move |v: &str| {
+      *c_test_code.rc_deref_mut() = v.to_owned();
+    });
+    subject.next("test shared subject");
+    assert_eq!(*test_code.rc_deref_mut(), "test shared subject");
+    assert_eq!(subject.teardown_size(), 1);
+  }
 
   #[test]
   fn base_data_flow() {

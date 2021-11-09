@@ -223,8 +223,6 @@ mod test {
         .into_shared()
         .subscribe(move |v| *c_last.lock().unwrap() = v);
 
-      // todo: no way to wait all task has finished in `ThreadPool`.
-
       *last.lock().unwrap()
     })
   }
@@ -266,7 +264,6 @@ mod test {
         .into_shared()
         .subscribe(move |v| *c_last.lock().unwrap() = v);
 
-      // todo: no way to wait all task has finished in `Tokio` Scheduler.
       *last.lock().unwrap()
     })
   }

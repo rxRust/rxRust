@@ -1,8 +1,4 @@
-use crate::prelude::*;
-use std::cell::RefCell;
-use std::rc::Rc;
-use std::sync::{Arc, Mutex};
-
+use crate::{impl_helper::*, impl_local_shared_both, prelude::*};
 ////////////////////////////////////////////////////////////////////////////////
 
 #[derive(Clone)]
@@ -12,13 +8,13 @@ pub struct FlattenOp<S, Inner> {
   pub(crate) marker: std::marker::PhantomData<Inner>,
 }
 
-impl<Outer, Inner, Item, Err> Observable for FlattenOp<Outer, Inner>
+impl<Outer, Inner> Observable for FlattenOp<Outer, Inner>
 where
-  Outer: Observable<Item = Inner, Err = Err>,
-  Inner: Observable<Item = Item, Err = Err>,
+  Inner: Observable,
+  Outer: Observable<Item = Inner, Err = Inner::Err>,
 {
-  type Item = Item;
-  type Err = Err;
+  type Item = Inner::Item;
+  type Err = Inner::Err;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -104,223 +100,102 @@ impl Default for FlattenState {
 #[derive(Clone)]
 /// This is an `Observer` for items of an `Observable` that is emitted from a
 /// parent `Observable`.
-pub struct FlattenInnerObserver<O, S, St> {
+pub struct FlattenInnerObserver<O, U, S> {
   observer: O,
-  subscription: S,
-  state: St,
+  subscription: U,
+  state: S,
 }
 
-impl<O, S, Item, Err> Observer
-  for FlattenInnerObserver<O, S, Arc<Mutex<FlattenState>>>
+impl<O, U, S> Observer for FlattenInnerObserver<O, U, S>
 where
-  O: Observer<Item = Item, Err = Err>,
-  S: SubscriptionLike,
+  O: Observer,
+  U: SubscriptionLike,
+  S: RcDerefMut,
+  for<'r> S::Target<'r>: std::ops::DerefMut<Target = FlattenState>,
 {
-  type Item = Item;
-  type Err = Err;
+  type Item = O::Item;
+  type Err = O::Err;
 
   fn next(&mut self, item: Self::Item) {
-    let state = self.state.lock().unwrap();
-    let is_completed = state.is_completed;
-    drop(state);
-
-    if !is_completed {
+    if !self.state.rc_deref_mut().is_completed {
       self.observer.next(item);
     }
   }
 
   fn error(&mut self, err: Self::Err) {
-    let mut state = self.state.lock().unwrap();
-    let should_error = state.register_observable_error();
-    drop(state);
-
-    if should_error {
+    if self.state.rc_deref_mut().register_observable_error() {
       self.observer.error(err);
       self.subscription.unsubscribe();
     }
   }
 
   fn complete(&mut self) {
-    let mut state = self.state.lock().unwrap();
-    let should_complete = state.register_observable_completed();
-    drop(state);
-
-    if should_complete {
+    if self.state.rc_deref_mut().register_observable_completed() {
       self.observer.complete();
       self.subscription.unsubscribe();
     }
   }
 }
-
-impl<O, S, Item, Err> Observer
-  for FlattenInnerObserver<O, S, Rc<RefCell<FlattenState>>>
-where
-  O: Observer<Item = Item, Err = Err>,
-  S: SubscriptionLike,
-{
-  type Item = Item;
-  type Err = Err;
-
-  fn next(&mut self, item: Self::Item) {
-    let state = self.state.borrow();
-    let is_completed = state.is_completed;
-    drop(state);
-
-    if !is_completed {
-      self.observer.next(item);
-    }
-  }
-
-  fn error(&mut self, err: Self::Err) {
-    let mut state = self.state.borrow_mut();
-    let should_error = state.register_observable_error();
-    drop(state);
-
-    if should_error {
-      self.observer.error(err);
-      self.subscription.unsubscribe();
-    }
-  }
-
-  fn complete(&mut self) {
-    let mut state = self.state.borrow_mut();
-    let should_complete = state.register_observable_completed();
-    drop(state);
-
-    if should_complete {
-      self.observer.complete();
-      self.subscription.unsubscribe();
-    }
-  }
-}
-
-impl<O, S, Item, Err> Observer for FlattenInnerObserver<O, S, Box<FlattenState>>
-where
-  O: Observer<Item = Item, Err = Err>,
-  S: SubscriptionLike,
-{
-  type Item = Item;
-  type Err = Err;
-
-  fn next(&mut self, item: Self::Item) {
-    let state = &mut self.state;
-    let is_completed = state.is_completed;
-
-    if !is_completed {
-      self.observer.next(item);
-    }
-  }
-
-  fn error(&mut self, err: Self::Err) {
-    let state = &mut self.state;
-    let should_error = state.register_observable_error();
-
-    if should_error {
-      self.observer.error(err);
-      self.subscription.unsubscribe();
-    }
-  }
-
-  fn complete(&mut self) {
-    let state = &mut self.state;
-    let should_complete = state.register_observable_completed();
-
-    if should_complete {
-      self.observer.complete();
-      self.subscription.unsubscribe();
-    }
-  }
-}
-////////////////////////////////////////////////////////////////////////////////
-// shared
-
-type SharedInnerObserver<O> =
-  FlattenInnerObserver<O, SharedSubscription, Arc<Mutex<FlattenState>>>;
 
 #[derive(Clone)]
 /// This is an `Observer` for `Observable` values that get emitted by an
 /// `Observable` that works on a shared environment.
-pub struct FlattenSharedOuterObserver<Inner, O> {
+pub struct FlattenOuterObserver<Inner, InnerObserver, U, S> {
   marker: std::marker::PhantomData<Inner>,
-  inner_observer: Arc<Mutex<SharedInnerObserver<O>>>,
-  subscription: SharedSubscription,
-  state: Arc<Mutex<FlattenState>>,
+  inner_observer: InnerObserver,
+  subscription: U,
+  state: S,
 }
 
-impl<Inner, O, Item, Err> Observer for FlattenSharedOuterObserver<Inner, O>
+type FlattenSharedOuterObserver<Inner, InnerObserver> = FlattenOuterObserver<
+  Inner,
+  MutArc<
+    FlattenInnerObserver<
+      InnerObserver,
+      SharedSubscription,
+      MutArc<FlattenState>,
+    >,
+  >,
+  SharedSubscription,
+  MutArc<FlattenState>,
+>;
+
+type FlattenLocalOuterObserver<Inner, InnerObserver> = FlattenOuterObserver<
+  Inner,
+  MutRc<
+    FlattenInnerObserver<InnerObserver, LocalSubscription, MutRc<FlattenState>>,
+  >,
+  LocalSubscription,
+  MutRc<FlattenState>,
+>;
+
+macro_rules! impl_outer_obsrever {
+  () => {
+    type Item = Inner;
+    type Err = O::Err;
+
+    fn next(&mut self, value: Inner) {
+      // increase count of registered Observables to keep track
+      // of observable completion
+      self.state.rc_deref_mut().register_new_observable();
+
+      self
+        .subscription
+        .add(value.actual_subscribe(self.inner_observer.clone()));
+    }
+
+    fn error(&mut self, err: Self::Err) { self.inner_observer.error(err) }
+
+    fn complete(&mut self) { self.inner_observer.complete() }
+  };
+}
+
+impl<Inner, O> Observer for FlattenSharedOuterObserver<Inner, O>
 where
-  O: Observer<Item = Item, Err = Err> + Sync + Send + 'static,
-  Inner: SharedObservable<Item = Item, Err = Err>,
+  O: Observer + Sync + Send + 'static,
+  Inner: SharedObservable<Item = O::Item, Err = O::Err>,
 {
-  type Item = Inner;
-  type Err = Err;
-
-  fn next(&mut self, value: Inner) {
-    // increase count of registered Observables to keep track
-    // of observable completion
-    let mut state = self.state.lock().unwrap();
-    state.register_new_observable();
-    drop(state);
-
-    self
-      .subscription
-      .add(value.actual_subscribe(self.inner_observer.clone()));
-  }
-
-  fn error(&mut self, err: Self::Err) { self.inner_observer.error(err) }
-
-  fn complete(&mut self) { self.inner_observer.complete() }
-}
-
-impl<Outer, Inner, Item, Err> SharedObservable for FlattenOp<Outer, Inner>
-where
-  Outer: SharedObservable<Item = Inner, Err = Err>,
-  Outer::Unsub: Send + Sync + 'static,
-  Inner: SharedObservable<Item = Item, Err = Err> + Send + Sync + 'static,
-{
-  type Unsub = SharedSubscription;
-
-  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
-  where
-    O: Observer<Item = Self::Item, Err = Self::Err> + Sync + Send + 'static,
-  {
-    let state = Arc::new(Mutex::new(FlattenState::new()));
-
-    let subscription = SharedSubscription::default();
-
-    let inner_observer = Arc::new(Mutex::new(FlattenInnerObserver {
-      observer,
-      subscription: subscription.clone(),
-      state: state.clone(),
-    }));
-
-    let observer = FlattenSharedOuterObserver {
-      marker: std::marker::PhantomData::<Inner>,
-      inner_observer,
-      subscription: subscription.clone(),
-      state,
-    };
-
-    subscription.add(self.source.actual_subscribe(observer));
-
-    subscription
-  }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// local
-
-type LocalInnerObserver<O> =
-  FlattenInnerObserver<O, LocalSubscription, Rc<RefCell<FlattenState>>>;
-
-#[derive(Clone)]
-/// This is an `Observer` for `Observable` values that get emitted by an
-/// `Observable` that works on a local environment.
-pub struct FlattenLocalOuterObserver<Inner, O> {
-  marker: std::marker::PhantomData<Inner>,
-  inner_observer: Rc<RefCell<LocalInnerObserver<O>>>,
-  subscription: LocalSubscription,
-  state: Rc<RefCell<FlattenState>>,
+  impl_outer_obsrever!();
 }
 
 impl<'a, Inner, O, Item, Err> Observer for FlattenLocalOuterObserver<Inner, O>
@@ -329,58 +204,40 @@ where
   Inner: LocalObservable<'a, Item = Item, Err = Err>,
   Inner::Unsub: 'static,
 {
-  type Item = Inner;
-  type Err = Err;
-
-  fn next(&mut self, value: Inner) {
-    let mut state = self.state.borrow_mut();
-    state.register_new_observable();
-    drop(state);
-
-    self
-      .subscription
-      .add(value.actual_subscribe(self.inner_observer.clone()));
-  }
-
-  fn error(&mut self, err: Self::Err) { self.inner_observer.error(err) }
-
-  fn complete(&mut self) { self.inner_observer.complete() }
+  impl_outer_obsrever!();
 }
 
-impl<'a, Outer, Inner, Item, Err> LocalObservable<'a>
-  for FlattenOp<Outer, Inner>
-where
-  Outer: LocalObservable<'a, Item = Inner, Err = Err>,
-  Inner: LocalObservable<'a, Item = Item, Err = Err> + 'a,
-  Outer::Unsub: 'static,
-  Inner::Unsub: 'static,
-{
-  type Unsub = LocalSubscription;
+impl_local_shared_both! {
+  impl<Outer, Inner> FlattenOp<Outer, Inner>;
+  type Unsub = @ctx::RcMultiSubscription;
+  macro method($self: ident, $observer:ident, $ctx: ident) {
+    let state = $ctx::Rc::own(FlattenState::new());
 
-  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
-  where
-    O: Observer<Item = Self::Item, Err = Self::Err> + 'a,
-  {
-    let state = Rc::new(RefCell::new(FlattenState::new()));
-    let subscription = LocalSubscription::default();
-
-    let inner_observer = Rc::new(RefCell::new(FlattenInnerObserver {
-      observer,
+    let subscription = $ctx::RcMultiSubscription::default();
+    let inner_observer = $ctx::Rc::own(FlattenInnerObserver {
+      observer: $observer,
       subscription: subscription.clone(),
       state: state.clone(),
-    }));
+    });
 
-    let observer = FlattenLocalOuterObserver {
+    let observer = FlattenOuterObserver {
       marker: std::marker::PhantomData::<Inner>,
       inner_observer,
       subscription: subscription.clone(),
       state,
     };
 
-    subscription.add(self.source.actual_subscribe(observer));
+    subscription.add($self.source.actual_subscribe(observer));
 
     subscription
   }
+  where
+    Inner: @ctx::Observable
+      @ctx::shared_only(+ Send + Sync + 'static)
+      @ctx::local_only(+ 'o),
+    Outer: @ctx::Observable<Item=Inner, Err=Inner::Err>,
+    Inner::Unsub: 'static,
+    Outer::Unsub: 'static
 }
 
 ////////////////////////////////////////////////////////////////////////////////

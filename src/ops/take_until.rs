@@ -1,8 +1,4 @@
-use std::cell::RefCell;
-use std::rc::Rc;
-use std::sync::{Arc, Mutex};
-
-use crate::prelude::*;
+use crate::{impl_helper::*, impl_local_shared_both, prelude::*};
 
 #[derive(Clone)]
 pub struct TakeUntilOp<S, N> {
@@ -10,64 +6,37 @@ pub struct TakeUntilOp<S, N> {
   pub(crate) notifier: N,
 }
 
-observable_proxy_impl!(TakeUntilOp, S, N);
-
-impl<'a, S, N> LocalObservable<'a> for TakeUntilOp<S, N>
-where
-  S: LocalObservable<'a> + 'a,
-  N: LocalObservable<'a, Err = S::Err> + 'a,
-  N::Unsub: 'static,
-  S::Unsub: 'static,
-{
-  type Unsub = LocalSubscription;
-  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
-  where
-    O: Observer<Item = Self::Item, Err = Self::Err> + 'a,
-  {
-    let subscription = LocalSubscription::default();
-    // We need to keep a reference to the observer from two places
-    let shared_observer = Rc::new(RefCell::new(observer));
-
-    subscription.add(self.notifier.actual_subscribe(
-      TakeUntilNotifierObserver {
-        subscription: subscription.clone(),
-        main_observer: shared_observer.clone(),
-        _p: TypeHint::new(),
-      },
-    ));
-    subscription.add(self.source.actual_subscribe(shared_observer));
-    subscription
-  }
+impl<S: Observable, N> Observable for TakeUntilOp<S, N> {
+  type Item = S::Item;
+  type Err = S::Err;
 }
 
-impl<S, N> SharedObservable for TakeUntilOp<S, N>
-where
-  S: SharedObservable,
-  N: SharedObservable<Err = S::Err>,
-  S::Item: Send + Sync + 'static,
-  N::Item: Send + Sync + 'static,
-  S::Unsub: Send + Sync,
-  N::Unsub: Send + Sync,
-{
-  type Unsub = SharedSubscription;
-  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
-  where
-    O: Observer<Item = Self::Item, Err = Self::Err> + Sync + Send + 'static,
-  {
-    let subscription = SharedSubscription::default();
+impl_local_shared_both! {
+  impl<S, N> TakeUntilOp<S, N>;
+  type Unsub = @ctx::RcMultiSubscription;
+  macro method($self: ident, $observer: ident, $ctx: ident) {
+    let subscription = $ctx::RcMultiSubscription::default();
     // We need to keep a reference to the observer from two places
-    let shared_observer = Arc::new(Mutex::new(observer));
+    let shared_observer = $ctx::Rc::own($observer);
 
-    subscription.add(self.notifier.actual_subscribe(
+    subscription.add($self.notifier.actual_subscribe(
       TakeUntilNotifierObserver {
         subscription: subscription.clone(),
         main_observer: shared_observer.clone(),
         _p: TypeHint::new(),
       },
     ));
-    subscription.add(self.source.actual_subscribe(shared_observer));
+    subscription.add($self.source.actual_subscribe(shared_observer));
     subscription
   }
+  where
+    S: @ctx::Observable,
+    N: @ctx::Observable<Err=S::Err>  @ctx::local_only(+ 'o),
+    @ctx::shared_only(N::Item: 'static,)
+    S::Unsub: 'static,
+    N::Unsub: 'static
+
+
 }
 
 pub struct TakeUntilNotifierObserver<O, U, Item> {

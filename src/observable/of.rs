@@ -1,4 +1,4 @@
-use crate::prelude::*;
+use crate::{impl_local_shared_both, prelude::*};
 
 /// Creates an observable producing a multiple values.
 ///
@@ -26,7 +26,7 @@ use crate::prelude::*;
 macro_rules! of_sequence {
     ( $( $item:expr ),* ) => {
   {
-    $crate::observable::create(|mut s| {
+    $crate::observable::create(|s| {
       $(
         s.next($item);
       )*
@@ -52,42 +52,24 @@ macro_rules! of_sequence {
 /// observable::of(123)
 ///   .subscribe(|v| {println!("{},", v)});
 /// ```
-pub fn of<Item>(v: Item) -> ObservableBase<OfEmitter<Item>> {
-  ObservableBase::new(OfEmitter(v))
-}
+pub fn of<Item>(v: Item) -> OfObservable<Item> { OfObservable(v) }
 
 #[derive(Clone)]
-pub struct OfEmitter<Item>(pub(crate) Item);
+pub struct OfObservable<Item>(pub(crate) Item);
 
-impl<Item> Emitter for OfEmitter<Item> {
+impl<Item> Observable for OfObservable<Item> {
   type Item = Item;
   type Err = ();
 }
 
-impl<'a, Item> LocalEmitter<'a> for OfEmitter<Item> {
-  type Unsub = SingleSubscription;
-
-  fn emit<O>(self, mut observer: O) -> Self::Unsub
-  where
-    O: Observer<Item = Self::Item, Err = Self::Err> + 'a,
-  {
-    observer.next(self.0);
-    observer.complete();
-    SingleSubscription::default()
-  }
-}
-
-impl<Item> SharedEmitter for OfEmitter<Item> {
-  type Unsub = SingleSubscription;
-
-  fn emit<O>(self, mut observer: O) -> Self::Unsub
-  where
-    O: Observer<Item = Self::Item, Err = Self::Err> + Send + Sync + 'static,
-  {
-    observer.next(self.0);
-    observer.complete();
-    SingleSubscription::default()
-  }
+impl_local_shared_both! {
+ impl<Item> OfObservable<Item>;
+ type Unsub = SingleSubscription;
+ macro method($self:ident, $observer: ident, $ctx: ident) {
+   $observer.next($self.0);
+   $observer.complete();
+   SingleSubscription::default()
+ }
 }
 
 /// Creates an observable that emits value or the error from a [`Result`] given.
@@ -115,48 +97,29 @@ impl<Item> SharedEmitter for OfEmitter<Item> {
 /// ```
 pub fn of_result<Item, Err>(
   r: Result<Item, Err>,
-) -> ObservableBase<ResultEmitter<Item, Err>> {
-  ObservableBase::new(ResultEmitter(r))
+) -> ResultObservable<Item, Err> {
+  ResultObservable(r)
 }
 
 #[derive(Clone)]
-pub struct ResultEmitter<Item, Err>(pub(crate) Result<Item, Err>);
+pub struct ResultObservable<Item, Err>(pub(crate) Result<Item, Err>);
 
-impl<Item, Err> Emitter for ResultEmitter<Item, Err> {
+impl<Item, Err> Observable for ResultObservable<Item, Err> {
   type Item = Item;
   type Err = Err;
 }
 
-impl<'a, Item, Err> LocalEmitter<'a> for ResultEmitter<Item, Err> {
-  type Unsub = SingleSubscription;
-
-  fn emit<O>(self, mut observer: O) -> Self::Unsub
-  where
-    O: Observer<Item = Self::Item, Err = Self::Err> + 'a,
-  {
-    match self.0 {
-      Ok(v) => observer.next(v),
-      Err(e) => observer.error(e),
-    };
-    observer.complete();
-    SingleSubscription::default()
-  }
-}
-
-impl<Item, Err> SharedEmitter for ResultEmitter<Item, Err> {
-  type Unsub = SingleSubscription;
-
-  fn emit<O>(self, mut observer: O) -> Self::Unsub
-  where
-    O: Observer<Item = Self::Item, Err = Self::Err> + Send + Sync + 'static,
-  {
-    match self.0 {
-      Ok(v) => observer.next(v),
-      Err(e) => observer.error(e),
-    };
-    observer.complete();
-    SingleSubscription::default()
-  }
+impl_local_shared_both! {
+ impl<Item, Err> ResultObservable<Item, Err>;
+ type Unsub = SingleSubscription;
+ macro method($self: ident, $observer: ident, $ctx: ident) {
+   match $self.0 {
+     Ok(v) => $observer.next(v),
+     Err(e) => $observer.error(e),
+   };
+   $observer.complete();
+   SingleSubscription::default()
+ }
 }
 
 /// Creates an observable that potentially emits a single value from [`Option`].
@@ -176,46 +139,28 @@ impl<Item, Err> SharedEmitter for ResultEmitter<Item, Err> {
 /// observable::of_option(Some(1234))
 ///   .subscribe(|v| {println!("{},", v)});
 /// ```
-pub fn of_option<Item>(o: Option<Item>) -> ObservableBase<OptionEmitter<Item>> {
-  ObservableBase::new(OptionEmitter(o))
+pub fn of_option<Item>(o: Option<Item>) -> OptionObservable<Item> {
+  OptionObservable(o)
 }
 
 #[derive(Clone)]
-pub struct OptionEmitter<Item>(pub(crate) Option<Item>);
+pub struct OptionObservable<Item>(pub(crate) Option<Item>);
 
-impl<Item> Emitter for OptionEmitter<Item> {
+impl<Item> Observable for OptionObservable<Item> {
   type Item = Item;
   type Err = ();
 }
 
-impl<'a, Item> LocalEmitter<'a> for OptionEmitter<Item> {
-  type Unsub = SingleSubscription;
-
-  fn emit<O>(self, mut observer: O) -> Self::Unsub
-  where
-    O: Observer<Item = Self::Item, Err = Self::Err> + 'a,
-  {
-    if let Some(v) = self.0 {
-      observer.next(v)
-    }
-    observer.complete();
-    SingleSubscription::default()
-  }
-}
-
-impl<Item> SharedEmitter for OptionEmitter<Item> {
-  type Unsub = SingleSubscription;
-
-  fn emit<O>(self, mut observer: O) -> Self::Unsub
-  where
-    O: Observer<Item = Self::Item, Err = Self::Err> + Send + Sync + 'static,
-  {
-    if let Some(v) = self.0 {
-      observer.next(v)
-    }
-    observer.complete();
-    SingleSubscription::default()
-  }
+impl_local_shared_both! {
+ impl<Item> OptionObservable<Item>;
+ type Unsub = SingleSubscription;
+ macro method($self: ident, $observer: ident, $ctx: ident) {
+   if let Some(v) = $self.0 {
+     $observer.next(v)
+   }
+   $observer.complete();
+   SingleSubscription::default()
+ }
 }
 
 /// Creates an observable that emits the return value of a callable.
@@ -234,17 +179,17 @@ impl<Item> SharedEmitter for OptionEmitter<Item> {
 /// observable::of_fn(|| {1234})
 ///   .subscribe(|v| {println!("{},", v)});
 /// ```
-pub fn of_fn<F, Item>(f: F) -> ObservableBase<CallableEmitter<F>>
+pub fn of_fn<F, Item>(f: F) -> CallableObservable<F>
 where
   F: FnOnce() -> Item,
 {
-  ObservableBase::new(CallableEmitter(f))
+  CallableObservable(f)
 }
 
 #[derive(Clone)]
-pub struct CallableEmitter<F>(F);
+pub struct CallableObservable<F>(F);
 
-impl<Item, F> Emitter for CallableEmitter<F>
+impl<Item, F> Observable for CallableObservable<F>
 where
   F: FnOnce() -> Item,
 {
@@ -252,36 +197,15 @@ where
   type Err = ();
 }
 
-impl<'a, Item, F> LocalEmitter<'a> for CallableEmitter<F>
-where
-  F: FnOnce() -> Item,
-{
+impl_local_shared_both! {
+  impl<Item, F> CallableObservable<F>;
   type Unsub = SingleSubscription;
-
-  fn emit<O>(self, mut observer: O) -> Self::Unsub
-  where
-    O: Observer<Item = Self::Item, Err = Self::Err> + 'a,
-  {
-    observer.next((self.0)());
-    observer.complete();
+  macro method($self: ident, $observer: ident, $ctx: ident) {
+    $observer.next(($self.0)());
+    $observer.complete();
     SingleSubscription::default()
   }
-}
-
-impl<Item, F> SharedEmitter for CallableEmitter<F>
-where
-  F: FnOnce() -> Item,
-{
-  type Unsub = SingleSubscription;
-
-  fn emit<O>(self, mut observer: O) -> Self::Unsub
-  where
-    O: Observer<Item = Self::Item, Err = Self::Err> + Send + Sync + 'static,
-  {
-    observer.next((self.0)());
-    observer.complete();
-    SingleSubscription::default()
-  }
+  where F: FnOnce() -> Item
 }
 
 #[cfg(test)]

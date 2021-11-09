@@ -21,14 +21,10 @@ pub trait SharedObservable: Observable {
   }
 }
 
-pub trait SharedEmitter: Emitter {
-  type Unsub: SubscriptionLike + Send + Sync + 'static;
-  fn emit<O>(self, observer: O) -> Self::Unsub
-  where
-    O: Observer<Item = Self::Item, Err = Self::Err> + Send + Sync + 'static;
+impl<S: Observable> Observable for Shared<S> {
+  type Item = S::Item;
+  type Err = S::Err;
 }
-
-observable_proxy_impl!(Shared, S);
 
 impl<S> SharedObservable for Shared<S>
 where

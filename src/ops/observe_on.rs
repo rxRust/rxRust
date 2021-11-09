@@ -1,85 +1,54 @@
-use crate::prelude::*;
 use crate::scheduler::SharedScheduler;
-use std::{
-  cell::RefCell,
-  rc::Rc,
-  sync::{Arc, Mutex},
-};
-
+use crate::{impl_helper::*, impl_local_shared_both, prelude::*};
 #[derive(Clone)]
 pub struct ObserveOnOp<S, SD> {
   pub(crate) source: S,
   pub(crate) scheduler: SD,
 }
 
-observable_proxy_impl!(ObserveOnOp, S, SD);
+impl<S: Observable, SD> Observable for ObserveOnOp<S, SD> {
+  type Item = S::Item;
+  type Err = S::Err;
+}
 
-impl<S, SD> LocalObservable<'static> for ObserveOnOp<S, SD>
-where
-  S: LocalObservable<'static>,
-  S::Item: Clone + 'static,
-  S::Err: Clone + 'static,
-  SD: LocalScheduler + 'static,
-{
+impl_local_shared_both! {
+  impl<S, SD> ObserveOnOp<S, SD>;
   type Unsub = S::Unsub;
-  fn actual_subscribe<
-    O: Observer<Item = Self::Item, Err = Self::Err> + 'static,
-  >(
-    self,
-    observer: O,
-  ) -> Self::Unsub {
-    let observer = LocalObserver {
-      observer: Rc::new(RefCell::new(observer)),
-      scheduler: self.scheduler,
-      subscription: LocalSubscription::default(),
+  macro method($self: ident, $observer: ident, $ctx: ident) {
+    let observer = ObserveOnObserver {
+      observer: $ctx::Rc::own($observer),
+      scheduler: $self.scheduler,
+      subscription: $ctx::RcMultiSubscription::default(),
     };
 
-    self.source.actual_subscribe(observer)
+    $self.source.actual_subscribe(observer)
   }
+  where
+    @ctx::local_only('o: 'static,)
+    @ctx::shared_only(
+      S::Item: Send + Sync +'static,
+      S::Err: Send + Sync + 'static,
+    )
+    SD: @ctx::Scheduler @ctx::shared_only(+ Send + Sync) + 'static,
+    S: @ctx::Observable
+
 }
 
-impl<S, SD> SharedObservable for ObserveOnOp<S, SD>
-where
-  S: SharedObservable,
-  S::Item: Clone + Send + 'static,
-  S::Err: Clone + Send + 'static,
-  SD: SharedScheduler + Send + Sync + 'static,
-{
-  type Unsub = S::Unsub;
-  fn actual_subscribe<
-    O: Observer<Item = Self::Item, Err = Self::Err> + Sync + Send + 'static,
-  >(
-    self,
-    observer: O,
-  ) -> Self::Unsub {
-    let observer = SharedObserver {
-      observer: Arc::new(Mutex::new(observer)),
-      subscription: SharedSubscription::default(),
-      scheduler: self.scheduler,
-    };
-    self.source.actual_subscribe(observer)
-  }
-}
-
-struct LocalObserver<O, SD: LocalScheduler> {
-  observer: Rc<RefCell<O>>,
+struct ObserveOnObserver<O, SD, S> {
+  observer: O,
   scheduler: SD,
-  subscription: LocalSubscription,
+  subscription: S,
 }
 
-struct SharedObserver<O, SD: SharedScheduler> {
-  observer: Arc<Mutex<O>>,
-  subscription: SharedSubscription,
-  scheduler: SD,
-}
-
-#[doc(hidden)]
 macro_rules! impl_observer {
-  ($item: ident, $err: ident) => {
-    fn next(&mut self, value: $item) {
+  () => {
+    type Item = O::Item;
+    type Err = O::Err;
+
+    fn next(&mut self, value: Self::Item) {
       self.observer_schedule(move |mut observer, v| observer.next(v), value)
     }
-    fn error(&mut self, err: $err) {
+    fn error(&mut self, err: Self::Err) {
       self.observer_schedule(|mut observer, v| observer.error(v), err)
     }
     fn complete(&mut self) {
@@ -88,64 +57,55 @@ macro_rules! impl_observer {
   };
 }
 
-impl<O, SD> SharedObserver<O, SD>
+impl<O, SD> Observer for ObserveOnObserver<MutArc<O>, SD, SharedSubscription>
 where
+  O: Observer + Send + 'static,
+  O::Item: Send + 'static,
+  O::Err: Send + 'static,
   SD: SharedScheduler,
 {
-  fn observer_schedule<S, Task>(&mut self, task: Task, state: S)
-  where
-    S: Send + 'static,
-    O: Send + 'static,
-    Task: FnOnce(Arc<Mutex<O>>, S) + Send + 'static,
-  {
-    let subscription = self.scheduler.schedule(
-      |(observer, state)| task(observer, state),
-      None,
-      (self.observer.clone(), state),
-    );
-
-    self.subscription.add(subscription);
-  }
+  impl_observer!();
 }
 
-impl<Item, Err, O, SD> Observer for SharedObserver<O, SD>
+impl<O, SD> Observer for ObserveOnObserver<MutRc<O>, SD, LocalSubscription>
 where
-  Item: Clone + Send + 'static,
-  Err: Clone + Send + 'static,
-  O: Observer<Item = Item, Err = Err> + Send + 'static,
-  SD: SharedScheduler,
+  O: Observer + 'static,
+  SD: LocalScheduler,
 {
-  type Item = Item;
-  type Err = Err;
-  impl_observer!(Item, Err);
+  impl_observer!();
 }
 
-impl<O: 'static, SD: LocalScheduler + 'static> LocalObserver<O, SD> {
-  fn observer_schedule<S, Task>(&mut self, task: Task, state: S)
-  where
-    S: 'static,
-    Task: FnOnce(Rc<RefCell<O>>, S) + 'static,
-  {
-    let subscription = self.scheduler.schedule(
-      |(observer, state)| task(observer, state),
-      None,
-      (self.observer.clone(), state),
-    );
+macro_rules! impl_scheduler {
+  (
+    $scheduler_bound:ident,
+    $rc: ident,
+    $t_subscription: ty,
+    $($send: ident)?
+  ) => {
+    impl<O, SD> ObserveOnObserver<$rc<O>, SD, $t_subscription>
+    where
+      SD: $scheduler_bound,
+    {
+      fn observer_schedule<S, Task>(&mut self, task: Task, state: S)
+      where
+        S:$($send + )? 'static,
+        O:$($send + )? 'static,
+        Task: FnOnce($rc<O>, S) +$($send + )? 'static,
+      {
+        let subscription = self.scheduler.schedule(
+          |(observer, state)| task(observer, state),
+          None,
+          (self.observer.clone(), state),
+        );
 
-    self.subscription.add(subscription);
-  }
+        self.subscription.add(subscription);
+      }
+    }
+  };
 }
-impl<Item, Err, O, SD> Observer for LocalObserver<O, SD>
-where
-  Item: Clone + 'static,
-  Err: Clone + 'static,
-  O: Observer<Item = Item, Err = Err> + 'static,
-  SD: LocalScheduler + 'static,
-{
-  type Item = Item;
-  type Err = Err;
-  impl_observer!(Item, Err);
-}
+
+impl_scheduler!(SharedScheduler, MutArc, SharedSubscription, Send);
+impl_scheduler!(LocalScheduler, MutRc, LocalSubscription,);
 
 #[cfg(test)]
 mod test {
@@ -178,7 +138,7 @@ mod test {
 
     let pool = ThreadPool::builder().pool_size(100).create().unwrap();
 
-    observable::create(|mut s| {
+    observable::create(|s| {
       (0..100).for_each(|i| s.next(i));
       *emit_thread.lock().unwrap() = thread::current().id();
     })

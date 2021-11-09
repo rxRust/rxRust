@@ -1,10 +1,4 @@
-use std::{
-  cell::RefCell,
-  rc::Rc,
-  sync::{Arc, Mutex},
-};
-
-use crate::prelude::*;
+use crate::{impl_helper::*, impl_local_shared_both, prelude::*};
 
 #[derive(Clone)]
 pub struct SkipOp<S> {
@@ -12,53 +6,28 @@ pub struct SkipOp<S> {
   pub(crate) count: u32,
 }
 
-observable_proxy_impl!(SkipOp, S);
-
-impl<'a, S> LocalObservable<'a> for SkipOp<S>
-where
-  S: LocalObservable<'a>,
-  S::Unsub: 'a,
-{
-  type Unsub = Rc<RefCell<ProxySubscription<S::Unsub>>>;
-
-  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
-  where
-    O: Observer<Item = Self::Item, Err = Self::Err> + 'a,
-  {
-    let subscription = Rc::new(RefCell::new(ProxySubscription::default()));
-    subscription
-      .borrow_mut()
-      .proxy(self.source.actual_subscribe(SkipObserver {
-        observer,
-        subscription: subscription.clone(),
-        count: self.count,
-        hits: 0,
-      }));
-    subscription
-  }
+impl<S: Observable> Observable for SkipOp<S> {
+  type Item = S::Item;
+  type Err = S::Err;
 }
 
-impl<'a, S> SharedObservable for SkipOp<S>
-where
-  S: SharedObservable,
-{
-  type Unsub = Arc<Mutex<ProxySubscription<S::Unsub>>>;
-  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
-  where
-    O: Observer<Item = Self::Item, Err = Self::Err> + Send + Sync + 'static,
-  {
-    let subscription = Arc::new(Mutex::new(ProxySubscription::default()));
-    subscription
-      .lock()
-      .unwrap()
-      .proxy(self.source.actual_subscribe(SkipObserver {
-        observer,
-        subscription: subscription.clone(),
-        count: self.count,
-        hits: 0,
-      }));
-    subscription
-  }
+impl_local_shared_both! {
+ impl<S> SkipOp<S>;
+ type Unsub = @ctx::Rc<ProxySubscription<S::Unsub>>;
+ macro method($self: ident, $observer: ident, $ctx: ident) {
+   let subscription =$ctx::Rc::own(ProxySubscription::default());
+   let u = $self.source.actual_subscribe(SkipObserver {
+    observer: $observer,
+    subscription: subscription.clone(),
+    count: $self.count,
+    hits: 0,
+  });
+   subscription.rc_deref_mut().proxy(u);
+   subscription
+ }
+ where
+  @ctx::local_only(S::Unsub: 'o,)
+  S: @ctx::Observable
 }
 
 pub struct SkipObserver<O, S> {

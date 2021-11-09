@@ -1,9 +1,5 @@
-use crate::prelude::*;
-use std::cell::RefCell;
+use crate::{impl_helper::*, impl_local_shared_both, prelude::*};
 use std::collections::VecDeque;
-use std::rc::Rc;
-use std::sync::{Arc, Mutex};
-
 /// An Observable that combines from two other two Observables.
 ///
 /// This struct is created by the zip method on [Observable](Observable::zip).
@@ -23,62 +19,36 @@ where
   type Err = A::Err;
 }
 
-impl<'a, A, B> LocalObservable<'a> for ZipOp<A, B>
-where
-  A: LocalObservable<'a>,
-  B: LocalObservable<'a, Err = A::Err>,
-  A::Item: 'a,
-  B::Item: 'a,
-  A::Unsub: 'static,
-  B::Unsub: 'static,
-{
-  type Unsub = LocalSubscription;
-  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
-  where
-    O: Observer<Item = Self::Item, Err = Self::Err> + 'a,
-  {
-    let sub = LocalSubscription::default();
-    let o_zip = ZipObserver::new(observer, sub.clone());
-    let o_zip = Rc::new(RefCell::new(o_zip));
+impl_local_shared_both! {
+  impl<A, B> ZipOp<A, B>;
+  type Unsub = @ctx::RcMultiSubscription;
+  macro method($self:ident, $observer: ident, $ctx: ident) {
+    let sub = $ctx::RcMultiSubscription::default();
+    let o_zip = ZipObserver::new($observer, sub.clone());
+    let o_zip = $ctx::Rc::own(o_zip);
     sub.add(
-      self
+      $self
         .a
         .actual_subscribe(AObserver(o_zip.clone(), TypeHint::new())),
     );
 
-    sub.add(self.b.actual_subscribe(BObserver(o_zip, TypeHint::new())));
+    sub.add($self.b.actual_subscribe(BObserver(o_zip, TypeHint::new())));
     sub
   }
-}
-
-impl<A, B> SharedObservable for ZipOp<A, B>
-where
-  A: SharedObservable,
-  B: SharedObservable<Err = A::Err>,
-  A::Item: Send + Sync + 'static,
-  B::Item: Send + Sync + 'static,
-  A::Unsub: Send + Sync,
-  B::Unsub: Send + Sync,
-{
-  type Unsub = SharedSubscription;
-  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
   where
-    O: Observer<Item = Self::Item, Err = Self::Err> + Sync + Send + 'static,
-  {
-    let sub = SharedSubscription::default();
-    let o_zip = ZipObserver::new(observer, sub.clone());
-    let o_zip = Arc::new(Mutex::new(o_zip));
-    sub.add(
-      self
-        .a
-        .actual_subscribe(AObserver(o_zip.clone(), TypeHint::new())),
-    );
-
-    sub.add(self.b.actual_subscribe(BObserver(o_zip, TypeHint::new())));
-    sub
-  }
+    A: @ctx::Observable,
+    B: @ctx::Observable<Err=A::Err>,
+    @ctx::shared_only(
+      A::Item: Send + Sync + 'static,
+      B::Item: Send + Sync + 'static,
+    )
+    @ctx::local_only(
+      A::Item: 'o,
+      B::Item: 'o,
+    )
+    A::Unsub: 'static @ctx::shared_only(+Send + Sync),
+    B::Unsub:'static @ctx::shared_only(+Send + Sync)
 }
-
 enum ZipItem<A, B> {
   ItemA(A),
   ItemB(B),
