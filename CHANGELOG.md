@@ -1,5 +1,7 @@
 ## [Unreleased](https://github.com/rxRust/rxRust/compare/v0.15.0...HEAD)
+### Features
 - **operator**: add `skip_until` operator.
+- **operator**: add `combine_latest` operator.
 
 ## [0.15.0](https://github.com/rxRust/rxRust/releases/tag/v0.15.0)
 ### Bug Fixes

@@ -53,6 +53,7 @@ use crate::ops::default_if_empty::DefaultIfEmptyOp;
 use ops::{
   box_it::{BoxOp, IntoBox},
   buffer::{BufferWithCountOp, BufferWithCountOrTimerOp, BufferWithTimeOp},
+  combine_latest::CombineLatestOp,
   contains::ContainsOp,
   debounce::DebounceOp,
   delay::DelayOp,
@@ -1390,6 +1391,53 @@ pub trait Observable: Sized {
       count,
       time,
       scheduler,
+    }
+  }
+
+  /// Emits item which is combining latest items from two observables.
+  ///
+  /// combine_latest() merges two observables into one observable
+  /// by applying a binary operator on the latest item of two observable
+  /// whenever each of observables produces an element.
+  ///
+  /// #Example
+  /// ```
+  /// use rxrust::prelude::*;
+  /// use std::time::Duration;
+  /// use futures::executor::LocalPool;
+  ///
+  /// let mut local_scheduler = LocalPool::new();
+  /// let spawner = local_scheduler.spawner();
+  /// observable::interval(Duration::from_millis(2), spawner.clone())
+  ///   .combine_latest(
+  ///     observable::interval(Duration::from_millis(3), spawner),
+  ///     |a, b| (a, b),
+  ///   )
+  ///   .take(5)
+  ///   .subscribe(move |v| println!("{}, {}", v.0, v.1));
+  ///
+  /// local_scheduler.run();
+  /// // print logs:
+  /// // 0, 0
+  /// // 1, 0
+  /// // 2, 0
+  /// // 2, 1
+  /// // 3, 1
+  /// ```
+  fn combine_latest<O, BinaryOp, OutputItem>(
+    self,
+    other: O,
+    binary_op: BinaryOp,
+  ) -> CombineLatestOp<Self, O, BinaryOp, OutputItem>
+  where
+    O: Observable<Err = Self::Err>,
+    BinaryOp: FnMut(Self::Item, O::Item) -> OutputItem,
+  {
+    CombineLatestOp {
+      a: self,
+      b: other,
+      binary_op,
+      _marker: TypeHint::new(),
     }
   }
 }

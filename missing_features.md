@@ -64,7 +64,7 @@ Operators that selectively emit items from a source Observable.
 Operators that work with multiple source Observables to create a single Observable
 
 - [ ] And/Then/When — combine sets of items emitted by two or more Observables by means of Pattern and Plan intermediaries
-- [ ] CombineLatest — when an item is emitted by either of two Observables, combine the latest item emitted by each Observable via a specified function and emit items based on the results of this function
+- [x] CombineLatest — when an item is emitted by either of two Observables, combine the latest item emitted by each Observable via a specified function and emit items based on the results of this function
 - [ ] Join — combine items emitted by two Observables whenever an item from one Observable is emitted during a time window defined according to an item emitted by the other Observable
 - [x] Merge — combine multiple Observables into one by merging their emissions
 - [ ] StartWith — emit a specified sequence of items before beginning to emit the items from the source Observable
