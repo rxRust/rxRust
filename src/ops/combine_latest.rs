@@ -6,15 +6,13 @@ use crate::prelude::*;
 use crate::{complete_proxy_impl, error_proxy_impl, is_stopped_proxy_impl};
 
 #[derive(Clone)]
-pub struct CombineLatestOp<A, B, BinaryOp, OutputItem> {
+pub struct CombineLatestOp<A, B, BinaryOp> {
   pub(crate) a: A,
   pub(crate) b: B,
   pub(crate) binary_op: BinaryOp,
-  pub(crate) _marker: TypeHint<*const OutputItem>,
 }
 
-impl<A, B, BinaryOp, OutputItem> Observable
-  for CombineLatestOp<A, B, BinaryOp, OutputItem>
+impl<A, B, BinaryOp, OutputItem> Observable for CombineLatestOp<A, B, BinaryOp>
 where
   A: Observable,
   B: Observable<Err = A::Err>,
@@ -25,7 +23,7 @@ where
 }
 
 impl<'a, A, B, BinaryOp, OutputItem> LocalObservable<'a>
-  for CombineLatestOp<A, B, BinaryOp, OutputItem>
+  for CombineLatestOp<A, B, BinaryOp>
 where
   A: LocalObservable<'a>,
   B: LocalObservable<'a, Err = A::Err>,
@@ -59,7 +57,7 @@ where
 }
 
 impl<A, B, BinaryOp, OutputItem> SharedObservable
-  for CombineLatestOp<A, B, BinaryOp, OutputItem>
+  for CombineLatestOp<A, B, BinaryOp>
 where
   A: SharedObservable,
   B: SharedObservable<Err = A::Err>,
