@@ -100,7 +100,7 @@ Operators that evaluate one or more Observables or items emitted by Observables
 - [x] Contains — determine whether an Observable emits a particular item or not
 - [x] DefaultIfEmpty — emit items from the source Observable, or a default item if the source Observable emits nothing
 - [ ] SequenceEqual — determine whether two Observables emit the same sequence of items
-- [ ] SkipUntil — discard items emitted by an Observable until a second Observable emits an item
+- [x] SkipUntil — discard items emitted by an Observable until a second Observable emits an item
 - [x] SkipWhile — discard items emitted by an Observable until a specified condition becomes false
 - [x] TakeUntil — discard items emitted by an Observable after a second Observable emits an item or terminates
 - [x] TakeWhile — discard items emitted by an Observable after a specified condition becomes false

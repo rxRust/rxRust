@@ -1,4 +1,5 @@
 ## [Unreleased](https://github.com/rxRust/rxRust/compare/v0.15.0...HEAD)
+- **operator**: add `skip_until` operator.
 
 ## [0.15.0](https://github.com/rxRust/rxRust/releases/tag/v0.15.0)
 ### Bug Fixes
