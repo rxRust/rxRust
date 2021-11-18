@@ -73,6 +73,7 @@ use ops::{
   scan::ScanOp,
   skip::SkipOp,
   skip_last::SkipLastOp,
+  skip_until::SkipUntilOp,
   skip_while::SkipWhileOp,
   subscribe_on::SubscribeOnOP,
   take::TakeOp,
@@ -488,6 +489,37 @@ pub trait Observable: Sized {
     SkipOp {
       source: self,
       count,
+    }
+  }
+
+  /// Ignore the values emitted by the source Observable until the `predicate`
+  /// returns true for the value.
+  ///
+  /// `skip_until` returns an Observable that skips values emitted by the source
+  /// Observable until the result of the predicate is true for the value. The
+  /// resulting Observable will include and emit the matching value.
+  ///
+  /// # Example
+  /// Ignore the numbers in the 0-10 range until the Observer emits 5.
+  ///
+  /// ```
+  /// # use rxrust::prelude::*;
+  ///
+  /// let mut items = vec![];
+  /// observable::from_iter(0..10)
+  ///   .skip_until(|v| v == &5)
+  ///   .subscribe(|v| items.push(v));
+  ///
+  /// assert_eq!((5..10).collect::<Vec<i32>>(), items);
+  /// ```
+  #[inline]
+  fn skip_until<F>(self, predicate: F) -> SkipUntilOp<Self, F>
+  where
+    F: FnMut(&Self::Item) -> bool,
+  {
+    SkipUntilOp {
+      source: self,
+      predicate,
     }
   }
 

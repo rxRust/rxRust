@@ -21,6 +21,7 @@ pub mod sample;
 pub mod scan;
 pub mod skip;
 pub mod skip_last;
+pub mod skip_until;
 pub mod skip_while;
 pub mod subscribe_on;
 pub mod take;
