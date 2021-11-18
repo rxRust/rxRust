@@ -1428,7 +1428,7 @@ pub trait Observable: Sized {
     self,
     other: O,
     binary_op: BinaryOp,
-  ) -> CombineLatestOp<Self, O, BinaryOp, OutputItem>
+  ) -> CombineLatestOp<Self, O, BinaryOp>
   where
     O: Observable<Err = Self::Err>,
     BinaryOp: FnMut(Self::Item, O::Item) -> OutputItem,
@@ -1437,7 +1437,6 @@ pub trait Observable: Sized {
       a: self,
       b: other,
       binary_op,
-      _marker: TypeHint::new(),
     }
   }
 }
