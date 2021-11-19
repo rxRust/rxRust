@@ -1,33 +1,10 @@
-use crate::prelude::*;
-use crate::{complete_proxy_impl, error_proxy_impl, is_stopped_proxy_impl};
+use crate::{impl_local_shared_both, prelude::*};
 
 /// Skips source values until a predicate returns true for the value.
 #[derive(Clone)]
 pub struct SkipUntilOp<S, F> {
   pub(crate) source: S,
   pub(crate) predicate: F,
-}
-
-#[doc(hidden)]
-macro_rules! observable_impl {
-    ($subscription:ty, $source:ident, $($marker:ident +)* $lf: lifetime) => {
-  type Unsub = $source::Unsub;
-  fn actual_subscribe<O>(
-    self,
-    subscriber: Subscriber<O, $subscription>,
-  ) -> Self::Unsub
-  where O: Observer<Item=Self::Item,Err= Self::Err> + $($marker +)* $lf {
-    let subscriber = Subscriber {
-      observer: SkipUntilObserver {
-        observer: subscriber.observer,
-        predicate: self.predicate,
-        done_skipping: false
-      },
-      subscription: subscriber.subscription,
-    };
-    self.source.actual_subscribe(subscriber)
-  }
-}
 }
 
 impl<S, F> Observable for SkipUntilOp<S, F>
@@ -39,20 +16,22 @@ where
   type Err = S::Err;
 }
 
-impl<'a, S, F> LocalObservable<'a> for SkipUntilOp<S, F>
-where
-  S: LocalObservable<'a>,
-  F: FnMut(&S::Item) -> bool + 'a,
-{
-  observable_impl!(LocalSubscription, S, 'a);
-}
-
-impl<S, F> SharedObservable for SkipUntilOp<S, F>
-where
-  S: SharedObservable,
-  F: FnMut(&S::Item) -> bool + Send + Sync + 'static,
-{
-  observable_impl!(SharedSubscription, S, Send + Sync + 'static);
+impl_local_shared_both! {
+  impl<S, F> SkipUntilOp<S, F>;
+  type Unsub = S::Unsub;
+  macro method($self: ident, $observer: ident, $ctx: ident) {
+    let observer = SkipUntilObserver {
+      observer: $observer,
+      predicate: $self.predicate,
+      done_skipping: false
+    };
+    $self.source.actual_subscribe(observer)
+  }
+  where
+    S: @ctx::Observable,
+    F: FnMut(&S::Item) -> bool +
+      @ctx::local_only('o)
+      @ctx::shared_only(Send + Sync + 'static)
 }
 
 pub struct SkipUntilObserver<O, F> {
@@ -78,9 +57,11 @@ where
     }
   }
 
-  error_proxy_impl!(Err, observer);
-  complete_proxy_impl!(observer);
-  is_stopped_proxy_impl!(observer);
+  #[inline]
+  fn error(&mut self, err: Err) { self.observer.error(err); }
+
+  #[inline]
+  fn complete(&mut self) { self.observer.complete() }
 }
 
 #[cfg(test)]
