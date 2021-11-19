@@ -1,27 +1,37 @@
 use crate::prelude::*;
 
-pub struct BehaviorSubject<O: Observer + ?Sized, U: SubscriptionLike> {
-  pub(crate) subject: Subject<O, U>,
-  pub(crate) value: O::Item,
+#[derive(Clone)]
+pub struct BehaviorSubject<S, V> {
+  pub(crate) subject: S,
+  pub(crate) value: V,
 }
 
-pub type LocalBehaviorSubject<'a, Item, Err> = MutRc<
-  BehaviorSubject<
-    dyn Observer<Item = Item, Err = Err> + 'a,
-    MutRc<SingleSubscription>,
-  >,
->;
+pub type LocalBehaviorSubject<'a, Item, Err> =
+  BehaviorSubject<LocalSubject<'a, Item, Err>, MutRc<Item>>;
 
-pub type SharedBehaviorSubject<Item, Err> = MutArc<
-  BehaviorSubject<
-    dyn Observer<Item = Item, Err = Err> + Send + Sync,
-    MutArc<SingleSubscription>,
-  >,
->;
+pub type SharedBehaviorSubject<Item, Err> =
+  BehaviorSubject<SharedSubject<Item, Err>, MutArc<Item>>;
 
-impl<O: Observer + ?Sized, U: SubscriptionLike> SubscriptionLike
-  for BehaviorSubject<O, U>
-{
+impl<'a, Item, Err> LocalBehaviorSubject<'a, Item, Err> {
+  #[inline]
+  pub fn new(value: Item) -> Self {
+    Self {
+      subject: <_>::default(),
+      value: MutRc::own(value),
+    }
+  }
+}
+impl<Item, Err> SharedBehaviorSubject<Item, Err> {
+  #[inline]
+  pub fn new(value: Item) -> Self {
+    Self {
+      subject: <_>::default(),
+      value: MutArc::own(value),
+    }
+  }
+}
+
+impl<S: SubscriptionLike, V> SubscriptionLike for BehaviorSubject<S, V> {
   #[inline]
   fn unsubscribe(&mut self) { self.subject.unsubscribe(); }
 
@@ -29,20 +39,21 @@ impl<O: Observer + ?Sized, U: SubscriptionLike> SubscriptionLike
   fn is_closed(&self) -> bool { self.subject.is_closed() }
 }
 
-impl<O, U> Observer for BehaviorSubject<O, U>
+impl<S, Item> Observer for BehaviorSubject<S, Item>
 where
-  O: Observer + ?Sized,
-  O::Item: Clone,
-  O::Err: Clone,
-  U: SubscriptionLike,
+  S: Observer,
+  S::Item: Clone,
+  Item: RcDerefMut,
+  for<'r> Item::Target<'r>: std::ops::DerefMut<Target = S::Item>,
 {
-  type Item = O::Item;
-  type Err = O::Err;
+  type Item = S::Item;
+  type Err = S::Err;
 
   #[inline]
   fn next(&mut self, value: Self::Item) {
-    self.value = value;
-    self.subject.next(self.value.clone())
+    let mut v = self.value.rc_deref_mut();
+    *v = value;
+    self.subject.next(v.clone())
   }
 
   #[inline]
@@ -52,24 +63,9 @@ where
   fn complete(&mut self) { self.subject.complete() }
 }
 
-impl<O: Observer + ?Sized, U: SubscriptionLike> TearDownSize
-  for BehaviorSubject<O, U>
-{
+impl<S: TearDownSize, V> TearDownSize for BehaviorSubject<S, V> {
   #[inline]
   fn teardown_size(&self) -> usize { self.subject.teardown_size() }
-}
-
-impl<O, S> BehaviorSubject<O, S>
-where
-  O: Observer + ?Sized,
-  S: SubscriptionLike,
-{
-  pub fn new(value: O::Item) -> Self {
-    Self {
-      subject: <_>::default(),
-      value,
-    }
-  }
 }
 
 impl<Item, Err> Observable for SharedBehaviorSubject<Item, Err> {
@@ -87,17 +83,12 @@ where
   where
     O: Observer<Item = Self::Item, Err = Self::Err> + Sync + Send + 'static,
   {
-    if !self.rc_deref().subject.is_closed() {
-      observer.next(self.rc_deref().value.clone());
+    if !self.subject.is_closed() {
+      observer.next(self.value.rc_deref().clone());
     }
     let o = Box::new(observer);
-    self.rc_deref_mut().subject.subscribe(o)
+    self.subject.actual_subscribe(o)
   }
-}
-
-impl<Item, Err> SharedBehaviorSubject<Item, Err> {
-  #[inline]
-  pub fn new(value: Item) -> Self { MutArc::own(BehaviorSubject::new(value)) }
 }
 
 impl<'a, Item, Err> Observable for LocalBehaviorSubject<'a, Item, Err> {
@@ -113,19 +104,11 @@ impl<'a, Item: Clone, Err> LocalObservable<'a>
   where
     O: Observer<Item = Self::Item, Err = Self::Err> + 'a,
   {
-    if !self.rc_deref().subject.is_closed() {
-      observer.next(self.rc_deref().value.clone());
+    if !self.subject.is_closed() {
+      observer.next(self.value.rc_deref().clone());
     }
-    self
-      .rc_deref_mut()
-      .subject
-      .subscribe(Box::new(Box::new(observer)))
+    self.subject.actual_subscribe(observer)
   }
-}
-
-impl<'a, Item, Err> LocalBehaviorSubject<'a, Item, Err> {
-  #[inline]
-  pub fn new(value: Item) -> Self { MutRc::own(BehaviorSubject::new(value)) }
 }
 
 #[cfg(test)]

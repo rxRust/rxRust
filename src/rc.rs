@@ -1,8 +1,8 @@
 use crate::prelude::*;
 use std::{
-  cell::{Ref, RefCell, RefMut},
+  cell::{BorrowError, BorrowMutError, Ref, RefCell, RefMut},
   rc::Rc,
-  sync::{Arc, Mutex, MutexGuard},
+  sync::{Arc, Mutex, MutexGuard, TryLockError},
 };
 
 pub trait RcDeref {
@@ -13,12 +13,28 @@ pub trait RcDeref {
   fn rc_deref<'a>(&'a self) -> Self::Target<'a>;
 }
 
+pub trait TryRcDeref {
+  type Target<'a>
+  where
+    Self: 'a;
+  #[allow(clippy::needless_lifetimes)]
+  fn try_rc_deref<'a>(&'a self) -> Self::Target<'a>;
+}
+
 pub trait RcDerefMut {
   type Target<'a>
   where
     Self: 'a;
   #[allow(clippy::needless_lifetimes)]
   fn rc_deref_mut<'a>(&'a self) -> Self::Target<'a>;
+}
+
+pub trait TryRcDerefMut {
+  type Target<'a>
+  where
+    Self: 'a;
+  #[allow(clippy::needless_lifetimes)]
+  fn try_rc_deref_mut<'a>(&'a self) -> Self::Target<'a>;
 }
 
 #[derive(Default)]
@@ -44,6 +60,16 @@ impl<T> RcDeref for MutRc<T> {
   fn rc_deref<'a>(&'a self) -> Self::Target<'a> { self.0.borrow() }
 }
 
+impl<T> TryRcDeref for MutRc<T> {
+  type Target<'a>
+  where
+    Self: 'a,
+  = Result<Ref<'a, T>, BorrowError>;
+  #[inline]
+  #[allow(clippy::needless_lifetimes)]
+  fn try_rc_deref<'a>(&'a self) -> Self::Target<'a> { self.0.try_borrow() }
+}
+
 impl<T> RcDeref for MutArc<T> {
   type Target<'a>
   where
@@ -53,6 +79,17 @@ impl<T> RcDeref for MutArc<T> {
   #[inline]
   #[allow(clippy::needless_lifetimes)]
   fn rc_deref<'a>(&'a self) -> Self::Target<'a> { self.0.lock().unwrap() }
+}
+
+impl<T> TryRcDeref for MutArc<T> {
+  type Target<'a>
+  where
+    Self: 'a,
+  = Result<MutexGuard<'a, T>, TryLockError<MutexGuard<'a, T>>>;
+
+  #[inline]
+  #[allow(clippy::needless_lifetimes)]
+  fn try_rc_deref<'a>(&'a self) -> Self::Target<'a> { self.0.try_lock() }
 }
 
 impl<T> RcDerefMut for MutRc<T> {
@@ -75,6 +112,30 @@ impl<T> RcDerefMut for MutArc<T> {
   #[inline]
   #[allow(clippy::needless_lifetimes)]
   fn rc_deref_mut<'a>(&'a self) -> Self::Target<'a> { self.0.lock().unwrap() }
+}
+
+impl<T> TryRcDerefMut for MutRc<T> {
+  type Target<'a>
+  where
+    Self: 'a,
+  = Result<RefMut<'a, T>, BorrowMutError>;
+
+  #[inline]
+  #[allow(clippy::needless_lifetimes)]
+  fn try_rc_deref_mut<'a>(&'a self) -> Self::Target<'a> {
+    self.0.try_borrow_mut()
+  }
+}
+
+impl<T> TryRcDerefMut for MutArc<T> {
+  type Target<'a>
+  where
+    Self: 'a,
+  = Result<MutexGuard<'a, T>, TryLockError<MutexGuard<'a, T>>>;
+
+  #[inline]
+  #[allow(clippy::needless_lifetimes)]
+  fn try_rc_deref_mut<'a>(&'a self) -> Self::Target<'a> { self.0.try_lock() }
 }
 
 macro_rules! observer_impl {

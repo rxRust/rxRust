@@ -1,28 +1,112 @@
 use crate::prelude::*;
+use std::ops::DerefMut;
 pub mod behavior_subject;
 pub use behavior_subject::*;
 
-pub struct Subject<O: Observer + ?Sized, S: SubscriptionLike> {
-  pub(crate) observers: Vec<SubjectObserver<Box<O>, S>>,
-  pub(crate) subscription: SingleSubscription,
+pub enum ObserverTrigger<Item, Err> {
+  Item(Item),
+  Err(Err),
+  Complete,
+}
+pub struct InnerSubject<O: Observer + ?Sized, S: SubscriptionLike> {
+  observers: Vec<SubjectObserver<Box<O>, S>>,
+  subscription: SingleSubscription,
 }
 
-//todo use atomic bool replace Box<dyn Publisher<Item = Item, Err = Err> + Send
-// + Sync>
-pub type SharedSubject<Item, Err> = MutArc<
-  Subject<
-    dyn Observer<Item = Item, Err = Err> + Send + Sync,
-    MutArc<SingleSubscription>,
+#[derive(Default, Clone)]
+pub struct Subject<T, B> {
+  inner: T,
+  buffer: B,
+}
+
+pub type SharedSubject<Item, Err> = Subject<
+  MutArc<
+    InnerSubject<
+      dyn Observer<Item = Item, Err = Err> + Send + Sync,
+      MutArc<SingleSubscription>,
+    >,
   >,
+  MutArc<Vec<ObserverTrigger<Item, Err>>>,
 >;
 
-pub type LocalSubject<'a, Item, Err> = MutRc<
-  Subject<dyn Observer<Item = Item, Err = Err> + 'a, MutRc<SingleSubscription>>,
+pub type LocalSubject<'a, Item, Err> = Subject<
+  MutRc<
+    InnerSubject<
+      dyn Observer<Item = Item, Err = Err> + 'a,
+      MutRc<SingleSubscription>,
+    >,
+  >,
+  MutRc<Vec<ObserverTrigger<Item, Err>>>,
 >;
 
 impl<Item, Err> SharedSubject<Item, Err> {
   #[inline]
   pub fn new() -> Self { Self::default() }
+}
+
+impl<'a, Item, Err> LocalSubject<'a, Item, Err> {
+  #[inline]
+  pub fn new() -> Self { Self::default() }
+}
+
+fn emit_buffer<O, B, Item, Err>(mut observer: O, mut b: B)
+where
+  O: DerefMut,
+  O::Target: Observer<Item = Item, Err = Err>,
+  B: DerefMut<Target = Vec<ObserverTrigger<Item, Err>>>,
+{
+  while let Some(to_emit) = b.pop() {
+    match to_emit {
+      ObserverTrigger::Item(v) => observer.next(v),
+      ObserverTrigger::Err(err) => observer.error(err),
+      ObserverTrigger::Complete => observer.complete(),
+    }
+  }
+}
+
+macro_rules! impl_observer {
+  () => {
+    type Item = Item;
+    type Err = Err;
+
+    fn next(&mut self, value: Self::Item) {
+      if let Ok(mut inner) = self.inner.try_rc_deref_mut() {
+        inner.next(value);
+        emit_buffer(inner, self.buffer.rc_deref_mut())
+      } else {
+        self
+          .buffer
+          .rc_deref_mut()
+          .push(ObserverTrigger::Item(value));
+      }
+    }
+
+    fn error(&mut self, err: Self::Err) {
+      if let Ok(mut inner) = self.inner.try_rc_deref_mut() {
+        inner.error(err);
+        emit_buffer(inner, self.buffer.rc_deref_mut())
+      } else {
+        self.buffer.rc_deref_mut().push(ObserverTrigger::Err(err));
+      }
+    }
+
+    fn complete(&mut self) {
+      if let Ok(mut inner) = self.inner.try_rc_deref_mut() {
+        inner.complete();
+        emit_buffer(inner, self.buffer.rc_deref_mut())
+      } else {
+        self.buffer.rc_deref_mut().push(ObserverTrigger::Complete);
+      }
+    }
+  };
+}
+
+impl<'a, Item: Clone, Err: Clone> Observer for LocalSubject<'a, Item, Err> {
+  impl_observer!();
+}
+
+impl<Item: Clone, Err: Clone> Observer for SharedSubject<Item, Err> {
+  impl_observer!();
 }
 
 impl<Item, Err> Observable for SharedSubject<Item, Err> {
@@ -36,7 +120,7 @@ impl<Item, Err> SharedObservable for SharedSubject<Item, Err> {
   where
     O: Observer<Item = Self::Item, Err = Self::Err> + Sync + Send + 'static,
   {
-    self.rc_deref_mut().subscribe(Box::new(observer))
+    self.inner.rc_deref_mut().subscribe(Box::new(observer))
   }
 }
 
@@ -51,21 +135,15 @@ impl<'a, Item, Err> LocalObservable<'a> for LocalSubject<'a, Item, Err> {
   where
     O: Observer<Item = Self::Item, Err = Self::Err> + 'a,
   {
-    self.rc_deref_mut().subscribe(Box::new(observer))
+    self.inner.rc_deref_mut().subscribe(Box::new(observer))
   }
 }
 
-impl<'a, Item, Err> LocalSubject<'a, Item, Err> {
-  #[inline]
-  pub fn new() -> Self { Self::default() }
-}
-
-impl<O, U> SubscriptionLike for Subject<O, U>
+impl<O, U> SubscriptionLike for InnerSubject<O, U>
 where
   O: Observer + ?Sized,
   U: SubscriptionLike,
 {
-  #[inline]
   fn unsubscribe(&mut self) {
     self
       .observers
@@ -79,7 +157,15 @@ where
   fn is_closed(&self) -> bool { self.subscription.is_closed() }
 }
 
-impl<O, U> TearDownSize for Subject<O, U>
+impl<T: SubscriptionLike, B> SubscriptionLike for Subject<T, B> {
+  #[inline]
+  fn unsubscribe(&mut self) { self.inner.unsubscribe() }
+
+  #[inline]
+  fn is_closed(&self) -> bool { self.inner.is_closed() }
+}
+
+impl<O, U> TearDownSize for InnerSubject<O, U>
 where
   O: Observer + ?Sized,
   U: SubscriptionLike,
@@ -88,21 +174,35 @@ where
   fn teardown_size(&self) -> usize { self.observers.len() }
 }
 
-#[derive(Clone)]
-pub(crate) struct SubjectObserver<O: Observer, S: SubscriptionLike> {
+impl<T: TearDownSize, B> TearDownSize for Subject<T, B> {
+  #[inline]
+  fn teardown_size(&self) -> usize { self.inner.teardown_size() }
+}
+
+pub(crate) struct SubjectObserver<O, S> {
   pub observer: O,
   pub subscription: S,
 }
 
-impl<O, S> Observer for Subject<O, S>
+impl<O: Observer + ?Sized, S: SubscriptionLike> Default for InnerSubject<O, S> {
+  fn default() -> Self {
+    InnerSubject {
+      observers: vec![],
+      subscription: Default::default(),
+    }
+  }
+}
+
+impl<O, U> Observer for InnerSubject<O, U>
 where
   O: Observer + ?Sized,
+  U: SubscriptionLike,
   O::Item: Clone,
   O::Err: Clone,
-  S: SubscriptionLike,
 {
   type Item = O::Item;
   type Err = O::Err;
+
   fn next(&mut self, value: Self::Item) {
     if !self.subscription.is_closed() {
       let any_finished =
@@ -112,6 +212,7 @@ where
           }
           finished || o.subscription.is_closed()
         });
+
       if any_finished {
         self.observers.retain(|o| !o.subscription.is_closed());
       }
@@ -121,32 +222,27 @@ where
   }
 
   fn error(&mut self, err: Self::Err) {
-    self
-      .observers
-      .iter_mut()
-      .for_each(|subscriber| subscriber.observer.error(err.clone()));
-    self.observers.clear();
+    if !self.is_closed() {
+      self
+        .observers
+        .iter_mut()
+        .for_each(|subscriber| subscriber.observer.error(err.clone()));
+      self.observers.clear();
+    }
   }
 
   fn complete(&mut self) {
-    self
-      .observers
-      .iter_mut()
-      .for_each(|subscriber| subscriber.observer.complete());
-    self.observers.clear();
-  }
-}
-
-impl<O: Observer + ?Sized, S: SubscriptionLike> Default for Subject<O, S> {
-  fn default() -> Self {
-    Subject {
-      observers: vec![],
-      subscription: Default::default(),
+    if !self.is_closed() {
+      self
+        .observers
+        .iter_mut()
+        .for_each(|subscriber| subscriber.observer.complete());
+      self.observers.clear();
     }
   }
 }
 
-impl<O, U> Subject<O, U>
+impl<O, U> InnerSubject<O, U>
 where
   O: Observer + ?Sized,
   U: SubscriptionLike + Default + Clone,
