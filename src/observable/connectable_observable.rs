@@ -116,8 +116,8 @@ impl<Src> Connect
   for ConnectableObservable<Src, SharedSubject<Src::Item, Src::Err>>
 where
   Src: SharedObservable,
-  Src::Item: Clone + 'static,
-  Src::Err: Clone + 'static,
+  Src::Item: Clone + Send + Sync + 'static,
+  Src::Err: Clone + Send + Sync + 'static,
 {
   type R = RefCount<SharedInnerRefCount<Src>>;
   type Unsub = Src::Unsub;

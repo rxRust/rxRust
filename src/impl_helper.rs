@@ -28,7 +28,7 @@
 ///
 /// Here is a real example which is the implementation of `ObservableFn`.
 ///
-/// ```
+/// ```ignore
 /// impl_local_shared_both! {
 ///   impl<F, Item, Err> ObservableFn<F, Item, Err>;
 ///   type Unsub = SingleSubscription;

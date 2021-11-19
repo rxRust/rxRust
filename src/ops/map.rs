@@ -1,27 +1,9 @@
-use crate::prelude::*;
+use crate::{impl_local_shared_both, prelude::*};
 
 #[derive(Clone)]
 pub struct MapOp<S, M> {
   pub(crate) source: S,
   pub(crate) func: M,
-}
-
-#[doc(hidden)]
-macro_rules! observable_impl {
- ($subscription:ty, $($marker:ident +)* $lf: lifetime) => {
-  fn actual_subscribe<O>(
-    self,
-    observer: O
-  ) -> Self::Unsub
-  where O: Observer<Item=Self::Item, Err=Self::Err> + $($marker +)* $lf {
-    let map = self.func;
-    self.source.actual_subscribe(MapObserver {
-      observer,
-      map,
-      _marker: TypeHint::new(),
-    })
-  }
-}
 }
 
 impl<Item, S, M> Observable for MapOp<S, M>
@@ -33,24 +15,22 @@ where
   type Err = S::Err;
 }
 
-impl<'a, Item, S, M> LocalObservable<'a> for MapOp<S, M>
-where
-  S: LocalObservable<'a>,
-  M: FnMut(S::Item) -> Item + 'a,
-  S::Item: 'a,
-{
+impl_local_shared_both! {
+  impl<Item, S, M>  MapOp<S, M>;
   type Unsub = S::Unsub;
-  observable_impl!(LocalSubscription,'a);
-}
-
-impl<Item, S, M> SharedObservable for MapOp<S, M>
-where
-  S: SharedObservable,
-  M: FnMut(S::Item) -> Item + Send + Sync + 'static,
-  S::Item: 'static,
-{
-  type Unsub = S::Unsub;
-  observable_impl!(SharedSubscription, Send + Sync + 'static);
+  macro method($self: ident, $observer: ident, $ctx: ident) {
+    let map = $self.func;
+    $self.source.actual_subscribe(MapObserver {
+      observer: $observer,
+      map,
+      _marker: TypeHint::new(),
+    })
+  }
+  where
+    S: @ctx::Observable,
+    S::Item: @ctx::local_only('o) @ctx::shared_only('static),
+    M: FnMut(S::Item) -> Item
+      + @ctx::local_only('o) @ctx::shared_only( Send + Sync + 'static)
 }
 
 #[derive(Clone)]
