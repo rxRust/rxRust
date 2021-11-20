@@ -133,7 +133,7 @@ macro_rules! impl_local_shared_both {
     @replace$(+$i:literal)*, $ctx: ident,
     [$($before:tt)*] ($arg1: ty, $($args: ty),+) $($t:tt)*
   ) => {
-    impl_local_share_both!{
+    impl_local_shared_both!{
       @replace$(+$i)*, $ctx,
       [
         $($before)*

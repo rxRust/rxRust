@@ -1,9 +1,4 @@
-use std::cell::RefCell;
-use std::rc::Rc;
-use std::sync::{Arc, Mutex};
-
-use crate::prelude::*;
-use crate::{complete_proxy_impl, error_proxy_impl, is_stopped_proxy_impl};
+use crate::{impl_helper::*, impl_local_shared_both, prelude::*};
 
 #[derive(Clone)]
 pub struct CombineLatestOp<A, B, BinaryOp> {
@@ -22,76 +17,35 @@ where
   type Err = A::Err;
 }
 
-impl<'a, A, B, BinaryOp, OutputItem> LocalObservable<'a>
-  for CombineLatestOp<A, B, BinaryOp>
-where
-  A: LocalObservable<'a>,
-  B: LocalObservable<'a, Err = A::Err>,
-  BinaryOp: FnMut(A::Item, B::Item) -> OutputItem + 'a,
-  A::Item: Clone + 'a,
-  B::Item: Clone + 'a,
-{
-  type Unsub = LocalSubscription;
-  fn actual_subscribe<O: Observer<Item = Self::Item, Err = Self::Err> + 'a>(
-    self,
-    subscriber: Subscriber<O, LocalSubscription>,
-  ) -> Self::Unsub {
-    let sub = subscriber.subscription;
+impl_local_shared_both! {
+  impl<A, B, BinaryOp, OutputItem>  CombineLatestOp<A, B, BinaryOp>;
+  type Unsub = @ctx::RcMultiSubscription;
+  macro method($self: ident, $observer: ident, $ctx: ident) {
+    let sub = $ctx::RcMultiSubscription::default();
     let o_combine = CombineLatestObserver::new(
-      subscriber.observer,
+      $observer,
       sub.clone(),
-      self.binary_op,
+      $self.binary_op,
     );
-    let o_combine = Rc::new(RefCell::new(o_combine));
-    sub.add(self.a.actual_subscribe(Subscriber {
-      observer: AObserver(o_combine.clone(), TypeHint::new()),
-      subscription: LocalSubscription::default(),
-    }));
-
-    sub.add(self.b.actual_subscribe(Subscriber {
-      observer: BObserver(o_combine, TypeHint::new()),
-      subscription: LocalSubscription::default(),
-    }));
+    let o_combine = $ctx::Rc::own(o_combine);
+    sub.add(
+      $self.a.actual_subscribe(AObserver(o_combine.clone(), TypeHint::new()))
+    );
+    sub.add($self.b.actual_subscribe(BObserver(o_combine, TypeHint::new())));
     sub
   }
-}
-
-impl<A, B, BinaryOp, OutputItem> SharedObservable
-  for CombineLatestOp<A, B, BinaryOp>
-where
-  A: SharedObservable,
-  B: SharedObservable<Err = A::Err>,
-  BinaryOp: FnMut(A::Item, B::Item) -> OutputItem + Send + Sync + 'static,
-  A::Item: Clone + Send + Sync + 'static,
-  B::Item: Clone + Send + Sync + 'static,
-  A::Unsub: Send + Sync,
-  B::Unsub: Send + Sync,
-{
-  type Unsub = SharedSubscription;
-  fn actual_subscribe<
-    O: Observer<Item = Self::Item, Err = Self::Err> + Sync + Send + 'static,
-  >(
-    self,
-    subscriber: Subscriber<O, SharedSubscription>,
-  ) -> Self::Unsub {
-    let sub = subscriber.subscription;
-    let o_combine = CombineLatestObserver::new(
-      subscriber.observer,
-      sub.clone(),
-      self.binary_op,
-    );
-    let o_combine = Arc::new(Mutex::new(o_combine));
-    sub.add(self.a.actual_subscribe(Subscriber {
-      observer: AObserver(o_combine.clone(), TypeHint::new()),
-      subscription: SharedSubscription::default(),
-    }));
-
-    sub.add(self.b.actual_subscribe(Subscriber {
-      observer: BObserver(o_combine, TypeHint::new()),
-      subscription: SharedSubscription::default(),
-    }));
-    sub
-  }
+  where
+    A: @ctx::Observable,
+    B: @ctx::Observable<Err = A::Err>,
+    BinaryOp: FnMut(A::Item, B::Item) -> OutputItem +
+      @ctx::local_only('o)
+      @ctx::shared_only(Send + Sync + 'static),
+    A::Item: Clone
+      + @ctx::local_only('o) @ctx::shared_only(Send + Sync + 'static),
+    B::Item: Clone
+      + @ctx::local_only('o) @ctx::shared_only(Send + Sync + 'static),
+    A::Unsub: 'static,
+    B::Unsub: 'static
 }
 
 enum CombineItem<A, B> {
@@ -159,8 +113,6 @@ where
       self.completed_one = true;
     }
   }
-
-  is_stopped_proxy_impl!(observer);
 }
 
 struct AObserver<O, B>(O, TypeHint<B>);
@@ -171,11 +123,14 @@ where
 {
   type Item = A;
   type Err = Err;
+  #[inline]
   fn next(&mut self, value: A) { self.0.next(CombineItem::ItemA(value)); }
 
-  error_proxy_impl!(Err, 0);
-  complete_proxy_impl!(0);
-  is_stopped_proxy_impl!(0);
+  #[inline]
+  fn error(&mut self, err: Self::Err) { self.0.error(err) }
+
+  #[inline]
+  fn complete(&mut self) { self.0.complete() }
 }
 
 struct BObserver<O, A>(O, TypeHint<A>);
@@ -188,9 +143,11 @@ where
   type Err = Err;
   fn next(&mut self, value: B) { self.0.next(CombineItem::ItemB(value)); }
 
-  error_proxy_impl!(Err, 0);
-  complete_proxy_impl!(0);
-  is_stopped_proxy_impl!(0);
+  #[inline]
+  fn error(&mut self, err: Self::Err) { self.0.error(err) }
+
+  #[inline]
+  fn complete(&mut self) { self.0.complete() }
 }
 
 #[cfg(test)]
