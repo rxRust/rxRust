@@ -171,9 +171,7 @@ where
 {
   type Item = A;
   type Err = Err;
-  fn next(&mut self, value: A) {
-    self.0.next(CombineItem::ItemA(value));
-  }
+  fn next(&mut self, value: A) { self.0.next(CombineItem::ItemA(value)); }
 
   error_proxy_impl!(Err, 0);
   complete_proxy_impl!(0);
@@ -188,9 +186,7 @@ where
 {
   type Item = B;
   type Err = Err;
-  fn next(&mut self, value: B) {
-    self.0.next(CombineItem::ItemB(value));
-  }
+  fn next(&mut self, value: B) { self.0.next(CombineItem::ItemB(value)); }
 
   error_proxy_impl!(Err, 0);
   complete_proxy_impl!(0);
