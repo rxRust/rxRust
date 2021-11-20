@@ -1,5 +1,5 @@
 /// `impl_local_shared_both` is a macro helper to implement both the
-/// `LocalObservable` and `SharedObservable` at the same time. You can use
+/// `LocalObservable` and `SharedObservable` at once. You can use
 /// `@ctx` to unify the same meaning but different types in local and shared
 /// implementation. See (`local`)[local] and ('shared')[shared] mod to learn
 /// what type you can use.

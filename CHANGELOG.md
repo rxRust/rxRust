@@ -1,10 +1,14 @@
 ## [Unreleased](https://github.com/rxRust/rxRust/compare/v0.15.0...HEAD)
+
+This is a big refactor version, `Subscriber` has been removed, `LocalObservable` and `SharedObservable` has direct to accept `Observer` instead of `Subscriber`. Provide `SingleSubscription` `ProxySubscription` and `MultiSubscription` to use, so we can choose the most suitable and efficient type when implementing operator. A macro named `impl_local_shared_both` help implement local & shared version at once. And nightly rust required before `GAT` stable.
 ### Features
 - **operator**: add `skip_until` operator.
 - **operator**: add `combine_latest` operator.
 
 ### Breaking Changes
 - **observer**: remove `Observer::is_stopped` method.
+- `Subscriber` removed.
+- The `LocalObservable` and `SharedObservable` now accept `Observer` instead of `Subscriber` 
 
 ## [0.15.0](https://github.com/rxRust/rxRust/releases/tag/v0.15.0)
 ### Bug Fixes

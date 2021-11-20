@@ -6,11 +6,14 @@
 [![](https://img.shields.io/crates/d/rxrust.svg)](https://crates.io/crates/rxrust)
 
 ## Usage
+
+`1.0.x` version require rust nightly before `GAT stable,  `0.15.0` work with stable rust.
+
 Add this to your Cargo.toml:
 
 ```toml
 [dependencies]
-rxrust = "0.10.0"
+rxrust = "1.0.0-alpha.1"
 ```
 
 ## Example 
