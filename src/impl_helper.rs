@@ -128,6 +128,20 @@ macro_rules! impl_local_shared_both {
     }
   };
 
+  // fix args invalid token.
+  (
+    @replace$(+$i:literal)*, $ctx: ident,
+    [$($before:tt)*] ($arg1: ty, $($args: ty),+) $($t:tt)*
+  ) => {
+    impl_local_share_both!{
+      @replace$(+$i)*, $ctx,
+      [
+        $($before)*
+        ($arg1, $($args)+)
+      ]
+      $($t)*
+    }
+  };
   // next token that group in () [] or {}.
   (
     @replace$(+$i:literal)*, $ctx: ident,
@@ -213,7 +227,7 @@ macro_rules! impl_local_shared_both {
       $($t: ident)::+ $(<$($lf: lifetime,)* $($g: ty),*>)?;
     type Unsub = $u: ty;
     macro method($($args:tt)*) $body:tt
-    $(where $($b:tt)*)?
+    $(where $($b:tt)+)?
   ) => {
     impl<'o, $($($ilf,)* $($ig),*)?> LocalObservable<'o>
       for $($t)::+ $(<$($lf,)* $($g,)*>)?
@@ -239,7 +253,7 @@ macro_rules! impl_local_shared_both {
       $($t: ident)::+ $(<$($lf: lifetime,)* $($g: ty),*>)?;
     type Unsub = $u: ty;
     macro method($($args:tt)*) $body:tt
-    $(where $($b:tt)*)?
+    $(where $($b:tt)+)?
   )=>{
     impl$(<$($ilf,)* $($ig),*>)? SharedObservable
       for $($t)::+ $(<$($lf,)* $($g,)*>)?
