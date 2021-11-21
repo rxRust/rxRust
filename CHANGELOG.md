@@ -1,4 +1,6 @@
-## [Unreleased](https://github.com/rxRust/rxRust/compare/v0.15.0...HEAD)
+## [Unreleased](https://github.com/rxRust/rxRust/compare/v1.0.0-alpha.1...HEAD)
+
+## [1.0.0-alpha.1](https://github.com/rxRust/rxRust/releases/tag/v1.0.0-alpha.1)
 
 This is a big refactor version, `Subscriber` has been removed, `LocalObservable` and `SharedObservable` has direct to accept `Observer` instead of `Subscriber`. Provide `SingleSubscription` `ProxySubscription` and `MultiSubscription` to use, so we can choose the most suitable and efficient type when implementing operator. A macro named `impl_local_shared_both` help implement local & shared version at once. And nightly rust required before `GAT` stable.
 ### Features
