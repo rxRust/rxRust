@@ -49,17 +49,23 @@ impl<'a, Item, Err> LocalSubject<'a, Item, Err> {
   pub fn new() -> Self { Self::default() }
 }
 
-fn emit_buffer<O, B, Item, Err>(mut observer: O, mut b: B)
+fn emit_buffer<'a, O, B, Item, Err, T>(mut observer: O, b: &'a B)
 where
   O: DerefMut,
   O::Target: Observer<Item = Item, Err = Err>,
-  B: DerefMut<Target = Vec<ObserverTrigger<Item, Err>>>,
+  B: RcDerefMut<Target<'a> = T> + 'a,
+  T: DerefMut<Target = Vec<ObserverTrigger<Item, Err>>>,
 {
-  while let Some(to_emit) = b.pop() {
-    match to_emit {
-      ObserverTrigger::Item(v) => observer.next(v),
-      ObserverTrigger::Err(err) => observer.error(err),
-      ObserverTrigger::Complete => observer.complete(),
+  loop {
+    let v = b.rc_deref_mut().pop();
+    if let Some(to_emit) = v {
+      match to_emit {
+        ObserverTrigger::Item(v) => observer.next(v),
+        ObserverTrigger::Err(err) => observer.error(err),
+        ObserverTrigger::Complete => observer.complete(),
+      }
+    } else {
+      break;
     }
   }
 }
@@ -72,7 +78,7 @@ macro_rules! impl_observer {
     fn next(&mut self, value: Self::Item) {
       if let Ok(mut inner) = self.inner.try_rc_deref_mut() {
         inner.next(value);
-        emit_buffer(inner, self.buffer.rc_deref_mut())
+        emit_buffer(inner, &self.buffer)
       } else {
         self
           .buffer
@@ -84,7 +90,7 @@ macro_rules! impl_observer {
     fn error(&mut self, err: Self::Err) {
       if let Ok(mut inner) = self.inner.try_rc_deref_mut() {
         inner.error(err);
-        emit_buffer(inner, self.buffer.rc_deref_mut())
+        emit_buffer(inner, &self.buffer)
       } else {
         self.buffer.rc_deref_mut().push(ObserverTrigger::Err(err));
       }
@@ -93,7 +99,7 @@ macro_rules! impl_observer {
     fn complete(&mut self) {
       if let Ok(mut inner) = self.inner.try_rc_deref_mut() {
         inner.complete();
-        emit_buffer(inner, self.buffer.rc_deref_mut())
+        emit_buffer(inner, &self.buffer)
       } else {
         self.buffer.rc_deref_mut().push(ObserverTrigger::Complete);
       }
@@ -353,23 +359,23 @@ mod test {
 
   #[test]
   fn fix_recursive_next() {
-    let mut subject = LocalSubject::new();
+    let mut subject = Subject::default();
     let mut c_subject = subject.clone();
 
     subject.clone().subscribe(move |i| {
-      if i < 1 {
-        c_subject.next(2)
+      if i < 2 {
+        c_subject.next(i + 1)
       }
     });
 
     subject.next(0);
 
-    let mut subject = SharedSubject::new();
+    let mut subject = Subject::default();
     let mut c_subject = subject.clone();
 
     subject.clone().into_shared().subscribe(move |i| {
-      if i < 1 {
-        c_subject.next(2)
+      if i < 2 {
+        c_subject.next(i + 1)
       }
     });
 
