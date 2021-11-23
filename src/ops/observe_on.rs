@@ -111,6 +111,8 @@ impl_scheduler!(LocalScheduler, MutRc, LocalSubscription,);
 mod test {
   use crate::prelude::*;
   use futures::executor::{LocalPool, ThreadPool};
+  use std::collections::HashSet;
+  use std::sync::atomic::{AtomicBool, Ordering};
   use std::sync::{Arc, Mutex};
   use std::thread;
   use std::time::Duration;
@@ -132,27 +134,33 @@ mod test {
   #[test]
   fn switch_thread() {
     let id = thread::spawn(move || {}).thread().id();
+    let changed_thread = Arc::new(AtomicBool::default());
+    let c_changed_thread = changed_thread.clone();
     let emit_thread = Arc::new(Mutex::new(id));
-    let observe_thread = Arc::new(Mutex::new(vec![]));
+    let observe_thread = Arc::new(Mutex::new(HashSet::new()));
     let oc = observe_thread.clone();
 
     let pool = ThreadPool::builder().pool_size(100).create().unwrap();
 
     observable::create(|s| {
-      (0..100).for_each(|i| s.next(i));
-      *emit_thread.lock().unwrap() = thread::current().id();
+      while !changed_thread.load(Ordering::Relaxed) {
+        s.next(());
+        *emit_thread.lock().unwrap() = thread::current().id();
+      }
+      s.complete();
     })
     .observe_on(pool)
     .into_shared()
-    .subscribe(move |_v| {
-      observe_thread.lock().unwrap().push(thread::current().id());
+    .subscribe_blocking(move |_v| {
+      let mut ot = observe_thread.lock().unwrap();
+      ot.insert(thread::current().id());
+
+      c_changed_thread.store(ot.len() > 1, Ordering::Relaxed);
     });
-    std::thread::sleep(Duration::from_millis(1));
 
     let current_id = thread::current().id();
     assert_eq!(*emit_thread.lock().unwrap(), current_id);
-    let mut ot = oc.lock().unwrap();
-    ot.dedup();
+    let ot = oc.lock().unwrap();
     assert!(ot.len() > 1);
   }
 
