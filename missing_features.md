@@ -69,6 +69,7 @@ Operators that work with multiple source Observables to create a single Observab
 - [x] Merge — combine multiple Observables into one by merging their emissions
 - [ ] StartWith — emit a specified sequence of items before beginning to emit the items from the source Observable
 - [ ] Switch — convert an Observable that emits Observables into a single Observable that emits the items emitted by the most-recently-emitted of those Observables
+- [x] WithLatestFrom - similar to CombineLatest, but only emits items when the single source Observable emits an item (not when any of the Observables that are passed to the operator do, as CombineLatest does)
 - [x] Zip — combine the emissions of multiple Observables together via a specified function and emit single items for each combination based on the results of this function
 
 ### Error Handling Operators
