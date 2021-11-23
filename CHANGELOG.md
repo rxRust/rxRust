@@ -1,4 +1,6 @@
 ## [Unreleased](https://github.com/rxRust/rxRust/compare/v1.0.0-alpha.1...HEAD)
+### Features
+- **operator**: add `with_latest_from` operator.
 
 ## [1.0.0-alpha.1](https://github.com/rxRust/rxRust/releases/tag/v1.0.0-alpha.1)
 
