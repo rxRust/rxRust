@@ -75,6 +75,7 @@ use ops::{
   take_until::TakeUntilOp,
   take_while::TakeWhileOp,
   throttle_time::{ThrottleEdge, ThrottleTimeOp},
+  with_latest_from::WithLatestFromOp,
   zip::ZipOp,
   Accum, AverageOp, CountOp, FlatMapOp, MinMaxOp, ReduceOp, SumOp,
 };
@@ -1235,6 +1236,21 @@ pub trait Observable: Sized {
     U: Observable,
   {
     ZipOp { a: self, b: other }
+  }
+
+  /// Combines the source Observable with other Observables to create an
+  /// Observable whose values are calculated from the latest values of each,
+  /// only when the source emits.
+  ///
+  /// Whenever the source Observable emits a value, it computes a formula
+  /// using that value plus the latest values from other input Observables,
+  /// then emits the output of that formula.
+  #[inline]
+  fn with_latest_from<U>(self, other: U) -> WithLatestFromOp<Self, U>
+  where
+    U: Observable,
+  {
+    WithLatestFromOp { a: self, b: other }
   }
 
   /// Emits default value if Observable completed with empty result
