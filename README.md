@@ -7,13 +7,13 @@
 
 ## Usage
 
-`1.0.x` version require rust nightly before `GAT stable,  `0.15.0` work with stable rust.
+`1.0.x` version requires Rust nightly before GAT stable, `0.15.0` version works with Rust stable.
 
 Add this to your Cargo.toml:
 
 ```toml
 [dependencies]
-rxrust = "1.0.0-alpha.1"
+rxrust = "1.0.0-alpha.2"
 ```
 
 ## Example 
