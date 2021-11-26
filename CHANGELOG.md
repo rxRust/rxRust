@@ -1,8 +1,8 @@
 ## [Unreleased](https://github.com/rxRust/rxRust/compare/v1.0.0-alpha.2...HEAD)
-
+### Features
+- **operator**: add `start_with` operator.
 
 ## [1.0.0-alpha.2](https://github.com/rxRust/rxRust/releases/tag/v1.0.0-alpha.2)
-
 ### Features
 - **operator**: add `with_latest_from` operator.
 
