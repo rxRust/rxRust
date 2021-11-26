@@ -69,6 +69,7 @@ use ops::{
   skip_last::SkipLastOp,
   skip_until::SkipUntilOp,
   skip_while::SkipWhileOp,
+  start_with::StartWithOp,
   subscribe_on::SubscribeOnOP,
   take::TakeOp,
   take_last::TakeLastOp,
@@ -1442,6 +1443,17 @@ pub trait Observable: Sized {
       a: self,
       b: other,
       binary_op,
+    }
+  }
+
+  /// Returns an observable that, at the moment of subscription, will synchronously emit all values
+  /// provided to this operator, then subscribe to the source and mirror all of its emissions
+  /// to subscribers.
+  fn start_with<B>(self, values: Vec<B>) -> StartWithOp<Self, B>
+  {
+    StartWithOp {
+      source: self,
+      values,
     }
   }
 }
