@@ -37,7 +37,7 @@ macro_rules! observable_impl {
 impl<'a, B, S> LocalObservable<'a> for StartWithOp<S, B>
 where
   S: LocalObservable<'a>,
-  B: Clone + Into<S::Item>  + 'a,
+  B: Clone + Into<S::Item> + 'a,
   S::Item: 'a,
 {
   type Unsub = S::Unsub;
@@ -88,8 +88,8 @@ where
 
 #[cfg(test)]
 mod test {
-  use crate::prelude::*;
   use crate::of_sequence;
+  use crate::prelude::*;
 
   #[test]
   fn simple_integer() {
