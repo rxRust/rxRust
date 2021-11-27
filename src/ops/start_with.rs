@@ -1,4 +1,4 @@
-use crate::prelude::*;
+use crate::{impl_local_shared_both, prelude::*};
 
 #[derive(Clone)]
 pub struct StartWithOp<S, B> {
@@ -14,44 +14,29 @@ where
   type Err = S::Err;
 }
 
-#[doc(hidden)]
-macro_rules! observable_impl {
-  ($subscription:ty, $($marker:ident +)* $lf: lifetime) => {
-    fn actual_subscribe<O> (
-      self,
-      observer: O,
-    ) -> Self::Unsub
-    where O: Observer<Item = Self::Item, Err = Self::Err> + $($marker +)* $lf {
-      let values = self.values;
+impl_local_shared_both! {
+  impl<S, B> StartWithOp<S, B>;
+  type Unsub = S::Unsub;
+  macro method($self: ident, $observer: ident, $ctx: ident) {
+    let values = $self.values;
 
-      self.source.actual_subscribe(StartWithObserver {
-        observer,
-        values,
-        is_values_processed: false,
-        _marker: TypeHint::new(),
-      })
-    }
+    $self.source.actual_subscribe(StartWithObserver {
+      observer: $observer,
+      values,
+      is_values_processed: false,
+      _marker: TypeHint::new()
+    })
   }
-}
-
-impl<'a, B, S> LocalObservable<'a> for StartWithOp<S, B>
-where
-  S: LocalObservable<'a>,
-  B: Clone + Into<S::Item> + 'a,
-  S::Item: 'a,
-{
-  type Unsub = S::Unsub;
-  observable_impl!(LocalSubscription,'a);
-}
-
-impl<B, S> SharedObservable for StartWithOp<S, B>
-where
-  S: SharedObservable,
-  B: Clone + Into<S::Item> + Send + Sync + 'static,
-  S::Item: 'static,
-{
-  type Unsub = S::Unsub;
-  observable_impl!(SharedSubscription, Send + Sync + 'static);
+  where
+    S: @ctx::Observable,
+    @ctx::shared_only(
+      B: Clone + Into<S::Item> + Send + Sync + 'static,
+      S::Item: 'static,
+    )
+    @ctx::local_only(
+      B: Clone + Into<S::Item> + 'o,
+      S::Item: Clone + 'o,
+    )
 }
 
 #[derive(Clone)]
