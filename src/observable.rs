@@ -30,6 +30,10 @@ pub use from_fn::*;
 
 pub mod timer;
 pub use timer::{timer, timer_at};
+
+pub mod start;
+pub use start::start;
+
 mod observable_all;
 pub use observable_all::*;
 mod observable_err;
