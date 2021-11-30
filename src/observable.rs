@@ -56,6 +56,7 @@ use ops::{
   debounce::DebounceOp,
   delay::DelayOp,
   distinct::DistinctOp,
+  distinct::DistinctUntilChangedOp,
   filter::FilterOp,
   filter_map::FilterMapOp,
   finalize::FinalizeOp,
@@ -1260,6 +1261,12 @@ pub trait Observable: Sized {
   /// Observable that are distinct by comparison from previous items.
   #[inline]
   fn distinct(self) -> DistinctOp<Self> { DistinctOp { source: self } }
+
+  /// Only emit when the current value is different than the last
+  #[inline]
+  fn distinct_until_changed(self) -> DistinctUntilChangedOp<Self> {
+    DistinctUntilChangedOp { source: self }
+  }
 
   /// 'Zips up' two observable into a single observable of pairs.
   ///
