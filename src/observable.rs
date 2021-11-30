@@ -667,6 +667,40 @@ pub trait Observable: Sized {
     TakeWhileOp {
       source: self,
       callback,
+      inclusive: false,
+    }
+  }
+
+  /// Emits values while result of an callback is true and the last one that
+  /// causes the callback to return false.
+  ///
+  /// # Example
+  /// Take the first 5 seconds of an infinite 1-second interval Observable
+  ///
+  /// ```
+  /// # use rxrust::prelude::*;
+  ///
+  /// observable::from_iter(0..10)
+  ///   .take_while_inclusive(|v| v < &4)
+  /// .subscribe(|v| println!("{}", v));
+
+  /// // print logs:
+  /// // 0
+  /// // 1
+  /// // 2
+  /// // 3
+  /// // 4
+  /// ```
+  ///
+  #[inline]
+  fn take_while_inclusive<F>(self, callback: F) -> TakeWhileOp<Self, F>
+  where
+    F: FnMut(&Self::Item) -> bool,
+  {
+    TakeWhileOp {
+      source: self,
+      callback,
+      inclusive: true,
     }
   }
 

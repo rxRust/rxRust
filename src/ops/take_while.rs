@@ -3,6 +3,7 @@ use crate::{impl_helper::*, impl_local_shared_both, prelude::*};
 pub struct TakeWhileOp<S, F> {
   pub(crate) source: S,
   pub(crate) callback: F,
+  pub(crate) inclusive: bool,
 }
 
 impl<S, F> Observable for TakeWhileOp<S, F>
@@ -23,6 +24,7 @@ impl_local_shared_both! {
       observer: $observer,
       subscription: subscription.clone(),
       callback: $self.callback,
+      inclusive: $self.inclusive,
     };
     let s = $self.source.actual_subscribe(observer);
     subscription.rc_deref_mut().proxy(s);
@@ -41,6 +43,7 @@ pub struct TakeWhileObserver<O, S, F> {
   observer: O,
   subscription: S,
   callback: F,
+  inclusive: bool,
 }
 
 impl<O, U, Item, Err, F> Observer for TakeWhileObserver<O, U, F>
@@ -55,6 +58,9 @@ where
     if (self.callback)(&value) {
       self.observer.next(value);
     } else {
+      if self.inclusive {
+        self.observer.next(value);
+      }
       self.observer.complete();
       self.subscription.unsubscribe();
     }
@@ -79,6 +85,19 @@ mod test {
       .subscribe_complete(|_| next_count += 1, || completed = true);
 
     assert_eq!(next_count, 5);
+    assert!(completed);
+  }
+
+  #[test]
+  fn inclusive_case() {
+    let mut completed = false;
+    let mut next_count = 0;
+
+    observable::from_iter(0..100)
+      .take_while_inclusive(|v| v < &5)
+      .subscribe_complete(|_| next_count += 1, || completed = true);
+
+    assert_eq!(next_count, 6);
     assert!(completed);
   }
 
