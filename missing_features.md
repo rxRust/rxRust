@@ -47,6 +47,7 @@ Operators that selectively emit items from a source Observable.
   - [x] ThrottleTime
   - [x] Debounce
 - [x] Distinct — suppress duplicate items emitted by an Observable
+  - [x] DistinctUntilChanged — only emit when the current value is different than the last
 - [x] ElementAt — emit only item n emitted by an Observable
 - [x] Filter — emit only those items from an Observable that pass a predicate test
 - [x] First — emit only the first item, or the first item that meets a condition, from an Observable

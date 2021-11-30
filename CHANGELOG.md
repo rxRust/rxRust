@@ -2,6 +2,7 @@
 ### Features
 - **operator**: add `start_with` operator.
 - **operator**: add `start` operator.
+- **operator**: add `distinct_until_changed` operator.
 
 ## [1.0.0-alpha.2](https://github.com/rxRust/rxRust/releases/tag/v1.0.0-alpha.2)
 ### Features
