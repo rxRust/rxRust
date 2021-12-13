@@ -99,6 +99,67 @@ where
   fn complete(&mut self) { self.observer.complete() }
 }
 
+#[derive(Clone)]
+pub struct DistinctUntilKeyChangedOp<S, F> {
+  pub(crate) source: S,
+  pub(crate) key: F,
+}
+
+impl<S: Observable, F> Observable for DistinctUntilKeyChangedOp<S, F> {
+  type Item = S::Item;
+  type Err = S::Err;
+}
+
+impl_local_shared_both! {
+  impl<S, F, K> DistinctUntilKeyChangedOp<S, F>;
+  type Unsub = S::Unsub;
+  macro method($self: ident, $observer: ident, $ctx: ident) {
+    $self.source.actual_subscribe(DistinctUntilKeyChangedObserver {
+      observer: $observer,
+      key: $self.key,
+      last: None,
+    })
+  }
+  where
+    F: Fn(&S::Item) -> K
+      @ctx::local_only(+ 'o)
+      @ctx::shared_only(+ Send + Sync + 'static),
+    S: @ctx::Observable,
+    K: Eq,
+    S::Item: Clone
+      @ctx::local_only(+ 'o)
+      @ctx::shared_only(+ Send + Sync + 'static)
+}
+struct DistinctUntilKeyChangedObserver<O, Item, F> {
+  observer: O,
+  key: F,
+  last: Option<Item>,
+}
+
+impl<O, F, K, Item, Err> Observer
+  for DistinctUntilKeyChangedObserver<O, Item, F>
+where
+  O: Observer<Item = Item, Err = Err>,
+  Item: Clone,
+  K: Eq,
+  F: Fn(&Item) -> K,
+{
+  type Item = Item;
+  type Err = Err;
+  fn next(&mut self, value: Self::Item) {
+    if self.last.is_none()
+      || (self.key)(self.last.as_ref().unwrap()) != (self.key)(&value)
+    {
+      self.last = Some(value.clone());
+      self.observer.next(value);
+    }
+  }
+
+  fn error(&mut self, err: Self::Err) { self.observer.error(err) }
+
+  fn complete(&mut self) { self.observer.complete() }
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -158,4 +219,18 @@ mod tests {
   );
 
   fn bench_distinct_until_changed(b: &mut bencher::Bencher) { b.iter(smoke); }
+
+  #[test]
+  fn distinct_until_key_changed() {
+    let x = Rc::new(RefCell::new(vec![]));
+    let x_c = x.clone();
+    observable::from_iter(
+      vec![(1, 2), (2, 2), (2, 1), (1, 1), (2, 2), (3, 2)].into_iter(),
+    )
+    .map(|v| v)
+    .distinct_until_key_changed(|tup: &(i32, i32)| tup.0)
+    .subscribe(move |v| x.borrow_mut().push(v))
+    .unsubscribe();
+    assert_eq!(&*x_c.borrow(), &[(1, 2), (2, 2), (1, 1), (2, 2), (3, 2)]);
+  }
 }

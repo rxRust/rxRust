@@ -48,6 +48,7 @@ use crate::prelude::*;
 pub use observable_comp::*;
 
 use crate::ops::default_if_empty::DefaultIfEmptyOp;
+use crate::ops::distinct::DistinctUntilKeyChangedOp;
 use ops::{
   box_it::{BoxOp, IntoBox},
   buffer::{BufferWithCountOp, BufferWithCountOrTimerOp, BufferWithTimeOp},
@@ -1266,6 +1267,15 @@ pub trait Observable: Sized {
   #[inline]
   fn distinct_until_changed(self) -> DistinctUntilChangedOp<Self> {
     DistinctUntilChangedOp { source: self }
+  }
+
+  /// Only emit when the current value is different than the last
+  #[inline]
+  fn distinct_until_key_changed<F>(
+    self,
+    key: F,
+  ) -> DistinctUntilKeyChangedOp<Self, F> {
+    DistinctUntilKeyChangedOp { source: self, key }
   }
 
   /// 'Zips up' two observable into a single observable of pairs.
