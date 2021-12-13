@@ -48,7 +48,7 @@ use crate::prelude::*;
 pub use observable_comp::*;
 
 use crate::ops::default_if_empty::DefaultIfEmptyOp;
-use crate::ops::distinct::DistinctUntilKeyChangedOp;
+use crate::ops::distinct::{DistinctKeyOp, DistinctUntilKeyChangedOp};
 use ops::{
   box_it::{BoxOp, IntoBox},
   buffer::{BufferWithCountOp, BufferWithCountOrTimerOp, BufferWithTimeOp},
@@ -1263,13 +1263,19 @@ pub trait Observable: Sized {
   #[inline]
   fn distinct(self) -> DistinctOp<Self> { DistinctOp { source: self } }
 
+  /// Variant of distinct that takes a key selector.
+  #[inline]
+  fn distinct_key<F>(self, key: F) -> DistinctKeyOp<Self, F> {
+    DistinctKeyOp { source: self, key }
+  }
+
   /// Only emit when the current value is different than the last
   #[inline]
   fn distinct_until_changed(self) -> DistinctUntilChangedOp<Self> {
     DistinctUntilChangedOp { source: self }
   }
 
-  /// Only emit when the current value is different than the last
+  /// Variant of distinct_until_changed that takes a key selector.
   #[inline]
   fn distinct_until_key_changed<F>(
     self,
