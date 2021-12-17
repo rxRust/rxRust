@@ -225,6 +225,20 @@ mod test {
   }
 
   #[test]
+  fn circular() {
+    let mut subject_a = LocalSubject::new();
+    let mut subject_b = LocalSubject::new();
+    let mut cloned_subject_b = subject_b.clone();
+
+    subject_a.clone().with_latest_from(subject_b.clone()).subscribe(move |_| {
+      cloned_subject_b.next(());
+    });
+    subject_b.next(());
+    subject_a.next(());
+    subject_a.next(());
+  }
+
+  #[test]
   fn bench() { do_bench(); }
 
   benchmark_group!(do_bench, bench_zip);
