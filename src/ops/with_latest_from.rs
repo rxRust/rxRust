@@ -1,6 +1,6 @@
-use crate::prelude::*;
 use crate::impl_helper::*;
 use crate::impl_local_shared_both;
+use crate::prelude::*;
 
 /// An Observable that combines from two other two Observables.
 ///
@@ -42,12 +42,14 @@ impl_local_shared_both! {
     subscription
   }
   where
-    A::Item: @ctx::local_only('o) @ctx::shared_only('static),
-    B::Item: Clone @ctx::local_only(+ 'o) @ctx::shared_only(+ Send + Sync + 'static),
     A: @ctx::Observable,
     B: @ctx::Observable<Err=A::Err>,
     A::Unsub: 'static,
-    B::Unsub: 'static
+    B::Unsub: 'static,
+    A::Item: @ctx::local_only('o) @ctx::shared_only('static),
+    B::Item: Clone
+      @ctx::local_only(+ 'o)
+      @ctx::shared_only(+ Send + Sync + 'static)
 }
 
 #[derive(Clone)]
@@ -60,14 +62,17 @@ struct BObserver<O, V, Unsub> {
 
 macro_rules! impl_b_observer {
   ($rc: ident) => {
-    impl<O, AItem, BItem, Unsub> Observer for BObserver<O, $rc<Option<BItem>>, Unsub>
+    impl<O, AItem, BItem, Unsub> Observer
+      for BObserver<O, $rc<Option<BItem>>, Unsub>
     where
-      O: Observer<Item =(AItem, BItem)>,
+      O: Observer<Item = (AItem, BItem)>,
       Unsub: SubscriptionLike,
     {
       type Item = BItem;
       type Err = O::Err;
-      fn next(&mut self, value: Self::Item) { *self.value.rc_deref_mut() = Some(value); }
+      fn next(&mut self, value: Self::Item) {
+        *self.value.rc_deref_mut() = Some(value);
+      }
 
       fn error(&mut self, err: Self::Err) { self.observer.error(err) }
 
@@ -78,7 +83,7 @@ macro_rules! impl_b_observer {
         }
       }
     }
-  }
+  };
 }
 
 impl_b_observer!(MutRc);
@@ -93,9 +98,9 @@ struct AObserver<O: Observer, V> {
 macro_rules! impl_a_observer {
   ($rc: ident) => {
     impl<AItem, BItem, Err, O> Observer for AObserver<O, $rc<Option<BItem>>>
-      where
-          O: Observer<Item = (AItem, BItem), Err = Err>,
-          BItem: Clone,
+    where
+      O: Observer<Item = (AItem, BItem), Err = Err>,
+      BItem: Clone,
     {
       type Item = AItem;
       type Err = Err;
@@ -109,13 +114,11 @@ macro_rules! impl_a_observer {
         self.observer.next((item, item2));
       }
 
-      fn complete(&mut self) {
-        self.observer.complete();
-      }
+      fn complete(&mut self) { self.observer.complete(); }
 
       fn error(&mut self, err: Self::Err) { self.observer.error(err) }
     }
-  }
+  };
 }
 
 impl_a_observer!(MutRc);
@@ -163,7 +166,8 @@ mod test {
       let primary = numbers.clone().filter(|v| *v % 3 == 0);
       let secondary = numbers.clone().filter(|v| *v % 3 != 0);
 
-      let with_latest_from = primary.clone().with_latest_from(secondary.clone());
+      let with_latest_from =
+        primary.clone().with_latest_from(secondary.clone());
 
       //  attach observers
       with_latest_from.subscribe(|v| numbers_store.push(v));
@@ -212,9 +216,12 @@ mod test {
     let mut subject_b = LocalSubject::new();
     let mut cloned_subject_b = subject_b.clone();
 
-    subject_a.clone().with_latest_from(subject_b.clone()).subscribe(move |_| {
-      cloned_subject_b.next(());
-    });
+    subject_a
+      .clone()
+      .with_latest_from(subject_b.clone())
+      .subscribe(move |_| {
+        cloned_subject_b.next(());
+      });
     subject_b.next(());
     subject_a.next(());
     subject_a.next(());
