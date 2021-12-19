@@ -6,6 +6,10 @@
 - **operator**: add `distinct_key` operator.
 - **operator**: add `distinct_key_until_changed` operator.
 
+### Refactor
+
+- **operator**: Re-implement `with_latest_from`, so that two operands don't require one shared observer at the same time anymore.
+
 ## [1.0.0-alpha.2](https://github.com/rxRust/rxRust/releases/tag/v1.0.0-alpha.2)
 ### Features
 - **operator**: add `with_latest_from` operator.
