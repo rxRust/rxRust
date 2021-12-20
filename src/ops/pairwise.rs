@@ -46,8 +46,8 @@ where
     let (_x, y) = std::mem::take(&mut self.pair);
     self.pair = (y, Some(value));
 
-    if let (Some(a), Some(b)) = self.pair.clone() {
-      self.observer.next((a, b));
+    if let (Some(a), Some(b)) = &self.pair {
+      self.observer.next((a.clone(), b.clone()));
     }
   }
 
