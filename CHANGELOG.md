@@ -5,6 +5,7 @@
 - **operator**: add `distinct_until_changed` operator.
 - **operator**: add `distinct_key` operator.
 - **operator**: add `distinct_key_until_changed` operator.
+- **operator**: add `pairwise` operator.
 
 ## [1.0.0-alpha.2](https://github.com/rxRust/rxRust/releases/tag/v1.0.0-alpha.2)
 ### Features
