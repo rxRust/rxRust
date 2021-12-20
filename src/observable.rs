@@ -49,6 +49,7 @@ pub use observable_comp::*;
 
 use crate::ops::default_if_empty::DefaultIfEmptyOp;
 use crate::ops::distinct::{DistinctKeyOp, DistinctUntilKeyChangedOp};
+use crate::ops::pairwise::PairwiseOp;
 use ops::{
   box_it::{BoxOp, IntoBox},
   buffer::{BufferWithCountOp, BufferWithCountOrTimerOp, BufferWithTimeOp},
@@ -1516,6 +1517,10 @@ pub trait Observable: Sized {
       values,
     }
   }
+
+  /// Groups pairs of consecutive emissions together and emits them as an pair
+  /// of two values.
+  fn pairwise(self) -> PairwiseOp<Self> { PairwiseOp { source: self } }
 }
 
 pub trait LocalObservable<'a>: Observable {
