@@ -308,7 +308,7 @@ pub trait Observable: Sized {
   #[inline]
   fn map<B, F>(self, f: F) -> MapOp<Self, F>
   where
-    F: Fn(Self::Item) -> B,
+    F: FnMut(Self::Item) -> B,
   {
     MapOp {
       source: self,
