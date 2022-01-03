@@ -157,20 +157,24 @@ mod test {
         move |j| {
           let last_next_arg = last_next_arg_cloned.clone();
           let next_count = next_count_cloned.clone();
-          let notifier_completed_count = notifier_completed_count_cloned.clone();
-          cloned_source.clone().take_until(cloned_notifier.clone()).subscribe_complete(
-            move |i| {
-              *last_next_arg.rc_deref_mut() = Some((i, j));
-              *next_count.rc_deref_mut() += 1;
-            },
-            move || {
-              *notifier_completed_count.rc_deref_mut() += 1;
-            },
-          );
+          let notifier_completed_count =
+            notifier_completed_count_cloned.clone();
+          cloned_source
+            .clone()
+            .take_until(cloned_notifier.clone())
+            .subscribe_complete(
+              move |i| {
+                *last_next_arg.rc_deref_mut() = Some((i, j));
+                *next_count.rc_deref_mut() += 1;
+              },
+              move || {
+                *notifier_completed_count.rc_deref_mut() += 1;
+              },
+            );
         },
         move || {
           *source_completed_count_cloned.rc_deref_mut() += 1;
-        }
+        },
       );
       source.next(5);
       notifier.next(1);
@@ -181,11 +185,10 @@ mod test {
       source.complete();
     }
     assert_eq!(*next_count.rc_deref(), 2);
-    assert_eq!(*last_next_arg.rc_deref(), Some((7,2)));
+    assert_eq!(*last_next_arg.rc_deref(), Some((7, 2)));
     assert_eq!(*source_completed_count.rc_deref(), 1);
     assert_eq!(*notifier_completed_count.rc_deref(), 2);
   }
-
 
   #[test]
   fn bench() { do_bench(); }
