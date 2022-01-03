@@ -134,6 +134,7 @@ mod test {
     assert_eq!(*v.borrow(), 1);
   }
 
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn switch_thread() {
     let id = thread::spawn(move || {}).thread().id();
@@ -167,6 +168,7 @@ mod test {
     assert!(ot.len() > 1);
   }
 
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn pool_unsubscribe() {
     let scheduler = ThreadPool::new().unwrap();

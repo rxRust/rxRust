@@ -158,6 +158,7 @@ mod test {
     assert_eq!(accept2, 1);
   }
 
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn fork_and_shared() {
     observable::of(1)

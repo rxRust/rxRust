@@ -89,6 +89,7 @@ mod test {
     assert_eq!(nc2, 5);
   }
 
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn ininto_shared() {
     observable::from_iter(0..100)

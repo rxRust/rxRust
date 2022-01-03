@@ -107,6 +107,7 @@ mod test {
     assert_eq!(completed_count, 1);
   }
 
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn ininto_shared() {
     let last_next_arg = Arc::new(Mutex::new(None));

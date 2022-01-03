@@ -232,8 +232,12 @@ where
 mod test {
   use crate::prelude::*;
   use bencher::Bencher;
-  use ops::box_it::{BoxClone, SharedBoxClone};
-  use ops::box_it::{LocalBoxOp, SharedBoxOp};
+  use ops::box_it::BoxClone;
+  use ops::box_it::LocalBoxOp;
+  #[cfg(not(target_arch = "wasm32"))]
+  use ops::box_it::SharedBoxClone;
+  #[cfg(not(target_arch = "wasm32"))]
+  use ops::box_it::SharedBoxOp;
 
   #[test]
   fn box_observable() {
@@ -246,6 +250,7 @@ mod test {
     assert_eq!(test, 100);
   }
 
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn shared_box_observable() {
     let mut boxed: SharedBoxOp<i32, ()> = observable::of(100).box_it();
@@ -263,6 +268,7 @@ mod test {
       .subscribe(|_| {});
   }
 
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn shared_box_clone() {
     observable::of(100)

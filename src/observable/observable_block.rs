@@ -60,6 +60,7 @@ pub trait SubscribeBlocking<'a, N> {
   fn subscribe_blocking(self, next: N) -> SubscriptionWrapper<Self::Unsub>;
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl<'a, S, N> SubscribeBlocking<'a, N> for Shared<S>
 where
   S: SharedObservable<Err = ()>,
@@ -93,7 +94,7 @@ mod test {
   use std::sync::{Arc, Mutex};
   use std::time::{Duration, Instant};
 
-  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
   fn blocks_shared() {
     let pool = ThreadPool::new().unwrap();
     let stamp = Instant::now();

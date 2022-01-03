@@ -271,6 +271,7 @@ mod test {
   use futures::executor::ThreadPool;
   use std::time::{Duration, Instant};
 
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn smoke() {
     let test_code = MutArc::own("".to_owned());
@@ -320,6 +321,7 @@ mod test {
     assert_eq!(i, 0);
   }
 
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn empty_local_subject_can_convert_into_shared() {
     let pool = ThreadPool::new().unwrap();
@@ -358,6 +360,7 @@ mod test {
     local.error(2);
   }
 
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn fix_recursive_next() {
     let mut subject = Subject::default();

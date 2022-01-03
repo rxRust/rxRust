@@ -36,6 +36,7 @@ mod test {
   use bencher::Bencher;
   use std::sync::{Arc, Mutex};
 
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn proxy_call() {
     let next = Arc::new(Mutex::new(0));
@@ -83,6 +84,7 @@ mod test {
     assert_eq!(*c_sum2.lock().unwrap(), 10);
   }
 
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn fork_and_share() {
     let observable = observable::create(|_| {});
@@ -94,10 +96,13 @@ mod test {
     observable.clone().subscribe(|_| {});
   }
 
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn bench() { do_bench(); }
 
+  #[cfg(not(target_arch = "wasm32"))]
   benchmark_group!(do_bench, bench_from_fn);
 
+  #[cfg(not(target_arch = "wasm32"))]
   fn bench_from_fn(b: &mut Bencher) { b.iter(proxy_call); }
 }

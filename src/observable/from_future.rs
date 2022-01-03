@@ -130,6 +130,7 @@ mod tests {
     sync::{Arc, Mutex},
   };
 
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn shared() {
     let res = Arc::new(Mutex::new(0));

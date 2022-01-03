@@ -140,6 +140,7 @@ mod test {
     assert_eq!(6, emitted);
   }
 
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn reduce_fork_and_shared() {
     // type to type can fork
@@ -219,6 +220,7 @@ mod test {
     assert_eq!(None, emitted);
   }
 
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
 
   fn max_fork_and_shared() {
@@ -294,6 +296,7 @@ mod test {
     assert_eq!(None, emitted);
   }
 
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
 
   fn min_fork_and_shared() {
@@ -334,6 +337,7 @@ mod test {
     assert_eq!(-1, emitted);
   }
 
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn sum_fork_and_shared() {
     // type to type can fork
@@ -359,6 +363,7 @@ mod test {
     assert_eq!(0, emitted);
   }
 
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn count_fork_and_shared() {
     // type to type can fork
@@ -434,6 +439,7 @@ mod test {
     assert_eq!(None, emitted);
   }
 
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn average_fork_and_shared() {
     // type to type can fork

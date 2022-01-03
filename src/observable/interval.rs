@@ -60,6 +60,7 @@ mod tests {
   use futures::executor::{LocalPool, ThreadPool};
   use std::sync::{Arc, Mutex};
 
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn shared() {
     let millis = Arc::new(Mutex::new(0));

@@ -1646,6 +1646,7 @@ mod tests {
     b.iter(smoke_ignore_elements);
   }
 
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn shared_ignore_elements() {
     observable::from_iter(0..20)

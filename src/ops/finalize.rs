@@ -314,6 +314,7 @@ mod test {
     assert_eq!(finalize_count.get(), 1);
   }
 
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn finalize_shared() {
     // Given

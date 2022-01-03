@@ -233,6 +233,7 @@ mod tests {
       .unsubscribe();
     assert_eq!(&*x_c.borrow(), &[0, 1, 2, 3, 4]);
   }
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn shared() {
     observable::from_iter(0..10)
@@ -259,6 +260,7 @@ mod tests {
       .unsubscribe();
     assert_eq!(&*x_c.borrow(), &[1, 2, 1, 2, 3]);
   }
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn distinct_until_changed_shared() {
     observable::from_iter(0..10)

@@ -269,6 +269,7 @@ mod test {
     );
   }
 
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn shared() {
     let values = Arc::new(Mutex::new(vec![]));

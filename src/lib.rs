@@ -5,6 +5,7 @@
 #![recursion_limit = "256"]
 #![feature(generic_associated_types)]
 #![doc = include_str!("../README.md")]
+#![cfg_attr(all(test, target_arch = "wasm32"), allow(unused_imports))]
 
 #[cfg(test)]
 extern crate float_cmp;

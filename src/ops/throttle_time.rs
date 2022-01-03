@@ -157,6 +157,7 @@ mod tests {
     assert_eq!(&*x_c.rc_deref(), &[0, 3]);
   }
 
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn fork_and_shared() {
     use futures::executor::ThreadPool;

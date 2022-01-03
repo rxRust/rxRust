@@ -52,6 +52,7 @@ mod test {
   use crate::prelude::*;
   use bencher::Bencher;
 
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn no_results_before_deferred_subscribe() {
     let calls = Arc::new(Mutex::new(0));
@@ -104,6 +105,7 @@ mod test {
     assert_eq!(*calls.lock().unwrap().deref(), 2);
   }
 
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn fork_and_share() {
     let observable = observable::defer(observable::empty);
@@ -115,11 +117,14 @@ mod test {
     observable.subscribe(|_| {});
   }
 
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn bench() { do_bench(); }
 
+  #[cfg(not(target_arch = "wasm32"))]
   benchmark_group!(do_bench, bench_deref);
 
+  #[cfg(not(target_arch = "wasm32"))]
   fn bench_deref(b: &mut Bencher) {
     b.iter(no_results_before_deferred_subscribe);
   }

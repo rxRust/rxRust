@@ -163,6 +163,7 @@ mod test {
       assert_eq!(x.borrow().len(), 10);
     };
   }
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn sample_by_subject() {
     let mut subject = SharedSubject::new();
