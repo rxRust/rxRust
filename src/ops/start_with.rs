@@ -99,7 +99,7 @@ mod test {
       let s = of_sequence!(" World!", " Goodbye", " World!");
 
       s.start_with(vec!["Hello"]).subscribe(|value| {
-        ret.push_str(&value.to_string());
+        ret.push_str(value);
       });
     }
 
