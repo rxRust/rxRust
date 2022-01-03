@@ -73,6 +73,7 @@ impl<Item, Err> Observable for SharedBehaviorSubject<Item, Err> {
   type Err = Err;
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl<Item, Err> SharedObservable for SharedBehaviorSubject<Item, Err>
 where
   Item: Clone,

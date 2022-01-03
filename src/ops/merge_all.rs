@@ -1,11 +1,10 @@
-use super::box_it::{LocalBoxOp, SharedBoxOp};
+use super::box_it::LocalBoxOp;
+#[cfg(not(target_arch = "wasm32"))]
+use super::box_it::SharedBoxOp;
 use crate::prelude::*;
-use std::{
-  cell::RefCell,
-  collections::VecDeque,
-  rc::Rc,
-  sync::{Arc, Mutex},
-};
+#[cfg(not(target_arch = "wasm32"))]
+use std::sync::{Arc, Mutex};
+use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 
 pub struct MergeAllOp<S> {
   pub concurrent: usize,
@@ -129,6 +128,7 @@ where
   }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl<S> SharedObservable for MergeAllOp<S>
 where
   S: SharedObservable,
@@ -157,6 +157,7 @@ where
   }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub struct SharedMergeAllObserver<O: Observer> {
   observer: O,
   subscribed: usize,
@@ -166,6 +167,7 @@ pub struct SharedMergeAllObserver<O: Observer> {
   buffer: VecDeque<SharedBoxOp<O::Item, O::Err>>,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl<O> Observer for Arc<Mutex<SharedMergeAllObserver<O>>>
 where
   O: Observer + Send + Sync + 'static,
@@ -201,8 +203,10 @@ where
   }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 struct SharedInnerObserver<O: Observer>(Arc<Mutex<SharedMergeAllObserver<O>>>);
 
+#[cfg(not(target_arch = "wasm32"))]
 impl<O> Observer for SharedInnerObserver<O>
 where
   O: Observer + Send + Sync + 'static,

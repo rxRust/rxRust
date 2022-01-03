@@ -22,6 +22,7 @@ pub mod observer;
 pub mod ops;
 pub mod rc;
 pub mod scheduler;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod shared;
 pub mod subject;
 pub mod subscription;
@@ -35,6 +36,7 @@ pub mod prelude {
   pub use crate::ops;
   pub use crate::rc::*;
   pub use crate::scheduler::*;
+  #[cfg(not(target_arch = "wasm32"))]
   pub use crate::shared;
   pub use crate::subject;
   pub use crate::subject::*;
@@ -42,5 +44,6 @@ pub mod prelude {
   pub use crate::subscription::*;
   pub use crate::type_hint::TypeHint;
   pub use observer::Observer;
+  #[cfg(not(target_arch = "wasm32"))]
   pub use shared::*;
 }

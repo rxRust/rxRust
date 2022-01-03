@@ -41,6 +41,7 @@ where
   }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl<S, F> SharedObservable for FinalizeOp<S, F>
 where
   S: SharedObservable,

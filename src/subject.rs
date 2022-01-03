@@ -120,6 +120,7 @@ impl<Item, Err> Observable for SharedSubject<Item, Err> {
   type Err = Err;
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl<Item, Err> SharedObservable for SharedSubject<Item, Err> {
   type Unsub = MutArc<SingleSubscription>;
   fn actual_subscribe<O>(self, observer: O) -> Self::Unsub

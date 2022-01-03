@@ -9,6 +9,7 @@ pub trait BoxObservable<'a> {
   ) -> Box<dyn SubscriptionLike>;
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub trait SharedBoxObservable {
   type Item;
   type Err;
@@ -45,6 +46,7 @@ where
   box_observable_impl!(LocalSubscription, T, 'a);
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl<T> SharedBoxObservable for T
 where
   T: SharedObservable,
@@ -66,8 +68,11 @@ pub type LocalBoxOp<'a, Item, Err> =
   BoxOp<Box<dyn BoxObservable<'a, Item = Item, Err = Err> + 'a>>;
 pub type LocalCloneBoxOp<'a, Item, Err> =
   BoxOp<Box<dyn BoxClone<'a, Item = Item, Err = Err> + 'a>>;
+// #[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(target_arch = "wasm32"))]
 pub type SharedBoxOp<Item, Err> =
   BoxOp<Box<dyn SharedBoxObservable<Item = Item, Err = Err> + Send + Sync>>;
+#[cfg(not(target_arch = "wasm32"))]
 pub type SharedCloneBoxOp<Item, Err> =
   BoxOp<Box<dyn SharedBoxClone<Item = Item, Err = Err>>>;
 
@@ -93,11 +98,13 @@ impl<'a, Item, Err> LocalObservable<'a> for LocalBoxOp<'a, Item, Err> {
   observable_impl!(LocalSubscription, 'a);
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl<Item, Err> Observable for SharedBoxOp<Item, Err> {
   type Item = Item;
   type Err = Err;
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl<Item, Err> SharedObservable for SharedBoxOp<Item, Err> {
   type Unsub = Box<dyn SubscriptionLike + Send + Sync>;
   observable_impl!(SharedSubscription, Send + Sync + 'static);
@@ -112,10 +119,13 @@ impl<'a, Item, Err> LocalObservable<'a> for LocalCloneBoxOp<'a, Item, Err> {
   observable_impl!(LocalSubscription, 'a);
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl<Item, Err> Observable for SharedCloneBoxOp<Item, Err> {
   type Item = Item;
   type Err = Err;
 }
+
+#[cfg(not(target_arch = "wasm32"))]
 impl<Item, Err> SharedObservable for SharedCloneBoxOp<Item, Err> {
   type Unsub = Box<dyn SubscriptionLike + Send + Sync>;
   observable_impl!(SharedSubscription, Send + Sync + 'static);
@@ -139,6 +149,7 @@ where
   fn box_it(origin: T) -> BoxOp<Self> { BoxOp(Box::new(origin)) }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl<T> IntoBox<T>
   for Box<dyn SharedBoxObservable<Item = T::Item, Err = T::Err> + Send + Sync>
 where
@@ -184,12 +195,14 @@ where
   fn box_it(origin: T) -> BoxOp<Self> { BoxOp(Box::new(origin)) }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub trait SharedBoxClone: SharedBoxObservable {
   fn box_clone(
     &self,
   ) -> Box<dyn SharedBoxClone<Item = Self::Item, Err = Self::Err>>;
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl<T> SharedBoxClone for T
 where
   T: SharedBoxObservable + Clone + 'static,
@@ -201,11 +214,13 @@ where
   }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl<Item, Err> Clone for Box<dyn SharedBoxClone<Item = Item, Err = Err>> {
   #[inline]
   fn clone(&self) -> Self { self.box_clone() }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl<'a, T> IntoBox<T> for Box<dyn SharedBoxClone<Item = T::Item, Err = T::Err>>
 where
   T: SharedBoxObservable + Clone + 'static,

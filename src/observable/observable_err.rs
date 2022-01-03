@@ -68,6 +68,7 @@ where
   }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl<'a, S, N, E> SubscribeErr<'a, N, E> for Shared<S>
 where
   S: SharedObservable,

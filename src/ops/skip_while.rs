@@ -41,6 +41,7 @@ where
   observable_impl!(LocalSubscription, S, 'a);
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl<S, F> SharedObservable for SkipWhileOp<S, F>
 where
   S: SharedObservable,

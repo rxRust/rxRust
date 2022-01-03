@@ -68,6 +68,7 @@ where
   }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl<Source, Discr, Key> SharedObservable
   for GroupObservable<Source, Discr, Key>
 where
@@ -170,6 +171,7 @@ where
   }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl<'a, Source, Discr, Key> SharedObservable for GroupByOp<Source, Discr>
 where
   Source: SharedObservable + Clone + Send + Sync + 'static,

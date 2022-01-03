@@ -118,6 +118,7 @@ macro_rules! impl_observer {
 }
 
 impl_observer!(MutRc, LocalScheduler);
+#[cfg(not(target_arch = "wasm32"))]
 impl_observer!(MutArc, SharedScheduler, Send);
 
 #[cfg(test)]

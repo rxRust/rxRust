@@ -104,6 +104,7 @@ where
   fn connect(self) -> Self::Unsub { self.source.actual_subscribe(self.subject) }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 type SharedInnerRefCount<Src> = MutArc<
   InnerRefCount<
     Src,
@@ -112,6 +113,7 @@ type SharedInnerRefCount<Src> = MutArc<
   >,
 >;
 
+#[cfg(not(target_arch = "wasm32"))]
 impl<Src> Connect
   for ConnectableObservable<Src, SharedSubject<Src::Item, Src::Err>>
 where

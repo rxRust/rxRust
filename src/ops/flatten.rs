@@ -147,6 +147,7 @@ pub struct FlattenOuterObserver<Inner, InnerObserver, U, S> {
   state: S,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 type FlattenSharedOuterObserver<Inner, InnerObserver> = FlattenOuterObserver<
   Inner,
   MutArc<
@@ -190,6 +191,7 @@ macro_rules! impl_outer_obsrever {
   };
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl<Inner, O> Observer for FlattenSharedOuterObserver<Inner, O>
 where
   O: Observer + Sync + Send + 'static,

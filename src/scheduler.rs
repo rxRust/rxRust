@@ -18,6 +18,7 @@ pub fn task_future<T>(
 }
 
 /// A Scheduler is an object to order task and schedule their execution.
+#[cfg(not(target_arch = "wasm32"))]
 pub trait SharedScheduler {
   fn spawn<Fut>(&self, future: Fut)
   where
@@ -105,13 +106,16 @@ impl SubscriptionLike for SpawnHandle {
 
 #[cfg(feature = "futures-scheduler")]
 mod futures_scheduler {
-  use crate::scheduler::{LocalScheduler, SharedScheduler};
+  use crate::scheduler::LocalScheduler;
+  #[cfg(not(target_arch = "wasm32"))]
+  use crate::scheduler::SharedScheduler;
   use futures::{
-    executor::{LocalSpawner, ThreadPool},
-    task::{LocalSpawnExt, SpawnExt},
-    Future, FutureExt,
+    executor::LocalSpawner, task::LocalSpawnExt, Future, FutureExt,
   };
+  #[cfg(not(target_arch = "wasm32"))]
+  use futures::{executor::ThreadPool, task::SpawnExt};
 
+  #[cfg(not(target_arch = "wasm32"))]
   impl SharedScheduler for ThreadPool {
     fn spawn<Fut>(&self, future: Fut)
     where

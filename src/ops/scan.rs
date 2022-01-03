@@ -61,6 +61,7 @@ where
   observable_impl!(LocalSubscription, 'a);
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl<OutputItem, Source, BinaryOp> SharedObservable
   for ScanOp<Source, BinaryOp, OutputItem>
 where

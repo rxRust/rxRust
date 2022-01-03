@@ -40,6 +40,7 @@ where
   observable_impl!(LocalSubscription,'a);
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl<Item, S> SharedObservable for ContainsOp<S, Item>
 where
   S: SharedObservable<Item = Item>,

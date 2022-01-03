@@ -42,6 +42,7 @@ where
   observable_impl!(LocalSubscription, 'a);
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl<Item, S, F> SharedObservable for FilterMapOp<S, F>
 where
   S: SharedObservable,
