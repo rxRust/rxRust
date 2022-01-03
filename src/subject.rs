@@ -1,5 +1,6 @@
 use crate::prelude::*;
 use std::ops::DerefMut;
+
 pub mod behavior_subject;
 pub use behavior_subject::*;
 
@@ -16,6 +17,7 @@ pub struct InnerSubject<O: Observer + ?Sized, S: SubscriptionLike> {
 #[derive(Default, Clone)]
 pub struct Subject<T, B> {
   inner: T,
+  chamber: T,
   buffer: B,
 }
 
@@ -77,6 +79,7 @@ macro_rules! impl_observer {
 
     fn next(&mut self, value: Self::Item) {
       if let Ok(mut inner) = self.inner.try_rc_deref_mut() {
+        inner.load(self.chamber.rc_deref_mut().unload());
         inner.next(value);
         emit_buffer(inner, &self.buffer)
       } else {
@@ -89,6 +92,7 @@ macro_rules! impl_observer {
 
     fn error(&mut self, err: Self::Err) {
       if let Ok(mut inner) = self.inner.try_rc_deref_mut() {
+        inner.load(self.chamber.rc_deref_mut().unload());
         inner.error(err);
         emit_buffer(inner, &self.buffer)
       } else {
@@ -98,6 +102,7 @@ macro_rules! impl_observer {
 
     fn complete(&mut self) {
       if let Ok(mut inner) = self.inner.try_rc_deref_mut() {
+        inner.load(self.chamber.rc_deref_mut().unload());
         inner.complete();
         emit_buffer(inner, &self.buffer)
       } else {
@@ -126,7 +131,7 @@ impl<Item, Err> SharedObservable for SharedSubject<Item, Err> {
   where
     O: Observer<Item = Self::Item, Err = Self::Err> + Sync + Send + 'static,
   {
-    self.inner.rc_deref_mut().subscribe(Box::new(observer))
+    self.chamber.rc_deref_mut().subscribe(Box::new(observer))
   }
 }
 
@@ -141,7 +146,7 @@ impl<'a, Item, Err> LocalObservable<'a> for LocalSubject<'a, Item, Err> {
   where
     O: Observer<Item = Self::Item, Err = Self::Err> + 'a,
   {
-    self.inner.rc_deref_mut().subscribe(Box::new(observer))
+    self.chamber.rc_deref_mut().subscribe(Box::new(observer))
   }
 }
 
@@ -182,7 +187,9 @@ where
 
 impl<T: TearDownSize, B> TearDownSize for Subject<T, B> {
   #[inline]
-  fn teardown_size(&self) -> usize { self.inner.teardown_size() }
+  fn teardown_size(&self) -> usize {
+    self.inner.teardown_size() + self.chamber.teardown_size()
+  }
 }
 
 pub(crate) struct SubjectObserver<O, S> {
@@ -248,10 +255,11 @@ where
   }
 }
 
+
 impl<O, U> InnerSubject<O, U>
-where
-  O: Observer + ?Sized,
-  U: SubscriptionLike + Default + Clone,
+  where
+      O: Observer + ?Sized,
+      U: SubscriptionLike + Default + Clone,
 {
   fn subscribe(&mut self, observer: Box<O>) -> U {
     let subscription = U::default();
@@ -261,6 +269,16 @@ where
     };
     self.observers.push(observer);
     subscription
+  }
+
+  fn load(&mut self, mut observers: Vec<SubjectObserver<Box<O>, U>>)
+  {
+    self.observers.append(&mut observers);
+  }
+
+  #[inline]
+  fn unload(&mut self) -> Vec<SubjectObserver<Box<O>, U>> {
+    std::mem::take(&mut self.observers)
   }
 }
 

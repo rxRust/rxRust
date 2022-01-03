@@ -139,6 +139,55 @@ mod test {
   }
 
   #[test]
+  fn circular() {
+    let last_next_arg = MutRc::own(None);
+    let next_count = MutRc::own(0);
+    let last_next_arg_cloned = last_next_arg.clone();
+    let next_count_cloned = next_count.clone();
+    let source_completed_count = MutRc::own(0);
+    let source_completed_count_cloned = source_completed_count.clone();
+    let notifier_completed_count = MutRc::own(0);
+    let notifier_completed_count_cloned = notifier_completed_count.clone();
+    {
+      let mut notifier = LocalSubject::new();
+      let mut source = LocalSubject::new();
+      let cloned_source = source.clone();
+      let cloned_notifier = notifier.clone();
+      notifier.clone().subscribe_complete(
+        move |j| {
+          let last_next_arg = last_next_arg_cloned.clone();
+          let next_count = next_count_cloned.clone();
+          let notifier_completed_count = notifier_completed_count_cloned.clone();
+          cloned_source.clone().take_until(cloned_notifier.clone()).subscribe_complete(
+            move |i| {
+              *last_next_arg.rc_deref_mut() = Some((i, j));
+              *next_count.rc_deref_mut() += 1;
+            },
+            move || {
+              *notifier_completed_count.rc_deref_mut() += 1;
+            },
+          );
+        },
+        move || {
+          *source_completed_count_cloned.rc_deref_mut() += 1;
+        }
+      );
+      source.next(5);
+      notifier.next(1);
+      source.next(6);
+      notifier.next(2);
+      source.next(7);
+      notifier.complete();
+      source.complete();
+    }
+    assert_eq!(*next_count.rc_deref(), 2);
+    assert_eq!(*last_next_arg.rc_deref(), Some((7,2)));
+    assert_eq!(*source_completed_count.rc_deref(), 1);
+    assert_eq!(*notifier_completed_count.rc_deref(), 2);
+  }
+
+
+  #[test]
   fn bench() { do_bench(); }
 
   benchmark_group!(do_bench, bench_take_until);
