@@ -255,11 +255,10 @@ where
   }
 }
 
-
 impl<O, U> InnerSubject<O, U>
-  where
-      O: Observer + ?Sized,
-      U: SubscriptionLike + Default + Clone,
+where
+  O: Observer + ?Sized,
+  U: SubscriptionLike + Default + Clone,
 {
   fn subscribe(&mut self, observer: Box<O>) -> U {
     let subscription = U::default();
@@ -271,8 +270,7 @@ impl<O, U> InnerSubject<O, U>
     subscription
   }
 
-  fn load(&mut self, mut observers: Vec<SubjectObserver<Box<O>, U>>)
-  {
+  fn load(&mut self, mut observers: Vec<SubjectObserver<Box<O>, U>>) {
     self.observers.append(&mut observers);
   }
 
