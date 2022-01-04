@@ -135,6 +135,25 @@ mod futures_scheduler {
   }
 }
 
+#[cfg(target_arch = "wasm32")]
+pub struct LocalSpawner;
+
+#[cfg(all(target_arch = "wasm32", feature = "wasm-scheduler"))]
+mod wasm_scheduler {
+  use crate::scheduler::{LocalScheduler, LocalSpawner};
+  use futures::FutureExt;
+  use wasm_bindgen_futures::spawn_local;
+
+  impl LocalScheduler for LocalSpawner {
+    fn spawn<Fut>(&self, future: Fut)
+    where
+      Fut: futures::Future<Output = ()> + 'static,
+    {
+      spawn_local(future.map(|_| {}));
+    }
+  }
+}
+
 fn repeating_future(
   task: impl FnMut(usize) + 'static,
   time_between: Duration,
