@@ -17,9 +17,9 @@ pub trait TearDownSize: SubscriptionLike {
 
 impl<S: SubscriptionLike + ?Sized> SubscriptionLike for Box<S> {
   #[inline]
-  fn unsubscribe(&mut self) { (&mut **self).unsubscribe() }
+  fn unsubscribe(&mut self) { (**self).unsubscribe() }
   #[inline]
-  fn is_closed(&self) -> bool { (&**self).is_closed() }
+  fn is_closed(&self) -> bool { (**self).is_closed() }
 }
 
 pub type SharedSubscription =
