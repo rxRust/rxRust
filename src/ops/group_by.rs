@@ -31,7 +31,7 @@ where
 
 ///////////////////////////////////////////////////////////////////////////////
 
-/// Observable emited by the GroupByOp.
+/// Observable emitted by the GroupByOp.
 #[derive(Clone)]
 pub struct GroupObservable<Source, Discr, Key> {
   source: Source,
