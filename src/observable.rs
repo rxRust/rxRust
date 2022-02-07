@@ -1074,7 +1074,7 @@ pub trait Observable: Sized {
       // Note: we will never be dividing by zero here, as
       // the acc.1 will be always >= 1.
       // It would have be zero if we've would have received an element
-      // when the source observable is empty but beacuse of how
+      // when the source observable is empty but because of how
       // `scan` works, we will transparently not receive anything in
       // such case.
       acc.0 * (1.0 / (acc.1 as f64))
