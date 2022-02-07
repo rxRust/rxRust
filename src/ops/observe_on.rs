@@ -138,7 +138,7 @@ mod test {
     let c_changed_thread = changed_thread.clone();
     let emit_thread = Arc::new(Mutex::new(id));
     let observe_thread = Arc::new(Mutex::new(HashSet::new()));
-    let oc = observe_thread.clone();
+    let thread_clone = observe_thread.clone();
 
     let pool = ThreadPool::builder().pool_size(100).create().unwrap();
 
@@ -152,16 +152,16 @@ mod test {
     .observe_on(pool)
     .into_shared()
     .subscribe_blocking(move |_v| {
-      let mut ot = observe_thread.lock().unwrap();
-      ot.insert(thread::current().id());
+      let mut thread = observe_thread.lock().unwrap();
+      thread.insert(thread::current().id());
 
-      c_changed_thread.store(ot.len() > 1, Ordering::Relaxed);
+      c_changed_thread.store(thread.len() > 1, Ordering::Relaxed);
     });
 
     let current_id = thread::current().id();
     assert_eq!(*emit_thread.lock().unwrap(), current_id);
-    let ot = oc.lock().unwrap();
-    assert!(ot.len() > 1);
+    let thread = thread_clone.lock().unwrap();
+    assert!(thread.len() > 1);
   }
 
   #[test]
