@@ -107,6 +107,7 @@ mod test {
     assert_eq!(completed_count, 1);
   }
 
+
   #[test]
   fn ininto_shared() {
     let last_next_arg = Arc::new(Mutex::new(None));
@@ -139,6 +140,39 @@ mod test {
   }
 
   #[test]
+  fn circular_next() {
+    let last_next_arg = MutRc::own(None);
+    let next_count = MutRc::own(0);
+    let source_completed_count = MutRc::own(0);
+    let notifier = LocalSubject::new();
+    let mut source = LocalSubject::new();
+
+    {
+      let source_completed_count= source_completed_count.clone();
+      let mut notifier = notifier.clone();
+      let last_next_arg = last_next_arg.clone();
+      let next_count = next_count.clone();
+
+      source.clone().take_until(notifier.clone()).subscribe_complete(
+        move |i| {
+          *last_next_arg.rc_deref_mut() = Some(i);
+          *next_count.rc_deref_mut() += 1;
+          notifier.next(());
+        },
+        move || {
+          *source_completed_count.rc_deref_mut() += 1;
+        },
+      );
+      source.next(1);
+      source.next(3);
+      source.next(5);
+    }
+    assert_eq!(*next_count.rc_deref(), 2);
+    assert_eq!(*last_next_arg.rc_deref(), Some(3));
+    assert_eq!(*source_completed_count.rc_deref(), 1);
+  }
+
+  #[test]
   fn circular() {
     let last_next_arg = MutRc::own(None);
     let next_count = MutRc::own(0);
@@ -158,19 +192,19 @@ mod test {
           let last_next_arg = last_next_arg_cloned.clone();
           let next_count = next_count_cloned.clone();
           let notifier_completed_count =
-            notifier_completed_count_cloned.clone();
+              notifier_completed_count_cloned.clone();
           cloned_source
-            .clone()
-            .take_until(cloned_notifier.clone())
-            .subscribe_complete(
-              move |i| {
-                *last_next_arg.rc_deref_mut() = Some((i, j));
-                *next_count.rc_deref_mut() += 1;
-              },
-              move || {
-                *notifier_completed_count.rc_deref_mut() += 1;
-              },
-            );
+              .clone()
+              .take_until(cloned_notifier.clone())
+              .subscribe_complete(
+                move |i| {
+                  *last_next_arg.rc_deref_mut() = Some((i, j));
+                  *next_count.rc_deref_mut() += 1;
+                },
+                move || {
+                  *notifier_completed_count.rc_deref_mut() += 1;
+                },
+              );
         },
         move || {
           *source_completed_count_cloned.rc_deref_mut() += 1;
