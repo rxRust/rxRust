@@ -290,6 +290,7 @@ pub mod impl_local {
 
   pub type RcMultiSubscription = LocalSubscription;
   pub type Rc<T> = MutRc<T>;
+  pub type Brc<T, Item, Err> = BufferedMutRc<T, Item, Err>;
   pub trait Scheduler: LocalScheduler {}
   impl<T: LocalScheduler> Scheduler for T {}
 
@@ -314,6 +315,7 @@ pub mod impl_shared {
 
   pub type RcMultiSubscription = SharedSubscription;
   pub type Rc<T> = MutArc<T>;
+  pub type Brc<T, Item, Err> = BufferedMutArc<T, Item, Err>;
   pub trait Scheduler: SharedScheduler {}
   impl<T: SharedScheduler> Scheduler for T {}
 
