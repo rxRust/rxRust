@@ -1,4 +1,3 @@
-use crate::impl_helper::impl_local::actual_subscribe;
 use crate::{impl_helper::*, impl_local_shared_both, prelude::*};
 
 #[derive(Clone)]
@@ -11,65 +10,35 @@ impl<S: Observable, N> Observable for TakeUntilOp<S, N> {
   type Item = S::Item;
   type Err = S::Err;
 }
-impl<'o, S, N> LocalObservable<'o> for TakeUntilOp<S, N>
-where
-  S: LocalObservable<'o>,
-  N: LocalObservable<'o, Err = S::Err> + 'o,
-  S::Item: 'o,
-  S::Err: 'o,
-  S::Unsub: 'static,
-  N::Unsub: 'static,
-{
-  type Unsub = impl_local::RcMultiSubscription;
-  #[allow(unused_mut)]
-  fn actual_subscribe<O>(self, mut observer: O) -> Self::Unsub
-  where
-    O: Observer<Item = Self::Item, Err = Self::Err> + 'o,
-  {
-    {
-      let subscription = LocalSubscription::default();
-      let shared_observer = BufferedMutRc::own(observer);
-      subscription.add(self.notifier.actual_subscribe(
-        TakeUntilNotifierObserver {
-          subscription: subscription.clone(),
-          main_observer: shared_observer.clone(),
-          _p: TypeHint::new(),
-        },
-      ));
-      subscription.add(self.source.actual_subscribe(shared_observer));
-      subscription
-    }
-  }
-}
 
-impl<S, N> SharedObservable for TakeUntilOp<S, N>
-where
-  S: SharedObservable,
-  N: SharedObservable<Err = S::Err>,
-  N::Item: 'static,
-  S::Unsub: 'static,
-  N::Unsub: 'static,
-{
-  type Unsub = impl_shared::RcMultiSubscription;
-  #[allow(unused_mut)]
-  fn actual_subscribe<O>(self, mut _observer: O) -> Self::Unsub
-  where
-    O: Observer<Item = Self::Item, Err = Self::Err> + Send + Sync + 'static,
-  {
-    {
-      let subscription = impl_shared::RcMultiSubscription::default();
-      let shared_observer = impl_shared::Rc::own(_observer);
-      subscription.add(self.notifier.actual_subscribe(
-        TakeUntilNotifierObserver {
-          subscription: subscription.clone(),
-          main_observer: shared_observer.clone(),
-          _p: TypeHint::new(),
-        },
-      ));
-      subscription.add(self.source.actual_subscribe(shared_observer));
-      subscription
-    }
+impl_local_shared_both! {
+  impl<S, N> TakeUntilOp<S, N>;
+  type Unsub = @ctx::RcMultiSubscription;
+  macro method($self: ident, $observer: ident, $ctx: ident) {
+    let subscription = $ctx::RcMultiSubscription::default();
+    // We need to keep a reference to the observer from two places
+    let shared_observer = $ctx::Brc::own($observer);
+
+    subscription.add($self.notifier.actual_subscribe(
+      TakeUntilNotifierObserver {
+        subscription: subscription.clone(),
+        main_observer: shared_observer.clone(),
+        _p: TypeHint::new(),
+      },
+    ));
+    subscription.add($self.source.actual_subscribe(shared_observer));
+    subscription
   }
+  where
+    S: @ctx::Observable,
+    N: @ctx::Observable<Err=S::Err>  @ctx::local_only(+ 'o),
+    @ctx::local_only(S::Item: 'o,)
+    @ctx::local_only(S::Err: 'o,)
+    @ctx::shared_only(S::Item: Sync + Send + 'static,)
+    @ctx::shared_only(S::Err: Sync + Send + 'static,)
+    @ctx::shared_only(N::Item: 'static,)
+    S::Unsub: 'static,
+    N::Unsub: 'static
 }
 
 pub struct TakeUntilNotifierObserver<O, U, Item> {
