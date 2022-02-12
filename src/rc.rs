@@ -304,26 +304,6 @@ where
     }
   }
 }
-// fn emit_buffer<'a, O, Item, Err>(
-//   mut observer: O,
-//   b: &'a mut Vec<ObserverTrigger<Item, Err>>,
-// ) where
-//   O: DerefMut,
-//   O::Target: Observer<Item = Item, Err = Err>,
-// {
-//   loop {
-//     let v = b.pop();
-//     if let Some(to_emit) = v {
-//       match to_emit {
-//         ObserverTrigger::Item(v) => observer.next(v),
-//         ObserverTrigger::Err(err) => observer.error(err),
-//         ObserverTrigger::Complete => observer.complete(),
-//       }
-//     } else {
-//       break;
-//     }
-//   }
-// }
 
 macro_rules! observer_impl_for_brc {
   ($rc: ident) => {
