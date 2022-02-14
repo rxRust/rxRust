@@ -83,7 +83,8 @@ Operators that help to recover from error notifications from an Observable
 A toolbox of useful Operators for working with Observables
 
 - [x] Delay — shift the emissions from an Observable forward in time by a particular amount
-- [ ] Do — register an action to take upon a variety of Observable lifecycle events
+- [x] Do — register an action to take upon a variety of Observable lifecycle events
+  - named `tap`
 - [ ] Materialize/Dematerialize — represent both the items emitted and the notifications sent as emitted items, or reverse this process
 - [x] ObserveOn — specify the scheduler on which an observer will observe this Observable
 - [ ] Serialize — force an Observable to make serialized calls and to be well-behaved
