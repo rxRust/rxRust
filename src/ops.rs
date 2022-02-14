@@ -31,6 +31,7 @@ pub mod take;
 pub mod take_last;
 pub mod take_until;
 pub mod take_while;
+pub mod tap;
 pub mod throttle_time;
 pub mod with_latest_from;
 pub mod zip;

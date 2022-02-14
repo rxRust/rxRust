@@ -6,6 +6,7 @@
 - **operator**: add `distinct_key` operator.
 - **operator**: add `distinct_key_until_changed` operator.
 - **operator**: add `pairwise` operator.
+- **operator**: add `tap` operator.
 
 ### Refactor
 

@@ -50,6 +50,7 @@ pub use observable_comp::*;
 use crate::ops::default_if_empty::DefaultIfEmptyOp;
 use crate::ops::distinct::{DistinctKeyOp, DistinctUntilKeyChangedOp};
 use crate::ops::pairwise::PairwiseOp;
+use crate::ops::tap::TapOp;
 use ops::{
   box_it::{BoxOp, IntoBox},
   buffer::{BufferWithCountOp, BufferWithCountOrTimerOp, BufferWithTimeOp},
@@ -1521,6 +1522,18 @@ pub trait Observable: Sized {
   /// Groups pairs of consecutive emissions together and emits them as an pair
   /// of two values.
   fn pairwise(self) -> PairwiseOp<Self> { PairwiseOp { source: self } }
+
+  /// Used to perform side-effects for notifications from the source observable
+  #[inline]
+  fn tap<F>(self, f: F) -> TapOp<Self, F>
+  where
+    F: FnMut(&Self::Item),
+  {
+    TapOp {
+      source: self,
+      func: f,
+    }
+  }
 }
 
 pub trait LocalObservable<'a>: Observable {
