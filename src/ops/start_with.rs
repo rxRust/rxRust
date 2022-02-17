@@ -18,17 +18,14 @@ impl_local_shared_both! {
   impl<S, B> StartWithOp<S, B>;
   type Unsub = S::Unsub;
   macro method($self: ident, $observer: ident, $ctx: ident) {
-    let values = $self.values;
+    for val in $self.values {
+      $observer.next(val);
+    }
 
-    $self.source.actual_subscribe(StartWithObserver {
-      observer: $observer,
-      values,
-      is_values_processed: false,
-      _marker: TypeHint::new()
-    })
+    $self.source.actual_subscribe($observer)
   }
   where
-    S: @ctx::Observable,
+    S: @ctx::Observable<Item=B>,
     @ctx::shared_only(
       B: Clone + Into<S::Item> + Send + Sync + 'static,
       S::Item: 'static,
@@ -39,42 +36,14 @@ impl_local_shared_both! {
     )
 }
 
-#[derive(Clone)]
-pub struct StartWithObserver<O, B, Item> {
-  observer: O,
-  values: Vec<B>,
-  is_values_processed: bool,
-  _marker: TypeHint<*const Item>,
-}
-
-impl<Item, Err, O, B> Observer for StartWithObserver<O, B, Item>
-where
-  O: Observer<Item = Item, Err = Err>,
-  B: Clone + Into<Item>,
-{
-  type Item = Item;
-  type Err = Err;
-  fn next(&mut self, value: Item) {
-    if !self.is_values_processed {
-      for val in self.values.clone() {
-        self.observer.next(val.into());
-      }
-
-      self.is_values_processed = true;
-    }
-
-    self.observer.next(value)
-  }
-
-  fn error(&mut self, err: Self::Err) { self.observer.error(err) }
-
-  fn complete(&mut self) { self.observer.complete() }
-}
-
 #[cfg(test)]
 mod test {
   use crate::of_sequence;
   use crate::prelude::*;
+  use crate::test_scheduler::ManualScheduler;
+  use std::cell::RefCell;
+  use std::rc::Rc;
+  use std::time::Duration;
 
   #[test]
   fn simple_integer() {
@@ -104,6 +73,25 @@ mod test {
     }
 
     assert_eq!(ret, "Hello World! Goodbye World!");
+  }
+
+  #[test]
+  fn should_start_on_subscription() {
+    let scheduler = ManualScheduler::now();
+    let values = Rc::new(RefCell::new(vec![]));
+    let interval =
+      observable::interval(Duration::from_millis(100), scheduler.clone());
+
+    {
+      let values = values.clone();
+      interval
+        .start_with(vec![0])
+        .subscribe(move |v| values.borrow_mut().push(v));
+    }
+
+    scheduler.advance_and_run(Duration::from_millis(10), 1);
+    assert_eq!(values.borrow().len(), 1);
+    assert_eq!(values.borrow().as_ref(), vec![0]);
   }
 
   #[test]
