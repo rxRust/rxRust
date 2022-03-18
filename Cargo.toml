@@ -23,8 +23,8 @@ version = "1.6.3"
 features = ["unstable"]
 
 [dependencies.futures]
-version="0.3.5"
-features= ["thread-pool"]
+version = "0.3.5"
+features = ["thread-pool"]
 
 [dependencies.tokio]
 version = "1.0"
@@ -36,7 +36,7 @@ version = "0.4.29"
 optional = true
 
 [features]
-default = []
+default = ["futures-scheduler"]
 tokio-scheduler = ["tokio"]
 futures-scheduler = []
 wasm-scheduler = ["wasm-bindgen-futures"]
