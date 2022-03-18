@@ -82,9 +82,7 @@ impl<T, Item, Err> BufferedMutArc<T, Item, Err> {
 
 impl<T> RcDeref for MutRc<T> {
   type Target<'a>
-  where
-    Self: 'a,
-  = Ref<'a, T>;
+  = Ref<'a, T> where Self: 'a;
   #[inline]
   #[allow(clippy::needless_lifetimes)]
   fn rc_deref<'a>(&'a self) -> Self::Target<'a> { self.0.borrow() }
@@ -92,9 +90,7 @@ impl<T> RcDeref for MutRc<T> {
 
 impl<T> TryRcDeref for MutRc<T> {
   type Target<'a>
-  where
-    Self: 'a,
-  = Result<Ref<'a, T>, BorrowError>;
+  = Result<Ref<'a, T>, BorrowError> where Self: 'a;
   #[inline]
   #[allow(clippy::needless_lifetimes)]
   fn try_rc_deref<'a>(&'a self) -> Self::Target<'a> { self.0.try_borrow() }
@@ -102,9 +98,7 @@ impl<T> TryRcDeref for MutRc<T> {
 
 impl<T> RcDeref for MutArc<T> {
   type Target<'a>
-  where
-    Self: 'a,
-  = MutexGuard<'a, T>;
+  = MutexGuard<'a, T> where Self: 'a;
 
   #[inline]
   #[allow(clippy::needless_lifetimes)]
@@ -113,9 +107,7 @@ impl<T> RcDeref for MutArc<T> {
 
 impl<T> TryRcDeref for MutArc<T> {
   type Target<'a>
-  where
-    Self: 'a,
-  = Result<MutexGuard<'a, T>, TryLockError<MutexGuard<'a, T>>>;
+  = Result<MutexGuard<'a, T>, TryLockError<MutexGuard<'a, T>>> where Self: 'a;
 
   #[inline]
   #[allow(clippy::needless_lifetimes)]
@@ -124,9 +116,7 @@ impl<T> TryRcDeref for MutArc<T> {
 
 impl<T, Item, Err> RcDeref for BufferedMutRc<T, Item, Err> {
   type Target<'a>
-  where
-    Self: 'a,
-  = Ref<'a, T>;
+  = Ref<'a, T> where Self: 'a;
   #[inline]
   #[allow(clippy::needless_lifetimes)]
   fn rc_deref<'a>(&'a self) -> Self::Target<'a> { self.inner.rc_deref() }
@@ -134,9 +124,7 @@ impl<T, Item, Err> RcDeref for BufferedMutRc<T, Item, Err> {
 
 impl<T, Item, Err> TryRcDeref for BufferedMutRc<T, Item, Err> {
   type Target<'a>
-  where
-    Self: 'a,
-  = Result<Ref<'a, T>, BorrowError>;
+  = Result<Ref<'a, T>, BorrowError> where Self: 'a;
   #[inline]
   #[allow(clippy::needless_lifetimes)]
   fn try_rc_deref<'a>(&'a self) -> Self::Target<'a> {
@@ -146,9 +134,7 @@ impl<T, Item, Err> TryRcDeref for BufferedMutRc<T, Item, Err> {
 
 impl<T, Item, Err> RcDeref for BufferedMutArc<T, Item, Err> {
   type Target<'a>
-  where
-    Self: 'a,
-  = MutexGuard<'a, T>;
+  = MutexGuard<'a, T> where Self: 'a;
 
   #[inline]
   #[allow(clippy::needless_lifetimes)]
@@ -158,8 +144,7 @@ impl<T, Item, Err> RcDeref for BufferedMutArc<T, Item, Err> {
 impl<T, Item, Err> TryRcDeref for BufferedMutArc<T, Item, Err> {
   type Target<'a>
   where
-    Self: 'a,
-  = Result<MutexGuard<'a, T>, TryLockError<MutexGuard<'a, T>>>;
+  = Result<MutexGuard<'a, T>, TryLockError<MutexGuard<'a, T>>> where Self: 'a;
 
   #[inline]
   #[allow(clippy::needless_lifetimes)]
@@ -169,10 +154,7 @@ impl<T, Item, Err> TryRcDeref for BufferedMutArc<T, Item, Err> {
 }
 
 impl<T> RcDerefMut for MutRc<T> {
-  type Target<'a>
-  where
-    Self: 'a,
-  = RefMut<'a, T>;
+  type Target<'a> = RefMut<'a, T> where T: 'a;
 
   #[inline]
   #[allow(clippy::needless_lifetimes)]
@@ -181,9 +163,7 @@ impl<T> RcDerefMut for MutRc<T> {
 
 impl<T> RcDerefMut for MutArc<T> {
   type Target<'a>
-  where
-    Self: 'a,
-  = MutexGuard<'a, T>;
+  = MutexGuard<'a, T> where Self: 'a;
 
   #[inline]
   #[allow(clippy::needless_lifetimes)]
@@ -192,9 +172,7 @@ impl<T> RcDerefMut for MutArc<T> {
 
 impl<T, Item, Err> RcDerefMut for BufferedMutRc<T, Item, Err> {
   type Target<'a>
-  where
-    Self: 'a,
-  = RefMut<'a, T>;
+  = RefMut<'a, T> where Self: 'a;
 
   #[inline]
   #[allow(clippy::needless_lifetimes)]
@@ -205,9 +183,7 @@ impl<T, Item, Err> RcDerefMut for BufferedMutRc<T, Item, Err> {
 
 impl<T, Item, Err> RcDerefMut for BufferedMutArc<T, Item, Err> {
   type Target<'a>
-  where
-    Self: 'a,
-  = MutexGuard<'a, T>;
+  = MutexGuard<'a, T> where Self: 'a;
 
   #[inline]
   #[allow(clippy::needless_lifetimes)]
@@ -218,9 +194,7 @@ impl<T, Item, Err> RcDerefMut for BufferedMutArc<T, Item, Err> {
 
 impl<T> TryRcDerefMut for MutRc<T> {
   type Target<'a>
-  where
-    Self: 'a,
-  = Result<RefMut<'a, T>, BorrowMutError>;
+  = Result<RefMut<'a, T>, BorrowMutError> where Self: 'a;
 
   #[inline]
   #[allow(clippy::needless_lifetimes)]
@@ -231,9 +205,7 @@ impl<T> TryRcDerefMut for MutRc<T> {
 
 impl<T> TryRcDerefMut for MutArc<T> {
   type Target<'a>
-  where
-    Self: 'a,
-  = Result<MutexGuard<'a, T>, TryLockError<MutexGuard<'a, T>>>;
+  = Result<MutexGuard<'a, T>, TryLockError<MutexGuard<'a, T>>> where Self: 'a;
 
   #[inline]
   #[allow(clippy::needless_lifetimes)]
@@ -242,9 +214,7 @@ impl<T> TryRcDerefMut for MutArc<T> {
 
 impl<T, Item, Err> TryRcDerefMut for BufferedMutRc<T, Item, Err> {
   type Target<'a>
-  where
-    Self: 'a,
-  = Result<RefMut<'a, T>, BorrowMutError>;
+  = Result<RefMut<'a, T>, BorrowMutError> where Self: 'a;
 
   #[inline]
   #[allow(clippy::needless_lifetimes)]
@@ -255,9 +225,7 @@ impl<T, Item, Err> TryRcDerefMut for BufferedMutRc<T, Item, Err> {
 
 impl<T, Item, Err> TryRcDerefMut for BufferedMutArc<T, Item, Err> {
   type Target<'a>
-  where
-    Self: 'a,
-  = Result<MutexGuard<'a, T>, TryLockError<MutexGuard<'a, T>>>;
+  = Result<MutexGuard<'a, T>, TryLockError<MutexGuard<'a, T>>> where Self: 'a;
 
   #[inline]
   #[allow(clippy::needless_lifetimes)]
