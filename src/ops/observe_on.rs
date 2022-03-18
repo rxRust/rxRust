@@ -1,4 +1,4 @@
-#[cfg(not(feature = "wasm-scheduler"))]
+#[cfg(not(all(target_arch = "wasm32", feature = "wasm-scheduler")))]
 use crate::scheduler::SharedScheduler;
 use crate::{impl_helper::*, impl_local_shared_both, prelude::*};
 #[derive(Clone)]
@@ -58,7 +58,7 @@ macro_rules! impl_observer {
   };
 }
 
-#[cfg(not(feature = "wasm-scheduler"))]
+#[cfg(not(all(target_arch = "wasm32", feature = "wasm-scheduler")))]
 impl<O, SD> Observer for ObserveOnObserver<MutArc<O>, SD, SharedSubscription>
 where
   O: Observer + Send + 'static,
@@ -106,7 +106,7 @@ macro_rules! impl_scheduler {
   };
 }
 
-#[cfg(not(feature = "wasm-scheduler"))]
+#[cfg(not(all(target_arch = "wasm32", feature = "wasm-scheduler")))]
 impl_scheduler!(SharedScheduler, MutArc, SharedSubscription, Send);
 impl_scheduler!(LocalScheduler, MutRc, LocalSubscription,);
 
