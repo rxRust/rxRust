@@ -31,10 +31,15 @@ version = "1.0"
 features = ["rt-multi-thread", "rt"]
 optional = true
 
+[dependencies.wasm-bindgen-futures]
+version = "0.4.29"
+optional = true
+
 [features]
-default = ["futures-scheduler"]
+default = []
 tokio-scheduler = ["tokio"]
 futures-scheduler = []
+wasm-scheduler = ["wasm-bindgen-futures"]
 
 [dev-dependencies]
 float-cmp = "0.8.0"
