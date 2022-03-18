@@ -104,6 +104,7 @@ impl SubscriptionLike for SpawnHandle {
   fn is_closed(&self) -> bool { *self.is_closed.read().unwrap() }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[cfg(feature = "futures-scheduler")]
 mod futures_scheduler {
   use crate::scheduler::{LocalScheduler, SharedScheduler};
