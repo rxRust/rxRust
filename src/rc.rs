@@ -143,7 +143,6 @@ impl<T, Item, Err> RcDeref for BufferedMutArc<T, Item, Err> {
 
 impl<T, Item, Err> TryRcDeref for BufferedMutArc<T, Item, Err> {
   type Target<'a>
-  where
   = Result<MutexGuard<'a, T>, TryLockError<MutexGuard<'a, T>>> where Self: 'a;
 
   #[inline]
