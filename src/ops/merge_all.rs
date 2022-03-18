@@ -2,13 +2,9 @@ use super::box_it::LocalBoxOp;
 #[cfg(not(feature = "wasm-scheduler"))]
 use super::box_it::SharedBoxOp;
 use crate::prelude::*;
-use std::{
-  cell::RefCell,
-  collections::VecDeque,
-  rc::Rc,
-};
 #[cfg(not(feature = "wasm-scheduler"))]
 use std::sync::{Arc, Mutex};
+use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 
 pub struct MergeAllOp<S> {
   pub concurrent: usize,

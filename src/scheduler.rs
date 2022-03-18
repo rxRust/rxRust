@@ -300,8 +300,8 @@ mod wasm_scheduler {
 
   impl LocalScheduler for LocalSpawner {
     fn spawn<Fut>(&self, future: Fut)
-      where
-          Fut: Future<Output = ()> + 'static,
+    where
+      Fut: Future<Output = ()> + 'static,
     {
       wasm_bindgen_futures::spawn_local(future.map(|_| ()));
     }
