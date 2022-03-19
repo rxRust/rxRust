@@ -93,6 +93,7 @@ mod test {
   use std::sync::{Arc, Mutex};
   use std::time::{Duration, Instant};
 
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn blocks_shared() {
     let pool = ThreadPool::new().unwrap();

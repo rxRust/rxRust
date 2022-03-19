@@ -180,6 +180,7 @@ mod test {
     m.clone().merge(m.clone()).subscribe(|_| {});
   }
 
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn merge_local_and_shared() {
     let mut res = vec![];

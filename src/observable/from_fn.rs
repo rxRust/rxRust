@@ -30,6 +30,7 @@ impl_local_shared_both! {
   where F: FnOnce(&mut dyn Observer<Item = Item, Err = Err>)
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[cfg(test)]
 mod test {
   use crate::prelude::*;

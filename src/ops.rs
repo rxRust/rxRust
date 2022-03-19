@@ -141,6 +141,7 @@ mod test {
     assert_eq!(6, emitted);
   }
 
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn reduce_fork_and_shared() {
     // type to type can fork
@@ -220,8 +221,8 @@ mod test {
     assert_eq!(None, emitted);
   }
 
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
-
   fn max_fork_and_shared() {
     // type to type can fork
     let m = observable::from_iter(vec![1., 2.]).max();
@@ -295,8 +296,8 @@ mod test {
     assert_eq!(None, emitted);
   }
 
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
-
   fn min_fork_and_shared() {
     // type to type can fork
     let m = observable::from_iter(vec![1., 2.]).min();
@@ -335,6 +336,7 @@ mod test {
     assert_eq!(-1, emitted);
   }
 
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn sum_fork_and_shared() {
     // type to type can fork
@@ -360,6 +362,7 @@ mod test {
     assert_eq!(0, emitted);
   }
 
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn count_fork_and_shared() {
     // type to type can fork
@@ -435,6 +438,7 @@ mod test {
     assert_eq!(None, emitted);
   }
 
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn average_fork_and_shared() {
     // type to type can fork

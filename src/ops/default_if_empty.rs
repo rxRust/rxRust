@@ -94,6 +94,7 @@ mod test {
     assert!(completed);
   }
 
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn into_shared() {
     observable::from_iter(0..100)
@@ -102,6 +103,7 @@ mod test {
       .subscribe(|_| {});
   }
 
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn ininto_shared_empty() {
     observable::empty()

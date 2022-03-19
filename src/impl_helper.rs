@@ -276,7 +276,7 @@ macro_rules! impl_local_shared_both {
   // enter replace
   ($($t:tt)*) => {
     impl_local_shared_both!(@replace, impl_local, [] $($t)*);
-    #[cfg(not(all(target_arch = "wasm32", feature = "wasm-scheduler")))]
+    #[cfg(not(all(target_arch = "wasm32")))]
     impl_local_shared_both!(@replace, impl_shared, [] $($t)*);
   };
 }
@@ -305,7 +305,7 @@ pub mod impl_local {
   }
 }
 
-#[cfg(not(all(target_arch = "wasm32", feature = "wasm-scheduler")))]
+#[cfg(not(all(target_arch = "wasm32")))]
 pub mod impl_shared {
   use crate::prelude::*;
   // macro builtin replace.

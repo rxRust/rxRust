@@ -168,6 +168,7 @@ mod test {
     assert_eq!(i, 42);
   }
 
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn empty_local_subject_can_convert_into_shared() {
     let pool = ThreadPool::new().unwrap();

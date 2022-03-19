@@ -146,6 +146,7 @@ mod test {
     assert_eq!(vec!(1, 2, 3, 4, 5), emitted);
   }
 
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn scan_fork_and_shared_mixed_types() {
     // type to type can fork
@@ -156,6 +157,7 @@ mod test {
       .subscribe(|_| {});
   }
 
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn scan_fork_and_shared() {
     // type to type can fork

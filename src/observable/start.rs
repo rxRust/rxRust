@@ -49,6 +49,7 @@ mod tests {
     assert!(is_completed);
   }
 
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn it_shall_emit_closure_value_shared() {
     let actual = Arc::new(AtomicI32::new(0));

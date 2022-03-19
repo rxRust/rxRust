@@ -102,6 +102,7 @@ mod tests {
     assert_eq!(val, i_emitted.load(Ordering::Relaxed));
   }
 
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn timer_shall_emit_value_shared() {
     let pool = ThreadPool::new().unwrap();
@@ -137,6 +138,7 @@ mod tests {
     assert_eq!(next_count.load(Ordering::Relaxed), 1);
   }
 
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn timer_shall_call_next_once_shared() {
     let pool = ThreadPool::new().unwrap();
@@ -174,6 +176,7 @@ mod tests {
     assert!(is_completed.load(Ordering::Relaxed));
   }
 
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn timer_shall_be_completed_shared() {
     let pool = ThreadPool::new().unwrap();
@@ -208,6 +211,7 @@ mod tests {
     assert!(stamp.elapsed() >= duration);
   }
 
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn timer_shall_elapse_duration_shared() {
     let pool = ThreadPool::new().unwrap();
@@ -244,6 +248,7 @@ mod tests {
     assert_eq!(val, i_emitted.load(Ordering::Relaxed));
   }
 
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn timer_at_shall_emit_value_shared() {
     let pool = ThreadPool::new().unwrap();

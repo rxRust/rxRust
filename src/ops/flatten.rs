@@ -363,6 +363,7 @@ mod test {
     assert_eq!(*ec.lock().unwrap(), 1);
   }
 
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn flatten_local_and_shared() {
     let mut res = vec![];

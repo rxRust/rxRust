@@ -95,7 +95,7 @@ macro_rules! impl_observer {
 }
 
 impl_observer!(MutRc, LocalScheduler);
-#[cfg(not(all(target_arch = "wasm32", feature = "wasm-scheduler")))]
+#[cfg(not(all(target_arch = "wasm32")))]
 impl_observer!(MutArc, SharedScheduler, Send);
 #[cfg(test)]
 mod tests {
@@ -145,6 +145,7 @@ mod tests {
     assert_eq!(&*x_c.rc_deref(), &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
   }
 
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn fork_and_shared() {
     use futures::executor::ThreadPool;
