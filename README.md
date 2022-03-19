@@ -71,6 +71,8 @@ observable::from_iter(0..10)
   .subscribe(|v| {println!("{},", v)});
 ```
 
+Also, `rxrust` supports WebAssembly by enabling the feature `wasm-scheduler` and using the crate `wasm-bindgen`. Simple example is [here](https://github.com/utilForever/rxrust-with-wasm). Note that `wasm-scheduler` only supports `LocalScheduler`.
+
 ## Converts from a Future
 
 Just use `observable::from_future` to convert a `Future` to an observable sequence.
