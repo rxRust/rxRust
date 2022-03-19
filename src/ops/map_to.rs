@@ -94,6 +94,7 @@ mod test {
     assert_eq!(i, 5);
   }
 
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn fork_and_shared() {
     // type to type can fork

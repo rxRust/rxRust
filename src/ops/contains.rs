@@ -94,6 +94,7 @@ mod test {
     observable::empty().contains(1).subscribe(|b| assert!(!b));
   }
 
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn contains_shared() {
     observable::from_iter(0..10)

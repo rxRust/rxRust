@@ -276,6 +276,7 @@ mod tests {
     assert_eq!(expected, actual);
   }
 
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn it_shall_buffer_with_count_shared() {
     let expected =
@@ -373,6 +374,7 @@ mod tests {
     local.run();
   }
 
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn it_shall_buffer_with_time_shared() {
     let pool = ThreadPool::new().unwrap();
@@ -411,6 +413,7 @@ mod tests {
     assert!(is_completed.load(Ordering::Relaxed));
   }
 
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn it_shall_not_emit_buffer_with_time_on_error() {
     let pool = ThreadPool::new().unwrap();
@@ -501,6 +504,7 @@ mod tests {
     assert!(error_called.load(Ordering::Relaxed));
   }
 
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn it_shall_buffer_with_count_or_time_shared() {
     let pool = ThreadPool::new().unwrap();
@@ -537,6 +541,7 @@ mod tests {
     assert!(is_completed.load(Ordering::Relaxed));
   }
 
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn it_shall_buffer_with_count_or_time_shared_on_error() {
     let pool = ThreadPool::new().unwrap();

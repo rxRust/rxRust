@@ -213,6 +213,7 @@ where
   fn box_it(origin: T) -> BoxOp<Self> { BoxOp(Box::new(origin)) }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[cfg(test)]
 mod test {
   use crate::prelude::*;

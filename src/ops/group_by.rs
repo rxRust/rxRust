@@ -213,6 +213,7 @@ mod test {
     assert_eq!(obs_count, 2);
   }
 
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn group_by_shared() {
     let s = observable::of(0).group_by(|_| "zero");

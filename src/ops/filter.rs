@@ -76,6 +76,7 @@ where
 mod test {
   use crate::prelude::*;
 
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn fork_and_shared() {
     observable::from_iter(0..10)

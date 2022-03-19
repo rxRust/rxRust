@@ -89,6 +89,7 @@ mod test {
     assert_eq!(i, 3);
   }
 
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn filter_map_shared_and_fork() {
     observable::of(1)
@@ -98,6 +99,7 @@ mod test {
       .subscribe(|_| {});
   }
 
+  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn filter_map_return_ref() {
     observable::of(&1)

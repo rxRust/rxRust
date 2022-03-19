@@ -44,6 +44,7 @@ impl_local_shared_both! {
  where F: FnOnce()-> U, U: @ctx::Observable
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[cfg(test)]
 mod test {
   use std::ops::Deref;
