@@ -44,6 +44,26 @@ jobs:
           command: test
           args: --all-features
 
+  test-wasm:
+    name: wasm Test Suite
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v1
+
+      - name: Install toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+          override: true
+
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - name: Run wasm-pack test
+        run: wasm-pack test --node
+
   rustfmt:
     name: rust code format style check
     runs-on: ubuntu-latest
