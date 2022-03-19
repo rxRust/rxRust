@@ -44,3 +44,4 @@ wasm-scheduler = ["wasm-bindgen-futures"]
 [dev-dependencies]
 float-cmp = "0.8.0"
 bencher = "0.1.5"
+wasm-bindgen-test = "0.3.29"
