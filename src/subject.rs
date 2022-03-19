@@ -283,7 +283,9 @@ where
 #[cfg(test)]
 mod test {
   use super::*;
+  #[cfg(not(target_arch = "wasm32"))]
   use futures::executor::ThreadPool;
+  #[cfg(not(target_arch = "wasm32"))]
   use std::time::{Duration, Instant};
 
   #[test]

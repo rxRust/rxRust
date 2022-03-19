@@ -113,11 +113,18 @@ impl_scheduler!(LocalScheduler, MutRc, LocalSubscription,);
 #[cfg(test)]
 mod test {
   use crate::prelude::*;
-  use futures::executor::{LocalPool, ThreadPool};
+  use futures::executor::LocalPool;
+  #[cfg(not(target_arch = "wasm32"))]
+  use futures::executor::ThreadPool;
+  #[cfg(not(target_arch = "wasm32"))]
   use std::collections::HashSet;
+  #[cfg(not(target_arch = "wasm32"))]
   use std::sync::atomic::{AtomicBool, Ordering};
+  #[cfg(not(target_arch = "wasm32"))]
   use std::sync::{Arc, Mutex};
+  #[cfg(not(target_arch = "wasm32"))]
   use std::thread;
+  #[cfg(not(target_arch = "wasm32"))]
   use std::time::Duration;
   use std::{cell::RefCell, rc::Rc};
 

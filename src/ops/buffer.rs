@@ -257,10 +257,13 @@ where
 #[cfg(test)]
 mod tests {
   use crate::prelude::*;
-  use futures::executor::{LocalPool, ThreadPool};
+  use futures::executor::LocalPool;
+  #[cfg(not(target_arch = "wasm32"))]
+  use futures::executor::ThreadPool;
   use std::cell::RefCell;
   use std::rc::Rc;
   use std::sync::atomic::{AtomicBool, Ordering};
+  #[cfg(not(target_arch = "wasm32"))]
   use std::sync::{Arc, Mutex};
   use std::time::Duration;
 

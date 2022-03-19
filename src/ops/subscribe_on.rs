@@ -32,6 +32,7 @@ impl_local_shared_both! {
     SD: @ctx::Scheduler
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[cfg(test)]
 mod test {
   use crate::prelude::*;
@@ -40,7 +41,6 @@ mod test {
   use std::thread;
   use std::time::Duration;
 
-  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn thread_pool() {
     let pool = ThreadPool::new().unwrap();
@@ -62,7 +62,6 @@ mod test {
     assert_ne!(c_thread.lock().unwrap()[0], thread::current().id());
   }
 
-  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn pool_unsubscribe() {
     let pool = ThreadPool::new().unwrap();

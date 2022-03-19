@@ -57,7 +57,9 @@ impl_local_shared_both! {
 mod tests {
   use super::*;
   use crate::test_scheduler::ManualScheduler;
-  use futures::executor::{LocalPool, ThreadPool};
+  use futures::executor::LocalPool;
+  #[cfg(not(target_arch = "wasm32"))]
+  use futures::executor::ThreadPool;
   use std::sync::{Arc, Mutex};
 
   #[cfg(not(target_arch = "wasm32"))]

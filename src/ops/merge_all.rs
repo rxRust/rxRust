@@ -245,8 +245,11 @@ where
 #[cfg(test)]
 mod test {
   use super::*;
+  #[cfg(not(target_arch = "wasm32"))]
   use crate::observable::SubscribeBlocking;
-  use futures::executor::{LocalPool, ThreadPool};
+  use futures::executor::LocalPool;
+  #[cfg(not(target_arch = "wasm32"))]
+  use futures::executor::ThreadPool;
   use std::time::Duration;
 
   #[test]
