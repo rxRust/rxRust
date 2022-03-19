@@ -313,3 +313,16 @@ mod wasm_scheduler {
     }
   }
 }
+
+#[cfg(all(test, target_arch = "wasm32"))]
+mod test {
+  use crate::prelude::*;
+  use wasm_bindgen_test::*;
+
+  #[wasm_bindgen_test]
+  fn test_local() {
+    let mut container = Vec::new();
+    observable::from_iter(1..=5).subscribe(|val| container.push(val));
+    assert_eq!(container, vec![1, 2, 3, 4, 5]);
+  }
+}
