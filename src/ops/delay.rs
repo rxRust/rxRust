@@ -39,13 +39,13 @@ impl_local_shared_both! {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use futures::executor::{LocalPool, ThreadPool};
+  use futures::executor::LocalPool;
+  #[cfg(not(target_arch = "wasm32"))]
+  use futures::executor::ThreadPool;
+  #[cfg(not(target_arch = "wasm32"))]
+  use std::sync::{Arc, Mutex};
   use std::time::Instant;
-  use std::{
-    cell::RefCell,
-    rc::Rc,
-    sync::{Arc, Mutex},
-  };
+  use std::{cell::RefCell, rc::Rc};
 
   #[cfg(not(target_arch = "wasm32"))]
   #[test]

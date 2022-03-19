@@ -120,15 +120,12 @@ impl_local_shared_both! {
 mod tests {
   use super::*;
   use bencher::Bencher;
-  use futures::{
-    executor::{LocalPool, ThreadPool},
-    future,
-  };
-  use std::{
-    cell::RefCell,
-    rc::Rc,
-    sync::{Arc, Mutex},
-  };
+  #[cfg(not(target_arch = "wasm32"))]
+  use futures::executor::ThreadPool;
+  use futures::{executor::LocalPool, future};
+  #[cfg(not(target_arch = "wasm32"))]
+  use std::sync::{Arc, Mutex};
+  use std::{cell::RefCell, rc::Rc};
 
   #[cfg(not(target_arch = "wasm32"))]
   #[test]

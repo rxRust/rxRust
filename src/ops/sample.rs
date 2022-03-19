@@ -133,12 +133,9 @@ where
 mod test {
   use crate::prelude::*;
   use crate::test_scheduler::ManualScheduler;
-  use std::{
-    cell::RefCell,
-    rc::Rc,
-    sync::{Arc, Mutex},
-    time::Duration,
-  };
+  #[cfg(not(target_arch = "wasm32"))]
+  use std::sync::{Arc, Mutex};
+  use std::{cell::RefCell, rc::Rc, time::Duration};
 
   #[test]
   fn sample_base() {

@@ -74,9 +74,9 @@ where
 
 #[cfg(test)]
 mod test {
-  use std::sync::{Arc, Mutex};
-
   use crate::prelude::*;
+  #[cfg(not(target_arch = "wasm32"))]
+  use std::sync::{Arc, Mutex};
 
   #[test]
   fn base_function() {

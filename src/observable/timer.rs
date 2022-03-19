@@ -79,7 +79,9 @@ impl_local_shared_both! {
 #[cfg(test)]
 mod tests {
   use crate::prelude::*;
-  use futures::executor::{LocalPool, ThreadPool};
+  use futures::executor::LocalPool;
+  #[cfg(not(target_arch = "wasm32"))]
+  use futures::executor::ThreadPool;
   use std::sync::atomic::{AtomicBool, AtomicI32, AtomicUsize, Ordering};
   use std::sync::Arc;
   use std::time::{Duration, Instant};
