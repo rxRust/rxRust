@@ -302,7 +302,7 @@ pub struct LocalSpawner;
 #[cfg(all(target_arch = "wasm32", feature = "wasm-scheduler"))]
 mod wasm_scheduler {
   use crate::scheduler::{LocalScheduler, LocalSpawner};
-  use futures::FutureExt;
+  use futures::{Future, FutureExt};
 
   impl LocalScheduler for LocalSpawner {
     fn spawn<Fut>(&self, future: Fut)

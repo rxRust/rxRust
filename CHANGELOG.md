@@ -1,5 +1,8 @@
-## [Unreleased](https://github.com/rxRust/rxRust/compare/v1.0.0-alpha.2...HEAD)
+## [Unreleased](https://github.com/rxRust/rxRust/compare/v1.0.0-alpha.3...HEAD)
+
+## [1.0.0-alpha.3](https://github.com/rxRust/rxRust/releases/tag/v1.0.0-alpha.3)
 ### Features
+- **wasm support**: support target `wasm32-unknown-unknown` and feature `wasm-scheduler`.
 - **operator**: add `start_with` operator.
 - **operator**: add `start` operator.
 - **operator**: add `distinct_until_changed` operator.
