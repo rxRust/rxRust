@@ -1,6 +1,6 @@
 [package]
 name = "rxrust"
-version = "1.0.0-alpha.2"
+version = "1.0.0-alpha.3"
 authors = ["adoo <Adoo@outlook.com>"]
 edition = "2021"
 description = "A Rust implementation of Reactive Extensions."
