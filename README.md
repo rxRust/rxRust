@@ -13,7 +13,7 @@ Add this to your Cargo.toml:
 
 ```toml
 [dependencies]
-rxrust = "1.0.0-alpha.2"
+rxrust = "1.0.0-alpha.3"
 ```
 
 ## Example 
@@ -29,7 +29,7 @@ let odd = numbers.clone().filter(|v| v % 2 != 0);
 
 // merge odd and even stream again
 even.merge(odd).subscribe(|v| print!("{} ", v, ));
-// "0 1 2 3 4 5 6 7 8 9" will be printed.
+// "0 2 4 6 8 1 3 5 7 9" will be printed.
 
 ```
 
