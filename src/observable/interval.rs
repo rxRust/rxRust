@@ -1,6 +1,7 @@
 use crate::{impl_helper::*, impl_local_shared_both, prelude::*};
 
-use std::time::{Duration, Instant};
+use crate::prelude::Instant;
+use std::time::Duration;
 
 /// Creates an observable which will fire at `dur` time into the future,
 /// and will repeat every `dur` interval after.
