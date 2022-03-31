@@ -5,7 +5,7 @@ use std::future::Future;
 
 use futures::StreamExt;
 use std::sync::{Arc, RwLock};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 pub fn task_future<T>(
   task: impl FnOnce(T) + 'static,
@@ -301,8 +301,39 @@ pub struct LocalSpawner;
 
 #[cfg(all(target_arch = "wasm32", feature = "wasm-scheduler"))]
 mod wasm_scheduler {
+  use super::{Duration, Instant, SpawnHandle, StreamExt};
   use crate::scheduler::{LocalScheduler, LocalSpawner};
   use futures::{Future, FutureExt};
+
+  #[cfg(all(target_arch = "wasm32"))]
+  fn to_interval(
+    mut task: impl FnMut(usize) + 'static,
+    interval_duration: Duration,
+    at: Option<Instant>,
+  ) -> impl Future<Output = ()> {
+    let mut number = 0;
+    let at = at.unwrap_or(Instant::now() + interval_duration);
+
+    futures::future::ready(()).then(move |_| {
+      fluvio_wasm_timer::Interval::new_at(at, interval_duration).for_each(
+        move |_| {
+          number += 1;
+          task(number);
+          futures::future::ready(())
+        },
+      )
+    })
+  }
+
+  fn repeating_future(
+    task: impl FnMut(usize) + 'static,
+    time_between: Duration,
+    at: Option<Instant>,
+  ) -> (impl Future<Output = ()>, SpawnHandle) {
+    let future = to_interval(task, time_between, at);
+    let (fut, handle) = futures::future::abortable(future);
+    (fut.map(|_| ()), SpawnHandle::new(handle))
+  }
 
   impl LocalScheduler for LocalSpawner {
     fn spawn<Fut>(&self, future: Fut)
@@ -310,6 +341,17 @@ mod wasm_scheduler {
       Fut: Future<Output = ()> + 'static,
     {
       wasm_bindgen_futures::spawn_local(future.map(|_| ()));
+    }
+
+    fn schedule_repeating(
+      &self,
+      task: impl FnMut(usize) + 'static,
+      time_between: Duration,
+      at: Option<Instant>,
+    ) -> SpawnHandle {
+      let (f, handle) = repeating_future(task, time_between, at);
+      self.spawn(f.map(|_| ()));
+      handle
     }
   }
 }

@@ -17,6 +17,7 @@ no-dev-version = true
 
 [dependencies]
 smallvec = "1.4.2"
+fluvio-wasm-timer = "0.2.5"
 
 [dependencies.async-std]
 version = "1.6.3"
