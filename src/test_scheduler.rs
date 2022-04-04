@@ -1,10 +1,10 @@
 #![cfg(test)]
-use crate::prelude::{LocalScheduler, SpawnHandle, SubscriptionLike};
+use crate::prelude::{Instant, LocalScheduler, SpawnHandle, SubscriptionLike};
 use futures::future::AbortHandle;
 use std::future::Future;
 use std::ops::{Add, Sub};
 use std::sync::{Arc, Mutex, RwLock};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 #[derive(Clone)]
 pub struct ManualScheduler {
