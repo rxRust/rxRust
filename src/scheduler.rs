@@ -1,5 +1,6 @@
 use crate::prelude::*;
 use async_std::prelude::FutureExt as AsyncFutureExt;
+use fluvio_wasm_timer::Instant;
 use futures::future::{lazy, AbortHandle, FutureExt};
 use std::future::Future;
 

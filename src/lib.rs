@@ -41,7 +41,6 @@ pub mod prelude {
   pub use crate::subscription;
   pub use crate::subscription::*;
   pub use crate::type_hint::TypeHint;
-  pub use fluvio_wasm_timer::Instant;
   pub use observer::Observer;
   pub use shared::*;
 }
