@@ -1,6 +1,7 @@
-use crate::{impl_helper::*, impl_local_shared_both, prelude::*};
+use crate::{
+  impl_helper::*, impl_local_shared_both, prelude::*, scheduler::Instant,
+};
 
-use fluvio_wasm_timer::Instant;
 use std::time::Duration;
 
 /// Creates an observable which will fire at `dur` time into the future,
