@@ -1,12 +1,13 @@
 use crate::prelude::*;
 use async_std::prelude::FutureExt as AsyncFutureExt;
-use fluvio_wasm_timer::Instant;
 use futures::future::{lazy, AbortHandle, FutureExt};
 use std::future::Future;
 
 use futures::StreamExt;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
+
+pub(crate) use fluvio_wasm_timer::Instant;
 
 pub fn task_future<T>(
   task: impl FnOnce(T) + 'static,

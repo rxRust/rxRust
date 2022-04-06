@@ -1,6 +1,6 @@
 #![cfg(test)]
 use crate::prelude::{LocalScheduler, SpawnHandle, SubscriptionLike};
-use fluvio_wasm_timer::Instant;
+use crate::scheduler::Instant;
 use futures::future::AbortHandle;
 use std::future::Future;
 use std::ops::{Add, Sub};
