@@ -7,7 +7,7 @@ use futures::StreamExt;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
-pub(crate) use fluvio_wasm_timer::Instant;
+pub use fluvio_wasm_timer::Instant;
 
 pub fn task_future<T>(
   task: impl FnOnce(T) + 'static,
@@ -174,7 +174,7 @@ fn to_interval(
     .delay(delay)
 }
 
-#[cfg(feature = "tokio-scheduler")]
+#[cfg(all(not(target_arch = "wasm32"), feature = "tokio-scheduler"))]
 mod tokio_scheduler {
   use super::*;
   use std::sync::Arc;
@@ -199,7 +199,7 @@ mod tokio_scheduler {
   }
 }
 
-#[cfg(all(test, feature = "tokio-scheduler"))]
+#[cfg(all(test, not(target_arch = "wasm32"), feature = "tokio-scheduler"))]
 mod test {
   use crate::prelude::*;
   use bencher::Bencher;

@@ -51,6 +51,7 @@ use crate::ops::default_if_empty::DefaultIfEmptyOp;
 use crate::ops::distinct::{DistinctKeyOp, DistinctUntilKeyChangedOp};
 use crate::ops::pairwise::PairwiseOp;
 use crate::ops::tap::TapOp;
+use crate::scheduler::Instant;
 use ops::{
   box_it::{BoxOp, IntoBox},
   buffer::{BufferWithCountOp, BufferWithCountOrTimerOp, BufferWithTimeOp},
@@ -89,7 +90,7 @@ use ops::{
   Accum, AverageOp, CountOp, FlatMapOp, MinMaxOp, ReduceOp, SumOp,
 };
 use std::ops::{Add, Mul};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 type ALLOp<O, F> =
   DefaultIfEmptyOp<TakeOp<FilterOp<MapOp<O, F>, fn(&bool) -> bool>>>;

@@ -1,5 +1,7 @@
-use crate::{impl_helper::*, impl_local_shared_both, prelude::*};
-use std::time::{Duration, Instant};
+use crate::{
+  impl_helper::*, impl_local_shared_both, prelude::*, scheduler::Instant,
+};
+use std::time::Duration;
 
 // Returns an observable which will emit a single `item`
 // once after a given `dur` using a given `scheduler`
@@ -79,12 +81,13 @@ impl_local_shared_both! {
 #[cfg(test)]
 mod tests {
   use crate::prelude::*;
+  use crate::scheduler::Instant;
   use futures::executor::LocalPool;
   #[cfg(not(target_arch = "wasm32"))]
   use futures::executor::ThreadPool;
   use std::sync::atomic::{AtomicBool, AtomicI32, AtomicUsize, Ordering};
   use std::sync::Arc;
-  use std::time::{Duration, Instant};
+  use std::time::Duration;
 
   #[test]
   fn timer_shall_emit_value() {

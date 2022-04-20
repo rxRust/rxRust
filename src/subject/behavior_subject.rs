@@ -115,9 +115,11 @@ impl<'a, Item: Clone, Err> LocalObservable<'a>
 mod test {
   use crate::prelude::*;
   #[cfg(not(target_arch = "wasm32"))]
+  use crate::scheduler::Instant;
+  #[cfg(not(target_arch = "wasm32"))]
   use futures::executor::ThreadPool;
   #[cfg(not(target_arch = "wasm32"))]
-  use std::time::{Duration, Instant};
+  use std::time::Duration;
 
   #[test]
   fn base_data_flow() {

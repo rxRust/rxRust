@@ -90,9 +90,10 @@ where
 #[cfg(test)]
 mod test {
   use crate::prelude::*;
+  use crate::scheduler::Instant;
   use futures::executor::ThreadPool;
   use std::sync::{Arc, Mutex};
-  use std::time::{Duration, Instant};
+  use std::time::Duration;
 
   #[test]
   fn blocks_shared() {

@@ -34,7 +34,11 @@ pub mod prelude {
   pub use crate::observer;
   pub use crate::ops;
   pub use crate::rc::*;
-  pub use crate::scheduler::*;
+  #[cfg(target_arch = "wasm32")]
+  pub use crate::scheduler::LocalSpawner;
+  pub use crate::scheduler::{task_future, LocalScheduler, SpawnHandle};
+  #[cfg(not(target_arch = "wasm32"))]
+  pub use crate::scheduler::SharedScheduler;
   pub use crate::shared;
   pub use crate::subject;
   pub use crate::subject::*;
