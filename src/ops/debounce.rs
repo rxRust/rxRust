@@ -1,6 +1,6 @@
 use crate::prelude::*;
-use crate::{impl_helper::*, impl_local_shared_both};
 use crate::scheduler::Instant;
+use crate::{impl_helper::*, impl_local_shared_both};
 use std::time::Duration;
 #[derive(Clone)]
 pub struct DebounceOp<S, SD> {
