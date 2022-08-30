@@ -84,7 +84,7 @@ use ops::{
   take_last::TakeLastOp,
   take_until::TakeUntilOp,
   take_while::TakeWhileOp,
-  throttle_time::{ThrottleEdge, ThrottleTimeOp},
+  throttle_time::{ThrottleTimeEdge, ThrottleTimeOp},
   with_latest_from::WithLatestFromOp,
   zip::ZipOp,
   Accum, AverageOp, CountOp, FlatMapOp, MinMaxOp, ReduceOp, SumOp,
@@ -1250,7 +1250,7 @@ pub trait Observable: Sized {
   fn throttle_time<SD>(
     self,
     duration: Duration,
-    edge: ThrottleEdge,
+    edge: ThrottleTimeEdge,
     scheduler: SD,
   ) -> ThrottleTimeOp<Self, SD> {
     ThrottleTimeOp {
