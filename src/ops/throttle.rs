@@ -148,31 +148,37 @@ mod tests {
     let scheduler = ManualScheduler::now();
 
     let interval =
-        observable::interval(Duration::from_millis(5), scheduler.clone());
+      observable::interval(Duration::from_millis(5), scheduler.clone());
     let throttle_subscribe = |edge| {
       let x = x.clone();
       interval
-          .clone()
-          .take(5)
-          .throttle(
-            |val| -> Duration { Duration::from_millis(11) },
-            edge,
-            scheduler.clone(),
-          )
-          .subscribe(move |v| x.rc_deref_mut().push(v))
+        .clone()
+        .take(5)
+        .throttle(
+          |val| -> Duration {
+            if val % 2 == 0 {
+              Duration::from_millis(7)
+            } else {
+              Duration::from_millis(5)
+            }
+          },
+          edge,
+          scheduler.clone(),
+        )
+        .subscribe(move |v| x.rc_deref_mut().push(v))
     };
 
     // tailing throttle
     let mut sub = throttle_subscribe(ThrottleEdge::Tailing);
     scheduler.advance_and_run(Duration::from_millis(1), 25);
     sub.unsubscribe();
-    assert_eq!(&*x_c.rc_deref(), &[2, 4]);
+    assert_eq!(&*x_c.rc_deref(), &[1, 3]);
 
     // leading throttle
     x_c.rc_deref_mut().clear();
     throttle_subscribe(ThrottleEdge::Leading);
     scheduler.advance_and_run(Duration::from_millis(1), 25);
-    assert_eq!(&*x_c.rc_deref(), &[0, 3]);
+    assert_eq!(&*x_c.rc_deref(), &[0, 2, 4]);
   }
 
   #[cfg(not(target_arch = "wasm32"))]
@@ -181,13 +187,19 @@ mod tests {
     use futures::executor::ThreadPool;
     let scheduler = ThreadPool::new().unwrap();
     observable::from_iter(0..10)
-        .throttle(
-          |val| -> Duration { Duration::from_millis(11) },
-          ThrottleEdge::Leading,
-          scheduler,
-        )
-        .into_shared()
-        .into_shared()
-        .subscribe(|_| {});
+      .throttle(
+        |val| -> Duration {
+          if val % 2 == 0 {
+            Duration::from_millis(7)
+          } else {
+            Duration::from_millis(5)
+          }
+        },
+        ThrottleEdge::Leading,
+        scheduler,
+      )
+      .into_shared()
+      .into_shared()
+      .subscribe(|_| {});
   }
 }
