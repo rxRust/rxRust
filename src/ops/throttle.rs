@@ -85,7 +85,16 @@ macro_rules! impl_observer {
         }
 
         if inner.throttled.is_none() {
-          let delay = (inner.duration_selector)(&value);
+          let delay = match inner.edge {
+            ThrottleEdge::Leading => (inner.duration_selector)(&value),
+            ThrottleEdge::Tailing => {
+              if let Some(trailing_value) = inner.trailing_value.take() {
+                (inner.duration_selector)(&trailing_value)
+              } else {
+                Duration::from_secs(0)
+              }
+            }
+          };
           let spawn_handle = inner.scheduler.schedule(
             move |_| {
               let mut inner = c_inner.rc_deref_mut();
@@ -139,18 +148,18 @@ mod tests {
     let scheduler = ManualScheduler::now();
 
     let interval =
-      observable::interval(Duration::from_millis(5), scheduler.clone());
+        observable::interval(Duration::from_millis(5), scheduler.clone());
     let throttle_subscribe = |edge| {
       let x = x.clone();
       interval
-        .clone()
-        .take(5)
-        .throttle(
-          |val| -> Duration { Duration::from_millis(11) },
-          edge,
-          scheduler.clone(),
-        )
-        .subscribe(move |v| x.rc_deref_mut().push(v))
+          .clone()
+          .take(5)
+          .throttle(
+            |val| -> Duration { Duration::from_millis(11) },
+            edge,
+            scheduler.clone(),
+          )
+          .subscribe(move |v| x.rc_deref_mut().push(v))
     };
 
     // tailing throttle
@@ -172,13 +181,13 @@ mod tests {
     use futures::executor::ThreadPool;
     let scheduler = ThreadPool::new().unwrap();
     observable::from_iter(0..10)
-      .throttle(
-        |val| -> Duration { Duration::from_millis(11) },
-        ThrottleEdge::Leading,
-        scheduler,
-      )
-      .into_shared()
-      .into_shared()
-      .subscribe(|_| {});
+        .throttle(
+          |val| -> Duration { Duration::from_millis(11) },
+          ThrottleEdge::Leading,
+          scheduler,
+        )
+        .into_shared()
+        .into_shared()
+        .subscribe(|_| {});
   }
 }
