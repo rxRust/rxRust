@@ -1233,14 +1233,15 @@ pub trait Observable: Sized {
   ///
   /// #Example
   /// ```
-  /// use rxrust::{ prelude::*, ops::throttle_time::ThrottleEdge };
+  /// use rxrust::{ prelude::*, ops::throttle_time::ThrottleTimeEdge };
   /// use std::time::Duration;
   /// use futures::executor::LocalPool;
   ///
   /// let mut local_scheduler = LocalPool::new();
   /// let spawner = local_scheduler.spawner();
   /// observable::interval(Duration::from_millis(1), spawner.clone())
-  ///   .throttle_time(Duration::from_millis(9), ThrottleEdge::Leading, spawner)
+  ///   .throttle_time(
+  ///     Duration::from_millis(9), ThrottleTimeEdge::Leading, spawner)
   ///   .take(5)
   ///   .subscribe(move |v| println!("{}", v));
   ///
