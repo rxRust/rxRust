@@ -84,6 +84,7 @@ use ops::{
   take_last::TakeLastOp,
   take_until::TakeUntilOp,
   take_while::TakeWhileOp,
+  throttle::{ThrottleEdge, ThrottleOp},
   throttle_time::{ThrottleTimeEdge, ThrottleTimeOp},
   with_latest_from::WithLatestFromOp,
   zip::ZipOp,
@@ -1224,6 +1225,44 @@ pub trait Observable: Sized {
     DebounceOp {
       source: self,
       duration,
+      scheduler,
+    }
+  }
+
+  /// Emits a value from the source Observable, then ignores subsequent source
+  /// values for duration milliseconds, then repeats this process.
+  ///
+  /// #Example
+  /// ```
+  /// use rxrust::{ prelude::*, ops::throttle::ThrottleEdge };
+  /// use std::time::Duration;
+  /// use futures::executor::LocalPool;
+  ///
+  /// let mut local_scheduler = LocalPool::new();
+  /// let spawner = local_scheduler.spawner();
+  /// observable::interval(Duration::from_millis(1), spawner.clone())
+  ///   .throttle(
+  ///     |val| -> Duration { Duration::from_millis(9) },
+  ///     ThrottleEdge::Leading, spawner)
+  ///   .take(5)
+  ///   .subscribe(move |v| println!("{}", v));
+  ///
+  /// local_scheduler.run();
+  /// ```
+  #[inline]
+  fn throttle<SD, F>(
+    self,
+    duration_selector: F,
+    edge: ThrottleEdge,
+    scheduler: SD,
+  ) -> ThrottleOp<Self, SD, F>
+  where
+    F: Fn(&Self::Item) -> Duration,
+  {
+    ThrottleOp {
+      source: self,
+      duration_selector,
+      edge,
       scheduler,
     }
   }
