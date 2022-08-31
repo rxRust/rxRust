@@ -162,7 +162,11 @@ mod tests {
     use futures::executor::ThreadPool;
     let scheduler = ThreadPool::new().unwrap();
     observable::from_iter(0..10)
-      .throttle_time(Duration::from_nanos(1), ThrottleTimeEdge::Leading, scheduler)
+      .throttle_time(
+        Duration::from_nanos(1),
+        ThrottleTimeEdge::Leading,
+        scheduler,
+      )
       .into_shared()
       .into_shared()
       .subscribe(|_| {});
