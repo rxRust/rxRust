@@ -1242,7 +1242,13 @@ pub trait Observable: Sized {
   /// let spawner = local_scheduler.spawner();
   /// observable::interval(Duration::from_millis(1), spawner.clone())
   ///   .throttle(
-  ///     |val| -> Duration { Duration::from_millis(9) },
+  ///     |val| -> Duration {
+  ///       if val % 2 == 0 {
+  ///         Duration::from_millis(7)
+  ///       } else {
+  ///         Duration::from_millis(5)
+  ///       }
+  ///     },
   ///     ThrottleEdge::Leading, spawner)
   ///   .take(5)
   ///   .subscribe(move |v| println!("{}", v));
