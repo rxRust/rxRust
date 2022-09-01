@@ -103,7 +103,7 @@ pub struct GroupByObserver<Obs, Source, Discr, Key, Item> {
   _marker: TypeHint<*const Item>,
 }
 
-impl<'a, Obs, Source, Discr, Key, Item, Err> Observer
+impl<Obs, Source, Discr, Key, Item, Err> Observer
   for GroupByObserver<Obs, Source, Discr, Key, Item>
 where
   Obs: Observer<Item = GroupObservable<Source, Discr, Key>, Err = Err>,

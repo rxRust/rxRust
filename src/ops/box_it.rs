@@ -206,7 +206,7 @@ impl<Item, Err> Clone for Box<dyn SharedBoxClone<Item = Item, Err = Err>> {
   fn clone(&self) -> Self { self.box_clone() }
 }
 
-impl<'a, T> IntoBox<T> for Box<dyn SharedBoxClone<Item = T::Item, Err = T::Err>>
+impl<T> IntoBox<T> for Box<dyn SharedBoxClone<Item = T::Item, Err = T::Err>>
 where
   T: SharedBoxObservable + Clone + 'static,
 {

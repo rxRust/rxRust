@@ -23,7 +23,7 @@ macro_rules! observable_impl {
 }
 }
 
-impl<'a, Item, S, F> Observable for FilterMapOp<S, F>
+impl<Item, S, F> Observable for FilterMapOp<S, F>
 where
   S: Observable,
   F: FnMut(S::Item) -> Option<Item>,

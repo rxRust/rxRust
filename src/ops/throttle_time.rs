@@ -2,7 +2,7 @@ use crate::{impl_helper::*, impl_local_shared_both, prelude::*};
 use std::time::Duration;
 
 /// Config to define leading and trailing behavior for throttle
-#[derive(PartialEq, Clone, Copy)]
+#[derive(PartialEq, Eq, Clone, Copy)]
 pub enum ThrottleTimeEdge {
   Tailing,
   Leading,
