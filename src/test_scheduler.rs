@@ -150,7 +150,7 @@ impl ManualScheduler {
 
     for task in &(*self.repeating_task.read().unwrap()) {
       let task_c = Arc::clone(task);
-      let delay = (*task_c.read().unwrap()).delay;
+      let delay = task_c.read().unwrap().delay;
 
       let mut prev = task_c.read().unwrap().last_time;
       let next_time: Instant = prev.add(delay);
@@ -164,7 +164,7 @@ impl ManualScheduler {
           prev = prev.add(delay);
         }
         if wanted_invokes > 0 {
-          (*task_c.write().unwrap()).last_time = prev;
+          task_c.write().unwrap().last_time = prev;
         }
       }
     }
