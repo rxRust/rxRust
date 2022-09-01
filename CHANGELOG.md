@@ -1,4 +1,5 @@
 ## [Unreleased](https://github.com/rxRust/rxRust/compare/v1.0.0-alpha.3...HEAD)
+- **operator**: add `throttle` operator.
 
 ## [1.0.0-alpha.3](https://github.com/rxRust/rxRust/releases/tag/v1.0.0-alpha.3)
 ### Features
