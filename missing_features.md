@@ -44,6 +44,7 @@ Operators that transform items that are emitted by an Observable.
 Operators that selectively emit items from a source Observable.
 
 - [x] Debounce — only emit an item from an Observable if a particular timespan has passed without it emitting another item
+  - [x] Throttle 
   - [x] ThrottleTime
   - [x] Debounce
 - [x] Distinct — suppress duplicate items emitted by an Observable
