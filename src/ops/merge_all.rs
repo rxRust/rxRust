@@ -175,6 +175,7 @@ where
   type Item = SharedBoxOp<O::Item, O::Err>;
   type Err = O::Err;
 
+  #[allow(clippy::mut_mutex_lock)]
   fn next(&mut self, value: Self::Item) {
     let mut inner = self.lock().unwrap();
     if inner.subscribed < inner.concurrent {
@@ -187,6 +188,7 @@ where
     }
   }
 
+  #[allow(clippy::mut_mutex_lock)]
   fn error(&mut self, err: Self::Err) {
     let mut inner = self.lock().unwrap();
     inner.completed = true;
@@ -194,6 +196,7 @@ where
     inner.subscription.unsubscribe();
   }
 
+  #[allow(clippy::mut_mutex_lock)]
   fn complete(&mut self) {
     let mut inner = self.lock().unwrap();
     inner.completed = true;
