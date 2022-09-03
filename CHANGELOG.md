@@ -1,5 +1,8 @@
 ## [Unreleased](https://github.com/rxRust/rxRust/compare/v1.0.0-alpha.3...HEAD)
+### Features
 - **operator**: add `throttle` operator.
+### Refactor
+- **operator**: Delete 'ThrottleTimeEdge' and 'ThrottleTimeOp'. Change the logic of function 'throttle_time()' to use 'throttle()'.
 
 ## [1.0.0-alpha.3](https://github.com/rxRust/rxRust/releases/tag/v1.0.0-alpha.3)
 ### Features
