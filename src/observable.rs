@@ -85,7 +85,6 @@ use ops::{
   take_until::TakeUntilOp,
   take_while::TakeWhileOp,
   throttle::{ThrottleEdge, ThrottleOp},
-  throttle_time::{ThrottleTimeEdge, ThrottleTimeOp},
   with_latest_from::WithLatestFromOp,
   zip::ZipOp,
   Accum, AverageOp, CountOp, FlatMapOp, MinMaxOp, ReduceOp, SumOp,
