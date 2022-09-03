@@ -1292,6 +1292,7 @@ pub trait Observable: Sized {
   /// local_scheduler.run();
   /// ```
   #[inline]
+  #[allow(clippy::type_complexity)]
   fn throttle_time<SD>(
     self,
     duration: Duration,
