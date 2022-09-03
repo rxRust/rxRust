@@ -202,4 +202,46 @@ mod tests {
       .into_shared()
       .subscribe(|_| {});
   }
+
+  #[test]
+  fn smoke_for_throttle_time() {
+    let x = MutRc::own(vec![]);
+    let x_c = x.clone();
+    let scheduler = ManualScheduler::now();
+
+    let interval =
+      observable::interval(Duration::from_millis(5), scheduler.clone());
+    let throttle_time_subscribe = |edge| {
+      let x = x.clone();
+      interval
+        .clone()
+        .take(5)
+        .throttle_time(Duration::from_millis(11), edge, scheduler.clone())
+        .subscribe(move |v| x.rc_deref_mut().push(v))
+    };
+
+    // tailing throttle
+    let mut sub = throttle_time_subscribe(ThrottleEdge::Tailing);
+    scheduler.advance_and_run(Duration::from_millis(1), 25);
+    sub.unsubscribe();
+    assert_eq!(&*x_c.rc_deref(), &[2, 4]);
+
+    // leading throttle
+    x_c.rc_deref_mut().clear();
+    throttle_time_subscribe(ThrottleEdge::Leading);
+    scheduler.advance_and_run(Duration::from_millis(1), 25);
+    assert_eq!(&*x_c.rc_deref(), &[0, 3]);
+  }
+
+  #[cfg(not(target_arch = "wasm32"))]
+  #[test]
+  fn fork_and_shared_for_throttle_time() {
+    use futures::executor::ThreadPool;
+    let scheduler = ThreadPool::new().unwrap();
+    observable::from_iter(0..10)
+      .throttle_time(Duration::from_nanos(1), ThrottleEdge::Leading, scheduler)
+      .into_shared()
+      .into_shared()
+      .subscribe(|_| {});
+  }
 }
