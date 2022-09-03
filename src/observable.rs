@@ -1277,7 +1277,7 @@ pub trait Observable: Sized {
   ///
   /// #Example
   /// ```
-  /// use rxrust::{ prelude::*, ops::throttle_time::ThrottleTimeEdge };
+  /// use rxrust::{ prelude::*, ops::throttle::ThrottleEdge };
   /// use std::time::Duration;
   /// use futures::executor::LocalPool;
   ///
@@ -1285,7 +1285,7 @@ pub trait Observable: Sized {
   /// let spawner = local_scheduler.spawner();
   /// observable::interval(Duration::from_millis(1), spawner.clone())
   ///   .throttle_time(
-  ///     Duration::from_millis(9), ThrottleTimeEdge::Leading, spawner)
+  ///     Duration::from_millis(9), ThrottleEdge::Leading, spawner)
   ///   .take(5)
   ///   .subscribe(move |v| println!("{}", v));
   ///
@@ -1295,15 +1295,23 @@ pub trait Observable: Sized {
   fn throttle_time<SD>(
     self,
     duration: Duration,
-    edge: ThrottleTimeEdge,
+    edge: ThrottleEdge,
     scheduler: SD,
-  ) -> ThrottleTimeOp<Self, SD> {
-    ThrottleTimeOp {
-      source: self,
-      duration,
+  ) -> ThrottleOp<Self, SD, Box<dyn Fn(&Self::Item) -> Duration + Send + Sync>>
+  where
+    Self::Item: 'static,
+  {
+    fn duration_selector_fn<T>(
+      duration: Duration,
+    ) -> impl for<'a> Fn(&'a T) -> Duration + 'static {
+      move |_| duration
+    }
+
+    self.throttle(
+      Box::new(duration_selector_fn::<Self::Item>(duration)),
       edge,
       scheduler,
-    }
+    )
   }
 
   /// Returns an Observable that emits all items emitted by the source
