@@ -1302,17 +1302,7 @@ pub trait Observable: Sized {
   where
     Self::Item: 'static,
   {
-    fn duration_selector_fn<T>(
-      duration: Duration,
-    ) -> impl for<'a> Fn(&'a T) -> Duration + 'static {
-      move |_| duration
-    }
-
-    self.throttle(
-      Box::new(duration_selector_fn::<Self::Item>(duration)),
-      edge,
-      scheduler,
-    )
+    self.throttle(Box::new(move |_| duration), edge, scheduler)
   }
 
   /// Returns an Observable that emits all items emitted by the source
