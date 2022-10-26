@@ -36,11 +36,15 @@ optional = true
 version = "0.4.29"
 optional = true
 
+[dependencies.gloo-timers]
+version = "0.2.4"
+optional = true
+
 [features]
 default = ["futures-scheduler"]
 tokio-scheduler = ["tokio"]
 futures-scheduler = []
-wasm-scheduler = ["wasm-bindgen-futures"]
+wasm-scheduler = ["wasm-bindgen-futures", "gloo-timers"]
 
 [dev-dependencies]
 float-cmp = "0.8.0"
