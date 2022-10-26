@@ -305,19 +305,22 @@ pub struct LocalSpawner;
 mod wasm_scheduler {
   use super::{Duration, Instant, SpawnHandle, StreamExt};
   use crate::scheduler::{LocalScheduler, LocalSpawner};
-  use futures::{Future, FutureExt};
+  use futures::{task, Future, FutureExt};
+  use gloo_timers::future::{sleep, IntervalStream};
 
   #[cfg(all(target_arch = "wasm32"))]
   fn to_interval(
     mut task: impl FnMut(usize) + 'static,
     interval_duration: Duration,
-    at: Option<Instant>,
+    delay: Duration,
   ) -> impl Future<Output = ()> {
+    sleep(delay);
+
     let mut number = 0;
-    let at = at.unwrap_or(Instant::now() + interval_duration);
 
     futures::future::ready(()).then(move |_| {
-      fluvio_wasm_timer::Interval::new_at(at, interval_duration).for_each(
+      task(number);
+      IntervalStream::new(interval_duration.as_millis() as u32).for_each(
         move |_| {
           number += 1;
           task(number);
@@ -332,7 +335,15 @@ mod wasm_scheduler {
     time_between: Duration,
     at: Option<Instant>,
   ) -> (impl Future<Output = ()>, SpawnHandle) {
-    let future = to_interval(task, time_between, at);
+    let now = Instant::now();
+    let delay = at.map(|inst| {
+      if inst > now {
+        inst - now
+      } else {
+        Duration::from_micros(0)
+      }
+    });
+    let future = to_interval(task, time_between, delay.unwrap_or(time_between));
     let (fut, handle) = futures::future::abortable(future);
     (fut.map(|_| ()), SpawnHandle::new(handle))
   }
