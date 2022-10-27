@@ -3,7 +3,6 @@
 //! [Observable](crate::observable::Observable), to make
 //! it easier to compose asynchronous or callback-based code.
 #![recursion_limit = "256"]
-#![feature(generic_associated_types)]
 #![doc = include_str!("../README.md")]
 
 #[cfg(test)]
