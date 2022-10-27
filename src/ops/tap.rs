@@ -77,19 +77,19 @@ mod test {
   fn fork_and_shared() {
     // type to type can fork
     let m = observable::from_iter(0..100).map(|v| v);
-    m.tap(|v| println!("v: {}", v))
+    m.tap(|v| println!("v: {v}"))
       .into_shared()
       .subscribe(|_| {});
 
     // type mapped to other type can fork
     let m = observable::from_iter(vec!['a', 'b', 'c']).map(|_v| 1);
-    m.tap(|v| println!("v: {}", v))
+    m.tap(|v| println!("v: {v}"))
       .into_shared()
       .subscribe(|_| {});
 
     // ref to ref can fork
     let m = observable::of(&1).map(|v| v);
-    m.tap(|v| println!("v: {}", v))
+    m.tap(|v| println!("v: {v}"))
       .into_shared()
       .subscribe(|_| {});
   }
