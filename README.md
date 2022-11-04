@@ -7,7 +7,7 @@
 
 ## Usage
 
-`1.0.x` version requires Rust nightly before GAT stable, `0.15.0` version works with Rust stable.
+`1.0.x` version requires Rust nightly before GAT stable, `latest` and `0.15.0` versions work with Rust stable.
 
 Add this to your Cargo.toml:
 
