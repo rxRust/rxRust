@@ -47,11 +47,17 @@ where
 {
   type Item = Item;
   type Err = Err;
-  fn next(&mut self, value: Item) { self.observer.next((self.map)(value)) }
+  fn next(&mut self, value: Item) {
+    self.observer.next((self.map)(value))
+  }
 
-  fn error(&mut self, err: Self::Err) { self.observer.error(err) }
+  fn error(&mut self, err: Self::Err) {
+    self.observer.error(err)
+  }
 
-  fn complete(&mut self) { self.observer.complete() }
+  fn complete(&mut self) {
+    self.observer.complete()
+  }
 }
 
 #[cfg(test)]
@@ -101,9 +107,13 @@ mod test {
   }
 
   #[test]
-  fn benchmark() { do_bench(); }
+  fn benchmark() {
+    do_bench();
+  }
 
   benchmark_group!(do_bench, bench);
 
-  fn bench(b: &mut bencher::Bencher) { b.iter(primitive_type); }
+  fn bench(b: &mut bencher::Bencher) {
+    b.iter(primitive_type);
+  }
 }

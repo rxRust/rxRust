@@ -58,10 +58,14 @@ where
   }
 
   #[inline]
-  fn error(&mut self, err: Err) { self.observer.error(err); }
+  fn error(&mut self, err: Err) {
+    self.observer.error(err);
+  }
 
   #[inline]
-  fn complete(&mut self) { self.observer.complete() }
+  fn complete(&mut self) {
+    self.observer.complete()
+  }
 }
 
 #[cfg(test)]
@@ -99,9 +103,13 @@ mod test {
   }
 
   #[test]
-  fn bench() { do_bench(); }
+  fn bench() {
+    do_bench();
+  }
 
   benchmark_group!(do_bench, bench_skip_until);
 
-  fn bench_skip_until(b: &mut bencher::Bencher) { b.iter(base_function); }
+  fn bench_skip_until(b: &mut bencher::Bencher) {
+    b.iter(base_function);
+  }
 }

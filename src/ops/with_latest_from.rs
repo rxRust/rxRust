@@ -74,7 +74,9 @@ macro_rules! impl_b_observer {
         *self.value.rc_deref_mut() = Some(value);
       }
 
-      fn error(&mut self, err: Self::Err) { self.observer.error(err) }
+      fn error(&mut self, err: Self::Err) {
+        self.observer.error(err)
+      }
 
       fn complete(&mut self) {
         if !self.done {
@@ -114,9 +116,13 @@ macro_rules! impl_a_observer {
         self.observer.next((item, item2));
       }
 
-      fn complete(&mut self) { self.observer.complete(); }
+      fn complete(&mut self) {
+        self.observer.complete();
+      }
 
-      fn error(&mut self, err: Self::Err) { self.observer.error(err) }
+      fn error(&mut self, err: Self::Err) {
+        self.observer.error(err)
+      }
     }
   };
 }
@@ -228,9 +234,13 @@ mod test {
   }
 
   #[test]
-  fn bench() { do_bench(); }
+  fn bench() {
+    do_bench();
+  }
 
   benchmark_group!(do_bench, bench_zip);
 
-  fn bench_zip(b: &mut bencher::Bencher) { b.iter(smoke); }
+  fn bench_zip(b: &mut bencher::Bencher) {
+    b.iter(smoke);
+  }
 }

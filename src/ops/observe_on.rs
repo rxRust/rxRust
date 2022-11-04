@@ -194,9 +194,13 @@ mod test {
     assert_eq!(c_emitted.lock().unwrap().len(), 0);
   }
   #[test]
-  fn bench() { do_bench(); }
+  fn bench() {
+    do_bench();
+  }
 
   benchmark_group!(do_bench, bench_observe_on);
 
-  fn bench_observe_on(b: &mut bencher::Bencher) { b.iter(smoke); }
+  fn bench_observe_on(b: &mut bencher::Bencher) {
+    b.iter(smoke);
+  }
 }

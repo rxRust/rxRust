@@ -53,7 +53,9 @@ where
     }
   }
 
-  fn error(&mut self, err: Self::Err) { self.observer.error(err) }
+  fn error(&mut self, err: Self::Err) {
+    self.observer.error(err)
+  }
 
   fn complete(&mut self) {
     if self.is_empty {
@@ -113,16 +115,24 @@ mod test {
   }
 
   #[test]
-  fn bench_base() { bench_b(); }
+  fn bench_base() {
+    bench_b();
+  }
 
   benchmark_group!(bench_b, bench_base_function);
 
-  fn bench_base_function(b: &mut Bencher) { b.iter(base_function); }
+  fn bench_base_function(b: &mut Bencher) {
+    b.iter(base_function);
+  }
 
   #[test]
-  fn bench_empty() { bench_e(); }
+  fn bench_empty() {
+    bench_e();
+  }
 
   benchmark_group!(bench_e, bench_empty_function);
 
-  fn bench_empty_function(b: &mut Bencher) { b.iter(base_empty_function); }
+  fn bench_empty_function(b: &mut Bencher) {
+    b.iter(base_empty_function);
+  }
 }

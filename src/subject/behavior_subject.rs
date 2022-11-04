@@ -33,10 +33,14 @@ impl<Item, Err> SharedBehaviorSubject<Item, Err> {
 
 impl<S: SubscriptionLike, V> SubscriptionLike for BehaviorSubject<S, V> {
   #[inline]
-  fn unsubscribe(&mut self) { self.subject.unsubscribe(); }
+  fn unsubscribe(&mut self) {
+    self.subject.unsubscribe();
+  }
 
   #[inline]
-  fn is_closed(&self) -> bool { self.subject.is_closed() }
+  fn is_closed(&self) -> bool {
+    self.subject.is_closed()
+  }
 }
 
 impl<S, Item> Observer for BehaviorSubject<S, Item>
@@ -57,15 +61,21 @@ where
   }
 
   #[inline]
-  fn error(&mut self, err: Self::Err) { self.subject.error(err) }
+  fn error(&mut self, err: Self::Err) {
+    self.subject.error(err)
+  }
 
   #[inline]
-  fn complete(&mut self) { self.subject.complete() }
+  fn complete(&mut self) {
+    self.subject.complete()
+  }
 }
 
 impl<S: TearDownSize, V> TearDownSize for BehaviorSubject<S, V> {
   #[inline]
-  fn teardown_size(&self) -> usize { self.subject.teardown_size() }
+  fn teardown_size(&self) -> usize {
+    self.subject.teardown_size()
+  }
 }
 
 impl<Item, Err> Observable for SharedBehaviorSubject<Item, Err> {

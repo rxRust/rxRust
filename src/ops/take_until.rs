@@ -69,7 +69,9 @@ where
   }
 
   #[inline]
-  fn complete(&mut self) { self.subscription.unsubscribe() }
+  fn complete(&mut self) {
+    self.subscription.unsubscribe()
+  }
 }
 
 #[cfg(test)]
@@ -232,9 +234,13 @@ mod test {
   }
 
   #[test]
-  fn bench() { do_bench(); }
+  fn bench() {
+    do_bench();
+  }
 
   benchmark_group!(do_bench, bench_take_until);
 
-  fn bench_take_until(b: &mut bencher::Bencher) { b.iter(base_function); }
+  fn bench_take_until(b: &mut bencher::Bencher) {
+    b.iter(base_function);
+  }
 }

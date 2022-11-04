@@ -61,9 +61,13 @@ where
 {
   type Item = O::Item;
   type Err = O::Err;
-  fn next(&mut self, value: Self::Item) { self.value = Some(value); }
+  fn next(&mut self, value: Self::Item) {
+    self.value = Some(value);
+  }
 
-  fn error(&mut self, err: Self::Err) { self.observer.error(err) }
+  fn error(&mut self, err: Self::Err) {
+    self.observer.error(err)
+  }
 
   fn complete(&mut self) {
     if !self.done {
@@ -119,14 +123,18 @@ where
   type Item = Item2;
   type Err = Err;
 
-  fn next(&mut self, _: Item2) { self.0.drain_value(); }
+  fn next(&mut self, _: Item2) {
+    self.0.drain_value();
+  }
 
   fn complete(&mut self) {
     self.0.drain_value();
     self.0.complete();
   }
 
-  fn error(&mut self, err: Self::Err) { self.0.error(err) }
+  fn error(&mut self, err: Self::Err) {
+    self.0.error(err)
+  }
 }
 
 #[cfg(test)]

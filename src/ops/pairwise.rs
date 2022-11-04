@@ -51,9 +51,13 @@ where
     }
   }
 
-  fn complete(&mut self) { self.observer.complete(); }
+  fn complete(&mut self) {
+    self.observer.complete();
+  }
 
-  fn error(&mut self, err: Self::Err) { self.observer.error(err) }
+  fn error(&mut self, err: Self::Err) {
+    self.observer.error(err)
+  }
 }
 
 #[cfg(test)]

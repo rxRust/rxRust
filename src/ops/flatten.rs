@@ -32,12 +32,16 @@ pub struct FlattenState {
 impl FlattenState {
   /// Creates a new state for a Flatten operator.
   #[inline]
-  pub fn new() -> Self { Self::default() }
+  pub fn new() -> Self {
+    Self::default()
+  }
 
   /// Indicates if a completion of emissions has been detected. This happens
   /// when the number of new Observables is the same as the number of
   /// completed Observables.
-  pub fn is_completed(&self) -> bool { self.is_completed }
+  pub fn is_completed(&self) -> bool {
+    self.is_completed
+  }
 
   /// Records the registration of a new Observable.
   pub fn register_new_observable(&mut self) {
@@ -184,9 +188,13 @@ macro_rules! impl_outer_obsrever {
         .add(value.actual_subscribe(self.inner_observer.clone()));
     }
 
-    fn error(&mut self, err: Self::Err) { self.inner_observer.error(err) }
+    fn error(&mut self, err: Self::Err) {
+      self.inner_observer.error(err)
+    }
 
-    fn complete(&mut self) { self.inner_observer.complete() }
+    fn complete(&mut self) {
+      self.inner_observer.complete()
+    }
   };
 }
 
@@ -383,9 +391,13 @@ mod test {
   }
 
   #[test]
-  fn bench() { do_bench(); }
+  fn bench() {
+    do_bench();
+  }
 
   benchmark_group!(do_bench, bench_flatten);
 
-  fn bench_flatten(b: &mut bencher::Bencher) { b.iter(odd_even_flatten); }
+  fn bench_flatten(b: &mut bencher::Bencher) {
+    b.iter(odd_even_flatten);
+  }
 }

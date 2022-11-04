@@ -71,9 +71,13 @@ where
     }
   }
 
-  fn error(&mut self, err: Self::Err) { self.down_observer.error(err) }
+  fn error(&mut self, err: Self::Err) {
+    self.down_observer.error(err)
+  }
 
-  fn complete(&mut self) { self.down_observer.complete() }
+  fn complete(&mut self) {
+    self.down_observer.complete()
+  }
 }
 
 #[cfg(test)]
@@ -110,7 +114,9 @@ mod test {
   }
 
   #[test]
-  fn bench() { do_bench(); }
+  fn bench() {
+    do_bench();
+  }
 
   benchmark_group!(do_bench, bench_map_types_mixed);
 

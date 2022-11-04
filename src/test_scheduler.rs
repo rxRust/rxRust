@@ -19,9 +19,13 @@ struct FakeClock {
 }
 
 impl FakeClock {
-  fn instant(&self) -> Instant { self.current_time }
+  fn instant(&self) -> Instant {
+    self.current_time
+  }
 
-  pub fn new(time: Instant) -> FakeClock { FakeClock { current_time: time } }
+  pub fn new(time: Instant) -> FakeClock {
+    FakeClock { current_time: time }
+  }
 
   pub fn advance(&mut self, duration: Duration) {
     self.current_time = self.current_time.add(duration);
@@ -108,7 +112,9 @@ impl ManualScheduler {
     }
   }
 
-  pub fn now() -> ManualScheduler { ManualScheduler::new(Instant::now()) }
+  pub fn now() -> ManualScheduler {
+    ManualScheduler::new(Instant::now())
+  }
 
   pub fn advance(&self, time: Duration) {
     self.clock.write().unwrap().advance(time);

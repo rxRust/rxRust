@@ -35,7 +35,9 @@ where
   type Item = Item;
   type Err = Err;
   #[inline(always)]
-  fn next(&mut self, value: Self::Item) { (self.next)(value); }
+  fn next(&mut self, value: Self::Item) {
+    (self.next)(value);
+  }
 
   fn error(&mut self, err: Self::Err) {
     (self.error)(err);

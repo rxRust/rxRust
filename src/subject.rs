@@ -43,12 +43,16 @@ pub type LocalSubject<'a, Item, Err> = Subject<
 
 impl<Item, Err> SharedSubject<Item, Err> {
   #[inline]
-  pub fn new() -> Self { Self::default() }
+  pub fn new() -> Self {
+    Self::default()
+  }
 }
 
 impl<'a, Item, Err> LocalSubject<'a, Item, Err> {
   #[inline]
-  pub fn new() -> Self { Self::default() }
+  pub fn new() -> Self {
+    Self::default()
+  }
 }
 
 fn emit_buffer<'a, O, B, Item, Err, T>(mut observer: O, b: &'a B)
@@ -165,15 +169,21 @@ where
   }
 
   #[inline]
-  fn is_closed(&self) -> bool { self.subscription.is_closed() }
+  fn is_closed(&self) -> bool {
+    self.subscription.is_closed()
+  }
 }
 
 impl<T: SubscriptionLike, B> SubscriptionLike for Subject<T, B> {
   #[inline]
-  fn unsubscribe(&mut self) { self.inner.unsubscribe() }
+  fn unsubscribe(&mut self) {
+    self.inner.unsubscribe()
+  }
 
   #[inline]
-  fn is_closed(&self) -> bool { self.inner.is_closed() }
+  fn is_closed(&self) -> bool {
+    self.inner.is_closed()
+  }
 }
 
 impl<O, U> TearDownSize for InnerSubject<O, U>
@@ -182,7 +192,9 @@ where
   U: SubscriptionLike,
 {
   #[inline]
-  fn teardown_size(&self) -> usize { self.observers.len() }
+  fn teardown_size(&self) -> usize {
+    self.observers.len()
+  }
 }
 
 impl<T: TearDownSize, B> TearDownSize for Subject<T, B> {

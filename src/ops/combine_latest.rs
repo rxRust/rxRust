@@ -124,13 +124,19 @@ where
   type Item = A;
   type Err = Err;
   #[inline]
-  fn next(&mut self, value: A) { self.0.next(CombineItem::ItemA(value)); }
+  fn next(&mut self, value: A) {
+    self.0.next(CombineItem::ItemA(value));
+  }
 
   #[inline]
-  fn error(&mut self, err: Self::Err) { self.0.error(err) }
+  fn error(&mut self, err: Self::Err) {
+    self.0.error(err)
+  }
 
   #[inline]
-  fn complete(&mut self) { self.0.complete() }
+  fn complete(&mut self) {
+    self.0.complete()
+  }
 }
 
 struct BObserver<O, A>(O, TypeHint<A>);
@@ -141,13 +147,19 @@ where
 {
   type Item = B;
   type Err = Err;
-  fn next(&mut self, value: B) { self.0.next(CombineItem::ItemB(value)); }
+  fn next(&mut self, value: B) {
+    self.0.next(CombineItem::ItemB(value));
+  }
 
   #[inline]
-  fn error(&mut self, err: Self::Err) { self.0.error(err) }
+  fn error(&mut self, err: Self::Err) {
+    self.0.error(err)
+  }
 
   #[inline]
-  fn complete(&mut self) { self.0.complete() }
+  fn complete(&mut self) {
+    self.0.complete()
+  }
 }
 
 #[cfg(test)]

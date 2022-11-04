@@ -45,9 +45,13 @@ where
     }
   }
 
-  fn error(&mut self, err: Self::Err) { self.observer.error(err) }
+  fn error(&mut self, err: Self::Err) {
+    self.observer.error(err)
+  }
 
-  fn complete(&mut self) { self.observer.complete() }
+  fn complete(&mut self) {
+    self.observer.complete()
+  }
 }
 
 #[derive(Clone)]
@@ -102,9 +106,13 @@ where
     }
   }
 
-  fn error(&mut self, err: Self::Err) { self.observer.error(err) }
+  fn error(&mut self, err: Self::Err) {
+    self.observer.error(err)
+  }
 
-  fn complete(&mut self) { self.observer.complete() }
+  fn complete(&mut self) {
+    self.observer.complete()
+  }
 }
 
 #[derive(Clone)]
@@ -151,9 +159,13 @@ where
     }
   }
 
-  fn error(&mut self, err: Self::Err) { self.observer.error(err) }
+  fn error(&mut self, err: Self::Err) {
+    self.observer.error(err)
+  }
 
-  fn complete(&mut self) { self.observer.complete() }
+  fn complete(&mut self) {
+    self.observer.complete()
+  }
 }
 
 #[derive(Clone)]
@@ -212,9 +224,13 @@ where
     }
   }
 
-  fn error(&mut self, err: Self::Err) { self.observer.error(err) }
+  fn error(&mut self, err: Self::Err) {
+    self.observer.error(err)
+  }
 
-  fn complete(&mut self) { self.observer.complete() }
+  fn complete(&mut self) {
+    self.observer.complete()
+  }
 }
 
 #[cfg(test)]
@@ -245,11 +261,15 @@ mod tests {
   }
 
   #[test]
-  fn bench() { do_bench(); }
+  fn bench() {
+    do_bench();
+  }
 
   benchmark_group!(do_bench, bench_distinct);
 
-  fn bench_distinct(b: &mut bencher::Bencher) { b.iter(smoke); }
+  fn bench_distinct(b: &mut bencher::Bencher) {
+    b.iter(smoke);
+  }
 
   #[test]
   fn distinct_until_changed() {
@@ -274,13 +294,17 @@ mod tests {
   }
 
   #[test]
-  fn bench2() { do_bench_distinct_until_changed(); }
+  fn bench2() {
+    do_bench_distinct_until_changed();
+  }
   benchmark_group!(
     do_bench_distinct_until_changed,
     bench_distinct_until_changed
   );
 
-  fn bench_distinct_until_changed(b: &mut bencher::Bencher) { b.iter(smoke); }
+  fn bench_distinct_until_changed(b: &mut bencher::Bencher) {
+    b.iter(smoke);
+  }
 
   #[test]
   fn distinct_until_key_changed() {

@@ -17,9 +17,13 @@ pub trait TearDownSize: SubscriptionLike {
 
 impl<S: SubscriptionLike + ?Sized> SubscriptionLike for Box<S> {
   #[inline]
-  fn unsubscribe(&mut self) { (**self).unsubscribe() }
+  fn unsubscribe(&mut self) {
+    (**self).unsubscribe()
+  }
   #[inline]
-  fn is_closed(&self) -> bool { (**self).is_closed() }
+  fn is_closed(&self) -> bool {
+    (**self).is_closed()
+  }
 }
 
 pub type SharedSubscription =
@@ -33,7 +37,9 @@ pub struct MultiSubscription<T> {
 
 impl<T: SubscriptionLike> SubscriptionLike for MultiSubscription<T> {
   #[inline(always)]
-  fn is_closed(&self) -> bool { self.closed }
+  fn is_closed(&self) -> bool {
+    self.closed
+  }
 
   fn unsubscribe(&mut self) {
     if !self.closed {
@@ -79,7 +85,9 @@ impl<T> Default for MultiSubscription<T> {
 
 impl<T: SubscriptionLike> TearDownSize for MultiSubscription<T> {
   #[inline]
-  fn teardown_size(&self) -> usize { self.teardown.len() }
+  fn teardown_size(&self) -> usize {
+    self.teardown.len()
+  }
 }
 
 /// Wrapper around a subscription which provides the
@@ -99,14 +107,20 @@ impl<T: SubscriptionLike> SubscriptionWrapper<T> {
   }
 
   /// Consumes this wrapper and returns the underlying subscription.
-  pub fn into_inner(self) -> T { self.0 }
+  pub fn into_inner(self) -> T {
+    self.0
+  }
 }
 
 impl<T: SubscriptionLike> SubscriptionLike for SubscriptionWrapper<T> {
   #[inline]
-  fn is_closed(&self) -> bool { self.0.is_closed() }
+  fn is_closed(&self) -> bool {
+    self.0.is_closed()
+  }
   #[inline]
-  fn unsubscribe(&mut self) { self.0.unsubscribe() }
+  fn unsubscribe(&mut self) {
+    self.0.unsubscribe()
+  }
 }
 
 /// An RAII implementation of a "scoped subscribed" of a subscription.
@@ -133,7 +147,9 @@ impl<T: SubscriptionLike> SubscriptionGuard<T> {
 
 impl<T: SubscriptionLike> Drop for SubscriptionGuard<T> {
   #[inline]
-  fn drop(&mut self) { self.0.unsubscribe() }
+  fn drop(&mut self) {
+    self.0.unsubscribe()
+  }
 }
 
 #[derive(Default, Clone)]
@@ -141,16 +157,22 @@ pub struct SingleSubscription(bool);
 
 impl SubscriptionLike for SingleSubscription {
   #[inline]
-  fn unsubscribe(&mut self) { self.0 = true; }
+  fn unsubscribe(&mut self) {
+    self.0 = true;
+  }
 
   #[inline]
-  fn is_closed(&self) -> bool { self.0 }
+  fn is_closed(&self) -> bool {
+    self.0
+  }
 }
 
 pub struct ProxySubscription<T: SubscriptionLike>(Option<T>);
 
 impl<T: SubscriptionLike> ProxySubscription<T> {
-  pub fn proxy(&mut self, proxy: T) -> Option<T> { self.0.replace(proxy) }
+  pub fn proxy(&mut self, proxy: T) -> Option<T> {
+    self.0.replace(proxy)
+  }
 }
 
 impl<T: SubscriptionLike> SubscriptionLike for ProxySubscription<T> {
@@ -166,7 +188,9 @@ impl<T: SubscriptionLike> SubscriptionLike for ProxySubscription<T> {
 }
 
 impl<T: SubscriptionLike> Default for ProxySubscription<T> {
-  fn default() -> Self { Self(Default::default()) }
+  fn default() -> Self {
+    Self(Default::default())
+  }
 }
 
 #[cfg(test)]

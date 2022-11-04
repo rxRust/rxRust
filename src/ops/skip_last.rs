@@ -47,9 +47,13 @@ where
     }
   }
 
-  fn error(&mut self, err: Self::Err) { self.observer.error(err) }
+  fn error(&mut self, err: Self::Err) {
+    self.observer.error(err)
+  }
 
-  fn complete(&mut self) { self.observer.complete() }
+  fn complete(&mut self) {
+    self.observer.complete()
+  }
 }
 
 #[cfg(test)]
@@ -108,9 +112,13 @@ mod test {
       .subscribe(|_| {});
   }
   #[test]
-  fn bench() { do_bench(); }
+  fn bench() {
+    do_bench();
+  }
 
   benchmark_group!(do_bench, bench_skip_last);
 
-  fn bench_skip_last(b: &mut bencher::Bencher) { b.iter(base_function); }
+  fn bench_skip_last(b: &mut bencher::Bencher) {
+    b.iter(base_function);
+  }
 }

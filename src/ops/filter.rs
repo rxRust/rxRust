@@ -67,9 +67,13 @@ where
     }
   }
 
-  fn error(&mut self, err: Self::Err) { self.observer.error(err) }
+  fn error(&mut self, err: Self::Err) {
+    self.observer.error(err)
+  }
 
-  fn complete(&mut self) { self.observer.complete() }
+  fn complete(&mut self) {
+    self.observer.complete()
+  }
 }
 
 #[cfg(test)]
@@ -98,9 +102,13 @@ mod test {
   }
 
   #[test]
-  fn bench() { do_bench(); }
+  fn bench() {
+    do_bench();
+  }
 
   benchmark_group!(do_bench, bench_filter);
 
-  fn bench_filter(b: &mut bencher::Bencher) { b.iter(smoke); }
+  fn bench_filter(b: &mut bencher::Bencher) {
+    b.iter(smoke);
+  }
 }

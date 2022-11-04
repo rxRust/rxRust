@@ -92,9 +92,13 @@ where
     self.target_observer.next(self.acc.clone())
   }
 
-  fn error(&mut self, err: Self::Err) { self.target_observer.error(err) }
+  fn error(&mut self, err: Self::Err) {
+    self.target_observer.error(err)
+  }
 
-  fn complete(&mut self) { self.target_observer.complete() }
+  fn complete(&mut self) {
+    self.target_observer.complete()
+  }
 }
 
 #[cfg(test)]
@@ -169,9 +173,13 @@ mod test {
   }
 
   #[test]
-  fn bench() { do_bench(); }
+  fn bench() {
+    do_bench();
+  }
 
   benchmark_group!(do_bench, bench_scan);
 
-  fn bench_scan(b: &mut bencher::Bencher) { b.iter(scan_initial); }
+  fn bench_scan(b: &mut bencher::Bencher) {
+    b.iter(scan_initial);
+  }
 }

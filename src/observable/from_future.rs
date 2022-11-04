@@ -174,9 +174,13 @@ mod tests {
   }
 
   #[test]
-  fn bench() { do_bench(); }
+  fn bench() {
+    do_bench();
+  }
 
   benchmark_group!(do_bench, bench_from_future);
 
-  fn bench_from_future(b: &mut Bencher) { b.iter(local); }
+  fn bench_from_future(b: &mut Bencher) {
+    b.iter(local);
+  }
 }
