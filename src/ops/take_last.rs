@@ -46,7 +46,9 @@ where
     }
   }
 
-  fn error(&mut self, err: Self::Err) { self.observer.error(err) }
+  fn error(&mut self, err: Self::Err) {
+    self.observer.error(err)
+  }
 
   fn complete(&mut self) {
     for value in self.queue.drain(..) {
@@ -100,9 +102,13 @@ mod test {
   }
 
   #[test]
-  fn bench() { do_bench(); }
+  fn bench() {
+    do_bench();
+  }
 
   benchmark_group!(do_bench, bench_take_last);
 
-  fn bench_take_last(b: &mut bencher::Bencher) { b.iter(base_function); }
+  fn bench_take_last(b: &mut bencher::Bencher) {
+    b.iter(base_function);
+  }
 }

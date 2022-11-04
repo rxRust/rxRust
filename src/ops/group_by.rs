@@ -24,9 +24,13 @@ where
     }
   }
 
-  fn error(&mut self, err: Self::Err) { self.observer.error(err) }
+  fn error(&mut self, err: Self::Err) {
+    self.observer.error(err)
+  }
 
-  fn complete(&mut self) { self.observer.complete() }
+  fn complete(&mut self) {
+    self.observer.complete()
+  }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -123,9 +127,13 @@ where
     };
   }
 
-  fn error(&mut self, err: Self::Err) { self.observer.error(err) }
+  fn error(&mut self, err: Self::Err) {
+    self.observer.error(err)
+  }
 
-  fn complete(&mut self) { self.observer.complete() }
+  fn complete(&mut self) {
+    self.observer.complete()
+  }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -221,9 +229,13 @@ mod test {
   }
 
   #[test]
-  fn bench() { do_bench(); }
+  fn bench() {
+    do_bench();
+  }
 
   benchmark_group!(do_bench, bench_group_by);
 
-  fn bench_group_by(b: &mut bencher::Bencher) { b.iter(group_by_parity); }
+  fn bench_group_by(b: &mut bencher::Bencher) {
+    b.iter(group_by_parity);
+  }
 }

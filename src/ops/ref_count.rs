@@ -116,7 +116,9 @@ where
   }
 
   #[inline(always)]
-  fn is_closed(&self) -> bool { self.subscription.is_closed() }
+  fn is_closed(&self) -> bool {
+    self.subscription.is_closed()
+  }
 }
 
 #[cfg(test)]
@@ -194,9 +196,13 @@ mod test {
   }
 
   #[test]
-  fn bench() { do_bench(); }
+  fn bench() {
+    do_bench();
+  }
 
   benchmark_group!(do_bench, bench_ref_count);
 
-  fn bench_ref_count(b: &mut bencher::Bencher) { b.iter(smoke) }
+  fn bench_ref_count(b: &mut bencher::Bencher) {
+    b.iter(smoke)
+  }
 }

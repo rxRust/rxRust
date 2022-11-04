@@ -123,11 +123,17 @@ where
 {
   type Item = A;
   type Err = Err;
-  fn next(&mut self, value: A) { self.0.next(ZipItem::ItemA(value)); }
+  fn next(&mut self, value: A) {
+    self.0.next(ZipItem::ItemA(value));
+  }
 
-  fn error(&mut self, err: Self::Err) { self.0.error(err) }
+  fn error(&mut self, err: Self::Err) {
+    self.0.error(err)
+  }
 
-  fn complete(&mut self) { self.0.complete() }
+  fn complete(&mut self) {
+    self.0.complete()
+  }
 }
 
 struct BObserver<O, A>(O, TypeHint<A>);
@@ -138,11 +144,17 @@ where
 {
   type Item = B;
   type Err = Err;
-  fn next(&mut self, value: B) { self.0.next(ZipItem::ItemB(value)); }
+  fn next(&mut self, value: B) {
+    self.0.next(ZipItem::ItemB(value));
+  }
 
-  fn error(&mut self, err: Self::Err) { self.0.error(err) }
+  fn error(&mut self, err: Self::Err) {
+    self.0.error(err)
+  }
 
-  fn complete(&mut self) { self.0.complete() }
+  fn complete(&mut self) {
+    self.0.complete()
+  }
 }
 
 #[cfg(test)]
@@ -193,9 +205,13 @@ mod test {
   }
 
   #[test]
-  fn bench() { do_bench(); }
+  fn bench() {
+    do_bench();
+  }
 
   benchmark_group!(do_bench, bench_zip);
 
-  fn bench_zip(b: &mut bencher::Bencher) { b.iter(smoke); }
+  fn bench_zip(b: &mut bencher::Bencher) {
+    b.iter(smoke);
+  }
 }

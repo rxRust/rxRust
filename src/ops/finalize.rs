@@ -86,7 +86,9 @@ where
   }
 
   #[inline]
-  fn is_closed(&self) -> bool { self.subscription.is_closed() }
+  fn is_closed(&self) -> bool {
+    self.subscription.is_closed()
+  }
 }
 
 impl<Target, U> SubscriptionLike
@@ -103,7 +105,9 @@ where
   }
 
   #[inline]
-  fn is_closed(&self) -> bool { self.subscription.is_closed() }
+  fn is_closed(&self) -> bool {
+    self.subscription.is_closed()
+  }
 }
 
 impl<Target, U> SubscriptionLike
@@ -120,7 +124,9 @@ where
   }
 
   #[inline]
-  fn is_closed(&self) -> bool { self.subscription.is_closed() }
+  fn is_closed(&self) -> bool {
+    self.subscription.is_closed()
+  }
 }
 
 impl<Item, Err, O, Target> Observer
@@ -132,7 +138,9 @@ where
   type Item = Item;
   type Err = Err;
   #[inline]
-  fn next(&mut self, value: Item) { self.observer.next(value); }
+  fn next(&mut self, value: Item) {
+    self.observer.next(value);
+  }
 
   fn error(&mut self, err: Err) {
     self.observer.error(err);
@@ -158,7 +166,9 @@ where
   type Item = Item;
   type Err = Err;
   #[inline]
-  fn next(&mut self, value: Item) { self.observer.next(value); }
+  fn next(&mut self, value: Item) {
+    self.observer.next(value);
+  }
 
   fn error(&mut self, err: Err) {
     self.observer.error(err);
@@ -184,7 +194,9 @@ where
   type Item = Item;
   type Err = Err;
   #[inline]
-  fn next(&mut self, value: Item) { self.observer.next(value); }
+  fn next(&mut self, value: Item) {
+    self.observer.next(value);
+  }
 
   fn error(&mut self, err: Err) {
     self.observer.error(err);
@@ -334,7 +346,9 @@ mod test {
   }
 
   #[test]
-  fn bench() { do_bench(); }
+  fn bench() {
+    do_bench();
+  }
 
   benchmark_group!(do_bench, bench_finalize);
 

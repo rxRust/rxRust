@@ -60,9 +60,13 @@ where
 {
   type Item = Item;
   type Err = Err;
-  fn next(&mut self, value: Item) { self.last = Some(value); }
+  fn next(&mut self, value: Item) {
+    self.last = Some(value);
+  }
 
-  fn error(&mut self, err: Self::Err) { self.observer.error(err) }
+  fn error(&mut self, err: Self::Err) {
+    self.observer.error(err)
+  }
 
   fn complete(&mut self) {
     if let Some(v) = &self.last {
@@ -192,9 +196,13 @@ mod test {
   }
 
   #[test]
-  fn bench() { do_bench(); }
+  fn bench() {
+    do_bench();
+  }
 
   benchmark_group!(do_bench, bench_last);
 
-  fn bench_last(b: &mut bencher::Bencher) { b.iter(last_or_hundered_items); }
+  fn bench_last(b: &mut bencher::Bencher) {
+    b.iter(last_or_hundered_items);
+  }
 }

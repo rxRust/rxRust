@@ -51,7 +51,9 @@ where
   type Item = Item;
   type Err = Err;
 
-  fn next(&mut self, value: Item) { self.observer.next(value) }
+  fn next(&mut self, value: Item) {
+    self.observer.next(value)
+  }
 
   fn error(&mut self, err: Err) {
     self.observer.error(err);
@@ -193,9 +195,13 @@ mod test {
   }
 
   #[test]
-  fn bench() { do_bench(); }
+  fn bench() {
+    do_bench();
+  }
 
   benchmark_group!(do_bench, bench_merge);
 
-  fn bench_merge(b: &mut bencher::Bencher) { b.iter(odd_even_merge); }
+  fn bench_merge(b: &mut bencher::Bencher) {
+    b.iter(odd_even_merge);
+  }
 }

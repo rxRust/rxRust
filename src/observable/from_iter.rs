@@ -143,9 +143,13 @@ mod test {
     assert!(completed);
   }
   #[test]
-  fn bench() { do_bench(); }
+  fn bench() {
+    do_bench();
+  }
 
   benchmark_group!(do_bench, bench_from_iter);
 
-  fn bench_from_iter(b: &mut Bencher) { b.iter(from_range); }
+  fn bench_from_iter(b: &mut Bencher) {
+    b.iter(from_range);
+  }
 }

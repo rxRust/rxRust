@@ -66,11 +66,17 @@ where
 {
   type Item = Item;
   type Err = Err;
-  fn next(&mut self, _: Item) { self.observer.next(self.value.clone()) }
+  fn next(&mut self, _: Item) {
+    self.observer.next(self.value.clone())
+  }
 
-  fn error(&mut self, err: Self::Err) { self.observer.error(err) }
+  fn error(&mut self, err: Self::Err) {
+    self.observer.error(err)
+  }
 
-  fn complete(&mut self) { self.observer.complete() }
+  fn complete(&mut self) {
+    self.observer.complete()
+  }
 }
 
 #[cfg(test)]
@@ -120,9 +126,13 @@ mod test {
   }
 
   #[test]
-  fn bench() { do_bench(); }
+  fn bench() {
+    do_bench();
+  }
 
   benchmark_group!(do_bench, bench_map_to);
 
-  fn bench_map_to(b: &mut bencher::Bencher) { b.iter(primitive_type); }
+  fn bench_map_to(b: &mut bencher::Bencher) {
+    b.iter(primitive_type);
+  }
 }

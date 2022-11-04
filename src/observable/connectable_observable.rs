@@ -98,10 +98,14 @@ where
   type Unsub = Src::Unsub;
 
   #[inline]
-  fn into_ref_count(self) -> Self::R { RefCount::local(self) }
+  fn into_ref_count(self) -> Self::R {
+    RefCount::local(self)
+  }
 
   #[inline]
-  fn connect(self) -> Self::Unsub { self.source.actual_subscribe(self.subject) }
+  fn connect(self) -> Self::Unsub {
+    self.source.actual_subscribe(self.subject)
+  }
 }
 
 type SharedInnerRefCount<Src> = MutArc<
@@ -123,10 +127,14 @@ where
   type Unsub = Src::Unsub;
 
   #[inline]
-  fn into_ref_count(self) -> Self::R { RefCount::shared(self) }
+  fn into_ref_count(self) -> Self::R {
+    RefCount::shared(self)
+  }
 
   #[inline]
-  fn connect(self) -> Self::Unsub { self.source.actual_subscribe(self.subject) }
+  fn connect(self) -> Self::Unsub {
+    self.source.actual_subscribe(self.subject)
+  }
 }
 
 #[cfg(test)]
@@ -171,9 +179,13 @@ mod test {
   }
 
   #[test]
-  fn bench() { do_bench(); }
+  fn bench() {
+    do_bench();
+  }
 
   benchmark_group!(do_bench, bench_connectable);
 
-  fn bench_connectable(b: &mut bencher::Bencher) { b.iter(smoke); }
+  fn bench_connectable(b: &mut bencher::Bencher) {
+    b.iter(smoke);
+  }
 }

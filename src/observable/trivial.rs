@@ -5,7 +5,9 @@ use crate::{impl_local_shared_both, prelude::*};
 /// # Arguments
 ///
 /// * `e` - An error to emit and terminate with
-pub fn throw<Err>(e: Err) -> ThrowObservable<Err> { ThrowObservable(e) }
+pub fn throw<Err>(e: Err) -> ThrowObservable<Err> {
+  ThrowObservable(e)
+}
 
 #[derive(Clone)]
 pub struct ThrowObservable<Err>(Err);
@@ -63,7 +65,9 @@ impl_local_shared_both! {
 ///
 /// Neither emits a value, nor completes, nor emits an error.
 #[inline]
-pub fn never() -> NeverObservable { NeverObservable }
+pub fn never() -> NeverObservable {
+  NeverObservable
+}
 
 #[derive(Clone)]
 pub struct NeverObservable;

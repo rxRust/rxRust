@@ -22,7 +22,9 @@ where
     }
   }
   #[inline]
-  fn error(&mut self, _err: ()) { self.is_stopped = true; }
+  fn error(&mut self, _err: ()) {
+    self.is_stopped = true;
+  }
   fn complete(&mut self) {
     if !self.is_stopped {
       (self.complete)();

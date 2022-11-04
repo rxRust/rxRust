@@ -96,9 +96,13 @@ mod test {
   }
 
   #[test]
-  fn bench() { do_bench(); }
+  fn bench() {
+    do_bench();
+  }
 
   benchmark_group!(do_bench, bench_from_fn);
 
-  fn bench_from_fn(b: &mut Bencher) { b.iter(proxy_call); }
+  fn bench_from_fn(b: &mut Bencher) {
+    b.iter(proxy_call);
+  }
 }

@@ -19,9 +19,13 @@ where
     }
   }
   #[inline]
-  fn error(&mut self, _err: ()) { self.is_stopped = true; }
+  fn error(&mut self, _err: ()) {
+    self.is_stopped = true;
+  }
   #[inline]
-  fn complete(&mut self) { self.is_stopped = true; }
+  fn complete(&mut self) {
+    self.is_stopped = true;
+  }
 }
 
 pub trait SubscribeNext<'a, N> {

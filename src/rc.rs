@@ -55,11 +55,15 @@ pub struct BufferedMutArc<T, Item, Err> {
 }
 
 impl<T> MutArc<T> {
-  pub fn own(t: T) -> Self { Self(Arc::new(Mutex::new(t))) }
+  pub fn own(t: T) -> Self {
+    Self(Arc::new(Mutex::new(t)))
+  }
 }
 
 impl<T> MutRc<T> {
-  pub fn own(t: T) -> Self { Self(Rc::new(RefCell::new(t))) }
+  pub fn own(t: T) -> Self {
+    Self(Rc::new(RefCell::new(t)))
+  }
 }
 
 impl<T, Item, Err> BufferedMutRc<T, Item, Err> {
@@ -85,7 +89,9 @@ impl<T> RcDeref for MutRc<T> {
   = Ref<'a, T> where Self: 'a;
   #[inline]
   #[allow(clippy::needless_lifetimes)]
-  fn rc_deref<'a>(&'a self) -> Self::Target<'a> { self.0.borrow() }
+  fn rc_deref<'a>(&'a self) -> Self::Target<'a> {
+    self.0.borrow()
+  }
 }
 
 impl<T> TryRcDeref for MutRc<T> {
@@ -93,7 +99,9 @@ impl<T> TryRcDeref for MutRc<T> {
   = Result<Ref<'a, T>, BorrowError> where Self: 'a;
   #[inline]
   #[allow(clippy::needless_lifetimes)]
-  fn try_rc_deref<'a>(&'a self) -> Self::Target<'a> { self.0.try_borrow() }
+  fn try_rc_deref<'a>(&'a self) -> Self::Target<'a> {
+    self.0.try_borrow()
+  }
 }
 
 impl<T> RcDeref for MutArc<T> {
@@ -102,7 +110,9 @@ impl<T> RcDeref for MutArc<T> {
 
   #[inline]
   #[allow(clippy::needless_lifetimes)]
-  fn rc_deref<'a>(&'a self) -> Self::Target<'a> { self.0.lock().unwrap() }
+  fn rc_deref<'a>(&'a self) -> Self::Target<'a> {
+    self.0.lock().unwrap()
+  }
 }
 
 impl<T> TryRcDeref for MutArc<T> {
@@ -111,7 +121,9 @@ impl<T> TryRcDeref for MutArc<T> {
 
   #[inline]
   #[allow(clippy::needless_lifetimes)]
-  fn try_rc_deref<'a>(&'a self) -> Self::Target<'a> { self.0.try_lock() }
+  fn try_rc_deref<'a>(&'a self) -> Self::Target<'a> {
+    self.0.try_lock()
+  }
 }
 
 impl<T, Item, Err> RcDeref for BufferedMutRc<T, Item, Err> {
@@ -119,7 +131,9 @@ impl<T, Item, Err> RcDeref for BufferedMutRc<T, Item, Err> {
   = Ref<'a, T> where Self: 'a;
   #[inline]
   #[allow(clippy::needless_lifetimes)]
-  fn rc_deref<'a>(&'a self) -> Self::Target<'a> { self.inner.rc_deref() }
+  fn rc_deref<'a>(&'a self) -> Self::Target<'a> {
+    self.inner.rc_deref()
+  }
 }
 
 impl<T, Item, Err> TryRcDeref for BufferedMutRc<T, Item, Err> {
@@ -138,7 +152,9 @@ impl<T, Item, Err> RcDeref for BufferedMutArc<T, Item, Err> {
 
   #[inline]
   #[allow(clippy::needless_lifetimes)]
-  fn rc_deref<'a>(&'a self) -> Self::Target<'a> { self.inner.rc_deref() }
+  fn rc_deref<'a>(&'a self) -> Self::Target<'a> {
+    self.inner.rc_deref()
+  }
 }
 
 impl<T, Item, Err> TryRcDeref for BufferedMutArc<T, Item, Err> {
@@ -157,7 +173,9 @@ impl<T> RcDerefMut for MutRc<T> {
 
   #[inline]
   #[allow(clippy::needless_lifetimes)]
-  fn rc_deref_mut<'a>(&'a self) -> Self::Target<'a> { (*self.0).borrow_mut() }
+  fn rc_deref_mut<'a>(&'a self) -> Self::Target<'a> {
+    (*self.0).borrow_mut()
+  }
 }
 
 impl<T> RcDerefMut for MutArc<T> {
@@ -166,7 +184,9 @@ impl<T> RcDerefMut for MutArc<T> {
 
   #[inline]
   #[allow(clippy::needless_lifetimes)]
-  fn rc_deref_mut<'a>(&'a self) -> Self::Target<'a> { self.0.lock().unwrap() }
+  fn rc_deref_mut<'a>(&'a self) -> Self::Target<'a> {
+    self.0.lock().unwrap()
+  }
 }
 
 impl<T, Item, Err> RcDerefMut for BufferedMutRc<T, Item, Err> {
@@ -208,7 +228,9 @@ impl<T> TryRcDerefMut for MutArc<T> {
 
   #[inline]
   #[allow(clippy::needless_lifetimes)]
-  fn try_rc_deref_mut<'a>(&'a self) -> Self::Target<'a> { self.0.try_lock() }
+  fn try_rc_deref_mut<'a>(&'a self) -> Self::Target<'a> {
+    self.0.try_lock()
+  }
 }
 
 impl<T, Item, Err> TryRcDerefMut for BufferedMutRc<T, Item, Err> {
@@ -241,9 +263,15 @@ macro_rules! observer_impl {
     {
       type Item = T::Item;
       type Err = T::Err;
-      fn next(&mut self, value: Self::Item) { self.rc_deref_mut().next(value) }
-      fn error(&mut self, err: Self::Err) { self.rc_deref_mut().error(err); }
-      fn complete(&mut self) { self.rc_deref_mut().complete(); }
+      fn next(&mut self, value: Self::Item) {
+        self.rc_deref_mut().next(value)
+      }
+      fn error(&mut self, err: Self::Err) {
+        self.rc_deref_mut().error(err);
+      }
+      fn complete(&mut self) {
+        self.rc_deref_mut().complete();
+      }
     }
   };
 }
@@ -318,10 +346,14 @@ macro_rules! rc_subscription_impl {
   ($rc: ident) => {
     impl<T: SubscriptionLike> SubscriptionLike for $rc<T> {
       #[inline]
-      fn unsubscribe(&mut self) { self.rc_deref_mut().unsubscribe() }
+      fn unsubscribe(&mut self) {
+        self.rc_deref_mut().unsubscribe()
+      }
 
       #[inline]
-      fn is_closed(&self) -> bool { self.rc_deref().is_closed() }
+      fn is_closed(&self) -> bool {
+        self.rc_deref().is_closed()
+      }
     }
   };
 }
@@ -333,30 +365,42 @@ impl<T: SubscriptionLike, Item, Err> SubscriptionLike
   for BufferedMutRc<T, Item, Err>
 {
   #[inline]
-  fn unsubscribe(&mut self) { self.rc_deref_mut().unsubscribe() }
+  fn unsubscribe(&mut self) {
+    self.rc_deref_mut().unsubscribe()
+  }
 
   #[inline]
-  fn is_closed(&self) -> bool { self.rc_deref().is_closed() }
+  fn is_closed(&self) -> bool {
+    self.rc_deref().is_closed()
+  }
 }
 
 impl<T: SubscriptionLike, Item, Err> SubscriptionLike
   for BufferedMutArc<T, Item, Err>
 {
   #[inline]
-  fn unsubscribe(&mut self) { self.rc_deref_mut().unsubscribe() }
+  fn unsubscribe(&mut self) {
+    self.rc_deref_mut().unsubscribe()
+  }
 
   #[inline]
-  fn is_closed(&self) -> bool { self.rc_deref().is_closed() }
+  fn is_closed(&self) -> bool {
+    self.rc_deref().is_closed()
+  }
 }
 
 impl<T> Clone for MutRc<T> {
   #[inline]
-  fn clone(&self) -> Self { Self(self.0.clone()) }
+  fn clone(&self) -> Self {
+    Self(self.0.clone())
+  }
 }
 
 impl<T> Clone for MutArc<T> {
   #[inline]
-  fn clone(&self) -> Self { Self(self.0.clone()) }
+  fn clone(&self) -> Self {
+    Self(self.0.clone())
+  }
 }
 
 impl<T, Item, Err> Clone for BufferedMutRc<T, Item, Err> {
@@ -383,7 +427,9 @@ macro_rules! impl_teardown_size {
   ($t: ident) => {
     impl<T: TearDownSize> TearDownSize for $t<T> {
       #[inline]
-      fn teardown_size(&self) -> usize { self.rc_deref().teardown_size() }
+      fn teardown_size(&self) -> usize {
+        self.rc_deref().teardown_size()
+      }
     }
   };
 }
@@ -392,10 +438,14 @@ impl_teardown_size!(MutArc);
 
 impl<T: TearDownSize, Item, Err> TearDownSize for BufferedMutRc<T, Item, Err> {
   #[inline]
-  fn teardown_size(&self) -> usize { self.rc_deref().teardown_size() }
+  fn teardown_size(&self) -> usize {
+    self.rc_deref().teardown_size()
+  }
 }
 
 impl<T: TearDownSize, Item, Err> TearDownSize for BufferedMutArc<T, Item, Err> {
   #[inline]
-  fn teardown_size(&self) -> usize { self.rc_deref().teardown_size() }
+  fn teardown_size(&self) -> usize {
+    self.rc_deref().teardown_size()
+  }
 }

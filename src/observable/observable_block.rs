@@ -29,13 +29,17 @@ where
   type Item = Item;
   type Err = ();
   #[inline(always)]
-  fn next(&mut self, value: Self::Item) { (self.next)(value); }
+  fn next(&mut self, value: Self::Item) {
+    (self.next)(value);
+  }
 
   fn error(&mut self, _err: ()) {
     self.is_stopped.store(true, Ordering::Relaxed);
   }
 
-  fn complete(&mut self) { self.is_stopped.store(true, Ordering::Relaxed) }
+  fn complete(&mut self) {
+    self.is_stopped.store(true, Ordering::Relaxed)
+  }
 }
 
 pub trait SubscribeBlocking<'a, N> {

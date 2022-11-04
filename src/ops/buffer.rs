@@ -61,7 +61,9 @@ where
     self.observer.complete();
   }
 
-  fn error(&mut self, err: Self::Err) { self.observer.error(err) }
+  fn error(&mut self, err: Self::Err) {
+    self.observer.error(err)
+  }
 }
 
 #[derive(Clone)]
@@ -140,7 +142,9 @@ impl<U: SubscriptionLike, H: SubscriptionLike> SubscriptionLike
     self.subscription.unsubscribe();
   }
 
-  fn is_closed(&self) -> bool { self.handler.is_closed() }
+  fn is_closed(&self) -> bool {
+    self.handler.is_closed()
+  }
 }
 
 impl<O, B, U, Item, Err> Observer for BufferWithTimeObserver<O, B, U>
@@ -248,10 +252,14 @@ where
   }
 
   #[inline]
-  fn error(&mut self, err: Self::Err) { self.observer.error(err); }
+  fn error(&mut self, err: Self::Err) {
+    self.observer.error(err);
+  }
 
   #[inline]
-  fn complete(&mut self) { self.observer.complete() }
+  fn complete(&mut self) {
+    self.observer.complete()
+  }
 }
 
 #[cfg(test)]

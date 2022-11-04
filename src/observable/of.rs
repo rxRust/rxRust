@@ -52,7 +52,9 @@ macro_rules! of_sequence {
 /// observable::of(123)
 ///   .subscribe(|v| {println!("{},", v)});
 /// ```
-pub fn of<Item>(v: Item) -> OfObservable<Item> { OfObservable(v) }
+pub fn of<Item>(v: Item) -> OfObservable<Item> {
+  OfObservable(v)
+}
 
 #[derive(Clone)]
 pub struct OfObservable<Item>(pub(crate) Item);
@@ -300,9 +302,13 @@ mod test {
   }
 
   #[test]
-  fn bench() { do_bench(); }
+  fn bench() {
+    do_bench();
+  }
 
   benchmark_group!(do_bench, bench_of);
 
-  fn bench_of(b: &mut bencher::Bencher) { b.iter(of); }
+  fn bench_of(b: &mut bencher::Bencher) {
+    b.iter(of);
+  }
 }

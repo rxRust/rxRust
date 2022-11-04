@@ -28,7 +28,9 @@ where
     }
   }
   #[inline]
-  fn complete(&mut self) { self.is_stopped = true; }
+  fn complete(&mut self) {
+    self.is_stopped = true;
+  }
 }
 
 pub trait SubscribeErr<'a, N, E> {
@@ -41,7 +43,7 @@ pub trait SubscribeErr<'a, N, E> {
   /// * `error`: A handler for a terminal event resulting from an error.
   /// completion.
   fn subscribe_err(self, next: N, error: E)
-  -> SubscriptionWrapper<Self::Unsub>;
+    -> SubscriptionWrapper<Self::Unsub>;
 }
 
 impl<'a, S, N, E> SubscribeErr<'a, N, E> for S
