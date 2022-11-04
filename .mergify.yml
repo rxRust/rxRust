@@ -22,7 +22,7 @@ pull_request_rules:
       - status-failure=rust code format style check
     actions:
         comment:
-          message: This pull request does not keep the same code style as this project. Could you fix it? 🙏 Switch to the nightly compiler (with rustup `rustup default nightly`) then run `cargo fmt` to get more details.
+          message: This pull request does not keep the same code style as this project. Could you fix it? 🙏 Run `cargo fmt` to get more details.
 
   - name: clippy check hint
     conditions:
