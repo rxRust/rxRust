@@ -1,5 +1,6 @@
 ## [Unreleased](https://github.com/rxRust/rxRust/compare/v1.0.0-alpha.3...HEAD)
 ### Features
+- Change to Rust stable by `GAT` is stabilized.
 - **operator**: add `throttle` operator.
 ### Refactor
 - **operator**: Delete 'ThrottleTimeEdge' and 'ThrottleTimeOp'. Change the logic of function 'throttle_time()' to use 'throttle()'.
