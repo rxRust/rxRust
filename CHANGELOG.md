@@ -1,4 +1,6 @@
-## [Unreleased](https://github.com/rxRust/rxRust/compare/v1.0.0-alpha.3...HEAD)
+## [Unreleased](https://github.com/rxRust/rxRust/compare/v1.0.0-alpha.4...HEAD)
+
+## [1.0.0-alpha.4](https://github.com/rxRust/rxRust/releases/tag/v1.0.0-alpha.4)
 ### Features
 - Change to Rust stable by `GAT` is stabilized.
 - **operator**: add `throttle` operator.

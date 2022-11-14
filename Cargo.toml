@@ -1,52 +1,49 @@
 [package]
-name = "rxrust"
-version = "1.0.0-alpha.3"
 authors = ["adoo <Adoo@outlook.com>"]
-edition = "2021"
-description = "A Rust implementation of Reactive Extensions."
-repository = "https://github.com/rxRust/rxRust"
-documentation = "https://docs.rs/rxrust/"
-homepage = "https://github.com/rxRust/rxRust"
-license="MIT"
-keywords = ["reactivex", "rx", "frp"]
 categories = ["asynchronous"]
+description = "A Rust implementation of Reactive Extensions."
+documentation = "https://docs.rs/rxrust/"
+edition = "2021"
+homepage = "https://github.com/rxRust/rxRust"
+keywords = ["reactivex", "rx", "frp"]
+license = "MIT"
+name = "rxrust"
 readme = "README.md"
-
-[package.metadata.release]
-no-dev-version = true
+repository = "https://github.com/rxRust/rxRust"
+version = "1.0.0-alpha.3"
 
 [dependencies]
-smallvec = "1.4.2"
 fluvio-wasm-timer = "0.2.5"
+smallvec = "1.4.2"
 
 [dependencies.async-std]
-version = "1.6.3"
 features = ["unstable"]
+version = "1.6.3"
 
 [dependencies.futures]
-version = "0.3.5"
 features = ["thread-pool"]
+version = "0.3.5"
 
 [dependencies.tokio]
-version = "1.0"
 features = ["rt-multi-thread", "rt"]
 optional = true
+version = "1.0"
 
 [dependencies.wasm-bindgen-futures]
-version = "0.4.29"
 optional = true
+version = "0.4.29"
 
 [dependencies.gloo-timers]
-version = "0.2.4"
 optional = true
+version = "0.2.4"
 
 [features]
 default = ["futures-scheduler"]
-tokio-scheduler = ["tokio"]
 futures-scheduler = []
+tokio-scheduler = ["tokio"]
 wasm-scheduler = ["wasm-bindgen-futures", "gloo-timers"]
 
 [dev-dependencies]
-float-cmp = "0.8.0"
 bencher = "0.1.5"
+float-cmp = "0.8.0"
 wasm-bindgen-test = "0.3.29"
