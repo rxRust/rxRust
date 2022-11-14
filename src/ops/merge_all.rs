@@ -25,23 +25,29 @@ where
   S: LocalObservable<'a, Item = Item>,
   Item: LocalObservable<'a, Err = S::Err> + 'a,
   Item::Unsub: 'static,
+  S::Unsub: 'static,
 {
-  type Unsub = S::Unsub;
+  type Unsub = LocalSubscription;
   fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
   where
     O: Observer<Item = Self::Item, Err = Self::Err> + 'a,
   {
-    self
-      .source
-      .map(|v| v.box_it())
-      .actual_subscribe(Rc::new(RefCell::new(LocalMergeAllObserver {
-        observer,
-        subscribed: 0,
-        concurrent: self.concurrent,
-        subscription: LocalSubscription::default(),
-        buffer: <_>::default(),
-        completed: false,
-      })))
+    let subscription = LocalSubscription::default();
+    let c_subscription = subscription.clone();
+    let s =
+      self
+        .source
+        .map(|v| v.box_it())
+        .actual_subscribe(Rc::new(RefCell::new(LocalMergeAllObserver {
+          observer,
+          subscribed: 0,
+          concurrent: self.concurrent,
+          subscription,
+          buffer: <_>::default(),
+          completed: false,
+        })));
+    c_subscription.add(s);
+    c_subscription
   }
 }
 
@@ -136,24 +142,30 @@ where
   S::Item: SharedObservable<Err = S::Err> + Send + Sync + 'static,
   <S::Item as SharedObservable>::Unsub: Send + Sync + 'static,
   Self::Item: Send + Sync + 'static,
+  S::Unsub: 'static,
 {
-  type Unsub = S::Unsub;
+  type Unsub = SharedSubscription;
 
   fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
   where
     O: Observer<Item = Self::Item, Err = Self::Err> + Sync + Send + 'static,
   {
-    self
-      .source
-      .map(|v| v.box_it())
-      .actual_subscribe(Arc::new(Mutex::new(SharedMergeAllObserver {
-        observer,
-        subscribed: 0,
-        concurrent: self.concurrent,
-        subscription: SharedSubscription::default(),
-        buffer: <_>::default(),
-        completed: false,
-      })))
+    let subscription = SharedSubscription::default();
+    let c_subscription = subscription.clone();
+    let s =
+      self
+        .source
+        .map(|v| v.box_it())
+        .actual_subscribe(Arc::new(Mutex::new(SharedMergeAllObserver {
+          observer,
+          subscribed: 0,
+          concurrent: self.concurrent,
+          subscription,
+          buffer: <_>::default(),
+          completed: false,
+        })));
+    c_subscription.add(s);
+    c_subscription
   }
 }
 
@@ -273,6 +285,22 @@ mod test {
       &*c_values.borrow(),
       &[0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 0, 1, 2, 3, 4]
     );
+  }
+
+  #[test]
+  fn fix_inner_unsubscribe() {
+    let values = Rc::new(RefCell::new(vec![]));
+    let c_values = values.clone();
+    let mut subject = LocalSubject::default();
+
+    let mut subscription = observable::of(subject.clone())
+      .merge_all(1)
+      .subscribe(move |v| values.borrow_mut().push(v));
+    subscription.unsubscribe();
+
+    subject.next(1);
+
+    assert_eq!(&*c_values.borrow(), &[]);
   }
 
   #[cfg(not(all(target_arch = "wasm32")))]

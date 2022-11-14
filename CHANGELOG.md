@@ -5,6 +5,9 @@
 ### Refactor
 - **operator**: Delete 'ThrottleTimeEdge' and 'ThrottleTimeOp'. Change the logic of function 'throttle_time()' to use 'throttle()'.
 
+### Bug Fixes
+- **operator**: fix unsubscribe `merge_all` but the inner observable not unsubscribe.
+
 ## [1.0.0-alpha.3](https://github.com/rxRust/rxRust/releases/tag/v1.0.0-alpha.3)
 ### Features
 - **wasm support**: support target `wasm32-unknown-unknown` and feature `wasm-scheduler`.
