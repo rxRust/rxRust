@@ -289,11 +289,8 @@ pub trait Observable: Sized {
   ///   Person{ name: String::from("Alice"), age: 28 },
   /// ])
   /// .group_by(|person: &Person| person.age)
-  /// .subscribe(|group| {
-  ///   group
-  ///   .reduce(|acc, person| format!("{} {}", acc, person.name))
-  ///   .subscribe(|result| println!("{}", result));
-  /// });
+  /// .flat_map(|group| group.reduce(|acc, person| format!("{} {}", acc, person.name)))
+  /// .subscribe(|result| println!("{}", result));
   ///
   /// // Prints:
   /// //  John
