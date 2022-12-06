@@ -136,7 +136,7 @@ impl_local_shared_both! {
   }
   where
     S: @ctx::Observable,
-    S::Item: Eq + Clone
+    S::Item: PartialEq + Clone
       @ctx::local_only(+ 'o)
       @ctx::shared_only(+ Send + Sync + 'static)
 }
@@ -148,7 +148,7 @@ struct DistinctUntilChangedObserver<O, Item> {
 impl<O, Item, Err> Observer for DistinctUntilChangedObserver<O, Item>
 where
   O: Observer<Item = Item, Err = Err>,
-  Item: Eq + Clone,
+  Item: PartialEq + Clone,
 {
   type Item = Item;
   type Err = Err;

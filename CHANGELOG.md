@@ -1,5 +1,8 @@
 ## [Unreleased](https://github.com/rxRust/rxRust/compare/v1.0.0-alpha.4...HEAD)
 
+### Bug Fixes
+- **operator**: `distinct_until_changed` only require the value implement `PartialEq` not `Eq`.
+
 ## [1.0.0-alpha.4](https://github.com/rxRust/rxRust/releases/tag/v1.0.0-alpha.4)
 ### Features
 - Change to Rust stable by `GAT` is stabilized.
