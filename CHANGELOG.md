@@ -1,5 +1,7 @@
-## [Unreleased](https://github.com/rxRust/rxRust/compare/v1.0.0-alpha.4...HEAD)
+## [Unreleased](https://github.com/rxRust/rxRust/compare/v1.0.0-alpha.5...HEAD)
 
+
+## [1.0.0-alpha.5](https://github.com/rxRust/rxRust/releases/tag/v1.0.0-alpha.5)
 ### Bug Fixes
 - **operator**: `distinct_until_changed` only require the value implement `PartialEq` not `Eq`.
 
