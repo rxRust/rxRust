@@ -289,7 +289,7 @@ pub trait Observable: Sized {
   ///   Person{ name: String::from("Alice"), age: 28 },
   /// ])
   /// .group_by(|person: &Person| person.age)
-  /// .flat_map(|group| group.reduce(|acc, person| format!("{} {}", acc, person.name)))
+  /// .flat_map(|group| group.reduce(|acc, person: Person| format!("{} {}", acc, person.name)))
   /// .subscribe(|result| println!("{}", result));
   ///
   /// // Prints:
@@ -298,13 +298,15 @@ pub trait Observable: Sized {
   /// //  Gregory
   /// ```
   #[inline]
-  fn group_by<D, Item, Key>(self, discr: D) -> GroupByOp<Self, D>
+  fn group_by<D, Key, Sub>(self, discr: D) -> GroupByOp<Self, D, Sub>
   where
-    D: FnMut(&Item) -> Key,
+    D: FnMut(&Self::Item) -> Key,
+    Sub: Observer<Item = Self::Item>,
   {
     GroupByOp {
       source: self,
       discr,
+      _subject: TypeHint::new(),
     }
   }
 

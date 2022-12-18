@@ -2,6 +2,7 @@
 
 ### Bug Fixes
 - **operator**: `distinct_until_changed` only require the value implement `PartialEq` not `Eq`.
+- **operator**: `group_by` should not subscribe to value source anew on each new group 
 
 ## [1.0.0-alpha.4](https://github.com/rxRust/rxRust/releases/tag/v1.0.0-alpha.4)
 ### Features
