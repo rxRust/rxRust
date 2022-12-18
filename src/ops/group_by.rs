@@ -1,164 +1,113 @@
 use crate::prelude::*;
 
-use std::{clone::Clone, cmp::Eq, collections::HashSet, hash::Hash};
+use crate::impl_local_shared_both;
+use std::{clone::Clone, cmp::Eq, collections::HashMap, hash::Hash};
 
-/// Observer filtering out the data that does not match its key.
+/// Observable used to keep track of the key of the items emitted by the contained subject.
 #[derive(Clone)]
-struct GroupObserver<Obs, Discr, Key> {
-  observer: Obs,
-  discr: Discr,
-  key: Key,
+pub struct KeyObservable<Key, Sub> {
+  pub key: Key,
+  subject: Sub,
 }
 
-impl<Obs, Discr, Key, Item, Err> Observer for GroupObserver<Obs, Discr, Key>
+impl<Key, Sub> Observable for KeyObservable<Key, Sub>
 where
-  Obs: Observer<Item = Item, Err = Err>,
-  Discr: FnMut(&Item) -> Key,
-  Key: Hash + Eq,
-{
-  type Item = Item;
-  type Err = Err;
-  fn next(&mut self, value: Item) {
-    if (self.discr)(&value) == self.key {
-      self.observer.next(value);
-    }
-  }
-
-  fn error(&mut self, err: Self::Err) {
-    self.observer.error(err)
-  }
-
-  fn complete(&mut self) {
-    self.observer.complete()
-  }
-}
-
-///////////////////////////////////////////////////////////////////////////////
-
-/// Observable emitted by the GroupByOp.
-#[derive(Clone)]
-pub struct GroupObservable<Source, Discr, Key> {
-  source: Source,
-  discr: Discr,
-  key: Key,
-}
-
-impl<Source, Discr, Key> Observable for GroupObservable<Source, Discr, Key>
-where
-  Source: Observable,
-{
-  type Item = Source::Item;
-  type Err = Source::Err;
-}
-
-impl<'a, Source, Discr, Key> LocalObservable<'a>
-  for GroupObservable<Source, Discr, Key>
-where
-  Source: LocalObservable<'a>,
-  Source::Item: 'a,
-  Discr: FnMut(&Source::Item) -> Key + Clone + 'a,
-  Key: Hash + Clone + Eq + 'a,
-{
-  type Unsub = Source::Unsub;
-  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
-  where
-    O: Observer<Item = Self::Item, Err = Self::Err> + 'a,
-  {
-    self.source.actual_subscribe(GroupObserver {
-      observer,
-      discr: self.discr,
-      key: self.key,
-    })
-  }
-}
-
-impl<Source, Discr, Key> SharedObservable
-  for GroupObservable<Source, Discr, Key>
-where
-  Source: SharedObservable,
-  Source::Item: Send + Sync + 'static,
-  Discr: FnMut(&Source::Item) -> Key + Clone + Send + Sync + 'static,
-  Key: Hash + Clone + Eq + Send + Sync + 'static,
-{
-  type Unsub = Source::Unsub;
-  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
-  where
-    O: Observer<Item = Self::Item, Err = Self::Err> + Send + Sync + 'static,
-  {
-    self.source.actual_subscribe(GroupObserver {
-      observer,
-      discr: self.discr,
-      key: self.key,
-    })
-  }
-}
-
-///////////////////////////////////////////////////////////////////////////////
-
-/// GroupByObserver keeps track of its source observable. Produces
-/// GroupObservable objects for each key returned by the discriminator
-/// function that was not yet encountered.
-#[derive(Clone)]
-pub struct GroupByObserver<Obs, Source, Discr, Key, Item> {
-  observer: Obs,
-  source: Source,
-  discr: Discr,
-  keys: HashSet<Key>,
-  _marker: TypeHint<*const Item>,
-}
-
-impl<Obs, Source, Discr, Key, Item, Err> Observer
-  for GroupByObserver<Obs, Source, Discr, Key, Item>
-where
-  Obs: Observer<Item = GroupObservable<Source, Discr, Key>, Err = Err>,
-  Source: Observable + Clone,
-  Discr: FnMut(&Item) -> Key + Clone,
+  Sub: Observable + Observer,
   Key: Hash + Clone + Eq,
 {
-  type Item = Item;
-  type Err = Err;
-  fn next(&mut self, value: Item) {
-    let key = (self.discr)(&value);
-    if !self.keys.contains(&key) {
-      let source = self.source.clone();
-      let discr = self.discr.clone();
-      self.keys.insert(key.clone());
-      self.observer.next(GroupObservable { source, discr, key });
-    };
-  }
-
-  fn error(&mut self, err: Self::Err) {
-    self.observer.error(err)
-  }
-
-  fn complete(&mut self) {
-    self.observer.complete()
-  }
+  type Item = <Sub as Observable>::Item;
+  type Err = <Sub as Observable>::Err;
 }
 
+impl_local_shared_both! {
+  impl<Key, Sub> KeyObservable<Key, Sub>;
+  type Unsub = Sub::Unsub;
+  macro method($self: ident, $observer: ident, $ctx: ident) {
+    $self
+    .subject
+    .actual_subscribe($observer)
+  }
+  where
+    Sub: Observer + @ctx::Observable,
+    Key: Hash + Clone + Eq,
+}
+
+#[derive(Clone)]
+pub struct GroupByObserver<Obs, Discr, Key, Sub> {
+  observer: Obs,
+  discr: Discr,
+  subjects: HashMap<Key, Sub>,
+}
+
+macro_rules! impl_observer {
+  ($subject: ty) => {
+    impl<'a, Obs, Discr, Key, Item, Err> Observer
+      for GroupByObserver<Obs, Discr, Key, $subject>
+    where
+      Item: Clone,
+      Err: Clone,
+      Obs: Observer<Item = KeyObservable<Key, $subject>, Err = Err>,
+      Discr: FnMut(&Item) -> Key + Clone,
+      Key: Hash + Clone + Eq,
+    {
+      type Item = Item;
+      type Err = Err;
+      fn next(&mut self, value: Item) {
+        let key = (self.discr)(&value);
+        let subject = self.subjects.entry(key.clone()).or_insert_with(|| {
+          let subject = <$subject>::new();
+          let wrapper = KeyObservable {
+            key,
+            subject: subject.clone(),
+          };
+          self.observer.next(wrapper);
+          subject
+        });
+        let _ = subject.next(value);
+      }
+
+      fn error(&mut self, err: Self::Err) {
+        self.observer.error(err)
+      }
+
+      fn complete(&mut self) {
+        self.observer.complete()
+      }
+    }
+  };
+}
+
+impl_observer!(LocalSubject<'a, Item, Err>);
+impl_observer!(SharedSubject<Item, Err>);
 ///////////////////////////////////////////////////////////////////////////////
 
 /// Main observable returned by the group_by method.
+/// `subject` is actually only present to keep track of the type of scheduling to use for
+/// the emitted observables
 #[derive(Clone)]
-pub struct GroupByOp<Source, Discr> {
+pub struct GroupByOp<Source, Discr, Subj> {
   pub(crate) source: Source,
   pub(crate) discr: Discr,
+  pub(crate) _subject: TypeHint<Subj>,
 }
 
-impl<Source, Discr, Key> Observable for GroupByOp<Source, Discr>
+impl<Source, Discr, Key, Subj> Observable for GroupByOp<Source, Discr, Subj>
 where
   Source: Observable,
   Discr: FnMut(&Source::Item) -> Key,
   Key: Hash + Eq,
+  Subj: Observable,
 {
-  type Item = GroupObservable<Source, Discr, Key>;
+  type Item = KeyObservable<Key, Subj>;
   type Err = Source::Err;
 }
 
-impl<'a, Source, Discr, Key> LocalObservable<'a> for GroupByOp<Source, Discr>
+impl<'a, Source, Discr, Key> LocalObservable<'a>
+  for GroupByOp<Source, Discr, LocalSubject<'a, Source::Item, Source::Err>>
 where
-  Source: LocalObservable<'a> + 'a + Clone,
-  Source::Item: 'a,
+  Source: LocalObservable<'a> + 'a,
+  Source::Item: 'a + Clone,
+  Source::Err: Clone,
   Discr: FnMut(&Source::Item) -> Key + 'a + Clone,
   Key: 'a + Hash + Clone + Eq,
 {
@@ -167,36 +116,32 @@ where
   where
     O: Observer<Item = Self::Item, Err = Self::Err> + 'a,
   {
-    let source = self.source.clone();
     self.source.actual_subscribe(GroupByObserver {
       observer,
-      source,
       discr: self.discr,
-      keys: HashSet::new(),
-      _marker: TypeHint::new(),
+      subjects: HashMap::<Key, LocalSubject<Source::Item, Source::Err>>::new(),
     })
   }
 }
 
-impl<'a, Source, Discr, Key> SharedObservable for GroupByOp<Source, Discr>
+impl<Source, Discr, Key> SharedObservable
+  for GroupByOp<Source, Discr, SharedSubject<Source::Item, Source::Err>>
 where
   Source: SharedObservable + Clone + Send + Sync + 'static,
-  Source::Item: Send + Sync + 'static,
+  Source::Item: Clone + Send + Sync,
+  Source::Err: Clone + Send + Sync,
   Discr: FnMut(&Source::Item) -> Key + Clone + Send + Sync + 'static,
-  Key: 'a + Hash + Clone + Eq + Send + Sync + 'static,
+  Key: Hash + Clone + Eq + Send + Sync + 'static,
 {
   type Unsub = Source::Unsub;
   fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
   where
     O: Observer<Item = Self::Item, Err = Self::Err> + Send + Sync + 'static,
   {
-    let source = self.source.clone();
     self.source.actual_subscribe(GroupByObserver {
       observer,
-      source,
       discr: self.discr,
-      keys: HashSet::new(),
-      _marker: TypeHint::new(),
+      subjects: HashMap::<Key, SharedSubject<Source::Item, Source::Err>>::new(),
     })
   }
 }
@@ -226,6 +171,45 @@ mod test {
   fn group_by_shared() {
     let s = observable::of(0).group_by(|_| "zero");
     s.into_shared().subscribe(|_| {});
+  }
+
+  #[test]
+  fn it_only_subscribes_once_local() {
+    let obs_count = MutRc::own(0);
+    observable::create(|subscriber| {
+      subscriber.next(1);
+      subscriber.next(2);
+      subscriber.complete();
+    })
+    .group_by(|value: &i64| *value)
+    .subscribe(|group| {
+      let obs_clone = obs_count.clone();
+      group.subscribe(move |_| {
+        *obs_clone.rc_deref_mut() += 1;
+      });
+    });
+    assert_eq!(2, *obs_count.rc_deref());
+  }
+
+  #[cfg(not(target_arch = "wasm32"))]
+  #[test]
+  fn it_only_subscribes_once_shared() {
+    let value = MutArc::own(0);
+    let v_c = value.clone();
+    observable::create(|subscriber| {
+      subscriber.next(1);
+      subscriber.next(2);
+      subscriber.complete();
+    })
+    .group_by(move |value: &i64| *value)
+    .into_shared()
+    .subscribe(move |group| {
+      let v_c_c = v_c.clone();
+      group.into_shared().subscribe(move |_| {
+        *v_c_c.rc_deref_mut() += 1;
+      });
+    });
+    assert_eq!(2, *value.rc_deref());
   }
 
   #[test]
