@@ -1,3 +1,4 @@
+#![feature(drain_filter)]
 //! Reactive extensions library for Rust: a library for
 //! [Reactive Programming](http://reactivex.io/) using
 //! [Observable](crate::observable::Observable), to make

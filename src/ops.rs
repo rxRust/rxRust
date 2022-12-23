@@ -26,6 +26,7 @@ pub mod skip;
 pub mod skip_last;
 pub mod skip_until;
 pub mod skip_while;
+pub mod sliding_window;
 pub mod start_with;
 pub mod subscribe_on;
 pub mod take;

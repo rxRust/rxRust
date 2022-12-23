@@ -51,6 +51,7 @@ use crate::ops::default_if_empty::DefaultIfEmptyOp;
 use crate::ops::distinct::{DistinctKeyOp, DistinctUntilKeyChangedOp};
 use crate::ops::on_error_map::OnErrorMapOp;
 use crate::ops::pairwise::PairwiseOp;
+use crate::ops::sliding_window::SlidingWindowWithTimeFunctionOperation;
 use crate::ops::tap::TapOp;
 use crate::scheduler::Instant;
 use ops::{
@@ -1602,6 +1603,97 @@ pub trait Observable: Sized {
     TapOp {
       source: self,
       func: f,
+    }
+  }
+
+  /// The function `sliding_window(window_size, scanning_interval, time_function, scheduler)`
+  /// emits each `scanning_interval` a Vec<T> which contains all elements having a timestamp
+  /// `time_function(T)` larger than `now() - window_size`.
+  /// This means that each item can occur in multiple vectors if `window_size > scanning_interval`.
+  ///
+  /// On complete, if the buffer is not empty,
+  /// it will be emitted.
+  /// On error, the buffer will be discarded.
+  ///
+  /// The operator never returns an empty buffer.
+  ///
+  /// #Example
+  /// ```
+  /// use std::sync::{Arc, Mutex};
+  /// use std::sync::atomic::{AtomicBool, Ordering};
+  /// use std::time::Duration;
+  /// use futures::executor::ThreadPool;
+  /// use rxrust::ops::sliding_window::get_now_duration;
+  /// use rxrust::prelude::*;
+  ///
+  /// let pool = ThreadPool::new().unwrap();
+  ///
+  /// let expected = vec![
+  ///   vec![0],
+  ///   vec![0, 1],
+  ///   vec![0, 1],
+  ///   vec![1, 2],
+  ///   vec![1, 2],
+  ///   vec![2, 3],
+  ///   vec![2, 3],
+  ///   vec![2, 3],
+  /// ];
+  /// let actual = Arc::new(Mutex::new(vec![]));
+  /// let actual_c = actual.clone();
+  ///
+  /// let is_completed = Arc::new(AtomicBool::new(false));
+  /// let is_completed_c = is_completed.clone();
+  ///
+  /// observable::create(|subscriber| {
+  ///     let sleep = Duration::from_millis(100);
+  ///     subscriber.next(0);
+  ///     std::thread::sleep(sleep);
+  ///     subscriber.next(1);
+  ///     std::thread::sleep(sleep);
+  ///     subscriber.next(2);
+  ///     std::thread::sleep(sleep);
+  ///     subscriber.next(3);
+  ///     std::thread::sleep(sleep);
+  ///     subscriber.complete();
+  /// })
+  /// .map(|i| (i, get_now_duration()))
+  /// .sliding_window(
+  ///     Duration::from_millis(210),
+  ///     Duration::from_millis(53),
+  ///     |(_, duration)| duration,
+  ///     pool,
+  /// )
+  /// .map(|window| window.iter().map(|(i, _)| *i).collect::<Vec<i32>>())
+  /// .into_shared()
+  /// .subscribe_all(
+  ///     move |vec| {
+  ///         let mut a = actual_c.lock().unwrap();
+  ///         (*a).push(vec);
+  ///     },
+  ///     |()| {},
+  ///     move || is_completed_c.store(true, Ordering::Relaxed),
+  /// );
+  ///
+  /// std::thread::sleep(Duration::from_millis(450));
+  /// assert_eq!(expected, *actual.lock().unwrap());
+  /// assert!(is_completed.load(Ordering::Relaxed));
+  /// ```
+  fn sliding_window<TimeFunction, Scheduler>(
+    self,
+    window_size: Duration,
+    scanning_interval: Duration,
+    time_function: TimeFunction,
+    scheduler: Scheduler,
+  ) -> SlidingWindowWithTimeFunctionOperation<Self, TimeFunction, Scheduler>
+  where
+    TimeFunction: Fn(Self::Item) -> Duration,
+  {
+    SlidingWindowWithTimeFunctionOperation {
+      source: self,
+      window_size,
+      scanning_interval,
+      time_function,
+      scheduler,
     }
   }
 }
