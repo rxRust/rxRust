@@ -127,7 +127,7 @@ where
 impl<Source, Discr, Key> SharedObservable
   for GroupByOp<Source, Discr, SharedSubject<Source::Item, Source::Err>>
 where
-  Source: SharedObservable + Clone + Send + Sync + 'static,
+  Source: SharedObservable + Send + Sync + 'static,
   Source::Item: Clone + Send + Sync,
   Source::Err: Clone + Send + Sync,
   Discr: FnMut(&Source::Item) -> Key + Clone + Send + Sync + 'static,
