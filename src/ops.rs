@@ -17,6 +17,7 @@ pub mod map_to;
 pub mod merge;
 pub mod merge_all;
 pub mod observe_on;
+pub mod on_error_map;
 pub mod pairwise;
 pub mod ref_count;
 pub mod sample;
