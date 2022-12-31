@@ -49,6 +49,7 @@ pub use observable_comp::*;
 
 use crate::ops::default_if_empty::DefaultIfEmptyOp;
 use crate::ops::distinct::{DistinctKeyOp, DistinctUntilKeyChangedOp};
+use crate::ops::on_error_map::OnErrorMapOp;
 use crate::ops::pairwise::PairwiseOp;
 use crate::ops::tap::TapOp;
 use crate::scheduler::Instant;
@@ -318,6 +319,19 @@ pub trait Observable: Sized {
     F: FnMut(Self::Item) -> B,
   {
     MapOp {
+      source: self,
+      func: f,
+    }
+  }
+
+  /// Creates a new stream which calls a closure on each error and uses
+  /// its return as emitted error.
+  #[inline]
+  fn on_error_map<B, F>(self, f: F) -> OnErrorMapOp<Self, F>
+  where
+    F: FnMut(Self::Err) -> B,
+  {
+    OnErrorMapOp {
       source: self,
       func: f,
     }
