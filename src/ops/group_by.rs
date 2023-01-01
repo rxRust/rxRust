@@ -102,6 +102,7 @@ where
   Discr: FnMut(&Item) -> Key,
   Key: Hash + Eq + Clone,
   Subject: Clone + Default + Observer<Item, Err>,
+  Err: Clone,
 {
   fn next(&mut self, value: Item) {
     let key = (self.discr)(&value);
@@ -115,12 +116,18 @@ where
   }
 
   #[inline]
-  fn error(self, err: Err) {
+  fn error(mut self, err: Err) {
+    for (_, subject) in self.subjects.drain() {
+      subject.error(err.clone());
+    }
     self.observer.error(err)
   }
 
   #[inline]
-  fn complete(self) {
+  fn complete(mut self) {
+    for (_, subject) in self.subjects.drain() {
+      subject.complete();
+    }
     self.observer.complete()
   }
 
@@ -167,6 +174,18 @@ mod test {
       });
     });
     assert_eq!(2, *obs_count.rc_deref());
+  }
+
+  #[test]
+  fn propagates_complete() {
+    let mut sum = 0;
+    from_iter(vec![1, 2, 3])
+      .group_by::<_, _, Subject<_, _>>(|v| *v)
+      .flat_map(|group| group.sum())
+      .subscribe(|avg| {
+        sum += avg;
+      });
+    assert_eq!(sum, 6);
   }
 
   #[test]
