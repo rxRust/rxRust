@@ -1,138 +1,47 @@
-use crate::{
-  impl_local_shared_both,
-  prelude::*,
-  subject::{LocalSubject, SharedSubject},
-};
-use ops::ref_count::{InnerRefCount, RefCount};
+use crate::prelude::*;
 
-pub struct ConnectableObservable<Src, Sbj> {
-  source: Src,
-  subject: Sbj,
+pub struct ConnectableObservable<S, Subject> {
+  source: S,
+  subject: Subject,
 }
 
-impl<Src, Sbj> ConnectableObservable<Src, Sbj> {}
-
-impl<Src, Sbj> Observable for ConnectableObservable<Src, Sbj>
+impl<S, Subject, Item, Err, O> Observable<Item, Err, O>
+  for ConnectableObservable<S, Subject>
 where
-  Sbj: Observable,
+  Subject: Observable<Item, Err, O>,
+  O: Observer<Item, Err>,
 {
-  type Item = Sbj::Item;
-  type Err = Sbj::Err;
-}
+  type Unsub = Subject::Unsub;
 
-impl_local_shared_both! {
-  impl<Src, Sbj> ConnectableObservable<Src, Sbj>;
-  type Unsub = Sbj::Unsub;
-  macro method($self: ident, $observer: ident, $ctx: ident) {
-    $self.subject.actual_subscribe($observer)
-  }
-  where
-    Sbj: @ctx::Observable
-}
-
-impl<Src, Sbj> ConnectableObservable<Src, Sbj> {
   #[inline]
-  pub fn new(source: Src) -> Self
+  fn actual_subscribe(self, observer: O) -> Self::Unsub {
+    self.subject.actual_subscribe(observer)
+  }
+}
+
+impl<S, Subject> ConnectableObservable<S, Subject> {
+  #[inline]
+  pub fn new(source: S) -> Self
   where
-    Sbj: Default,
+    Subject: Default,
   {
-    ConnectableObservable {
-      source,
-      subject: <_>::default(),
-    }
+    ConnectableObservable { source, subject: <_>::default() }
   }
 
   #[inline]
-  pub fn fork(&self) -> Sbj
+  pub fn fork(&self) -> Subject
   where
-    Sbj: Clone,
+    Subject: Clone,
   {
     self.subject.clone()
   }
-}
-
-impl<'a, Src, Item, Err>
-  ConnectableObservable<Src, LocalSubject<'a, Item, Err>>
-{
-  #[inline]
-  pub fn local(source: Src) -> Self {
-    ConnectableObservable {
-      source,
-      subject: <_>::default(),
-    }
-  }
-}
-
-impl<Src, Item, Err> ConnectableObservable<Src, SharedSubject<Item, Err>> {
-  #[inline]
-  pub fn shared(source: Src) -> Self {
-    ConnectableObservable {
-      source,
-      subject: <_>::default(),
-    }
-  }
-}
-
-pub trait Connect {
-  type R;
-  type Unsub;
-  fn into_ref_count(self) -> Self::R;
-  fn connect(self) -> Self::Unsub;
-}
-
-type LocalInnerRefCount<'a, Src> = MutRc<
-  InnerRefCount<
-    Src,
-    LocalSubject<'a, <Src as Observable>::Item, <Src as Observable>::Err>,
-    <Src as LocalObservable<'a>>::Unsub,
-  >,
->;
-impl<'a, Src> Connect
-  for ConnectableObservable<Src, LocalSubject<'a, Src::Item, Src::Err>>
-where
-  Src: LocalObservable<'a>,
-  Src::Item: Clone + 'a,
-  Src::Err: Clone + 'a,
-{
-  type R = RefCount<LocalInnerRefCount<'a, Src>>;
-  type Unsub = Src::Unsub;
 
   #[inline]
-  fn into_ref_count(self) -> Self::R {
-    RefCount::local(self)
-  }
-
-  #[inline]
-  fn connect(self) -> Self::Unsub {
-    self.source.actual_subscribe(self.subject)
-  }
-}
-
-type SharedInnerRefCount<Src> = MutArc<
-  InnerRefCount<
-    Src,
-    SharedSubject<<Src as Observable>::Item, <Src as Observable>::Err>,
-    <Src as SharedObservable>::Unsub,
-  >,
->;
-
-impl<Src> Connect
-  for ConnectableObservable<Src, SharedSubject<Src::Item, Src::Err>>
-where
-  Src: SharedObservable,
-  Src::Item: Clone + Send + Sync + 'static,
-  Src::Err: Clone + Send + Sync + 'static,
-{
-  type R = RefCount<SharedInnerRefCount<Src>>;
-  type Unsub = Src::Unsub;
-
-  #[inline]
-  fn into_ref_count(self) -> Self::R {
-    RefCount::shared(self)
-  }
-
-  #[inline]
-  fn connect(self) -> Self::Unsub {
+  pub fn connect<Item, Err>(self) -> S::Unsub
+  where
+    S: Observable<Item, Err, Subject>,
+    Subject: Observer<Item, Err>,
+  {
     self.source.actual_subscribe(self.subject)
   }
 }
@@ -144,7 +53,7 @@ mod test {
   #[test]
   fn smoke() {
     let o = observable::of(100);
-    let connected = ConnectableObservable::local(o);
+    let connected = ConnectableObservable::<_, Subject<_, _>>::new(o);
     let mut first = 0;
     let mut second = 0;
     connected.fork().subscribe(|v| first = v);
@@ -155,19 +64,9 @@ mod test {
     assert_eq!(second, 100);
   }
 
-  #[cfg(not(target_arch = "wasm32"))]
-  #[test]
-  fn fork_and_shared() {
-    let o = observable::of(100);
-    let connected = ConnectableObservable::shared(o);
-    connected.fork().into_shared().subscribe(|_| {});
-    connected.fork().into_shared().subscribe(|_| {});
-
-    connected.connect();
-  }
   #[test]
   fn publish_smoke() {
-    let p = observable::of(100).publish::<LocalSubject<'_, _, _>>();
+    let p = observable::of(100).publish::<Subject<'_, _, _>>();
     let mut first = 0;
     let mut second = 0;
     p.fork().subscribe(|v| first = v);

@@ -1,4 +1,4 @@
-use crate::{impl_helper::*, impl_local_shared_both, prelude::*};
+use crate::prelude::*;
 use std::time::Duration;
 
 #[derive(Clone)]
@@ -8,58 +8,63 @@ pub struct DelayOp<S, SD> {
   pub(crate) scheduler: SD,
 }
 
-impl<S: Observable, SD> Observable for DelayOp<S, SD> {
-  type Item = S::Item;
-  type Err = S::Err;
+impl<Item, Err, O, S, SD> Observable<Item, Err, O> for DelayOp<S, SD>
+where
+  O: Observer<Item, Err>,
+  S: Observable<Item, Err, O>,
+  S::Unsub: 'static,
+  SD: Scheduler<OnceTask<(S, O), SubscribeReturn<S::Unsub>>>,
+{
+  type Unsub = TaskHandle<SubscribeReturn<S::Unsub>>;
+
+  fn actual_subscribe(self, observer: O) -> Self::Unsub {
+    let task = OnceTask::new(subscribe_task, (self.source, observer));
+    self.scheduler.schedule(task, Some(self.delay))
+  }
 }
 
-impl_local_shared_both! {
-  impl<S, SD> DelayOp<S, SD>;
-  type Unsub = @ctx::RcMultiSubscription;
-  macro method($self: ident, $observer: ident, $ctx: ident){
-    let subscription = $ctx::RcMultiSubscription::default();
-    let c_subscription = subscription.clone();
-    let handle = $self.scheduler.schedule(
-      move |_| {
-        c_subscription.add($self.source.actual_subscribe($observer));
-      },
-      Some($self.delay),
-      (),
-    );
-    subscription.add(handle);
-    subscription
-  }
-  where
-    @ctx::local_only('o: 'static,)
-    S: @ctx::Observable @ctx::shared_only(+ Send) + 'static,
-    S::Unsub: 'static,
-    SD: @ctx::Scheduler
+impl<Item, Err, S, SD> ObservableExt<Item, Err> for DelayOp<S, SD> where
+  S: ObservableExt<Item, Err>
+{
+}
+
+pub fn subscribe_task<S, O, Item, Err>(
+  (source, observer): (S, O),
+) -> SubscribeReturn<S::Unsub>
+where
+  S: Observable<Item, Err, O>,
+  O: Observer<Item, Err>,
+{
+  SubscribeReturn::new(source.actual_subscribe(observer))
 }
 
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::scheduler::Instant;
   use futures::executor::LocalPool;
-  #[cfg(not(target_arch = "wasm32"))]
-  use futures::executor::ThreadPool;
-  #[cfg(not(target_arch = "wasm32"))]
-  use std::sync::{Arc, Mutex};
-  use std::{cell::RefCell, rc::Rc};
+  use std::{cell::RefCell, rc::Rc, time::Instant};
 
   #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn shared_smoke() {
+    use futures::executor::ThreadPool;
+    use std::sync::{Arc, Mutex};
+
+    use crate::ops::complete_status::CompleteStatus;
+
     let value = Arc::new(Mutex::new(0));
     let c_value = value.clone();
     let pool = ThreadPool::new().unwrap();
     let stamp = Instant::now();
-    observable::of(1)
+    let (o, status) = observable::of(1)
       .delay(Duration::from_millis(50), pool)
-      .into_shared()
-      .subscribe_blocking(move |v| {
-        *value.lock().unwrap() = v;
-      });
+      .complete_status();
+
+    o.subscribe(move |v| {
+      *value.lock().unwrap() = v;
+    });
+    CompleteStatus::wait_for_end(status);
+
     assert!(stamp.elapsed() > Duration::from_millis(50));
     assert_eq!(*c_value.lock().unwrap(), 1);
   }

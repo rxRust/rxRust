@@ -1,72 +1,101 @@
-use crate::{impl_helper::*, impl_local_shared_both, prelude::*};
+use crate::{
+  prelude::*,
+  rc::{MutArc, MutRc, RcDeref, RcDerefMut},
+};
 
 #[derive(Clone)]
 pub struct MergeOp<S1, S2> {
-  pub(crate) source1: S1,
-  pub(crate) source2: S2,
+  source1: S1,
+  source2: S2,
 }
-
-impl<S1, S2> Observable for MergeOp<S1, S2>
-where
-  S1: Observable,
-  S2: Observable<Item = S1::Item, Err = S1::Err>,
-{
-  type Item = S1::Item;
-  type Err = S1::Err;
-}
-
-impl_local_shared_both! {
-  impl<S1, S2> MergeOp<S1, S2>;
-  type Unsub = @ctx::RcMultiSubscription;
-  macro method($self: ident, $observer: ident, $ctx: ident) {
-    let subscription = $ctx::RcMultiSubscription::default();
-    let merge_observer = $ctx::Rc::own(MergeObserver {
-      observer: $observer,
-      subscription: subscription.clone(),
-      completed_one: false,
-    });
-    subscription.add($self.source1.actual_subscribe(merge_observer.clone()));
-    subscription.add($self.source2.actual_subscribe(merge_observer));
-    subscription
-  }
-  where
-    S1: @ctx::Observable,
-    S2: @ctx::Observable<Item=S1::Item, Err=S1::Err>,
-    S1::Unsub: 'static,
-    S2::Unsub: 'static
-}
-
 #[derive(Clone)]
-pub struct MergeObserver<O, Unsub> {
-  observer: O,
-  subscription: Unsub,
-  completed_one: bool,
+pub struct MergeOpThreads<S1, S2> {
+  source1: S1,
+  source2: S2,
 }
 
-impl<Item, Err, O, Unsub> Observer for MergeObserver<O, Unsub>
-where
-  O: Observer<Item = Item, Err = Err>,
-  Unsub: SubscriptionLike,
-{
-  type Item = Item;
-  type Err = Err;
-
-  fn next(&mut self, value: Item) {
-    self.observer.next(value)
-  }
-
-  fn error(&mut self, err: Err) {
-    self.observer.error(err);
-    self.subscription.unsubscribe();
-  }
-
-  fn complete(&mut self) {
-    if self.completed_one {
-      self.observer.complete();
-    } else {
-      self.completed_one = true;
+macro_rules! impl_merge_op {
+  ($name: ident, $rc: ident) => {
+    impl<S1, S2> $name<S1, S2> {
+      #[inline]
+      pub fn new(source1: S1, source2: S2) -> Self {
+        $name { source1, source2 }
+      }
     }
-  }
+
+    impl<S1, S2, Item, Err, O> Observable<Item, Err, O> for $name<S1, S2>
+    where
+      O: Observer<Item, Err>,
+      S1: Observable<Item, Err, $rc<MergeObserver<O>>>,
+      S2: Observable<Item, Err, $rc<MergeObserver<O>>>,
+    {
+      type Unsub = ZipSubscription<S1::Unsub, S2::Unsub>;
+
+      fn actual_subscribe(self, observer: O) -> Self::Unsub {
+        let observer = MergeObserver {
+          observer: Some(observer),
+          completed_one: false,
+        };
+        let observer = $rc::own(observer);
+        let a = self.source1.actual_subscribe(observer.clone());
+        let b = self.source2.actual_subscribe(observer.clone());
+        ZipSubscription::new(a, b)
+      }
+    }
+
+    impl<S1, S2, Item, Err> ObservableExt<Item, Err> for $name<S1, S2>
+    where
+      S1: ObservableExt<Item, Err>,
+      S2: ObservableExt<Item, Err>,
+    {
+    }
+
+    impl<Item, Err, O> Observer<Item, Err> for $rc<MergeObserver<O>>
+    where
+      O: Observer<Item, Err>,
+    {
+      fn next(&mut self, value: Item) {
+        let mut inner = self.rc_deref_mut();
+        if let Some(observer) = inner.observer.as_mut() {
+          observer.next(value)
+        }
+      }
+
+      fn error(self, err: Err) {
+        let mut inner = self.rc_deref_mut();
+        if let Some(o) = inner.observer.take() {
+          o.error(err)
+        }
+      }
+
+      fn complete(self) {
+        let mut inner = self.rc_deref_mut();
+        if !inner.completed_one {
+          inner.completed_one = true;
+        } else {
+          if let Some(o) = inner.observer.take() {
+            o.complete()
+          }
+        }
+      }
+
+      fn is_finished(&self) -> bool {
+        self
+          .rc_deref()
+          .observer
+          .as_ref()
+          .map_or(true, |o| o.is_finished())
+      }
+    }
+  };
+}
+
+impl_merge_op!(MergeOp, MutRc);
+impl_merge_op!(MergeOpThreads, MutArc);
+
+pub struct MergeObserver<O> {
+  observer: Option<O>,
+  completed_one: bool,
 }
 
 #[cfg(test)]
@@ -85,7 +114,7 @@ mod test {
     let mut numbers_store = vec![];
 
     {
-      let mut numbers = LocalSubject::new();
+      let mut numbers = Subject::default();
       // enabling multiple observers for even stream;
       let even = numbers.clone().filter(|v| *v % 2 == 0);
       // enabling multiple observers for odd stream;
@@ -110,7 +139,7 @@ mod test {
 
   #[test]
   fn merge_unsubscribe_work() {
-    let mut numbers = LocalSubject::new();
+    let mut numbers = Subject::default();
     // enabling multiple observers for even stream;
     let even = numbers.clone().filter(|v| *v % 2 == 0);
     // enabling multiple observers for odd stream;
@@ -128,15 +157,16 @@ mod test {
   fn completed_test() {
     let completed = Arc::new(AtomicBool::new(false));
     let c_clone = completed.clone();
-    let mut even = LocalSubject::new();
-    let mut odd = LocalSubject::new();
+    let even = Subject::default();
+    let odd = Subject::default();
 
-    even.clone().merge(odd.clone()).subscribe_complete(
-      |_: &()| {},
-      move || completed.store(true, Ordering::Relaxed),
-    );
+    even
+      .clone()
+      .merge(odd.clone())
+      .on_complete(move || completed.store(true, Ordering::Relaxed))
+      .subscribe(|_: &()| {});
 
-    even.complete();
+    even.clone().complete();
     assert!(!c_clone.load(Ordering::Relaxed));
     odd.complete();
     assert!(c_clone.load(Ordering::Relaxed));
@@ -151,14 +181,15 @@ mod test {
     let cc = completed.clone();
     let error = Arc::new(Mutex::new(0));
     let ec = error.clone();
-    let mut even = LocalSubject::new();
-    let mut odd = LocalSubject::new();
+    let even = Subject::default();
+    let odd = Subject::default();
 
-    even.clone().merge(odd.clone()).subscribe_all(
-      |_: ()| {},
-      move |_| *error.lock().unwrap() += 1,
-      move || *completed.lock().unwrap() += 1,
-    );
+    even
+      .clone()
+      .merge(odd.clone())
+      .on_complete(move || *completed.lock().unwrap() += 1)
+      .on_error(move |_| *error.lock().unwrap() += 1)
+      .subscribe(|_: ()| {});
 
     odd.error("");
     even.clone().error("");
@@ -172,26 +203,14 @@ mod test {
 
   #[test]
   fn merge_fork() {
-    let o = observable::create(|s| {
+    let o = observable::create(|mut s: Subscriber<_>| {
       s.next(1);
       s.next(2);
       s.error(());
     });
 
-    let m = o.clone().merge(o.clone());
-    m.clone().merge(m.clone()).subscribe(|_| {});
-  }
-
-  #[cfg(not(target_arch = "wasm32"))]
-  #[test]
-  fn merge_local_and_shared() {
-    let mut res = vec![];
-    let shared = observable::of(1);
-    let local = observable::of(2);
-
-    shared.merge(local).into_shared().subscribe(move |v| {
-      res.push(v);
-    });
+    let m = o.clone().merge(o);
+    m.clone().merge(m).subscribe(|_| {});
   }
 
   #[test]

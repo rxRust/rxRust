@@ -1,62 +1,71 @@
-use crate::{impl_local_shared_both, prelude::*};
+use crate::prelude::*;
 
 #[derive(Clone)]
-pub struct MapOp<S, M> {
-  pub(crate) source: S,
-  pub(crate) func: M,
+pub struct MapOp<S, F, Item> {
+  source: S,
+  func: F,
+  _m: TypeHint<Item>,
 }
 
-impl<Item, S, M> Observable for MapOp<S, M>
-where
-  S: Observable,
-  M: FnMut(S::Item) -> Item,
-{
-  type Item = Item;
-  type Err = S::Err;
-}
-
-impl_local_shared_both! {
-  impl<Item, S, M>  MapOp<S, M>;
-  type Unsub = S::Unsub;
-  macro method($self: ident, $observer: ident, $ctx: ident) {
-    let map = $self.func;
-    $self.source.actual_subscribe(MapObserver {
-      observer: $observer,
-      map,
-      _marker: TypeHint::new(),
-    })
+impl<S, F, Item> MapOp<S, F, Item> {
+  #[inline]
+  pub fn new(source: S, func: F) -> Self {
+    Self { source, func, _m: TypeHint::new() }
   }
-  where
-    S: @ctx::Observable,
-    S::Item: @ctx::local_only('o) @ctx::shared_only('static),
-    M: FnMut(S::Item) -> Item
-      + @ctx::local_only('o) @ctx::shared_only( Send + Sync + 'static)
+}
+
+impl<Item1, Item2, Err, O, S, F> Observable<Item1, Err, O>
+  for MapOp<S, F, Item2>
+where
+  O: Observer<Item1, Err>,
+  S: Observable<Item2, Err, MapObserver<O, F>>,
+  F: FnMut(Item2) -> Item1,
+{
+  type Unsub = S::Unsub;
+
+  fn actual_subscribe(self, observer: O) -> Self::Unsub {
+    self
+      .source
+      .actual_subscribe(MapObserver { observer, map: self.func })
+  }
+}
+
+impl<Item1, Item2, Err, S, F> ObservableExt<Item1, Err> for MapOp<S, F, Item2>
+where
+  S: ObservableExt<Item2, Err>,
+  F: FnMut(Item2) -> Item1,
+{
 }
 
 #[derive(Clone)]
-pub struct MapObserver<O, M, Item> {
+pub struct MapObserver<O, F> {
   observer: O,
-  map: M,
-  _marker: TypeHint<*const Item>,
+  map: F,
 }
 
-impl<Item, Err, O, M, B> Observer for MapObserver<O, M, Item>
+impl<Item, Err, O, F, B> Observer<Item, Err> for MapObserver<O, F>
 where
-  O: Observer<Item = B, Err = Err>,
-  M: FnMut(Item) -> B,
+  O: Observer<B, Err>,
+  F: FnMut(Item) -> B,
 {
-  type Item = Item;
-  type Err = Err;
+  #[inline]
   fn next(&mut self, value: Item) {
     self.observer.next((self.map)(value))
   }
 
-  fn error(&mut self, err: Self::Err) {
+  #[inline]
+  fn error(self, err: Err) {
     self.observer.error(err)
   }
 
-  fn complete(&mut self) {
+  #[inline]
+  fn complete(self) {
     self.observer.complete()
+  }
+
+  #[inline]
+  fn is_finished(&self) -> bool {
+    self.observer.is_finished()
   }
 }
 
@@ -79,22 +88,6 @@ mod test {
 
     observable::of(100).map(|v| v).subscribe(|v| i += v);
     assert_eq!(i, 100);
-  }
-
-  #[cfg(not(target_arch = "wasm32"))]
-  #[test]
-  fn fork_and_shared() {
-    // type to type can fork
-    let m = observable::from_iter(0..100).map(|v| v);
-    m.map(|v| v).into_shared().subscribe(|_| {});
-
-    // type mapped to other type can fork
-    let m = observable::from_iter(vec!['a', 'b', 'c']).map(|_v| 1);
-    m.map(|v| v as f32).into_shared().subscribe(|_| {});
-
-    // ref to ref can fork
-    let m = observable::of(&1).map(|v| v);
-    m.map(|v| v).into_shared().subscribe(|_| {});
   }
 
   #[test]

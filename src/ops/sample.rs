@@ -1,205 +1,199 @@
-use crate::{impl_helper::*, impl_local_shared_both, prelude::*};
+use crate::{
+  prelude::*,
+  rc::{MutArc, MutRc, RcDerefMut},
+};
 
 #[derive(Clone)]
-pub struct SampleOp<S, N> {
-  pub(crate) source: S,
-  pub(crate) sampling: N,
-}
-
-impl<Source, Sampling> Observable for SampleOp<Source, Sampling>
-where
-  Source: Observable,
-  Sampling: Observable,
-{
-  type Item = Source::Item;
-  type Err = Source::Err;
-}
-
-impl_local_shared_both! {
-  impl<Source, Sampling> SampleOp<Source, Sampling>;
-  type Unsub = @ctx::RcMultiSubscription;
-  macro method($self: ident, $observer: ident, $ctx: ident) {
-    let subscription =  $ctx::RcMultiSubscription::default();
-    let source_observer = $ctx::Rc::own(SampleObserver {
-      observer: $observer,
-      value: Option::None,
-      subscription: subscription.clone(),
-      done: false,
-    });
-
-    subscription.add($self.sampling.actual_subscribe(SamplingObserver(
-      source_observer.clone(),
-      TypeHint::new(),
-    )));
-    subscription.add($self.source.actual_subscribe(source_observer));
-    subscription
-  }
-  where
-    @ctx::shared_only(
-      Source::Item: Send + Sync + 'static,
-      Sampling::Item: 'static,
-    )
-    @ctx::local_only(Sampling::Item: 'o,)
-    Source: @ctx::Observable,
-    Sampling: @ctx::Observable<Err=Source::Err>,
-    Source::Unsub: 'static,
-    Sampling::Unsub: 'static
+pub struct SampleOp<Source, Sample, SampleItem> {
+  source: Source,
+  sample: Sample,
+  _hint: TypeHint<SampleItem>,
 }
 
 #[derive(Clone)]
-struct SampleObserver<O: Observer, Unsub> {
+pub struct SampleOpThreads<Source, Sample, SampleItem> {
+  source: Source,
+  sample: Sample,
+  _hint: TypeHint<SampleItem>,
+}
+
+macro_rules! impl_sample_op {
+  ($name: ident, $rc: ident) => {
+    impl<Source, Sample, SampleItem> $name<Source, Sample, SampleItem> {
+      #[inline]
+      pub(crate) fn new(source: Source, sample: Sample) -> Self {
+        Self {
+          source,
+          sample,
+          _hint: TypeHint::default(),
+        }
+      }
+    }
+
+    impl<Item1, Item2, Err, Source, Sample, O> Observable<Item1, Err, O>
+      for $name<Source, Sample, Item2>
+    where
+      O: Observer<Item1, Err>,
+      Source: Observable<
+        Item1,
+        Err,
+        SourceObserver<$rc<Option<O>>, $rc<Option<Item1>>>,
+      >,
+      Sample: Observable<
+        Item2,
+        Err,
+        SampleObserver<$rc<Option<O>>, $rc<Option<Item1>>>,
+      >,
+    {
+      type Unsub = ZipSubscription<Source::Unsub, Sample::Unsub>;
+      fn actual_subscribe(self, observer: O) -> Self::Unsub {
+        let value = $rc::own(None);
+        let observer = $rc::own(Some(observer));
+        let source_observer = SourceObserver {
+          observer: observer.clone(),
+          value: value.clone(),
+        };
+        let sample_observer = SampleObserver { observer, value };
+
+        let source_unsub = self.source.actual_subscribe(source_observer);
+        let sample_unsub = self.sample.actual_subscribe(sample_observer);
+        ZipSubscription::new(source_unsub, sample_unsub)
+      }
+    }
+
+    impl<Item1, Item2, Err, Source, Sample> ObservableExt<Item1, Err>
+      for $name<Source, Sample, Item2>
+    where
+      Source: ObservableExt<Item1, Err>,
+      Sample: ObservableExt<Item2, Err>,
+    {
+    }
+  };
+}
+
+impl_sample_op!(SampleOp, MutRc);
+impl_sample_op!(SampleOpThreads, MutArc);
+
+pub struct SourceObserver<O, V> {
   observer: O,
-  value: Option<O::Item>,
-  subscription: Unsub,
-  done: bool,
+  value: V,
 }
 
-impl<O, Unsub> Observer for SampleObserver<O, Unsub>
+impl<Item, Err, O, V> Observer<Item, Err> for SourceObserver<O, V>
 where
-  O: Observer,
-  Unsub: SubscriptionLike,
+  O: Observer<Item, Err>,
+  V: RcDerefMut<Target = Option<Item>>,
 {
-  type Item = O::Item;
-  type Err = O::Err;
-  fn next(&mut self, value: Self::Item) {
-    self.value = Some(value);
+  #[inline]
+  fn next(&mut self, value: Item) {
+    *self.value.rc_deref_mut() = Some(value);
   }
 
-  fn error(&mut self, err: Self::Err) {
+  #[inline]
+  fn error(self, err: Err) {
     self.observer.error(err)
   }
 
-  fn complete(&mut self) {
-    if !self.done {
-      self.subscription.unsubscribe();
-      self.done = true;
-    }
+  #[inline]
+  fn complete(self) {
+    self.observer.complete()
+  }
+
+  #[inline]
+  fn is_finished(&self) -> bool {
+    self.observer.is_finished()
   }
 }
 
-trait DrainValue<Item, Err> {
-  fn drain_value(&mut self);
+pub struct SampleObserver<O, V> {
+  observer: O,
+  value: V,
 }
 
-impl<O, Unsub> DrainValue<O::Item, O::Err> for SampleObserver<O, Unsub>
+impl<Item1, Item2, V, Err, O> Observer<Item2, Err> for SampleObserver<O, V>
 where
-  O: Observer,
+  O: Observer<Item1, Err>,
+  V: RcDerefMut<Target = Option<Item1>>,
 {
-  fn drain_value(&mut self) {
-    if self.done || self.value.is_none() {
-      return;
-    }
-    let value = self.value.take().unwrap();
-    self.observer.next(value);
-  }
-}
-
-impl<O, Unsub> DrainValue<O::Item, O::Err> for MutRc<SampleObserver<O, Unsub>>
-where
-  O: Observer,
-{
-  fn drain_value(&mut self) {
-    let mut val = self.rc_deref_mut();
-    val.drain_value();
-  }
-}
-
-impl<O, Unsub> DrainValue<O::Item, O::Err> for MutArc<SampleObserver<O, Unsub>>
-where
-  O: Observer,
-{
-  fn drain_value(&mut self) {
-    let mut val = self.rc_deref_mut();
-    val.drain_value();
-  }
-}
-
-struct SamplingObserver<Item, O>(O, TypeHint<*const Item>);
-
-impl<Item, Item2, Err, O> Observer for SamplingObserver<Item2, O>
-where
-  O: DrainValue<Item, Err> + Observer<Item = Item, Err = Err>,
-{
-  type Item = Item2;
-  type Err = Err;
-
   fn next(&mut self, _: Item2) {
-    self.0.drain_value();
+    if let Some(item) = self.value.rc_deref_mut().take() {
+      self.observer.next(item)
+    }
   }
 
-  fn complete(&mut self) {
-    self.0.drain_value();
-    self.0.complete();
+  #[inline]
+  fn error(self, err: Err) {
+    self.observer.error(err)
   }
 
-  fn error(&mut self, err: Self::Err) {
-    self.0.error(err)
+  #[inline]
+  fn complete(mut self) {
+    if let Some(item) = self.value.rc_deref_mut().take() {
+      self.observer.next(item)
+    }
+  }
+
+  #[inline]
+  fn is_finished(&self) -> bool {
+    self.observer.is_finished()
   }
 }
 
 #[cfg(test)]
 mod test {
-  use crate::prelude::*;
-  use crate::test_scheduler::ManualScheduler;
-  #[cfg(not(target_arch = "wasm32"))]
-  use std::sync::{Arc, Mutex};
+  use crate::{observable::fake_timer::FakeClock, prelude::*};
   use std::{cell::RefCell, rc::Rc, time::Duration};
 
   #[test]
   fn sample_base() {
-    let scheduler = ManualScheduler::now();
+    let clock = FakeClock::default();
     let x = Rc::new(RefCell::new(vec![]));
 
-    let interval =
-      observable::interval(Duration::from_millis(1), scheduler.clone());
+    let interval = clock.interval(Duration::from_millis(1));
     {
       let x_c = x.clone();
       interval
-        .take(100)
-        .sample(observable::interval(
-          Duration::from_millis(10),
-          scheduler.clone(),
-        ))
+        .sample(clock.interval(Duration::from_millis(10)))
         .subscribe(move |v| {
           x_c.borrow_mut().push(v);
         });
 
-      scheduler.advance_and_run(Duration::from_millis(1), 100);
-      assert_eq!(x.borrow().len(), 10);
+      clock.advance(Duration::from_millis(101));
+      assert_eq!(&*x.borrow(), &[9, 19, 29, 39, 49, 59, 69, 79, 89, 99]);
     };
   }
 
   #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn sample_by_subject() {
-    let mut subject = SharedSubject::new();
-    let mut notifier = SharedSubject::new();
-    let test_code = Arc::new(Mutex::new(0));
+    use crate::rc::{MutArc, RcDeref, RcDerefMut};
+
+    let mut subject = SubjectThreads::default();
+    let mut notifier = SubjectThreads::default();
+    let test_code = MutArc::own(0);
     let c_test_code = test_code.clone();
-    subject
-      .clone()
-      .sample(notifier.clone())
-      .into_shared()
-      .subscribe(move |v: i32| {
-        *c_test_code.lock().unwrap() = v;
-      });
+    subject.clone().sample_threads(notifier.clone()).subscribe(
+      move |v: i32| {
+        *c_test_code.rc_deref_mut() = v;
+      },
+    );
     subject.next(1);
     notifier.next(1);
-    assert_eq!(*test_code.lock().unwrap(), 1);
+    assert_eq!(*test_code.rc_deref(), 1);
 
     subject.next(2);
-    assert_eq!(*test_code.lock().unwrap(), 1);
+    assert_eq!(*test_code.rc_deref(), 1);
 
     subject.next(3);
     notifier.next(1);
-    assert_eq!(*test_code.lock().unwrap(), 3);
+    assert_eq!(*test_code.rc_deref(), 3);
 
-    *test_code.lock().unwrap() = 0;
+    *test_code.rc_deref_mut() = 0;
     notifier.next(1);
-    assert_eq!(*test_code.lock().unwrap(), 0);
+    assert_eq!(*test_code.rc_deref(), 0);
 
     subject.next(4);
     notifier.complete();
-    assert_eq!(*test_code.lock().unwrap(), 4);
+    assert_eq!(*test_code.rc_deref(), 4);
   }
 }

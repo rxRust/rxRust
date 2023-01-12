@@ -1,103 +1,90 @@
 use crate::prelude::*;
 
 #[derive(Clone)]
-pub struct ScanOp<Source, BinaryOp, OutputItem> {
-  pub(crate) source_observable: Source,
-  pub(crate) binary_op: BinaryOp,
-  pub(crate) initial_value: OutputItem,
+pub struct ScanOp<Source, BinaryOp, OutputItem, InputItem> {
+  source: Source,
+  binary_op: BinaryOp,
+  initial_value: OutputItem,
+  _m: TypeHint<InputItem>,
 }
 
-pub struct ScanObserver<Observer, BinaryOp, OutputItem, InputItem> {
+impl<Source, BinaryOp, OutputItem, InputItem>
+  ScanOp<Source, BinaryOp, OutputItem, InputItem>
+{
+  pub(crate) fn new(
+    source: Source,
+    binary_op: BinaryOp,
+    initial_value: OutputItem,
+  ) -> Self {
+    Self {
+      source,
+      binary_op,
+      initial_value,
+      _m: TypeHint::default(),
+    }
+  }
+}
+
+pub struct ScanObserver<Observer, BinaryOp, OutputItem> {
   target_observer: Observer,
   binary_op: BinaryOp,
   acc: OutputItem,
-  _marker: TypeHint<InputItem>,
 }
 
-#[doc(hidden)]
-macro_rules! observable_impl {
-    ($subscription:ty, $($marker:ident +)* $lf: lifetime) => {
-  fn actual_subscribe<O>(
-    self,
-    observer: O,
-  ) -> Self::Unsub
-  where O: Observer<Item=Self::Item,Err= Self::Err> + $($marker +)* $lf {
-    self.source_observable.actual_subscribe(ScanObserver {
+impl<InputItem, OutputItem, Err, O, S, BinaryOp> Observable<OutputItem, Err, O>
+  for ScanOp<S, BinaryOp, OutputItem, InputItem>
+where
+  S: Observable<InputItem, Err, ScanObserver<O, BinaryOp, OutputItem>>,
+  O: Observer<OutputItem, Err>,
+  BinaryOp: FnMut(OutputItem, InputItem) -> OutputItem,
+  OutputItem: Clone,
+{
+  type Unsub = S::Unsub;
+  fn actual_subscribe(self, observer: O) -> Self::Unsub {
+    self.source.actual_subscribe(ScanObserver {
       target_observer: observer,
       binary_op: self.binary_op,
       acc: self.initial_value,
-      _marker: TypeHint::new(),
     })
   }
 }
-}
 
-impl<OutputItem, Source, BinaryOp> Observable
-  for ScanOp<Source, BinaryOp, OutputItem>
+impl<InputItem, OutputItem, Err, S, BinaryOp> ObservableExt<OutputItem, Err>
+  for ScanOp<S, BinaryOp, OutputItem, InputItem>
 where
-  Source: Observable,
-  OutputItem: Clone,
-  BinaryOp: FnMut(OutputItem, Source::Item) -> OutputItem,
+  S: ObservableExt<InputItem, Err>,
 {
-  type Item = OutputItem;
-  type Err = Source::Err;
-}
-
-// We're making the `ScanOp` being an publisher - an object that
-// subscribers can subscribe to.
-// Doing so by implementing `Observable` trait for it.
-// Once instantiated, it will have a `actual_subscribe` method in it.
-// Note: we're accepting such subscribers that accept `Output` as their
-// `Item` type.
-impl<'a, OutputItem, Source, BinaryOp> LocalObservable<'a>
-  for ScanOp<Source, BinaryOp, OutputItem>
-where
-  Source: LocalObservable<'a>,
-  OutputItem: Clone + 'a,
-  BinaryOp: FnMut(OutputItem, Source::Item) -> OutputItem + 'a,
-  Source::Item: 'a,
-{
-  type Unsub = Source::Unsub;
-  observable_impl!(LocalSubscription, 'a);
-}
-
-impl<OutputItem, Source, BinaryOp> SharedObservable
-  for ScanOp<Source, BinaryOp, OutputItem>
-where
-  Source: SharedObservable,
-  OutputItem: Clone + Send + Sync + 'static,
-  Source::Item: 'static,
-  BinaryOp:
-    FnMut(OutputItem, Source::Item) -> OutputItem + Send + Sync + 'static,
-{
-  type Unsub = Source::Unsub;
-  observable_impl!(SharedSubscription, Send + Sync + 'static);
 }
 
 // We're making `ScanObserver` being able to be subscribed to other observables
 // by implementing `Observer` trait. Thanks to this, it is able to observe
 // sources having `Item` type as its `InputItem` type.
-impl<InputItem, Err, Source, BinaryOp, OutputItem> Observer
-  for ScanObserver<Source, BinaryOp, OutputItem, InputItem>
+impl<InputItem, Err, Source, BinaryOp, OutputItem> Observer<InputItem, Err>
+  for ScanObserver<Source, BinaryOp, OutputItem>
 where
-  Source: Observer<Item = OutputItem, Err = Err>,
+  Source: Observer<OutputItem, Err>,
   BinaryOp: FnMut(OutputItem, InputItem) -> OutputItem,
   OutputItem: Clone,
 {
-  type Item = InputItem;
-  type Err = Err;
   fn next(&mut self, value: InputItem) {
     // accumulating each item with a current value
     self.acc = (self.binary_op)(self.acc.clone(), value);
     self.target_observer.next(self.acc.clone())
   }
 
-  fn error(&mut self, err: Self::Err) {
+  #[inline]
+  fn error(self, err: Err) {
     self.target_observer.error(err)
   }
 
-  fn complete(&mut self) {
+  #[inline]
+  fn complete(self) {
     self.target_observer.complete()
+  }
+
+  #[inline]
+  fn is_finished(&self) -> bool {
+    self.target_observer.is_finished()
   }
 }
 
@@ -150,26 +137,11 @@ mod test {
     assert_eq!(vec!(1, 2, 3, 4, 5), emitted);
   }
 
-  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn scan_fork_and_shared_mixed_types() {
     // type to type can fork
     let m = observable::from_iter(vec!['a', 'b', 'c']).scan(|_acc, _v| 1i32);
-    m.scan(|_acc, v| v as f32)
-      .into_shared()
-      .into_shared()
-      .subscribe(|_| {});
-  }
-
-  #[cfg(not(target_arch = "wasm32"))]
-  #[test]
-  fn scan_fork_and_shared() {
-    // type to type can fork
-    let m = observable::from_iter(0..100).scan(|acc: i32, v| acc + v);
-    m.scan(|acc: i32, v| acc + v)
-      .into_shared()
-      .into_shared()
-      .subscribe(|_| {});
+    m.scan(|_acc, v| v as f32).subscribe(|_| {});
   }
 
   #[test]

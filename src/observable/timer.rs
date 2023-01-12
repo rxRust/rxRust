@@ -1,7 +1,8 @@
 use crate::{
-  impl_helper::*, impl_local_shared_both, prelude::*, scheduler::Instant,
+  prelude::*,
+  scheduler::{NormalReturn, OnceTask, Scheduler, TaskHandle},
 };
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 // Returns an observable which will emit a single `item`
 // once after a given `dur` using a given `scheduler`
@@ -10,11 +11,7 @@ pub fn timer<Item, S>(
   dur: Duration,
   scheduler: S,
 ) -> TimerObservable<Item, S> {
-  TimerObservable {
-    item,
-    dur,
-    scheduler,
-  }
+  TimerObservable { item, dur, scheduler }
 }
 
 // Returns an observable which will emit a single `item`
@@ -27,11 +24,7 @@ pub fn timer_at<Item, S>(
   scheduler: S,
 ) -> TimerObservable<Item, S> {
   let duration = get_duration_from_instant(at);
-  TimerObservable {
-    item,
-    dur: duration,
-    scheduler,
-  }
+  TimerObservable { item, dur: duration, scheduler }
 }
 
 // Calculates the duration between `Instant::now()` and a given `instant`.
@@ -53,41 +46,43 @@ pub struct TimerObservable<Item, S> {
   scheduler: S,
 }
 
-impl<Item, S> Observable for TimerObservable<Item, S> {
-  type Item = Item;
-  type Err = ();
+fn timer_task<Item, Err, O>(
+  (mut observer, value): (O, Item),
+) -> NormalReturn<()>
+where
+  O: Observer<Item, Err>,
+{
+  observer.next(value);
+  observer.complete();
+  NormalReturn::new(())
 }
 
-impl_local_shared_both! {
-  impl<Item, S> TimerObservable<Item, S>;
-  type Unsub = SpawnHandle;
-  macro method($self:ident, $observer: ident, $ctx: ident) {
-    $self.scheduler.schedule(
-      move |_| {
-        $observer.next($self.item);
-        $observer.complete();
-      },
-      Some($self.dur),
-      1,
-    )
+impl<Item, O, S> Observable<Item, (), O> for TimerObservable<Item, S>
+where
+  O: Observer<Item, ()>,
+  S: Scheduler<OnceTask<(O, Item), NormalReturn<()>>>,
+{
+  type Unsub = TaskHandle<NormalReturn<()>>;
+
+  fn actual_subscribe(self, observer: O) -> Self::Unsub {
+    let Self { item, dur, scheduler } = self;
+
+    scheduler.schedule(OnceTask::new(timer_task, (observer, item)), Some(dur))
   }
-  where
-    @ctx::local_only('o: 'static,)
-    S: @ctx::Scheduler + 'static,
-    Item: @ctx::shared_only(Send +) 'static
-
 }
+
+impl<Item, S> ObservableExt<Item, ()> for TimerObservable<Item, S> {}
 
 #[cfg(test)]
 mod tests {
   use crate::prelude::*;
-  use crate::scheduler::Instant;
   use futures::executor::LocalPool;
   #[cfg(not(target_arch = "wasm32"))]
   use futures::executor::ThreadPool;
   use std::sync::atomic::{AtomicBool, AtomicI32, AtomicUsize, Ordering};
   use std::sync::Arc;
   use std::time::Duration;
+  use std::time::Instant;
 
   #[test]
   fn timer_shall_emit_value() {
@@ -110,17 +105,22 @@ mod tests {
   #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn timer_shall_emit_value_shared() {
+    use crate::ops::complete_status::CompleteStatus;
+
     let pool = ThreadPool::new().unwrap();
 
     let val = 1234;
     let i_emitted = Arc::new(AtomicI32::new(0));
     let i_emitted_c = i_emitted.clone();
 
-    observable::timer(val, Duration::from_millis(5), pool)
-      .into_shared()
-      .subscribe_blocking(move |n| {
-        i_emitted_c.store(n, Ordering::Relaxed);
-      });
+    let (o, status) =
+      observable::timer(val, Duration::from_millis(5), pool).complete_status();
+
+    o.subscribe(move |n| {
+      i_emitted_c.store(n, Ordering::Relaxed);
+    });
+
+    CompleteStatus::wait_for_end(status);
 
     assert_eq!(val, i_emitted.load(Ordering::Relaxed));
   }
@@ -146,17 +146,22 @@ mod tests {
   #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn timer_shall_call_next_once_shared() {
+    use crate::ops::complete_status::CompleteStatus;
+
     let pool = ThreadPool::new().unwrap();
 
     let next_count = Arc::new(AtomicUsize::new(0));
     let next_count_c = next_count.clone();
 
-    observable::timer("aString", Duration::from_millis(5), pool)
-      .into_shared()
-      .subscribe_blocking(move |_| {
-        let count = next_count_c.load(Ordering::Relaxed);
-        next_count_c.store(count + 1, Ordering::Relaxed);
-      });
+    let (o, status) =
+      observable::timer("aString", Duration::from_millis(5), pool)
+        .complete_status();
+    o.subscribe(move |_| {
+      let count = next_count_c.load(Ordering::Relaxed);
+      next_count_c.store(count + 1, Ordering::Relaxed);
+    });
+
+    CompleteStatus::wait_for_end(status);
 
     assert_eq!(next_count.load(Ordering::Relaxed), 1);
   }
@@ -169,12 +174,10 @@ mod tests {
     let is_completed_c = is_completed.clone();
 
     observable::timer("aString", Duration::from_millis(5), local.spawner())
-      .subscribe_complete(
-        |_| {},
-        move || {
-          is_completed_c.store(true, Ordering::Relaxed);
-        },
-      );
+      .on_complete(move || {
+        is_completed_c.store(true, Ordering::Relaxed);
+      })
+      .subscribe(|_| {});
 
     local.run();
 
@@ -184,20 +187,21 @@ mod tests {
   #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn timer_shall_be_completed_shared() {
+    use crate::ops::complete_status::CompleteStatus;
+
     let pool = ThreadPool::new().unwrap();
 
     let is_completed = Arc::new(AtomicBool::new(false));
     let is_completed_c = is_completed.clone();
 
-    observable::timer("aString", Duration::from_millis(5), pool)
-      .into_shared()
-      .subscribe_blocking_all(
-        |_| {},
-        |_| {},
-        move || {
+    let (o, status) =
+      observable::timer("aString", Duration::from_millis(5), pool)
+        .on_complete(move || {
           is_completed_c.store(true, Ordering::Relaxed);
-        },
-      );
+        })
+        .complete_status();
+    let _ = o.subscribe(|_| {});
+    CompleteStatus::wait_for_end(status);
 
     assert!(is_completed.load(Ordering::Relaxed));
   }
@@ -219,14 +223,17 @@ mod tests {
   #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn timer_shall_elapse_duration_shared() {
+    use crate::ops::complete_status::CompleteStatus;
+
     let pool = ThreadPool::new().unwrap();
 
     let duration = Duration::from_millis(50);
     let stamp = Instant::now();
 
-    observable::timer("aString", duration, pool)
-      .into_shared()
-      .subscribe_blocking(|_| {});
+    let (o, status) =
+      observable::timer("aString", duration, pool).complete_status();
+    o.subscribe(|_| {});
+    CompleteStatus::wait_for_end(status);
 
     assert!(stamp.elapsed() >= duration);
   }
@@ -256,17 +263,24 @@ mod tests {
   #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn timer_at_shall_emit_value_shared() {
+    use crate::ops::complete_status::CompleteStatus;
+
     let pool = ThreadPool::new().unwrap();
 
     let val = 1234;
     let i_emitted = Arc::new(AtomicI32::new(0));
     let i_emitted_c = i_emitted.clone();
 
-    observable::timer_at(val, Instant::now() + Duration::from_millis(10), pool)
-      .into_shared()
-      .subscribe_blocking(move |n| {
-        i_emitted_c.store(n, Ordering::Relaxed);
-      });
+    let (o, status) = observable::timer_at(
+      val,
+      Instant::now() + Duration::from_millis(10),
+      pool,
+    )
+    .complete_status();
+    o.subscribe(move |n| {
+      i_emitted_c.store(n, Ordering::Relaxed);
+    });
+    CompleteStatus::wait_for_end(status);
 
     assert_eq!(val, i_emitted.load(Ordering::Relaxed));
   }
@@ -305,12 +319,10 @@ mod tests {
       Instant::now() + Duration::from_millis(10),
       local.spawner(),
     )
-    .subscribe_complete(
-      |_| {},
-      move || {
-        is_completed_c.store(true, Ordering::Relaxed);
-      },
-    );
+    .on_complete(move || {
+      is_completed_c.store(true, Ordering::Relaxed);
+    })
+    .subscribe(|_| {});
 
     local.run();
 
@@ -342,15 +354,13 @@ mod tests {
 
     let duration = Duration::from_secs(1);
     let now = Instant::now();
-    let execute_at = now - duration; // execute 1 sec in past
+    let execute_at = now.checked_sub(duration).unwrap(); // execute 1 sec in past
 
     observable::timer_at("aString", execute_at, local.spawner())
-      .subscribe_complete(
-        |_| {},
-        move || {
-          is_completed_c.store(true, Ordering::Relaxed);
-        },
-      );
+      .on_complete(move || {
+        is_completed_c.store(true, Ordering::Relaxed);
+      })
+      .subscribe(|_| {});
 
     local.run();
 

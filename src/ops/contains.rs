@@ -6,79 +6,61 @@ pub struct ContainsOp<S, Item> {
   pub(crate) target: Item,
 }
 
-impl<S, Item> Observable for ContainsOp<S, Item>
+impl<Item, Err, O, S> Observable<bool, Err, O> for ContainsOp<S, Item>
 where
-  S: Observable<Item = Item>,
+  S: Observable<Item, Err, ContainsObserver<O, Item>>,
+  O: Observer<bool, Err>,
+  Item: PartialEq,
 {
-  type Item = bool;
-  type Err = S::Err;
-}
+  type Unsub = S::Unsub;
 
-#[doc(hidden)]
-macro_rules! observable_impl {
-    ($subscription:ty, $($marker:ident +)* $lf: lifetime) => {
-  fn actual_subscribe<O>(
-    self,
-    observer: O,
-  ) -> Self::Unsub
-  where O: Observer<Item=bool,Err= Self::Err> + $($marker +)* $lf {
-    self.source.actual_subscribe(ContainsObserver{
-      observer,
+  fn actual_subscribe(self, observer: O) -> Self::Unsub {
+    self.source.actual_subscribe(ContainsObserver {
+      observer: Some(observer),
       target: self.target,
-      done:false,
     })
   }
 }
-}
 
-impl<'a, Item, S> LocalObservable<'a> for ContainsOp<S, Item>
-where
-  S: LocalObservable<'a, Item = Item>,
-  Item: 'a + Clone + Eq,
+impl<Item, Err, S> ObservableExt<bool, Err> for ContainsOp<S, Item> where
+  S: ObservableExt<Item, Err>
 {
-  type Unsub = S::Unsub;
-  observable_impl!(LocalSubscription,'a);
-}
-
-impl<Item, S> SharedObservable for ContainsOp<S, Item>
-where
-  S: SharedObservable<Item = Item>,
-  Item: Send + Sync + 'static + Clone + Eq,
-{
-  type Unsub = S::Unsub;
-  observable_impl!(SharedSubscription, Send + Sync + 'static);
 }
 
 pub struct ContainsObserver<S, T> {
-  observer: S,
+  observer: Option<S>,
   target: T,
-  done: bool,
 }
 
-impl<O, Item, Err> Observer for ContainsObserver<O, Item>
+impl<O, Item, Err> Observer<Item, Err> for ContainsObserver<O, Item>
 where
-  O: Observer<Item = bool, Err = Err>,
-  Item: Clone + Eq,
+  O: Observer<bool, Err>,
+  Item: PartialEq,
 {
-  type Item = Item;
-  type Err = Err;
   fn next(&mut self, value: Item) {
-    if !self.done && self.target == value {
-      self.observer.next(true);
-      self.done = true;
-      self.observer.complete();
+    if self.target == value {
+      if let Some(mut observer) = self.observer.take() {
+        observer.next(true);
+        observer.complete();
+      }
     }
   }
 
-  fn error(&mut self, err: Self::Err) {
-    self.observer.error(err)
+  fn error(mut self, err: Err) {
+    if let Some(observer) = self.observer.take() {
+      observer.error(err);
+    }
   }
 
-  fn complete(&mut self) {
-    if !self.done {
-      self.observer.next(false);
-      self.observer.complete();
+  fn complete(mut self) {
+    if let Some(mut observer) = self.observer.take() {
+      observer.next(false);
+      observer.complete();
     }
+  }
+
+  fn is_finished(&self) -> bool {
+    self.observer.as_ref().map_or(true, |o| o.is_finished())
   }
 }
 
@@ -94,15 +76,6 @@ mod test {
       .contains(99)
       .subscribe(|b| assert!(!b));
     observable::empty().contains(1).subscribe(|b| assert!(!b));
-  }
-
-  #[cfg(not(target_arch = "wasm32"))]
-  #[test]
-  fn contains_shared() {
-    observable::from_iter(0..10)
-      .contains(4)
-      .into_shared()
-      .subscribe(|b| assert!(b));
   }
 
   #[test]

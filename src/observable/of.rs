@@ -1,4 +1,4 @@
-use crate::{impl_local_shared_both, prelude::*};
+use crate::prelude::*;
 
 /// Creates an observable producing a multiple values.
 ///
@@ -26,12 +26,7 @@ use crate::{impl_local_shared_both, prelude::*};
 macro_rules! of_sequence {
     ( $( $item:expr ),* ) => {
   {
-    $crate::observable::create(|s| {
-      $(
-        s.next($item);
-      )*
-      s.complete();
-    })
+    $crate::observable::from_iter([$($item),*])
   }
 }
 }
@@ -52,6 +47,7 @@ macro_rules! of_sequence {
 /// observable::of(123)
 ///   .subscribe(|v| {println!("{},", v)});
 /// ```
+#[inline]
 pub fn of<Item>(v: Item) -> OfObservable<Item> {
   OfObservable(v)
 }
@@ -59,21 +55,19 @@ pub fn of<Item>(v: Item) -> OfObservable<Item> {
 #[derive(Clone)]
 pub struct OfObservable<Item>(pub(crate) Item);
 
-impl<Item> Observable for OfObservable<Item> {
-  type Item = Item;
-  type Err = ();
+impl<Item, O> Observable<Item, (), O> for OfObservable<Item>
+where
+  O: Observer<Item, ()>,
+{
+  type Unsub = ();
+
+  fn actual_subscribe(self, mut observer: O) -> Self::Unsub {
+    observer.next(self.0);
+    observer.complete();
+  }
 }
 
-impl_local_shared_both! {
- impl<Item> OfObservable<Item>;
- type Unsub = SingleSubscription;
- macro method($self:ident, $observer: ident, $ctx: ident) {
-   $observer.next($self.0);
-   $observer.complete();
-   SingleSubscription::default()
- }
-}
-
+impl<Item> ObservableExt<Item, ()> for OfObservable<Item> {}
 /// Creates an observable that emits value or the error from a [`Result`] given.
 ///
 /// Completes immediately after.
@@ -95,7 +89,8 @@ impl_local_shared_both! {
 /// use rxrust::prelude::*;
 ///
 /// observable::of_result(Err("An error"))
-///   .subscribe_err(|v: &i32| {}, |e| {println!("Error:  {},", e)});
+///   .on_error(|e| println!("Error:  {},", e))
+///   .subscribe(|v: &i32| {});
 /// ```
 pub fn of_result<Item, Err>(
   r: Result<Item, Err>,
@@ -106,23 +101,24 @@ pub fn of_result<Item, Err>(
 #[derive(Clone)]
 pub struct ResultObservable<Item, Err>(pub(crate) Result<Item, Err>);
 
-impl<Item, Err> Observable for ResultObservable<Item, Err> {
-  type Item = Item;
-  type Err = Err;
+impl<Item, Err, O> Observable<Item, Err, O> for ResultObservable<Item, Err>
+where
+  O: Observer<Item, Err>,
+{
+  type Unsub = ();
+
+  fn actual_subscribe(self, mut observer: O) -> Self::Unsub {
+    match self.0 {
+      Ok(v) => {
+        observer.next(v);
+        observer.complete();
+      }
+      Err(e) => observer.error(e),
+    };
+  }
 }
 
-impl_local_shared_both! {
- impl<Item, Err> ResultObservable<Item, Err>;
- type Unsub = SingleSubscription;
- macro method($self: ident, $observer: ident, $ctx: ident) {
-   match $self.0 {
-     Ok(v) => $observer.next(v),
-     Err(e) => $observer.error(e),
-   };
-   $observer.complete();
-   SingleSubscription::default()
- }
-}
+impl<Item, Err> ObservableExt<Item, Err> for ResultObservable<Item, Err> {}
 
 /// Creates an observable that potentially emits a single value from [`Option`].
 ///
@@ -148,22 +144,21 @@ pub fn of_option<Item>(o: Option<Item>) -> OptionObservable<Item> {
 #[derive(Clone)]
 pub struct OptionObservable<Item>(pub(crate) Option<Item>);
 
-impl<Item> Observable for OptionObservable<Item> {
-  type Item = Item;
-  type Err = ();
+impl<Item, O> Observable<Item, (), O> for OptionObservable<Item>
+where
+  O: Observer<Item, ()>,
+{
+  type Unsub = ();
+
+  fn actual_subscribe(self, mut observer: O) -> Self::Unsub {
+    if let Some(v) = self.0 {
+      observer.next(v)
+    }
+    observer.complete();
+  }
 }
 
-impl_local_shared_both! {
- impl<Item> OptionObservable<Item>;
- type Unsub = SingleSubscription;
- macro method($self: ident, $observer: ident, $ctx: ident) {
-   if let Some(v) = $self.0 {
-     $observer.next(v)
-   }
-   $observer.complete();
-   SingleSubscription::default()
- }
-}
+impl<Item> ObservableExt<Item, ()> for OptionObservable<Item> {}
 
 /// Creates an observable that emits the return value of a callable.
 ///
@@ -189,27 +184,25 @@ where
 }
 
 #[derive(Clone)]
-pub struct CallableObservable<F>(F);
+pub struct CallableObservable<F>(pub(crate) F);
 
-impl<Item, F> Observable for CallableObservable<F>
+impl<Item, F, O> Observable<Item, (), O> for CallableObservable<F>
 where
   F: FnOnce() -> Item,
+  O: Observer<Item, ()>,
 {
-  type Item = Item;
-  type Err = ();
-}
+  type Unsub = ();
 
-impl_local_shared_both! {
-  impl<Item, F> CallableObservable<F>;
-  type Unsub = SingleSubscription;
-  macro method($self: ident, $observer: ident, $ctx: ident) {
-    $observer.next(($self.0)());
-    $observer.complete();
-    SingleSubscription::default()
+  fn actual_subscribe(self, mut observer: O) -> Self::Unsub {
+    observer.next((self.0)());
+    observer.complete();
   }
-  where F: FnOnce() -> Item
 }
 
+impl<Item, F> ObservableExt<Item, ()> for CallableObservable<F> where
+  F: FnOnce() -> Item
+{
+}
 #[cfg(test)]
 mod test {
   use crate::prelude::*;
@@ -219,12 +212,11 @@ mod test {
     let mut value = 0;
     let mut completed = false;
     let callable = || 123;
-    observable::of_fn(callable).subscribe_complete(
-      |v| {
+    observable::of_fn(callable)
+      .on_complete(|| completed = true)
+      .subscribe(|v| {
         value = v;
-      },
-      || completed = true,
-    );
+      });
 
     assert_eq!(value, 123);
     assert!(completed);
@@ -234,24 +226,22 @@ mod test {
   fn of_option() {
     let mut value1 = 0;
     let mut completed1 = false;
-    observable::of_option(Some(123)).subscribe_complete(
-      |v| {
+    observable::of_option(Some(123))
+      .on_complete(|| completed1 = true)
+      .subscribe(|v| {
         value1 = v;
-      },
-      || completed1 = true,
-    );
+      });
 
     assert_eq!(value1, 123);
     assert!(completed1);
 
     let mut value2 = 0;
     let mut completed2 = false;
-    observable::of_option(None).subscribe_complete(
-      |v| {
+    observable::of_option(None)
+      .on_complete(|| completed2 = true)
+      .subscribe(|v| {
         value2 = v;
-      },
-      || completed2 = true,
-    );
+      });
 
     assert_eq!(value2, 0);
     assert!(completed2);
@@ -262,13 +252,12 @@ mod test {
     let mut value1 = 0;
     let mut completed1 = false;
     let r: Result<i32, &str> = Ok(123);
-    observable::of_result(r).subscribe_all(
-      |v| {
+    observable::of_result(r)
+      .on_complete(|| completed1 = true)
+      .on_error(|_| {})
+      .subscribe(|v| {
         value1 = v;
-      },
-      |_| {},
-      || completed1 = true,
-    );
+      });
 
     assert_eq!(value1, 123);
     assert!(completed1);
@@ -277,7 +266,8 @@ mod test {
     let mut error_reported = false;
     let r: Result<i32, &str> = Err("error");
     observable::of_result(r)
-      .subscribe_err(|_| value2 = 123, |_| error_reported = true);
+      .on_error(|_| error_reported = true)
+      .subscribe(|_| value2 = 123);
 
     assert_eq!(value2, 0);
     assert!(error_reported);
@@ -287,7 +277,9 @@ mod test {
   fn of() {
     let mut value = 0;
     let mut completed = false;
-    observable::of(100).subscribe_complete(|v| value = v, || completed = true);
+    observable::of(100)
+      .on_complete(|| completed = true)
+      .subscribe(|v| value = v);
 
     assert_eq!(value, 100);
     assert!(completed);
