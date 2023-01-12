@@ -13,37 +13,33 @@ repository = "https://github.com/rxRust/rxRust"
 version = "1.0.0-alpha.4"
 
 [dependencies]
-fluvio-wasm-timer = "0.2.5"
+pin-project-lite = "0.2.9"
 smallvec = "1.4.2"
 
-[dependencies.async-std]
-features = ["unstable"]
-version = "1.6.3"
-
 [dependencies.futures]
-features = ["thread-pool"]
-version = "0.3.5"
+version = "0.3.25"
 
 [dependencies.tokio]
 features = ["rt-multi-thread", "rt"]
 optional = true
 version = "1.0"
 
-[dependencies.wasm-bindgen-futures]
-optional = true
-version = "0.4.29"
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+futures-time = "3.0.0"
 
-[dependencies.gloo-timers]
-optional = true
-version = "0.2.4"
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen-futures = "0.4.29"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies.gloo-timers]
+features = ["futures"]
+version = "0.2.5"
 
 [features]
 default = ["futures-scheduler"]
-futures-scheduler = []
+futures-scheduler = ["futures/thread-pool"]
 tokio-scheduler = ["tokio"]
-wasm-scheduler = ["wasm-bindgen-futures", "gloo-timers"]
 
 [dev-dependencies]
 bencher = "0.1.5"
-float-cmp = "0.8.0"
+float-cmp = "0.9.0"
 wasm-bindgen-test = "0.3.29"

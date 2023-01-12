@@ -1,219 +1,373 @@
 use crate::prelude::*;
-use async_std::prelude::FutureExt as AsyncFutureExt;
-use futures::future::{lazy, AbortHandle, FutureExt};
-use std::future::Future;
+use futures::{future::RemoteHandle, ready, FutureExt, Stream};
+use pin_project_lite::pin_project;
+use std::{
+  cell::RefCell,
+  future::Future,
+  pin::Pin,
+  task::{Context, Poll, RawWaker, RawWakerVTable, Waker},
+};
 
-use futures::StreamExt;
-use std::sync::{Arc, RwLock};
-use std::time::Duration;
+pub struct TaskHandle<T>(RefCell<Option<InnerHandle<T>>>);
 
-pub use fluvio_wasm_timer::Instant;
-
-pub fn task_future<T>(
-  task: impl FnOnce(T) + 'static,
-  state: T,
-  delay: Option<Duration>,
-) -> (impl Future<Output = ()>, SpawnHandle) {
-  let fut = lazy(|_| task(state)).delay(delay.unwrap_or_default());
-  let (fut, handle) = futures::future::abortable(fut);
-  (fut.map(|_| ()), SpawnHandle::new(handle))
+enum InnerHandle<T> {
+  Handle(RemoteHandle<T>),
+  Value(T),
 }
 
-#[cfg(not(all(target_arch = "wasm32")))]
-/// A Scheduler is an object to order task and schedule their execution.
-pub trait SharedScheduler {
-  fn spawn<Fut>(&self, future: Fut)
-  where
-    Fut: Future<Output = ()> + Send + 'static;
-
-  fn schedule<T: Send + 'static>(
+pub trait Scheduler<T>: Clone
+where
+  T: Future,
+{
+  fn schedule(
     &self,
-    task: impl FnOnce(T) + Send + 'static,
-    delay: Option<Duration>,
-    state: T,
-  ) -> SpawnHandle {
-    let (f, handle) = task_future(task, state, delay);
-    self.spawn(f);
-    handle
-  }
+    task: T,
+    delay: Option<std::time::Duration>,
+  ) -> TaskHandle<T::Output>;
+}
 
-  fn schedule_repeating(
-    &self,
-    task: impl FnMut(usize) + Send + 'static,
-    time_between: Duration,
-    at: Option<Instant>,
-  ) -> SpawnHandle {
-    let (f, handle) = repeating_future(task, time_between, at);
-    self.spawn(f.map(|_| ()));
-    handle
+pin_project! {
+  pub struct OnceTask<Args, R> {
+    func: fn(Args) -> R,
+    args: Option<Args>,
   }
 }
 
-pub trait LocalScheduler {
-  fn spawn<Fut>(&self, future: Fut)
-  where
-    Fut: Future<Output = ()> + 'static;
-
-  fn schedule<T: 'static>(
-    &self,
-    task: impl FnOnce(T) + 'static,
-    delay: Option<Duration>,
-    state: T,
-  ) -> SpawnHandle {
-    let (f, handle) = task_future(task, state, delay);
-    self.spawn(f);
-    handle
-  }
-
-  fn schedule_repeating(
-    &self,
-    task: impl FnMut(usize) + 'static,
-    time_between: Duration,
-    at: Option<Instant>,
-  ) -> SpawnHandle {
-    let (f, handle) = repeating_future(task, time_between, at);
-    self.spawn(f.map(|_| ()));
-    handle
+pin_project! {
+  pub struct FutureTask<F: Future, Args, R> {
+    #[pin]
+    future: F,
+    task: fn(F::Output, Args)->R,
+    args: Option<Args>,
   }
 }
 
-#[derive(Clone)]
-pub struct SpawnHandle {
-  pub handle: AbortHandle,
-  is_closed: Arc<RwLock<bool>>,
+#[cfg(target_arch = "wasm32")]
+type Interval = gloo_timers::future::IntervalStream;
+#[cfg(not(target_arch = "wasm32"))]
+type Interval = futures_time::stream::Interval;
+
+pin_project! {
+  pub struct RepeatTask<Args> {
+    #[pin]
+    interval: Interval,
+    // the task to do and return if you want the task continue repeat.
+    task: fn(&mut Args, usize)-> bool,
+    args: Args,
+    seq: usize,
+  }
 }
 
-impl SpawnHandle {
+impl<Args, R> OnceTask<Args, R> {
   #[inline]
-  pub fn new(handle: AbortHandle) -> Self {
-    SpawnHandle {
-      handle,
-      is_closed: Arc::new(RwLock::new(false)),
+  pub fn new(func: fn(Args) -> R, args: Args) -> Self {
+    OnceTask { func, args: Some(args) }
+  }
+}
+
+impl<F: Future, Args, R> FutureTask<F, Args, R> {
+  pub fn new(future: F, task: fn(F::Output, Args) -> R, args: Args) -> Self {
+    Self { future, task, args: Some(args) }
+  }
+}
+
+impl<Args, R: TaskReturn> Future for OnceTask<Args, R> {
+  type Output = R;
+
+  fn poll(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Self::Output> {
+    let this = self.project();
+    let args = this.args.take().unwrap();
+    Poll::Ready((*this.func)(args))
+  }
+}
+
+impl<Args> Future for RepeatTask<Args> {
+  type Output = NormalReturn<()>;
+
+  fn poll(
+    mut self: Pin<&mut Self>,
+    cx: &mut Context<'_>,
+  ) -> Poll<Self::Output> {
+    let mut this = self.as_mut().project();
+
+    loop {
+      let instant = ready!(this.interval.as_mut().poll_next(cx));
+      match instant {
+        Some(_) if (*this.task)(this.args, *this.seq) => {
+          *this.seq += 1;
+        }
+        _ => return Poll::Ready(NormalReturn::new(())),
+      }
     }
   }
 }
 
-impl SubscriptionLike for SpawnHandle {
-  fn unsubscribe(&mut self) {
-    let was_closed = *self.is_closed.read().unwrap();
-    if !was_closed {
-      *self.is_closed.write().unwrap() = true;
-      self.handle.abort();
+impl<F, Args, R: TaskReturn> Future for FutureTask<F, Args, R>
+where
+  F: Future,
+{
+  type Output = R;
+
+  fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+    let this = self.project();
+    match this.future.poll(cx) {
+      Poll::Ready(v) => {
+        let args = this.args.take().unwrap();
+        Poll::Ready((*this.task)(v, args))
+      }
+      Poll::Pending => Poll::Pending,
+    }
+  }
+}
+
+impl<Args> RepeatTask<Args> {
+  pub fn new(
+    dur: std::time::Duration,
+    task: fn(&mut Args, usize) -> bool,
+    args: Args,
+  ) -> Self {
+    #[cfg(target_arch = "wasm32")]
+    let interval = Interval::new(dur.as_millis() as u32);
+    #[cfg(not(target_arch = "wasm32"))]
+    let interval = futures_time::stream::interval(dur.into());
+
+    Self { interval, task, args, seq: 0 }
+  }
+}
+
+pub struct SubscribeReturn<T: Subscription>(T);
+pub struct NormalReturn<T>(T);
+
+impl<T> NormalReturn<T> {
+  #[inline]
+  pub fn new(v: T) -> Self {
+    Self(v)
+  }
+}
+
+impl<T: Subscription> SubscribeReturn<T> {
+  #[inline]
+  pub fn new(v: T) -> Self {
+    Self(v)
+  }
+}
+
+impl<T> TaskHandle<T> {
+  pub fn value(v: T) -> Self {
+    Self(RefCell::new(Some(InnerHandle::Value(v))))
+  }
+
+  fn remote_handle(handle: RemoteHandle<T>) -> Self {
+    Self(RefCell::new(Some(InnerHandle::Handle(handle))))
+  }
+}
+trait TaskReturn {}
+
+impl<T: Subscription> TaskReturn for SubscribeReturn<T> {}
+impl<T> TaskReturn for NormalReturn<T> {}
+
+impl<T: 'static> Subscription for TaskHandle<NormalReturn<T>> {
+  #[inline]
+  fn unsubscribe(self) {
+    self.0.borrow_mut().take();
+  }
+
+  #[inline]
+  fn is_closed(&self) -> bool {
+    self.sync_remote();
+    self
+      .0
+      .borrow()
+      .as_ref()
+      .map_or(true, |h| matches!(h, InnerHandle::Value(_)))
+  }
+}
+
+impl<T: Subscription + 'static> Subscription
+  for TaskHandle<SubscribeReturn<T>>
+{
+  fn unsubscribe(self) {
+    self.sync_remote();
+    if let Some(InnerHandle::Value(u)) = self.0.borrow_mut().take() {
+      u.0.unsubscribe()
     }
   }
 
   #[inline]
   fn is_closed(&self) -> bool {
-    *self.is_closed.read().unwrap()
+    self.sync_remote();
+
+    self.0.borrow().as_ref().map_or(true, |inner| match inner {
+      InnerHandle::Handle(_) => false,
+      InnerHandle::Value(u) => u.0.is_closed(),
+    })
   }
+}
+
+impl<T: 'static> TaskHandle<T> {
+  fn sync_remote(&self) {
+    let inner = &mut *self.0.borrow_mut();
+
+    if let Some(InnerHandle::Handle(handler)) = inner {
+      let waker = unsafe { Waker::from_raw(MOCK_RAW_WAKER) };
+      let mut cx = Context::from_waker(&waker);
+      let future = Pin::new(handler);
+      if let Poll::Ready(value) = future.poll(&mut cx) {
+        *inner = Some(InnerHandle::Value(value));
+      }
+    }
+  }
+}
+
+const VTABLE: RawWakerVTable = RawWakerVTable::new(
+  |data: *const ()| RawWaker::new(data, &VTABLE),
+  |_data: *const ()| (),
+  |_data: *const ()| (),
+  |_data: *const ()| (),
+);
+
+const MOCK_RAW_WAKER: RawWaker =
+  RawWaker::new((&VTABLE as *const RawWakerVTable).cast(), &VTABLE);
+
+impl<T> Drop for TaskHandle<T> {
+  #[inline]
+  fn drop(&mut self) {
+    if let Some(InnerHandle::Handle(handle)) = self.0.borrow_mut().take() {
+      handle.forget()
+    }
+  }
+}
+
+#[cfg(target_arch = "wasm32")]
+#[derive(Debug, Clone)]
+pub struct WasmLocalScheduler;
+#[cfg(feature = "futures-scheduler")]
+pub use futures::executor::LocalPool as FuturesLocalSchedulerPool;
+#[cfg(feature = "futures-scheduler")]
+pub use futures::executor::LocalSpawner as FuturesLocalScheduler;
+#[cfg(all(feature = "futures-scheduler", not(target_arch = "wasm32")))]
+pub use futures::executor::ThreadPool as FuturesThreadPoolScheduler;
+#[cfg(all(feature = "tokio-scheduler", not(target_arch = "wasm32")))]
+pub use tokio::runtime::Handle as TokioScheduler;
+
+macro_rules! impl_scheduler_method {
+  ($spawn_macro: ident) => {
+    fn schedule(
+      &self,
+      task: T,
+      delay: Option<std::time::Duration>,
+    ) -> TaskHandle<T::Output> {
+      let fut = async move {
+        if let Some(dur) = delay {
+          let dur: Duration = dur.into();
+          sleep(dur.into()).await;
+        }
+        task.await
+      };
+      let (fut, handle) = fut.remote_handle();
+      $spawn_macro!(self, fut);
+      TaskHandle::remote_handle(handle)
+    }
+  };
 }
 
 #[cfg(feature = "futures-scheduler")]
-mod futures_scheduler {
-  use crate::scheduler::LocalScheduler;
-  #[cfg(not(target_arch = "wasm32"))]
-  use crate::scheduler::SharedScheduler;
-  use futures::{
-    executor::LocalSpawner, task::LocalSpawnExt, Future, FutureExt,
+macro_rules! futures_local_spawn {
+  ($pool: ident, $future: ident) => {
+    $pool.spawn_local($future).unwrap()
   };
-  #[cfg(not(target_arch = "wasm32"))]
-  use futures::{executor::ThreadPool, task::SpawnExt};
-
-  #[cfg(not(target_arch = "wasm32"))]
-  impl SharedScheduler for ThreadPool {
-    fn spawn<Fut>(&self, future: Fut)
-    where
-      Fut: Future<Output = ()> + Send + 'static,
-    {
-      SpawnExt::spawn(self, future).unwrap();
-    }
-  }
-
-  impl LocalScheduler for LocalSpawner {
-    fn spawn<Fut>(&self, future: Fut)
-    where
-      Fut: Future<Output = ()> + 'static,
-    {
-      self.spawn_local(future.map(|_| ())).unwrap();
-    }
-  }
 }
 
-fn repeating_future(
-  task: impl FnMut(usize) + 'static,
-  time_between: Duration,
-  at: Option<Instant>,
-) -> (impl Future<Output = ()>, SpawnHandle) {
-  let now = Instant::now();
-  let delay = at.map(|inst| {
-    if inst > now {
-      inst - now
-    } else {
-      Duration::from_micros(0)
-    }
-  });
-  let future = to_interval(task, time_between, delay.unwrap_or(time_between));
-  let (fut, handle) = futures::future::abortable(future);
-  (fut.map(|_| ()), SpawnHandle::new(handle))
-}
-
-fn to_interval(
-  mut task: impl FnMut(usize) + 'static,
-  interval_duration: Duration,
-  delay: Duration,
-) -> impl Future<Output = ()> {
-  let mut number = 0;
-
-  futures::future::ready(())
-    .then(move |_| {
-      task(number);
-      async_std::stream::interval(interval_duration).for_each(move |_| {
-        number += 1;
-        task(number);
-        futures::future::ready(())
-      })
-    })
-    .delay(delay)
-}
-
-#[cfg(all(not(target_arch = "wasm32"), feature = "tokio-scheduler"))]
-mod tokio_scheduler {
+#[cfg(target_arch = "wasm32")]
+mod wasm_scheduler {
   use super::*;
-  use std::sync::Arc;
-  use tokio::runtime::Runtime;
+  use futures::task::LocalSpawnExt;
+  use gloo_timers::future::sleep;
+  use std::time::Duration;
 
-  impl SharedScheduler for Runtime {
-    fn spawn<Fut>(&self, future: Fut)
+  macro_rules! wasm_bindgen_spawn {
+    ($pool: ident, $future: ident) => {
+      wasm_bindgen_futures::spawn_local($future);
+    };
+  }
+
+  impl<T> Scheduler<T> for WasmLocalScheduler
+  where
+    T: Future + 'static,
+    T::Output: TaskReturn,
+  {
+    impl_scheduler_method!(wasm_bindgen_spawn);
+  }
+
+  #[cfg(feature = "futures-scheduler")]
+  impl<T> Scheduler<T> for FuturesLocalScheduler
+  where
+    T: Future + 'static,
+    T::Output: TaskReturn,
+  {
+    impl_scheduler_method!(futures_local_spawn);
+  }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+mod not_wasm_scheduler {
+  use super::*;
+  use futures_time::{task::sleep, time::Duration};
+
+  #[cfg(feature = "futures-scheduler")]
+  mod futures_scheduler {
+    use super::*;
+    use futures::task::{LocalSpawnExt, SpawnExt};
+
+    macro_rules! futures_pool_spawn {
+      ($pool: ident, $future: ident) => {
+        $pool.spawn($future).unwrap()
+      };
+    }
+
+    impl<T> Scheduler<T> for FuturesThreadPoolScheduler
     where
-      Fut: Future<Output = ()> + Send + 'static,
+      T: Future + Send + 'static,
+      T::Output: TaskReturn + Send + 'static,
     {
-      Runtime::spawn(self, future);
+      impl_scheduler_method!(futures_pool_spawn);
+    }
+
+    impl<T> Scheduler<T> for FuturesLocalScheduler
+    where
+      T: Future + 'static,
+      T::Output: TaskReturn,
+    {
+      impl_scheduler_method!(futures_local_spawn);
     }
   }
 
-  impl SharedScheduler for Arc<Runtime> {
-    fn spawn<Fut>(&self, future: Fut)
+  #[cfg(feature = "tokio-scheduler")]
+  mod tokio_scheduler {
+    use super::*;
+
+    macro_rules! tokio_runtime_spawn {
+      ($pool: ident, $future: ident) => {
+        $pool.spawn($future)
+      };
+    }
+
+    impl<T> Scheduler<T> for TokioScheduler
     where
-      Fut: Future<Output = ()> + Send + 'static,
+      T: Future + Send + 'static,
+      T::Output: TaskReturn + Send + 'static,
     {
-      Runtime::spawn(self, future);
+      impl_scheduler_method!(tokio_runtime_spawn);
     }
   }
 }
 
 #[cfg(all(test, not(target_arch = "wasm32"), feature = "tokio-scheduler"))]
 mod test {
-  use crate::prelude::*;
+  use crate::{ops::complete_status::CompleteStatus, prelude::*};
   use bencher::Bencher;
   use futures::executor::{LocalPool, ThreadPool};
   use std::sync::{Arc, Mutex};
-
-  fn waste_time(v: u32) -> u32 {
-    (0..v)
-      .into_iter()
-      .map(|index| (0..index).sum::<u32>().min(u32::MAX / v))
-      .sum()
-  }
 
   #[test]
   fn bench_pool() {
@@ -227,11 +381,11 @@ mod test {
     b.iter(|| {
       let c_last = last.clone();
       let pool = ThreadPool::new().unwrap();
-      observable::from_iter(0..1000)
+      let (o, status) = observable::from_iter(0..1000)
         .observe_on(pool)
-        .map(waste_time)
-        .into_shared()
-        .subscribe(move |v| *c_last.lock().unwrap() = v);
+        .complete_status();
+      o.subscribe(move |v| *c_last.lock().unwrap() = v);
+      CompleteStatus::wait_for_end(status);
 
       *last.lock().unwrap()
     })
@@ -251,7 +405,6 @@ mod test {
       let mut local = LocalPool::new();
       observable::from_iter(0..1000)
         .observe_on(local.spawner())
-        .map(waste_time)
         .subscribe(move |v| *c_last.lock().unwrap() = v);
       local.run();
       *last.lock().unwrap()
@@ -271,12 +424,13 @@ mod test {
     b.iter(|| {
       let c_last = last.clone();
       let local = runtime::Builder::new_current_thread().build().unwrap();
+      let scheduler = local.handle().clone();
 
-      observable::from_iter(0..1000)
-        .observe_on(local)
-        .map(waste_time)
-        .into_shared()
-        .subscribe(move |v| *c_last.lock().unwrap() = v);
+      let (o, status) = observable::from_iter(0..1000)
+        .observe_on(scheduler)
+        .complete_status();
+      o.subscribe(move |v| *c_last.lock().unwrap() = v);
+      CompleteStatus::wait_for_end(status);
 
       *last.lock().unwrap()
     })
@@ -294,88 +448,14 @@ mod test {
     let last = Arc::new(Mutex::new(0));
     b.iter(|| {
       let c_last = last.clone();
-      let pool = runtime::Runtime::new().unwrap();
-      observable::from_iter(0..1000)
+      let pool = runtime::Runtime::new().unwrap().handle().clone();
+      let (o, status) = observable::from_iter(0..1000)
         .observe_on(pool)
-        .map(waste_time)
-        .into_shared()
-        .subscribe(move |v| *c_last.lock().unwrap() = v);
-
-      // todo: no way to wait all task has finished in `Tokio` Scheduler.
-
+        .complete_status();
+      o.subscribe(move |v| *c_last.lock().unwrap() = v);
+      CompleteStatus::wait_for_end(status);
       *last.lock().unwrap()
     })
-  }
-}
-
-#[cfg(target_arch = "wasm32")]
-pub struct LocalSpawner;
-
-#[cfg(all(target_arch = "wasm32", feature = "wasm-scheduler"))]
-mod wasm_scheduler {
-  use super::{Duration, Instant, SpawnHandle, StreamExt};
-  use crate::scheduler::{LocalScheduler, LocalSpawner};
-  use futures::{task, Future, FutureExt};
-  use gloo_timers::future::{sleep, IntervalStream};
-
-  #[cfg(all(target_arch = "wasm32"))]
-  fn to_interval(
-    mut task: impl FnMut(usize) + 'static,
-    interval_duration: Duration,
-    delay: Duration,
-  ) -> impl Future<Output = ()> {
-    sleep(delay);
-
-    let mut number = 0;
-
-    futures::future::ready(()).then(move |_| {
-      task(number);
-      IntervalStream::new(interval_duration.as_millis() as u32).for_each(
-        move |_| {
-          number += 1;
-          task(number);
-          futures::future::ready(())
-        },
-      )
-    })
-  }
-
-  fn repeating_future(
-    task: impl FnMut(usize) + 'static,
-    time_between: Duration,
-    at: Option<Instant>,
-  ) -> (impl Future<Output = ()>, SpawnHandle) {
-    let now = Instant::now();
-    let delay = at.map(|inst| {
-      if inst > now {
-        inst - now
-      } else {
-        Duration::from_micros(0)
-      }
-    });
-    let future = to_interval(task, time_between, delay.unwrap_or(time_between));
-    let (fut, handle) = futures::future::abortable(future);
-    (fut.map(|_| ()), SpawnHandle::new(handle))
-  }
-
-  impl LocalScheduler for LocalSpawner {
-    fn spawn<Fut>(&self, future: Fut)
-    where
-      Fut: Future<Output = ()> + 'static,
-    {
-      wasm_bindgen_futures::spawn_local(future.map(|_| ()));
-    }
-
-    fn schedule_repeating(
-      &self,
-      task: impl FnMut(usize) + 'static,
-      time_between: Duration,
-      at: Option<Instant>,
-    ) -> SpawnHandle {
-      let (f, handle) = repeating_future(task, time_between, at);
-      self.spawn(f.map(|_| ()));
-      handle
-    }
   }
 }
 

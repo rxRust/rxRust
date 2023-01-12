@@ -1,4 +1,4 @@
-use crate::{impl_local_shared_both, prelude::*};
+use crate::prelude::*;
 
 /// Creates an observable that will on subscription defer to another observable
 /// that is supplied by a supplier-function which will be run once at each
@@ -26,24 +26,25 @@ where
 #[derive(Clone)]
 pub struct ObservableDeref<F>(F);
 
-impl<F, U> Observable for ObservableDeref<F>
+impl<Item, Err, O, F, U> Observable<Item, Err, O> for ObservableDeref<F>
 where
   F: FnOnce() -> U,
-  U: Observable,
+  U: Observable<Item, Err, O>,
+  O: Observer<Item, Err>,
 {
-  type Item = U::Item;
-  type Err = U::Err;
+  type Unsub = U::Unsub;
+
+  fn actual_subscribe(self, observer: O) -> Self::Unsub {
+    (self.0)().actual_subscribe(observer)
+  }
 }
 
-impl_local_shared_both! {
- impl<F, U> ObservableDeref<F>;
- type Unsub = U::Unsub;
- macro method($self: ident, $observer: ident, $ctx: ident) {
-  ($self.0)().actual_subscribe($observer)
- }
- where F: FnOnce()-> U, U: @ctx::Observable
+impl<Item, Err, F, U> ObservableExt<Item, Err> for ObservableDeref<F>
+where
+  F: FnOnce() -> U,
+  U: ObservableExt<Item, Err>,
+{
 }
-
 #[cfg(not(target_arch = "wasm32"))]
 #[cfg(test)]
 mod test {
@@ -63,8 +64,7 @@ mod test {
     let deferred = observable::defer(|| {
       *calls.lock().unwrap() += 1;
       observable::of(&2)
-    })
-    .into_shared();
+    });
 
     assert_eq!(calls.lock().unwrap().deref(), &0);
 
@@ -72,11 +72,11 @@ mod test {
       let sum_copy = Arc::clone(&sum);
       let errs_copy = Arc::clone(&errs);
       let completes_copy = Arc::clone(&completes);
-      deferred.clone().subscribe_all(
-        move |v| *sum_copy.lock().unwrap() += v,
-        move |_| *errs_copy.lock().unwrap() += 1,
-        move || *completes_copy.lock().unwrap() += 1,
-      );
+      deferred
+        .clone()
+        .on_complete(move || *completes_copy.lock().unwrap() += 1)
+        .on_error(move |_| *errs_copy.lock().unwrap() += 1)
+        .subscribe(move |v| *sum_copy.lock().unwrap() += v);
       assert_eq!(*calls.lock().unwrap(), i);
     }
 
@@ -103,17 +103,6 @@ mod test {
     assert_eq!(*c_sum1.lock().unwrap(), 10);
     assert_eq!(*c_sum2.lock().unwrap(), 10);
     assert_eq!(*calls.lock().unwrap().deref(), 2);
-  }
-
-  #[test]
-  fn fork_and_share() {
-    let observable = observable::defer(observable::empty);
-    observable.clone().into_shared().subscribe(|_: i32| {});
-    observable.into_shared().subscribe(|_| {});
-
-    let observable = observable::defer(observable::empty).into_shared();
-    observable.clone().subscribe(|_: i32| {});
-    observable.subscribe(|_| {});
   }
 
   #[test]

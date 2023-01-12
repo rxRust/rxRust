@@ -144,14 +144,11 @@ Specialty Observables that have more precisely-controlled subscription dynamics
 
 ## Schedulers
 
-- [ ] maybe Redesign? How should rxRust work with Future's executor more naturally.
-- [ ] async Scheduler and timer for local thread, and not require thread safe.
-- [x] new thread scheduler
+- [x] maybe Redesign? How should rxRust work with Future's executor more naturally.
+- [x] async Scheduler and timer for local thread, and not require thread safe.
+- [x] local thread scheduler
 - [x] thread pool scheduler
 
-## Docs
-
-- [ ] A guide to introduce how to implement an operator or Observable creator.
 
 ## Workflows
 

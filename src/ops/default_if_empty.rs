@@ -1,51 +1,50 @@
-use crate::{impl_local_shared_both, prelude::*};
+use crate::prelude::*;
 
 #[derive(Clone)]
-pub struct DefaultIfEmptyOp<S>
+pub struct DefaultIfEmptyOp<S, Item> {
+  source: S,
+  is_empty: bool,
+  default_value: Item,
+}
+
+impl<Item, S> DefaultIfEmptyOp<S, Item> {
+  pub(crate) fn new(source: S, default_value: Item) -> Self {
+    Self { source, is_empty: true, default_value }
+  }
+}
+
+impl<Item, Err, O, S> Observable<Item, Err, O> for DefaultIfEmptyOp<S, Item>
 where
-  S: Observable,
+  S: Observable<Item, Err, DefaultIfEmptyObserver<O, Item>>,
+  O: Observer<Item, Err>,
+  Item: Clone,
 {
-  pub(crate) source: S,
-  pub(crate) is_empty: bool,
-  pub(crate) default_value: S::Item,
-}
-
-impl<S: Observable> Observable for DefaultIfEmptyOp<S> {
-  type Item = S::Item;
-  type Err = S::Err;
-}
-
-impl_local_shared_both! {
-  impl<S> DefaultIfEmptyOp<S>;
   type Unsub = S::Unsub;
-  macro method($self: ident, $observer: ident, $ctx: ident) {
-    $self.source.actual_subscribe(DefaultIfEmptyObserver {
-      observer: $observer,
-      is_empty: $self.is_empty,
-      default_value: $self.default_value,
+
+  fn actual_subscribe(self, observer: O) -> Self::Unsub {
+    self.source.actual_subscribe(DefaultIfEmptyObserver {
+      observer,
+      is_empty: self.is_empty,
+      default_value: self.default_value,
     })
   }
-  where
-    S: @ctx::Observable,
-    S::Item: Clone
-      @ctx::local_only(+ 'o)
-      @ctx::shared_only(+ Send + Sync + 'static)
-
 }
 
+impl<Item, Err, S> ObservableExt<Item, Err> for DefaultIfEmptyOp<S, Item> where
+  S: ObservableExt<Item, Err>
+{
+}
 pub struct DefaultIfEmptyObserver<O, Item> {
   observer: O,
   is_empty: bool,
   default_value: Item,
 }
 
-impl<Item, Err, O> Observer for DefaultIfEmptyObserver<O, Item>
+impl<Item, Err, O> Observer<Item, Err> for DefaultIfEmptyObserver<O, Item>
 where
-  O: Observer<Item = Item, Err = Err>,
+  O: Observer<Item, Err>,
   Item: Clone,
 {
-  type Item = Item;
-  type Err = Err;
   fn next(&mut self, value: Item) {
     self.observer.next(value);
     if self.is_empty {
@@ -53,15 +52,21 @@ where
     }
   }
 
-  fn error(&mut self, err: Self::Err) {
+  #[inline]
+  fn error(self, err: Err) {
     self.observer.error(err)
   }
 
-  fn complete(&mut self) {
+  fn complete(mut self) {
     if self.is_empty {
       self.observer.next(self.default_value.clone());
     }
     self.observer.complete()
+  }
+
+  #[inline]
+  fn is_finished(&self) -> bool {
+    self.observer.is_finished()
   }
 }
 
@@ -77,7 +82,8 @@ mod test {
 
     observable::of(10)
       .default_if_empty(5)
-      .subscribe_complete(|v| value = v, || completed = true);
+      .on_complete(|| completed = true)
+      .subscribe(|v| value = v);
 
     assert_eq!(value, 10);
     assert!(completed);
@@ -90,28 +96,11 @@ mod test {
 
     observable::empty()
       .default_if_empty(5)
-      .subscribe_complete(|v| value = v, || completed = true);
+      .on_complete(|| completed = true)
+      .subscribe(|v| value = v);
 
     assert_eq!(value, 5);
     assert!(completed);
-  }
-
-  #[cfg(not(target_arch = "wasm32"))]
-  #[test]
-  fn into_shared() {
-    observable::from_iter(0..100)
-      .default_if_empty(5)
-      .into_shared()
-      .subscribe(|_| {});
-  }
-
-  #[cfg(not(target_arch = "wasm32"))]
-  #[test]
-  fn ininto_shared_empty() {
-    observable::empty()
-      .default_if_empty(5)
-      .into_shared()
-      .subscribe(|_| {});
   }
 
   #[test]

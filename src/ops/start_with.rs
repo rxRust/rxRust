@@ -1,4 +1,4 @@
-use crate::{impl_local_shared_both, prelude::*};
+use crate::prelude::*;
 
 #[derive(Clone)]
 pub struct StartWithOp<S, B> {
@@ -6,41 +6,32 @@ pub struct StartWithOp<S, B> {
   pub(crate) values: Vec<B>,
 }
 
-impl<S, B> Observable for StartWithOp<S, B>
+impl<Item, Err, O, S> Observable<Item, Err, O> for StartWithOp<S, Item>
 where
-  S: Observable,
+  S: Observable<Item, Err, O>,
+  O: Observer<Item, Err>,
 {
-  type Item = S::Item;
-  type Err = S::Err;
-}
-
-impl_local_shared_both! {
-  impl<S, B> StartWithOp<S, B>;
   type Unsub = S::Unsub;
-  macro method($self: ident, $observer: ident, $ctx: ident) {
-    for val in $self.values {
-      $observer.next(val);
+
+  fn actual_subscribe(self, mut observer: O) -> Self::Unsub {
+    for val in self.values {
+      observer.next(val);
     }
 
-    $self.source.actual_subscribe($observer)
+    self.source.actual_subscribe(observer)
   }
-  where
-    S: @ctx::Observable<Item=B>,
-    @ctx::shared_only(
-      B: Clone + Into<S::Item> + Send + Sync + 'static,
-      S::Item: 'static,
-    )
-    @ctx::local_only(
-      B: Clone + Into<S::Item> + 'o,
-      S::Item: Clone + 'o,
-    )
+}
+
+impl<Item, Err, S> ObservableExt<Item, Err> for StartWithOp<S, Item> where
+  S: ObservableExt<Item, Err>
+{
 }
 
 #[cfg(test)]
 mod test {
+  use crate::observable::fake_timer::FakeClock;
   use crate::of_sequence;
   use crate::prelude::*;
-  use crate::test_scheduler::ManualScheduler;
   use std::cell::RefCell;
   use std::rc::Rc;
   use std::time::Duration;
@@ -77,10 +68,9 @@ mod test {
 
   #[test]
   fn should_start_on_subscription() {
-    let scheduler = ManualScheduler::now();
+    let clock = FakeClock::default();
     let values = Rc::new(RefCell::new(vec![]));
-    let interval =
-      observable::interval(Duration::from_millis(100), scheduler.clone());
+    let interval = clock.interval(Duration::from_millis(100));
 
     {
       let values = values.clone();
@@ -89,7 +79,7 @@ mod test {
         .subscribe(move |v| values.borrow_mut().push(v));
     }
 
-    scheduler.advance_and_run(Duration::from_millis(10), 1);
+    clock.advance(Duration::from_millis(10));
     assert_eq!(values.borrow().len(), 1);
     assert_eq!(values.borrow().as_ref(), vec![0]);
   }

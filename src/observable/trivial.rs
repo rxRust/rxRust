@@ -1,4 +1,4 @@
-use crate::{impl_local_shared_both, prelude::*};
+use crate::prelude::*;
 
 /// Creates an observable that emits no items, just terminates with an error.
 ///
@@ -12,19 +12,18 @@ pub fn throw<Err>(e: Err) -> ThrowObservable<Err> {
 #[derive(Clone)]
 pub struct ThrowObservable<Err>(Err);
 
-impl<Err> Observable for ThrowObservable<Err> {
-  type Item = ();
-  type Err = Err;
+impl<Err, O> Observable<(), Err, O> for ThrowObservable<Err>
+where
+  O: Observer<(), Err>,
+{
+  type Unsub = ();
+
+  fn actual_subscribe(self, observer: O) -> Self::Unsub {
+    observer.error(self.0);
+  }
 }
 
-impl_local_shared_both! {
- impl<Err> ThrowObservable<Err>;
- type Unsub = SingleSubscription;
- macro method($self:ident, $observer: ident, $ctx: ident) {
-   $observer.error($self.0);
-   SingleSubscription::default()
- }
-}
+impl<Err> ObservableExt<(), Err> for ThrowObservable<Err> {}
 
 /// Creates an observable that produces no values.
 ///
@@ -47,20 +46,18 @@ pub fn empty<Item>() -> EmptyObservable<Item> {
 #[derive(Clone)]
 pub struct EmptyObservable<Item>(TypeHint<Item>);
 
-impl<Item> Observable for EmptyObservable<Item> {
-  type Item = Item;
-  type Err = ();
-}
+impl<Item, O> Observable<Item, (), O> for EmptyObservable<Item>
+where
+  O: Observer<Item, ()>,
+{
+  type Unsub = ();
 
-impl_local_shared_both! {
-  impl<Item> EmptyObservable<Item>;
-  type Unsub = SingleSubscription;
-  macro method($self:ident, $observer: ident, $ctx: ident) {
-    $observer.complete();
-    SingleSubscription::default()
+  fn actual_subscribe(self, observer: O) -> Self::Unsub {
+    observer.complete();
   }
 }
 
+impl<Item> ObservableExt<Item, ()> for EmptyObservable<Item> {}
 /// Creates an observable that never emits anything.
 ///
 /// Neither emits a value, nor completes, nor emits an error.
@@ -72,19 +69,18 @@ pub fn never() -> NeverObservable {
 #[derive(Clone)]
 pub struct NeverObservable;
 
-impl Observable for NeverObservable {
-  type Item = ();
-  type Err = ();
-}
+impl<O> Observable<(), (), O> for NeverObservable
+where
+  O: Observer<(), ()>,
+{
+  type Unsub = ();
 
-impl_local_shared_both! {
-  impl NeverObservable;
-  type Unsub = SingleSubscription;
-  macro method($self:ident, $observer: ident, $ctx: ident) {
-    SingleSubscription::default()
+  fn actual_subscribe(self, observer: O) -> Self::Unsub {
+    observer.complete();
   }
 }
 
+impl ObservableExt<(), ()> for NeverObservable {}
 #[cfg(test)]
 mod test {
   use crate::prelude::*;
@@ -94,12 +90,13 @@ mod test {
     let mut value_emitted = false;
     let mut completed = false;
     let mut error_emitted = String::new();
-    observable::throw(String::from("error")).subscribe_all(
-      // helping with type inference
-      |_| value_emitted = true,
-      |e| error_emitted = e,
-      || completed = true,
-    );
+    observable::throw(String::from("error"))
+      .on_error(|e| error_emitted = e)
+      .on_complete(|| completed = true)
+      .subscribe(
+        // helping with type inference
+        |_| value_emitted = true,
+      );
     assert!(!value_emitted);
     assert!(!completed);
     assert_eq!(error_emitted, "error");
@@ -109,7 +106,9 @@ mod test {
   fn empty() {
     let mut hits = 0;
     let mut completed = false;
-    observable::empty().subscribe_complete(|()| hits += 1, || completed = true);
+    observable::empty()
+      .on_complete(|| completed = true)
+      .subscribe(|()| hits += 1);
 
     assert_eq!(hits, 0);
     assert!(completed);

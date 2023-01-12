@@ -1,285 +1,276 @@
-use super::box_it::LocalBoxOp;
-#[cfg(not(all(target_arch = "wasm32")))]
-use super::box_it::SharedBoxOp;
-use crate::prelude::*;
-#[cfg(not(all(target_arch = "wasm32")))]
-use std::sync::{Arc, Mutex};
-use std::{cell::RefCell, collections::VecDeque, rc::Rc};
+use crate::{
+  prelude::*,
+  rc::{MutArc, MutRc, RcDeref, RcDerefMut},
+};
+use std::collections::VecDeque;
 
-pub struct MergeAllOp<S> {
+pub struct MergeAllOp<'a, S, ObservableItem> {
   pub concurrent: usize,
   pub source: S,
+  _marker: TypeHint<&'a ObservableItem>,
 }
 
-impl<S> Observable for MergeAllOp<S>
-where
-  S: Observable,
-  S::Item: Observable,
-{
-  type Item = <S::Item as Observable>::Item;
-  type Err = S::Err;
+pub struct MergeAllOpThreads<S, ObservableItem> {
+  pub source: S,
+  pub concurrent: usize,
+  _marker: TypeHint<ObservableItem>,
 }
 
-impl<'a, S, Item> LocalObservable<'a> for MergeAllOp<S>
-where
-  S: LocalObservable<'a, Item = Item>,
-  Item: LocalObservable<'a, Err = S::Err> + 'a,
-  Item::Unsub: 'static,
-  S::Unsub: 'static,
-{
-  type Unsub = LocalSubscription;
-  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
-  where
-    O: Observer<Item = Self::Item, Err = Self::Err> + 'a,
-  {
-    let subscription = LocalSubscription::default();
-    let c_subscription = subscription.clone();
-    let s =
-      self
-        .source
-        .map(|v| v.box_it())
-        .actual_subscribe(Rc::new(RefCell::new(LocalMergeAllObserver {
-          observer,
-          subscribed: 0,
-          concurrent: self.concurrent,
-          subscription,
-          buffer: <_>::default(),
-          completed: false,
-        })));
-    c_subscription.add(s);
-    c_subscription
-  }
-}
-
-pub struct LocalMergeAllObserver<'a, O: Observer> {
-  observer: O,
-  subscribed: usize,
-  concurrent: usize,
-  subscription: LocalSubscription,
-  completed: bool,
-  buffer: VecDeque<LocalBoxOp<'a, O::Item, O::Err>>,
-}
-
-impl<'a, O> Observer for Rc<RefCell<LocalMergeAllObserver<'a, O>>>
-where
-  O: Observer + 'a,
-{
-  type Item = LocalBoxOp<'a, O::Item, O::Err>;
-  type Err = O::Err;
-
-  fn next(&mut self, value: Self::Item) {
-    let mut inner = self.borrow_mut();
-    if inner.subscribed < inner.concurrent {
-      inner
-        .subscription
-        .add(value.actual_subscribe(LocalInnerObserver(self.clone())));
-      inner.subscribed += 1;
-    } else {
-      inner.buffer.push_back(value);
-    }
-  }
-
-  fn error(&mut self, err: Self::Err) {
-    let mut inner = self.borrow_mut();
-    inner.completed = true;
-    inner.observer.error(err);
-    inner.subscription.unsubscribe();
-  }
-
-  fn complete(&mut self) {
-    let mut inner = self.borrow_mut();
-    inner.completed = true;
-    if inner.subscribed == 0 && inner.buffer.is_empty() {
-      inner.observer.complete()
-    }
-  }
-}
-
-struct LocalInnerObserver<'a, O: Observer>(
-  Rc<RefCell<LocalMergeAllObserver<'a, O>>>,
-);
-
-impl<'a, O> Observer for LocalInnerObserver<'a, O>
-where
-  O: Observer + 'a,
-{
-  type Item = O::Item;
-  type Err = O::Err;
-  #[inline]
-  fn next(&mut self, value: Self::Item) {
-    self.0.borrow_mut().observer.next(value);
-  }
-
-  fn error(&mut self, err: Self::Err) {
-    let mut inner = self.0.borrow_mut();
-    inner.subscribed -= 1;
-    inner.observer.error(err);
-    inner.subscription.unsubscribe();
-  }
-
-  fn complete(&mut self) {
-    let mut inner = self.0.borrow_mut();
-
-    if let Some(o) = inner.buffer.pop_front() {
-      inner
-        .subscription
-        .add(o.actual_subscribe(LocalInnerObserver(self.0.clone())));
-    } else {
-      inner.subscribed -= 1;
-      if inner.completed && inner.subscribed == 0 {
-        inner.observer.complete();
-        inner.subscription.unsubscribe();
+macro_rules! impl_new_method {
+  ($name: ident $(,$lf:lifetime)?) => {
+    impl<$($lf,)? S, ObservableItem> $name<$($lf,)? S, ObservableItem> {
+      #[inline]
+      pub(crate) fn new(source: S, concurrent: usize) -> Self {
+        Self {
+          concurrent,
+          source,
+          _marker: TypeHint::default(),
+        }
       }
     }
-  }
+  };
 }
 
-#[cfg(not(all(target_arch = "wasm32")))]
-impl<S> SharedObservable for MergeAllOp<S>
+impl_new_method!(MergeAllOp, 'a);
+impl_new_method!(MergeAllOpThreads);
+
+macro_rules! impl_observable_method {
+  ($subscription: ty, $box_unsub: ty, $outside_observer: ident, $rc: ident) => {
+    type Unsub = $subscription;
+
+    fn actual_subscribe(self, observer: O) -> Self::Unsub {
+      let mut subscription = Self::Unsub::default();
+
+      let observer_data = ObserverData {
+        observer,
+        subscribe_tasks: <_>::default(),
+        outside_completed: false,
+        subscribed: 0,
+        concurrent: self.concurrent,
+      };
+      let observer_data = $rc::own(Some(observer_data));
+      let merge_all_observer = $outside_observer {
+        observer_data,
+        subscription: subscription.clone(),
+        _hint: TypeHint::new(),
+      };
+      let unsub = self.source.actual_subscribe(merge_all_observer);
+      subscription.append(<$box_unsub>::new(unsub));
+      subscription
+    }
+  };
+}
+
+impl<'a, ObservableItem, Item, Err, O, S> Observable<Item, Err, O>
+  for MergeAllOp<'a, S, ObservableItem>
 where
-  S: SharedObservable,
-  S::Err: Send + Sync + 'static,
-  S::Item: SharedObservable<Err = S::Err> + Send + Sync + 'static,
-  <S::Item as SharedObservable>::Unsub: Send + Sync + 'static,
-  Self::Item: Send + Sync + 'static,
-  S::Unsub: 'static,
+  O: Observer<Item, Err> + 'a,
+  S: Observable<ObservableItem, Err, OutsideObserver<'a, O, Item>>,
+  ObservableItem: Observable<Item, Err, InnerObserver<'a, O>> + 'a,
+  S::Unsub: 'a,
+  ObservableItem::Unsub: 'a,
 {
-  type Unsub = SharedSubscription;
-
-  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
-  where
-    O: Observer<Item = Self::Item, Err = Self::Err> + Sync + Send + 'static,
-  {
-    let subscription = SharedSubscription::default();
-    let c_subscription = subscription.clone();
-    let s =
-      self
-        .source
-        .map(|v| v.box_it())
-        .actual_subscribe(Arc::new(Mutex::new(SharedMergeAllObserver {
-          observer,
-          subscribed: 0,
-          concurrent: self.concurrent,
-          subscription,
-          buffer: <_>::default(),
-          completed: false,
-        })));
-    c_subscription.add(s);
-    c_subscription
-  }
+  impl_observable_method!(
+    MultiSubscription<'a>,
+    BoxSubscription<'a>,
+    OutsideObserver,
+    MutRc
+  );
 }
 
-#[cfg(not(all(target_arch = "wasm32")))]
-pub struct SharedMergeAllObserver<O: Observer> {
+impl<'a, ObservableItem, Item, Err, S> ObservableExt<Item, Err>
+  for MergeAllOp<'a, S, ObservableItem>
+where
+  S: ObservableExt<ObservableItem, Err>,
+  ObservableItem: ObservableExt<Item, Err>,
+{
+}
+
+impl<ObservableItem, Item, Err, O, S> Observable<Item, Err, O>
+  for MergeAllOpThreads<S, ObservableItem>
+where
+  O: Observer<Item, Err> + Send + 'static,
+  S: Observable<ObservableItem, Err, OutsideObserverThreads<O, Item>>,
+  ObservableItem:
+    Observable<Item, Err, InnerObserverThreads<O>> + Send + 'static,
+  S::Unsub: Send + 'static,
+  ObservableItem::Unsub: Send + 'static,
+{
+  impl_observable_method!(
+    MultiSubscriptionThreads,
+    BoxSubscriptionThreads,
+    OutsideObserverThreads,
+    MutArc
+  );
+}
+
+impl<ObservableItem, Item, Err, S> ObservableExt<Item, Err>
+  for MergeAllOpThreads<S, ObservableItem>
+where
+  S: ObservableExt<ObservableItem, Err>,
+  ObservableItem: ObservableExt<Item, Err>,
+{
+}
+
+pub struct OutsideObserver<'a, O, Item> {
+  observer_data: MutRc<Option<ObserverDataLocal<'a, O>>>,
+  subscription: MultiSubscription<'a>,
+  _hint: TypeHint<Item>,
+}
+
+pub struct OutsideObserverThreads<O, Item> {
+  observer_data: MutArc<Option<ObserverDataThreads<O>>>,
+  subscription: MultiSubscriptionThreads,
+  _hint: TypeHint<Item>,
+}
+
+struct ObserverData<O, Lazy> {
   observer: O,
+  subscribe_tasks: VecDeque<Lazy>,
+  outside_completed: bool,
   subscribed: usize,
   concurrent: usize,
-  subscription: SharedSubscription,
-  completed: bool,
-  buffer: VecDeque<SharedBoxOp<O::Item, O::Err>>,
 }
 
-#[cfg(not(all(target_arch = "wasm32")))]
-impl<O> Observer for Arc<Mutex<SharedMergeAllObserver<O>>>
-where
-  O: Observer + Send + Sync + 'static,
-{
-  type Item = SharedBoxOp<O::Item, O::Err>;
-  type Err = O::Err;
+type ObserverDataLocal<'a, O> = ObserverData<O, Box<dyn FnOnce() + 'a>>;
+struct InnerObserver<'a, O>(MutRc<Option<ObserverDataLocal<'a, O>>>);
 
-  #[allow(clippy::mut_mutex_lock)]
-  fn next(&mut self, value: Self::Item) {
-    let mut inner = self.lock().unwrap();
-    if inner.subscribed < inner.concurrent {
-      inner
-        .subscription
-        .add(value.actual_subscribe(SharedInnerObserver(self.clone())));
-      inner.subscribed += 1;
-    } else {
-      inner.buffer.push_back(value);
-    }
-  }
+type ObserverDataThreads<O> = ObserverData<O, Box<dyn FnOnce() + Send>>;
+struct InnerObserverThreads<O>(MutArc<Option<ObserverDataThreads<O>>>);
 
-  #[allow(clippy::mut_mutex_lock)]
-  fn error(&mut self, err: Self::Err) {
-    let mut inner = self.lock().unwrap();
-    inner.completed = true;
-    inner.observer.error(err);
-    inner.subscription.unsubscribe();
-  }
+macro_rules! impl_inner_observer {
+  ($ty:ty $(, $lf:lifetime)?) => {
+    impl<$($lf,)? Item, Err, O> Observer<Item, Err> for $ty
+    where
+      O: Observer<Item, Err>,
+    {
+      fn next(&mut self, value: Item) {
+        if let Some(data) = self.0.rc_deref_mut().as_mut() {
+          data.observer.next(value)
+        }
+      }
 
-  #[allow(clippy::mut_mutex_lock)]
-  fn complete(&mut self) {
-    let mut inner = self.lock().unwrap();
-    inner.completed = true;
-    if inner.subscribed == 0 && inner.buffer.is_empty() {
-      inner.observer.complete()
-    }
-  }
-}
+      fn error(self, err: Err) {
+        if let Some(data) = self.0.rc_deref_mut().take() {
+          data.observer.error(err)
+        }
+      }
 
-#[cfg(not(all(target_arch = "wasm32")))]
-struct SharedInnerObserver<O: Observer>(Arc<Mutex<SharedMergeAllObserver<O>>>);
+      fn complete(self) {
+        let mut inner = self.0.rc_deref_mut();
+        if let Some(data) = inner.as_mut() {
+          if let Some(task) = data.subscribe_tasks.pop_front() {
+            task();
+          } else {
+            data.subscribed -= 1;
+            if data.subscribed == 0 && data.outside_completed {
+              inner.take().unwrap().observer.complete();
+            }
+          }
+        }
+      }
 
-#[cfg(not(all(target_arch = "wasm32")))]
-impl<O> Observer for SharedInnerObserver<O>
-where
-  O: Observer + Send + Sync + 'static,
-{
-  type Item = O::Item;
-  type Err = O::Err;
-  #[inline]
-  fn next(&mut self, value: Self::Item) {
-    self.0.lock().unwrap().observer.next(value);
-  }
-
-  fn error(&mut self, err: Self::Err) {
-    let mut inner = self.0.lock().unwrap();
-    inner.subscribed -= 1;
-    inner.observer.error(err);
-    inner.subscription.unsubscribe();
-  }
-
-  fn complete(&mut self) {
-    let mut inner = self.0.lock().unwrap();
-
-    if let Some(o) = inner.buffer.pop_front() {
-      inner
-        .subscription
-        .add(o.actual_subscribe(SharedInnerObserver(self.0.clone())));
-    } else {
-      inner.subscribed -= 1;
-      if inner.completed && inner.subscribed == 0 {
-        inner.observer.complete();
-        inner.subscription.unsubscribe();
+      fn is_finished(&self) -> bool {
+        self.0.rc_deref().as_ref().map_or(true, |data| {
+          data.observer.is_finished()
+        })
       }
     }
+  };
+}
+
+impl_inner_observer!(InnerObserver<'a, O>, 'a);
+impl_inner_observer!(InnerObserverThreads<O>);
+
+macro_rules! impl_outside_observer {
+  ($outside_ty: ty, $inner_ty: ty, $box_unsub: ty, $($lf:lifetime)? $($send:ident)?) => {
+    impl<$($lf,)? Item, Err, O, ObservableItem> Observer<ObservableItem, Err>
+      for $outside_ty
+    where
+      O: Observer<Item, Err> $(+ $lf)? $(+ $send + 'static)?,
+      ObservableItem: Observable<Item, Err, $inner_ty> $(+ $lf)? $(+ $send + 'static)?,
+      ObservableItem::Unsub: $($lf)? $($send + 'static)?,
+    {
+      fn next(&mut self, value: ObservableItem) {
+        let mut observer_data = self.observer_data.rc_deref_mut();
+        if let Some(data) = observer_data.as_mut() {
+          if data.subscribed < data.concurrent {
+            data.subscribed += 1;
+            drop(observer_data);
+            let unsub = value
+              .actual_subscribe(<$inner_ty>::new(self.observer_data.clone()));
+            let box_unsub = <$box_unsub>::new(unsub);
+            self.subscription.append(box_unsub);
+          } else {
+            let observer_data = self.observer_data.clone();
+            let mut subscription = self.subscription.clone();
+            data.subscribe_tasks.push_back(Box::new(move || {
+              let unsub = value.actual_subscribe(<$inner_ty>::new(observer_data));
+              let box_unsub = <$box_unsub>::new(unsub);
+              subscription.append(box_unsub);
+            }));
+          }
+        }
+      }
+
+      fn error(self, err: Err) {
+        if let Some(data) = self.observer_data.rc_deref_mut().take() {
+          data.observer.error(err);
+        }
+      }
+
+      fn complete(self) {
+        let mut data = self.observer_data.rc_deref_mut();
+        if let Some(inner) = data.as_mut() {
+          inner.outside_completed = true;
+          if inner.subscribed == 0 && inner.subscribe_tasks.is_empty() {
+            data.take().unwrap().observer.complete();
+          }
+        }
+      }
+
+      fn is_finished(&self) -> bool {
+        self.observer_data.rc_deref().as_ref().map_or(true, |data| {
+          data.observer.is_finished()
+        })
+      }
+    }
+  };
+}
+
+impl_outside_observer!(OutsideObserver<'a, O, Item>, InnerObserver<'a, O>, BoxSubscription<'a>, 'a);
+impl_outside_observer!(OutsideObserverThreads<O, Item>, InnerObserverThreads<O>, BoxSubscriptionThreads, Send);
+
+impl<'a, O> InnerObserver<'a, O> {
+  fn new(data: MutRc<Option<ObserverDataLocal<'a, O>>>) -> Self {
+    InnerObserver(data)
   }
 }
 
+impl<O> InnerObserverThreads<O> {
+  fn new(data: MutArc<Option<ObserverDataThreads<O>>>) -> Self {
+    InnerObserverThreads(data)
+  }
+}
 #[cfg(test)]
 mod test {
+  use crate::observable::fake_timer::FakeClock;
+
   use super::*;
-  #[cfg(not(target_arch = "wasm32"))]
-  use crate::observable::SubscribeBlocking;
-  use futures::executor::LocalPool;
-  #[cfg(not(target_arch = "wasm32"))]
-  use futures::executor::ThreadPool;
-  use std::time::Duration;
+  use std::{cell::RefCell, rc::Rc, time::Duration};
 
   #[test]
-  fn local() {
+  fn smoke() {
     let values = Rc::new(RefCell::new(vec![]));
     let c_values = values.clone();
+    let clock = FakeClock::default();
 
-    let mut local = LocalPool::new();
     observable::from_iter(
-      (0..3)
-        .map(|_| interval(Duration::from_millis(1), local.spawner()).take(5)),
+      (0..3).map(|_| clock.interval(Duration::from_millis(1)).take(5)),
     )
     .merge_all(2)
     .subscribe(move |i| values.borrow_mut().push(i));
-    local.run();
+    clock.advance(Duration::from_millis(11));
 
     assert_eq!(
       &*c_values.borrow(),
@@ -289,37 +280,17 @@ mod test {
 
   #[test]
   fn fix_inner_unsubscribe() {
-    let values = Rc::new(RefCell::new(vec![]));
+    let mut values = vec![];
     let c_values = values.clone();
-    let mut subject = LocalSubject::default();
+    let mut subject = Subject::default();
 
-    let mut subscription = observable::of(subject.clone())
+    let subscription = observable::of(subject.clone())
       .merge_all(1)
-      .subscribe(move |v| values.borrow_mut().push(v));
+      .subscribe(move |v| values.push(v));
     subscription.unsubscribe();
 
     subject.next(1);
 
-    assert_eq!(&*c_values.borrow(), &[]);
-  }
-
-  #[cfg(not(all(target_arch = "wasm32")))]
-  #[test]
-  fn shared() {
-    let values = Arc::new(Mutex::new(vec![]));
-    let c_values = values.clone();
-
-    let pool = ThreadPool::new().unwrap();
-    observable::from_iter(
-      (0..3).map(|_| interval(Duration::from_millis(1), pool.clone()).take(5)),
-    )
-    .merge_all(2)
-    .into_shared()
-    .subscribe_blocking(move |i| values.lock().unwrap().push(i));
-
-    assert_eq!(
-      &*c_values.lock().unwrap(),
-      &[0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 0, 1, 2, 3, 4]
-    );
+    assert_eq!(&c_values, &[]);
   }
 }

@@ -1,4 +1,4 @@
-use crate::{impl_local_shared_both, prelude::*};
+use crate::prelude::*;
 
 #[derive(Clone)]
 pub struct TapOp<S, M> {
@@ -6,58 +6,50 @@ pub struct TapOp<S, M> {
   pub(crate) func: M,
 }
 
-impl<Item, S, M> Observable for TapOp<S, M>
+impl<Item, Err, S, M, O> Observable<Item, Err, O> for TapOp<S, M>
 where
-  S: Observable<Item = Item>,
+  S: Observable<Item, Err, TapObserver<O, M>>,
   M: FnMut(&Item),
+  O: Observer<Item, Err>,
 {
-  type Item = Item;
-  type Err = S::Err;
-}
-
-impl_local_shared_both! {
-  impl<S, M>  TapOp<S, M>;
   type Unsub = S::Unsub;
-  macro method($self: ident, $observer: ident, $ctx: ident) {
-    let func = $self.func;
-    $self.source.actual_subscribe(TapObserver {
-      observer: $observer,
-      func,
-      _marker: TypeHint::new(),
-    })
+  fn actual_subscribe(self, observer: O) -> Self::Unsub {
+    let func = self.func;
+    self.source.actual_subscribe(TapObserver { observer, func })
   }
-  where
-    S: @ctx::Observable,
-    S::Item: @ctx::local_only('o) @ctx::shared_only('static),
-    M: FnMut(&S::Item)
-      + @ctx::local_only('o) @ctx::shared_only( Send + Sync + 'static)
 }
 
+impl<Item, Err, S, M> ObservableExt<Item, Err> for TapOp<S, M> where
+  S: ObservableExt<Item, Err>
+{
+}
 #[derive(Clone)]
-pub struct TapObserver<O, F, Item> {
+pub struct TapObserver<O, F> {
   observer: O,
   func: F,
-  _marker: TypeHint<*const Item>,
 }
 
-impl<Item, Err, O, F> Observer for TapObserver<O, F, Item>
+impl<Item, Err, O, F> Observer<Item, Err> for TapObserver<O, F>
 where
-  O: Observer<Item = Item, Err = Err>,
+  O: Observer<Item, Err>,
   F: FnMut(&Item),
 {
-  type Item = Item;
-  type Err = Err;
   fn next(&mut self, value: Item) {
     (self.func)(&value);
     self.observer.next(value)
   }
 
-  fn error(&mut self, err: Self::Err) {
+  fn error(self, err: Err) {
     self.observer.error(err)
   }
 
-  fn complete(&mut self) {
+  fn complete(self) {
     self.observer.complete()
+  }
+
+  #[inline]
+  fn is_finished(&self) -> bool {
+    self.observer.is_finished()
   }
 }
 
@@ -74,28 +66,6 @@ mod test {
       .subscribe(|v| i += v);
     assert_eq!(i, 100);
     assert_eq!(v, 100);
-  }
-
-  #[cfg(not(target_arch = "wasm32"))]
-  #[test]
-  fn fork_and_shared() {
-    // type to type can fork
-    let m = observable::from_iter(0..100).map(|v| v);
-    m.tap(|v| println!("v: {v}"))
-      .into_shared()
-      .subscribe(|_| {});
-
-    // type mapped to other type can fork
-    let m = observable::from_iter(vec!['a', 'b', 'c']).map(|_v| 1);
-    m.tap(|v| println!("v: {v}"))
-      .into_shared()
-      .subscribe(|_| {});
-
-    // ref to ref can fork
-    let m = observable::of(&1).map(|v| v);
-    m.tap(|v| println!("v: {v}"))
-      .into_shared()
-      .subscribe(|_| {});
   }
 
   #[test]

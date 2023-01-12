@@ -1,17 +1,13 @@
 use crate::{
-  impl_helper::*, impl_local_shared_both, prelude::*, scheduler::Instant,
+  prelude::*,
+  scheduler::{NormalReturn, RepeatTask, Scheduler, TaskHandle},
 };
-
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// Creates an observable which will fire at `dur` time into the future,
 /// and will repeat every `dur` interval after.
 pub fn interval<S>(dur: Duration, scheduler: S) -> IntervalObservable<S> {
-  IntervalObservable {
-    dur,
-    at: None,
-    scheduler,
-  }
+  IntervalObservable { dur, delay: None, scheduler }
 }
 
 /// Creates an observable which will fire at the time specified by `at`,
@@ -21,44 +17,52 @@ pub fn interval_at<S>(
   dur: Duration,
   scheduler: S,
 ) -> IntervalObservable<S> {
-  IntervalObservable {
-    scheduler,
-    dur,
-    at: Some(at),
-  }
+  let now = Instant::now();
+  let delay = if at > now {
+    at - now
+  } else {
+    Duration::from_micros(0)
+  };
+  IntervalObservable { scheduler, dur, delay: Some(delay) }
 }
 
 #[derive(Clone)]
 pub struct IntervalObservable<S> {
   scheduler: S,
   dur: Duration,
-  at: Option<Instant>,
+  delay: Option<Duration>,
 }
 
-impl<S> Observable for IntervalObservable<S> {
-  type Item = usize;
-  type Err = ();
-}
+impl<S, O> Observable<usize, (), O> for IntervalObservable<S>
+where
+  O: Observer<usize, ()>,
+  S: Scheduler<RepeatTask<O>>,
+{
+  type Unsub = TaskHandle<NormalReturn<()>>;
 
-impl_local_shared_both! {
-  impl<S> IntervalObservable<S>;
-  type Unsub = SpawnHandle;
-  macro method($self:ident, $observer: ident, $ctx: ident) {
-    $self.scheduler.schedule_repeating(
-      move |i| $observer.next(i),
-      $self.dur,
-      $self.at,
-    )
+  fn actual_subscribe(self, observer: O) -> Self::Unsub {
+    let Self { scheduler, dur, delay } = self;
+    scheduler.schedule(RepeatTask::new(dur, interval_task, observer), delay)
   }
-  where
-    @ctx::local_only('o: 'static,)
-    S: @ctx::Scheduler + 'static
+}
+
+impl<S> ObservableExt<usize, ()> for IntervalObservable<S> {}
+
+fn interval_task<O>(observer: &mut O, seq: usize) -> bool
+where
+  O: Observer<usize, ()>,
+{
+  if !observer.is_finished() {
+    observer.next(seq);
+    true
+  } else {
+    false
+  }
 }
 
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::test_scheduler::ManualScheduler;
   use futures::executor::LocalPool;
   #[cfg(not(target_arch = "wasm32"))]
   use futures::executor::ThreadPool;
@@ -67,17 +71,20 @@ mod tests {
   #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn shared() {
+    use crate::ops::complete_status::CompleteStatus;
+
     let millis = Arc::new(Mutex::new(0));
     let c_millis = millis.clone();
     let stamp = Instant::now();
     let pool = ThreadPool::new().unwrap();
 
-    interval(Duration::from_millis(1), pool)
+    let (o, status) = interval(Duration::from_millis(1), pool)
       .take(5) // Will block forever if we don't limit emissions
-      .into_shared()
-      .subscribe_blocking(move |_| {
-        *millis.lock().unwrap() += 1;
-      });
+      .complete_status();
+    o.subscribe(move |_| {
+      *millis.lock().unwrap() += 1;
+    });
+    CompleteStatus::wait_for_end(status);
 
     assert_eq!(*c_millis.lock().unwrap(), 5);
     assert!(stamp.elapsed() > Duration::from_millis(5));
@@ -95,24 +102,5 @@ mod tests {
     local.run();
     assert_eq!(*ticks.lock().unwrap(), 5);
     assert!(stamp.elapsed() > Duration::from_millis(5));
-  }
-
-  #[test]
-  fn local_manual() {
-    let scheduler = ManualScheduler::now();
-    let ticks = Arc::new(Mutex::new(0));
-    let ticks_c = Arc::clone(&ticks);
-    let delay = Duration::from_millis(1);
-    interval(delay, scheduler.clone())
-      .take(5)
-      .subscribe(move |_| (*ticks_c.lock().unwrap()) += 1);
-    assert_eq!(0, *ticks.lock().unwrap());
-    scheduler.advance(delay * 2);
-    scheduler.run_tasks();
-    assert_eq!(2, *ticks.lock().unwrap());
-
-    scheduler.advance(delay * 3);
-    scheduler.run_tasks();
-    assert_eq!(5, *ticks.lock().unwrap());
   }
 }

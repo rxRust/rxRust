@@ -1,4 +1,4 @@
-use crate::{impl_local_shared_both, prelude::*};
+use crate::prelude::*;
 use std::collections::VecDeque;
 
 #[derive(Clone)]
@@ -7,24 +7,25 @@ pub struct TakeLastOp<S> {
   pub(crate) count: usize,
 }
 
-impl<S: Observable> Observable for TakeLastOp<S> {
-  type Item = S::Item;
-  type Err = S::Err;
-}
-
-impl_local_shared_both! {
-  impl<S> TakeLastOp<S>;
+impl<Item, Err, O, S> Observable<Item, Err, O> for TakeLastOp<S>
+where
+  S: Observable<Item, Err, TakeLastObserver<O, Item>>,
+  O: Observer<Item, Err>,
+{
   type Unsub = S::Unsub;
-  macro method($self: ident, $observer: ident, $ctx: ident) {
-    $self.source.actual_subscribe(TakeLastObserver {
-      observer: $observer,
-      count: $self.count,
+
+  fn actual_subscribe(self, observer: O) -> Self::Unsub {
+    self.source.actual_subscribe(TakeLastObserver {
+      observer,
+      count: self.count,
       queue: VecDeque::new(),
     })
   }
-  where
-    @ctx::shared_only(S::Item: Send + Sync + 'static ,)
-    S: @ctx::Observable @ctx::local_only( + 'o)
+}
+
+impl<Item, Err, S> ObservableExt<Item, Err> for TakeLastOp<S> where
+  S: ObservableExt<Item, Err>
+{
 }
 
 pub struct TakeLastObserver<O, Item> {
@@ -33,12 +34,10 @@ pub struct TakeLastObserver<O, Item> {
   queue: VecDeque<Item>, // TODO: replace VecDeque with RingBuf
 }
 
-impl<Item, Err, O> Observer for TakeLastObserver<O, Item>
+impl<Item, Err, O> Observer<Item, Err> for TakeLastObserver<O, Item>
 where
-  O: Observer<Item = Item, Err = Err>,
+  O: Observer<Item, Err>,
 {
-  type Item = Item;
-  type Err = Err;
   fn next(&mut self, value: Item) {
     self.queue.push_back(value);
     while self.queue.len() > self.count {
@@ -46,15 +45,21 @@ where
     }
   }
 
-  fn error(&mut self, err: Self::Err) {
+  #[inline]
+  fn error(self, err: Err) {
     self.observer.error(err)
   }
 
-  fn complete(&mut self) {
+  fn complete(mut self) {
     for value in self.queue.drain(..) {
       self.observer.next(value);
     }
     self.observer.complete();
+  }
+
+  #[inline]
+  fn is_finished(&self) -> bool {
+    self.observer.is_finished()
   }
 }
 
@@ -69,7 +74,8 @@ mod test {
 
     observable::from_iter(0..100)
       .take_last(5)
-      .subscribe_complete(|v| ticks.push(v), || completed = true);
+      .on_complete(|| completed = true)
+      .subscribe(|v| ticks.push(v));
 
     assert_eq!(ticks, vec![95, 96, 97, 98, 99]);
     assert!(completed);
@@ -89,16 +95,6 @@ mod test {
     }
     assert_eq!(nc1, 5);
     assert_eq!(nc2, 5);
-  }
-
-  #[cfg(not(target_arch = "wasm32"))]
-  #[test]
-  fn ininto_shared() {
-    observable::from_iter(0..100)
-      .take_last(5)
-      .take_last(5)
-      .into_shared()
-      .subscribe(|_| {});
   }
 
   #[test]

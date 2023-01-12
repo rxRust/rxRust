@@ -1,66 +1,68 @@
-use crate::{impl_helper::*, impl_local_shared_both, prelude::*};
+use crate::prelude::*;
 
 #[derive(Clone)]
 pub struct SkipOp<S> {
-  pub(crate) source: S,
-  pub(crate) count: u32,
+  source: S,
+  count: usize,
 }
 
-impl<S: Observable> Observable for SkipOp<S> {
-  type Item = S::Item;
-  type Err = S::Err;
+impl<S> SkipOp<S> {
+  #[inline]
+  pub fn new(source: S, count: usize) -> Self {
+    Self { source, count }
+  }
 }
 
-impl_local_shared_both! {
- impl<S> SkipOp<S>;
- type Unsub = @ctx::Rc<ProxySubscription<S::Unsub>>;
- macro method($self: ident, $observer: ident, $ctx: ident) {
-   let subscription =$ctx::Rc::own(ProxySubscription::default());
-   let u = $self.source.actual_subscribe(SkipObserver {
-    observer: $observer,
-    subscription: subscription.clone(),
-    count: $self.count,
-    hits: 0,
-  });
-   subscription.rc_deref_mut().proxy(u);
-   subscription
- }
- where
-  @ctx::local_only(S::Unsub: 'o,)
-  S: @ctx::Observable
-}
-
-pub struct SkipObserver<O, S> {
-  observer: O,
-  subscription: S,
-  count: u32,
-  hits: u32,
-}
-
-impl<Item, Err, O, U> Observer for SkipObserver<O, U>
+impl<S, Item, Err, O> Observable<Item, Err, O> for SkipOp<S>
 where
-  O: Observer<Item = Item, Err = Err>,
-  U: SubscriptionLike,
+  O: Observer<Item, Err>,
+  S: Observable<Item, Err, SkipObserver<O>>,
 {
-  type Item = Item;
-  type Err = Err;
+  type Unsub = S::Unsub;
+
+  fn actual_subscribe(self, observer: O) -> Self::Unsub {
+    self.source.actual_subscribe(SkipObserver {
+      observer,
+      count: self.count,
+      hits: 0,
+    })
+  }
+}
+
+impl<S, Item, Err> ObservableExt<Item, Err> for SkipOp<S> where
+  S: ObservableExt<Item, Err>
+{
+}
+pub struct SkipObserver<O> {
+  observer: O,
+  count: usize,
+  hits: usize,
+}
+
+impl<Item, Err, O> Observer<Item, Err> for SkipObserver<O>
+where
+  O: Observer<Item, Err>,
+{
   fn next(&mut self, value: Item) {
     self.hits += 1;
     if self.hits > self.count {
       self.observer.next(value);
-      if self.hits == self.count {
-        self.complete();
-        self.subscription.unsubscribe();
-      }
     }
   }
 
-  fn error(&mut self, err: Self::Err) {
+  #[inline]
+  fn error(self, err: Err) {
     self.observer.error(err)
   }
 
-  fn complete(&mut self) {
+  #[inline]
+  fn complete(self) {
     self.observer.complete()
+  }
+
+  #[inline]
+  fn is_finished(&self) -> bool {
+    self.observer.is_finished()
   }
 }
 
@@ -75,7 +77,8 @@ mod test {
 
     observable::from_iter(0..100)
       .skip(5)
-      .subscribe_complete(|_| next_count += 1, || completed = true);
+      .on_complete(|| completed = true)
+      .subscribe(|_| next_count += 1);
 
     assert_eq!(next_count, 95);
     assert!(completed);
@@ -88,7 +91,8 @@ mod test {
 
     observable::from_iter(0..100)
       .skip(101)
-      .subscribe_complete(|_| next_count += 1, || completed = true);
+      .on_complete(|| completed = true)
+      .subscribe(|_| next_count += 1);
 
     assert_eq!(next_count, 0);
     assert!(completed);
@@ -108,16 +112,6 @@ mod test {
     }
     assert_eq!(nc1, 90);
     assert_eq!(nc2, 90);
-  }
-
-  #[cfg(not(target_arch = "wasm32"))]
-  #[test]
-  fn ininto_shared() {
-    observable::from_iter(0..100)
-      .skip(5)
-      .skip(5)
-      .into_shared()
-      .subscribe(|_| {});
   }
 
   #[test]

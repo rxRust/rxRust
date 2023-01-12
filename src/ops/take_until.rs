@@ -1,84 +1,109 @@
-use crate::{impl_helper::*, impl_local_shared_both, prelude::*};
+use crate::{
+  prelude::*,
+  rc::{MutArc, MutRc},
+};
 
 #[derive(Clone)]
-pub struct TakeUntilOp<S, N> {
-  pub(crate) source: S,
-  pub(crate) notifier: N,
+pub struct TakeUntilOp<S, N, NotifyItem, NotifyErr> {
+  source: S,
+  notifier: N,
+  _hint: TypeHint<(NotifyItem, NotifyErr)>,
 }
 
-impl<S: Observable, N> Observable for TakeUntilOp<S, N> {
-  type Item = S::Item;
-  type Err = S::Err;
+#[derive(Clone)]
+pub struct TakeUntilOpThreads<S, N, NotifyItem, NotifyErr> {
+  source: S,
+  notifier: N,
+  _hint: TypeHint<(NotifyItem, NotifyErr)>,
 }
 
-impl_local_shared_both! {
-  impl<S, N> TakeUntilOp<S, N>;
-  type Unsub = @ctx::RcMultiSubscription;
-  macro method($self: ident, $observer: ident, $ctx: ident) {
-    let subscription = $ctx::RcMultiSubscription::default();
-    // We need to keep a reference to the observer from two places
-    let shared_observer = $ctx::Brc::own($observer);
+macro_rules! impl_take_until {
+  ($name: ident, $rc: ident) => {
+    impl<S, N, NotifyItem, NotifyErr> $name<S, N, NotifyItem, NotifyErr> {
+      #[inline]
+      pub(crate) fn new(source: S, notifier: N) -> Self {
+        Self {
+          source,
+          notifier,
+          _hint: TypeHint::default(),
+        }
+      }
+    }
 
-    subscription.add($self.notifier.actual_subscribe(
-      TakeUntilNotifierObserver {
-        subscription: subscription.clone(),
-        main_observer: shared_observer.clone(),
-        _p: TypeHint::new(),
-      },
-    ));
-    subscription.add($self.source.actual_subscribe(shared_observer));
-    subscription
-  }
-  where
-    S: @ctx::Observable,
-    N: @ctx::Observable<Err=S::Err>  @ctx::local_only(+ 'o),
-    @ctx::local_only(S::Item: 'o,)
-    @ctx::local_only(S::Err: 'o,)
-    @ctx::shared_only(S::Item: Sync + Send + 'static,)
-    @ctx::shared_only(S::Err: Sync + Send + 'static,)
-    @ctx::shared_only(N::Item: 'static,)
-    S::Unsub: 'static,
-    N::Unsub: 'static
+    impl<S, N, Item, Err, O, NotifyItem, NotifyErr> Observable<Item, Err, O>
+      for $name<S, N, NotifyItem, NotifyErr>
+    where
+      O: Observer<Item, Err>,
+      S: Observable<Item, Err, $rc<Option<O>>>,
+      N: Observable<
+        NotifyItem,
+        NotifyErr,
+        TakeUntilNotifierObserver<Item, Err, $rc<Option<O>>>,
+      >,
+    {
+      type Unsub = ZipSubscription<S::Unsub, N::Unsub>;
+
+      fn actual_subscribe(self, observer: O) -> Self::Unsub {
+        // We need to keep a reference to the observer from two places
+        let main_observer = $rc::own(Some(observer));
+
+        let a = self.source.actual_subscribe(main_observer.clone());
+        let notify_observer = TakeUntilNotifierObserver {
+          main_observer,
+          _hint: TypeHint::default(),
+        };
+        let b = self.notifier.actual_subscribe(notify_observer);
+        ZipSubscription::new(a, b)
+      }
+    }
+
+    impl<S, N, Item, Err, NotifyItem, NotifyErr> ObservableExt<Item, Err>
+      for $name<S, N, NotifyItem, NotifyErr>
+    where
+      S: ObservableExt<Item, Err>,
+      N: ObservableExt<NotifyItem, NotifyErr>,
+    {
+    }
+  };
 }
 
-pub struct TakeUntilNotifierObserver<O, U, Item> {
+impl_take_until!(TakeUntilOp, MutRc);
+impl_take_until!(TakeUntilOpThreads, MutArc);
+
+pub struct TakeUntilNotifierObserver<Item, Err, O> {
   // We need access to main observer in order to call `complete` on it as soon
   // as notifier fired
   main_observer: O,
-  // We need to unsubscribe everything as soon as notifier fired
-  subscription: U,
-  _p: TypeHint<Item>,
+  _hint: TypeHint<(Item, Err)>,
 }
 
-impl<O, U, NotifierItem, Err> Observer
-  for TakeUntilNotifierObserver<O, U, NotifierItem>
+impl<Item, Err, NotifyItem, NotifyErr, O> Observer<NotifyItem, NotifyErr>
+  for TakeUntilNotifierObserver<Item, Err, O>
 where
-  O: Observer<Err = Err>,
-  U: SubscriptionLike,
+  O: Observer<Item, Err> + Clone,
 {
-  type Item = NotifierItem;
-  type Err = Err;
-  fn next(&mut self, _: NotifierItem) {
-    self.main_observer.complete();
-    self.subscription.unsubscribe();
-  }
-
-  fn error(&mut self, err: Err) {
-    self.main_observer.error(err);
-    self.subscription.unsubscribe();
+  fn next(&mut self, _: NotifyItem) {
+    self.main_observer.clone().complete();
   }
 
   #[inline]
-  fn complete(&mut self) {
-    self.subscription.unsubscribe()
+  fn error(self, _: NotifyErr) {}
+
+  #[inline]
+  fn complete(self) {}
+
+  #[inline]
+  fn is_finished(&self) -> bool {
+    self.main_observer.is_finished()
   }
 }
 
 #[cfg(test)]
 mod test {
-  use crate::prelude::*;
-  #[cfg(not(target_arch = "wasm32"))]
-  use std::sync::{Arc, Mutex};
+  use crate::{
+    prelude::*,
+    rc::{MutRc, RcDeref, RcDerefMut},
+  };
 
   #[test]
   fn base_function() {
@@ -86,20 +111,18 @@ mod test {
     let mut next_count = 0;
     let mut completed_count = 0;
     {
-      let mut notifier = LocalSubject::new();
-      let mut source = LocalSubject::new();
+      let mut notifier = Subject::default();
+      let mut source = Subject::default();
       source
         .clone()
-        .take_until(notifier.clone())
-        .subscribe_complete(
-          |i| {
-            last_next_arg = Some(i);
-            next_count += 1;
-          },
-          || {
-            completed_count += 1;
-          },
-        );
+        .take_until::<_, _, ()>(notifier.clone())
+        .on_complete(|| {
+          completed_count += 1;
+        })
+        .subscribe(|i| {
+          last_next_arg = Some(i);
+          next_count += 1;
+        });
       source.next(5);
       notifier.next(());
       source.next(6);
@@ -109,76 +132,6 @@ mod test {
     assert_eq!(next_count, 1);
     assert_eq!(last_next_arg, Some(5));
     assert_eq!(completed_count, 1);
-  }
-
-  #[cfg(not(target_arch = "wasm32"))]
-  #[test]
-  fn ininto_shared() {
-    let last_next_arg = Arc::new(Mutex::new(None));
-    let last_next_arg_mirror = last_next_arg.clone();
-    let next_count = Arc::new(Mutex::new(0));
-    let next_count_mirror = next_count.clone();
-    let completed_count = Arc::new(Mutex::new(0));
-    let completed_count_mirror = completed_count.clone();
-    let mut notifier = SharedSubject::new();
-    let mut source = SharedSubject::new();
-    source
-      .clone()
-      .take_until(notifier.clone())
-      .into_shared()
-      .subscribe_complete(
-        move |i| {
-          *last_next_arg.lock().unwrap() = Some(i);
-          *next_count.lock().unwrap() += 1;
-        },
-        move || {
-          *completed_count.lock().unwrap() += 1;
-        },
-      );
-    source.next(5);
-    notifier.next(());
-    source.next(6);
-    assert_eq!(*next_count_mirror.lock().unwrap(), 1);
-    assert_eq!(*last_next_arg_mirror.lock().unwrap(), Some(5));
-    assert_eq!(*completed_count_mirror.lock().unwrap(), 1);
-  }
-
-  #[test]
-  fn circular_next() {
-    let last_next_arg = MutRc::own(None);
-    let next_count = MutRc::own(0);
-    let source_completed_count = MutRc::own(0);
-    let notifier = LocalSubject::new();
-    let mut source = LocalSubject::new();
-
-    {
-      let source_completed_count = source_completed_count.clone();
-      let mut notifier = notifier.clone();
-      let last_next_arg = last_next_arg.clone();
-      let next_count = next_count.clone();
-
-      source
-        .clone()
-        .take_until(notifier.clone())
-        .subscribe_complete(
-          move |i| {
-            *last_next_arg.rc_deref_mut() = Some(i);
-            *next_count.rc_deref_mut() += 1;
-            if i > 2 {
-              notifier.next(());
-            }
-          },
-          move || {
-            *source_completed_count.rc_deref_mut() += 1;
-          },
-        );
-      source.next(1);
-      source.next(3);
-      source.next(5);
-    }
-    assert_eq!(*next_count.rc_deref(), 2);
-    assert_eq!(*last_next_arg.rc_deref(), Some(3));
-    assert_eq!(*source_completed_count.rc_deref(), 1);
   }
 
   #[test]
@@ -192,12 +145,16 @@ mod test {
     let notifier_completed_count = MutRc::own(0);
     let notifier_completed_count_cloned = notifier_completed_count.clone();
     {
-      let mut notifier = LocalSubject::new();
-      let mut source = LocalSubject::new();
+      let mut notifier = Subject::default();
+      let mut source = Subject::default();
       let cloned_source = source.clone();
       let cloned_notifier = notifier.clone();
-      notifier.clone().subscribe_complete(
-        move |j| {
+      notifier
+        .clone()
+        .on_complete(move || {
+          *source_completed_count_cloned.rc_deref_mut() += 1;
+        })
+        .subscribe(move |j| {
           let last_next_arg = last_next_arg_cloned.clone();
           let next_count = next_count_cloned.clone();
           let notifier_completed_count =
@@ -205,20 +162,14 @@ mod test {
           cloned_source
             .clone()
             .take_until(cloned_notifier.clone())
-            .subscribe_complete(
-              move |i| {
-                *last_next_arg.rc_deref_mut() = Some((i, j));
-                *next_count.rc_deref_mut() += 1;
-              },
-              move || {
-                *notifier_completed_count.rc_deref_mut() += 1;
-              },
-            );
-        },
-        move || {
-          *source_completed_count_cloned.rc_deref_mut() += 1;
-        },
-      );
+            .on_complete(move || {
+              *notifier_completed_count.rc_deref_mut() += 1;
+            })
+            .subscribe(move |i| {
+              *last_next_arg.rc_deref_mut() = Some((i, j));
+              *next_count.rc_deref_mut() += 1;
+            });
+        });
       source.next(5);
       notifier.next(1);
       source.next(6);

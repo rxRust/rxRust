@@ -1,134 +1,145 @@
-use crate::impl_helper::*;
-use crate::impl_local_shared_both;
-use crate::prelude::*;
+use std::marker::PhantomData;
+
+use crate::{
+  prelude::*,
+  rc::{MutArc, MutRc, RcDeref, RcDerefMut},
+};
 
 /// An Observable that combines from two other two Observables.
 ///
 /// This struct is created by the with_latest_from method on
 /// [Observable](Observable::with_latest_from). See its documentation for more.
 #[derive(Clone)]
-pub struct WithLatestFromOp<A, B> {
-  pub(crate) a: A,
-  pub(crate) b: B,
+pub struct WithLatestFromOp<S, FS> {
+  pub(crate) source: S,
+  pub(crate) from: FS,
 }
 
-impl<A, B> Observable for WithLatestFromOp<A, B>
+#[derive(Clone)]
+pub struct WithLatestFromOpThreads<S, FS> {
+  pub(crate) source: S,
+  pub(crate) from: FS,
+}
+
+macro_rules! impl_with_last_from_op {
+  ($name: ident, $rc: ident) => {
+    impl<S, FS> $name<S, FS> {
+      pub(crate) fn new(source: S, from: FS) -> Self {
+        Self { source, from }
+      }
+    }
+
+    impl<Source, From, O, ItemA, ItemB, Err> Observable<(ItemA, ItemB), Err, O>
+      for $name<Source, From>
+    where
+      O: Observer<(ItemA, ItemB), Err>,
+      Source:
+        Observable<ItemA, Err, AObserver<$rc<Option<O>>, $rc<Option<ItemB>>>>,
+      From: Observable<
+        ItemB,
+        Err,
+        BObserver<$rc<Option<O>>, $rc<Option<ItemB>>, ItemA>,
+      >,
+      ItemB: Clone,
+    {
+      type Unsub = ZipSubscription<Source::Unsub, From::Unsub>;
+      fn actual_subscribe(self, observer: O) -> Self::Unsub {
+        let item = $rc::own(None);
+        let source_observer = $rc::own(Some(observer));
+        let from_observer = BObserver {
+          observer: source_observer.clone(),
+          value: item.clone(),
+          _marker: std::marker::PhantomData::<ItemA>,
+        };
+        let from_unsub = self.from.actual_subscribe(from_observer);
+        let source_unsub = self.source.actual_subscribe(AObserver {
+          observer: source_observer,
+          value: item,
+        });
+
+        ZipSubscription::new(source_unsub, from_unsub)
+      }
+    }
+
+    impl<Source, From, ItemA, ItemB, Err> ObservableExt<(ItemA, ItemB), Err>
+      for $name<Source, From>
+    where
+      Source: ObservableExt<ItemA, Err>,
+      From: ObservableExt<ItemB, Err>,
+    {
+    }
+  };
+}
+
+impl_with_last_from_op!(WithLatestFromOp, MutRc);
+impl_with_last_from_op!(WithLatestFromOpThreads, MutArc);
+
+#[derive(Clone)]
+pub struct BObserver<O, V, ItemA> {
+  observer: O,
+  value: V,
+  _marker: PhantomData<ItemA>,
+}
+
+impl<O, ItemA, ItemB, V, Err> Observer<ItemB, Err> for BObserver<O, V, ItemA>
 where
-  A: Observable,
-  B: Observable<Err = A::Err>,
+  O: Observer<(ItemA, ItemB), Err>,
+  V: RcDerefMut<Target = Option<ItemB>>,
 {
-  type Item = (A::Item, B::Item);
-  type Err = A::Err;
-}
-
-impl_local_shared_both! {
-  impl<A, B> WithLatestFromOp<A, B>;
-  type Unsub = @ctx::RcMultiSubscription;
-  macro method($self: ident, $observer: ident, $ctx: ident) {
-    let subscription =  $ctx::RcMultiSubscription::default();
-
-    let item = $ctx::Rc::own(None);
-    let source_observer = $ctx::Rc::own($observer);
-    subscription.add($self.b.actual_subscribe(BObserver {
-      observer: source_observer.clone(),
-      value: item.clone(),
-      subscription: subscription.clone(),
-      done: false,
-    }));
-    subscription.add($self.a.actual_subscribe(AObserver {
-      observer: source_observer,
-      value: item,
-    }));
-    subscription
+  #[inline]
+  fn next(&mut self, value: ItemB) {
+    *self.value.rc_deref_mut() = Some(value);
   }
-  where
-    A: @ctx::Observable,
-    B: @ctx::Observable<Err=A::Err>,
-    A::Unsub: 'static,
-    B::Unsub: 'static,
-    A::Item: @ctx::local_only('o) @ctx::shared_only('static),
-    B::Item: Clone
-      @ctx::local_only(+ 'o)
-      @ctx::shared_only(+ Send + Sync + 'static)
+
+  #[inline]
+  fn error(self, err: Err) {
+    self.observer.error(err)
+  }
+
+  #[inline]
+  fn complete(self) {}
+
+  #[inline]
+  fn is_finished(&self) -> bool {
+    self.observer.is_finished()
+  }
 }
 
 #[derive(Clone)]
-struct BObserver<O, V, Unsub> {
-  observer: O,
-  value: V,
-  subscription: Unsub,
-  done: bool,
-}
-
-macro_rules! impl_b_observer {
-  ($rc: ident) => {
-    impl<O, AItem, BItem, Unsub> Observer
-      for BObserver<O, $rc<Option<BItem>>, Unsub>
-    where
-      O: Observer<Item = (AItem, BItem)>,
-      Unsub: SubscriptionLike,
-    {
-      type Item = BItem;
-      type Err = O::Err;
-      fn next(&mut self, value: Self::Item) {
-        *self.value.rc_deref_mut() = Some(value);
-      }
-
-      fn error(&mut self, err: Self::Err) {
-        self.observer.error(err)
-      }
-
-      fn complete(&mut self) {
-        if !self.done {
-          self.subscription.unsubscribe();
-          self.done = true;
-        }
-      }
-    }
-  };
-}
-
-impl_b_observer!(MutRc);
-impl_b_observer!(MutArc);
-
-#[derive(Clone)]
-struct AObserver<O: Observer, V> {
+pub struct AObserver<O, V> {
   observer: O,
   value: V,
 }
 
-macro_rules! impl_a_observer {
-  ($rc: ident) => {
-    impl<AItem, BItem, Err, O> Observer for AObserver<O, $rc<Option<BItem>>>
-    where
-      O: Observer<Item = (AItem, BItem), Err = Err>,
-      BItem: Clone,
-    {
-      type Item = AItem;
-      type Err = Err;
-
-      fn next(&mut self, item: Self::Item) {
-        let value = (*self.value.rc_deref()).clone();
-        if value.is_none() {
-          return;
-        }
-        let item2 = value.unwrap();
-        self.observer.next((item, item2));
-      }
-
-      fn complete(&mut self) {
-        self.observer.complete();
-      }
-
-      fn error(&mut self, err: Self::Err) {
-        self.observer.error(err)
-      }
+impl<ItemA, ItemB, Err, V, O> Observer<ItemA, Err> for AObserver<O, V>
+where
+  O: Observer<(ItemA, ItemB), Err>,
+  ItemB: Clone,
+  V: RcDeref<Target = Option<ItemB>>,
+{
+  fn next(&mut self, item: ItemA) {
+    // should not write in one line early end value borrow.
+    let v = self.value.rc_deref().clone();
+    if let Some(v) = v {
+      self.observer.next((item, v));
     }
-  };
-}
+  }
 
-impl_a_observer!(MutRc);
-impl_a_observer!(MutArc);
+  #[inline]
+  fn complete(self) {
+    self.observer.complete();
+  }
+
+  #[inline]
+  fn error(self, err: Err) {
+    self.observer.error(err)
+  }
+
+  #[inline]
+  fn is_finished(&self) -> bool {
+    self.observer.is_finished()
+  }
+}
 
 #[cfg(test)]
 mod test {
@@ -139,8 +150,8 @@ mod test {
     let mut ret = String::new();
 
     {
-      let mut s1 = LocalSubject::new();
-      let mut s2 = LocalSubject::new();
+      let mut s1 = Subject::default();
+      let mut s2 = Subject::default();
 
       s1.clone().with_latest_from(s2.clone()).subscribe(|(a, b)| {
         ret.push(a);
@@ -168,7 +179,7 @@ mod test {
     let mut numbers_store = vec![];
 
     {
-      let mut numbers = LocalSubject::new();
+      let mut numbers = Subject::default();
       let primary = numbers.clone().filter(|v| *v % 3 == 0);
       let secondary = numbers.clone().filter(|v| *v % 3 != 0);
 
@@ -194,10 +205,11 @@ mod test {
   fn complete() {
     let mut complete = false;
     {
-      let mut s1 = LocalSubject::new();
+      let s1 = Subject::default();
       s1.clone()
-        .with_latest_from(LocalSubject::new())
-        .subscribe_complete(|((), ())| {}, || complete = true);
+        .with_latest_from(Subject::default())
+        .on_complete(|| complete = true)
+        .subscribe(|((), ())| {});
 
       s1.complete();
     }
@@ -205,11 +217,12 @@ mod test {
 
     complete = false;
     {
-      let s1 = LocalSubject::new();
-      let mut s2 = LocalSubject::new();
+      let s1 = Subject::default();
+      let s2 = Subject::default();
       s1.clone()
         .with_latest_from(s2.clone())
-        .subscribe_complete(|((), ())| {}, || complete = true);
+        .on_complete(|| complete = true)
+        .subscribe(|((), ())| {});
 
       s2.complete();
     }
@@ -218,8 +231,8 @@ mod test {
 
   #[test]
   fn circular() {
-    let mut subject_a = LocalSubject::new();
-    let mut subject_b = LocalSubject::new();
+    let mut subject_a = Subject::default();
+    let mut subject_b = Subject::default();
     let mut cloned_subject_b = subject_b.clone();
 
     subject_a

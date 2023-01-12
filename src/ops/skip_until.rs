@@ -1,87 +1,217 @@
-use crate::{impl_local_shared_both, prelude::*};
+use std::{
+  cell::Cell,
+  rc::Rc,
+  sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+  },
+};
 
-/// Skips source values until a predicate returns true for the value.
+use crate::{
+  prelude::*,
+  rc::{MutArc, MutRc},
+};
+
 #[derive(Clone)]
-pub struct SkipUntilOp<S, F> {
+pub struct SkipUntilOp<S, N, NotifyItem, NotifyErr> {
   pub(crate) source: S,
-  pub(crate) predicate: F,
+  pub(crate) notifier: N,
+  _hint: TypeHint<(NotifyItem, NotifyErr)>,
 }
 
-impl<S, F> Observable for SkipUntilOp<S, F>
-where
-  S: Observable,
-  F: FnMut(&S::Item) -> bool,
-{
-  type Item = S::Item;
-  type Err = S::Err;
+#[derive(Clone)]
+pub struct SkipUntilOpThreads<S, N, NotifyItem, NotifyErr> {
+  pub(crate) source: S,
+  pub(crate) notifier: N,
+  _hint: TypeHint<(NotifyItem, NotifyErr)>,
 }
 
-impl_local_shared_both! {
-  impl<S, F> SkipUntilOp<S, F>;
-  type Unsub = S::Unsub;
-  macro method($self: ident, $observer: ident, $ctx: ident) {
-    let observer = SkipUntilObserver {
-      observer: $observer,
-      predicate: $self.predicate,
-      done_skipping: false
-    };
-    $self.source.actual_subscribe(observer)
-  }
-  where
-    S: @ctx::Observable,
-    F: FnMut(&S::Item) -> bool +
-      @ctx::local_only('o)
-      @ctx::shared_only(Send + Sync + 'static)
+macro_rules! impl_skip_until_op {
+  ($name: ident, $rc:ident, $observer: ident) => {
+    impl<S, N, NotifyItem, NotifyErr> $name<S, N, NotifyItem, NotifyErr> {
+      #[inline]
+      pub(crate) fn new(source: S, notifier: N) -> Self {
+        Self {
+          source,
+          notifier,
+          _hint: TypeHint::default(),
+        }
+      }
+    }
+
+    impl<S, N, Item, Err, O, NotifyItem, NotifyErr> Observable<Item, Err, O>
+      for $name<S, N, NotifyItem, NotifyErr>
+    where
+      O: Observer<Item, Err>,
+      S: Observable<Item, Err, $observer<O>>,
+      N: Observable<
+        NotifyItem,
+        NotifyErr,
+        SkipUntilNotifierObserver<$observer<O>>,
+      >,
+    {
+      type Unsub = ZipSubscription<S::Unsub, N::Unsub>;
+
+      fn actual_subscribe(self, observer: O) -> Self::Unsub {
+        // We need to keep a reference to the observer from two places
+        let share_observer = $observer::new(observer);
+
+        let notify_observer = SkipUntilNotifierObserver(share_observer.clone());
+        let b = self.notifier.actual_subscribe(notify_observer);
+        let a = self.source.actual_subscribe(share_observer);
+        ZipSubscription::new(a, b)
+      }
+    }
+
+    impl<S, N, Item, Err, NotifyItem, NotifyErr> ObservableExt<Item, Err>
+      for $name<S, N, NotifyItem, NotifyErr>
+    where
+      S: ObservableExt<Item, Err>,
+      N: ObservableExt<NotifyItem, NotifyErr>,
+    {
+    }
+  };
 }
 
-pub struct SkipUntilObserver<O, F> {
-  observer: O,
-  predicate: F,
-  done_skipping: bool,
+impl_skip_until_op!(SkipUntilOp, MutRc, ShareObserver);
+impl_skip_until_op!(SkipUntilOpThreads, MutArc, ShareObserverThreads);
+
+pub struct SkipUntilNotifierObserver<O>(O);
+
+pub struct ShareObserver<O> {
+  observer: MutRc<Option<O>>,
+  skip: Rc<Cell<bool>>,
 }
 
-impl<O, Item, Err, F> Observer for SkipUntilObserver<O, F>
-where
-  O: Observer<Item = Item, Err = Err>,
-  F: FnMut(&Item) -> bool,
-{
-  type Item = Item;
-  type Err = Err;
+pub struct ShareObserverThreads<O> {
+  observer: MutArc<Option<O>>,
+  skip: Arc<AtomicBool>,
+}
 
-  fn next(&mut self, value: Item) {
-    if self.done_skipping {
-      self.observer.next(value);
-    } else if (self.predicate)(&value) {
-      self.observer.next(value);
-      self.done_skipping = true;
+macro_rules! impl_observer {
+  ($name: ident) => {
+    impl<Item, Err, O> Observer<Item, Err> for $name<O>
+    where
+      O: Observer<Item, Err>,
+    {
+      fn next(&mut self, value: Item) {
+        if !self.is_skipping() {
+          self.observer.next(value)
+        }
+      }
+
+      #[inline]
+      fn error(self, err: Err) {
+        self.observer.error(err)
+      }
+
+      #[inline]
+      fn complete(self) {
+        self.observer.complete()
+      }
+
+      #[inline]
+      fn is_finished(&self) -> bool {
+        self.observer.is_finished()
+      }
+    }
+
+    impl<O> Clone for $name<O> {
+      fn clone(&self) -> Self {
+        $name {
+          observer: self.observer.clone(),
+          skip: self.skip.clone(),
+        }
+      }
+    }
+
+    impl<Item, Err, O> Observer<Item, Err>
+      for SkipUntilNotifierObserver<$name<O>>
+    {
+      #[inline]
+      fn next(&mut self, _: Item) {
+        self.0.stop_skipping();
+      }
+
+      #[inline]
+      fn error(self, _: Err) {}
+
+      #[inline]
+      fn complete(self) {
+        self.0.stop_skipping()
+      }
+
+      #[inline]
+      fn is_finished(&self) -> bool {
+        false
+      }
+    }
+  };
+}
+
+impl_observer!(ShareObserver);
+impl_observer!(ShareObserverThreads);
+
+impl<O> ShareObserver<O> {
+  fn new(observer: O) -> Self {
+    Self {
+      observer: MutRc::own(Some(observer)),
+      skip: Rc::new(Cell::new(true)),
     }
   }
 
-  #[inline]
-  fn error(&mut self, err: Err) {
-    self.observer.error(err);
+  fn is_skipping(&self) -> bool {
+    self.skip.get()
   }
 
-  #[inline]
-  fn complete(&mut self) {
-    self.observer.complete()
+  fn stop_skipping(&self) {
+    self.skip.set(false)
+  }
+}
+
+impl<O> ShareObserverThreads<O> {
+  fn new(observer: O) -> Self {
+    Self {
+      observer: MutArc::own(Some(observer)),
+      skip: Arc::new(AtomicBool::new(true)),
+    }
+  }
+
+  fn is_skipping(&self) -> bool {
+    self.skip.load(Ordering::Relaxed)
+  }
+
+  fn stop_skipping(&self) {
+    self.skip.store(false, Ordering::Relaxed)
   }
 }
 
 #[cfg(test)]
 mod test {
+  use std::vec;
+
   use crate::prelude::*;
 
   #[test]
+
   fn base_function() {
     let mut completed = false;
     let mut items = vec![];
+    let mut notifier = Subject::<_, ()>::default();
+    let c_notifier = notifier.clone();
+    observable::from_iter(0..10)
+      .tap(move |v| {
+        if v == &5 {
+          notifier.next(());
+        }
+      })
+      .skip_until(c_notifier)
+      .on_complete(|| completed = true)
+      .subscribe(|v| {
+        items.push(v);
+      });
 
-    observable::from_iter(0..100)
-      .skip_until(|v| v >= &50)
-      .subscribe_complete(|v| items.push(v), || completed = true);
-
-    assert_eq!((50..100).collect::<Vec<i32>>(), items);
+    assert_eq!(&items, &[5, 6, 7, 8, 9]);
     assert!(completed);
   }
 
@@ -91,15 +221,22 @@ mod test {
     let mut items2 = vec![];
 
     {
-      let skip_until = observable::from_iter(0..10).skip_until(|v| v >= &5);
-      let f1 = skip_until.clone();
-      let f2 = skip_until;
+      let notifier = Subject::<(), ()>::default();
+      let mut c_notifier = notifier.clone();
+      let skip_until = observable::from_iter(0..10)
+        .tap(move |v| {
+          if v == &5 {
+            c_notifier.next(())
+          }
+        })
+        .skip_until(notifier);
 
-      f1.skip_until(|v| v >= &5).subscribe(|v| items1.push(v));
-      f2.skip_until(|v| v >= &5).subscribe(|v| items2.push(v));
+      skip_until.clone().subscribe(|v| items1.push(v));
+      skip_until.subscribe(|v| items2.push(v));
     }
+
     assert_eq!(items1, items2);
-    assert_eq!((5..10).collect::<Vec<i32>>(), items1);
+    assert_eq!(&items1, &[5, 6, 7, 8, 9]);
   }
 
   #[test]

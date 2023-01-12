@@ -1,81 +1,67 @@
 use crate::prelude::*;
 
 #[derive(Clone)]
-pub struct MapToOp<S, B> {
-  pub(crate) source: S,
-  pub(crate) value: B,
+pub struct MapToOp<S, B, Item> {
+  source: S,
+  value: B,
+  _m: TypeHint<Item>,
 }
 
-#[doc(hidden)]
-macro_rules! observable_impl {
-    ($subscription:ty, $($marker:ident +)* $lf: lifetime) => {
-    fn actual_subscribe<O > (
-      self,
-      observer: O ,
-    ) -> Self::Unsub
-    where O: Observer<Item=Self::Item,Err= Self::Err> + $($marker +)* $lf {
-      let value = self.value;
-      self.source.actual_subscribe(MapToObserver {
-        observer,
-        value,
-        _marker: TypeHint::new(),
-      })
-    }
+impl<S, B, Item> MapToOp<S, B, Item> {
+  #[inline]
+  pub fn new(source: S, value: B) -> Self {
+    Self { source, value, _m: TypeHint::default() }
+  }
+}
+impl<Item, Err, O, S, B> Observable<B, Err, O> for MapToOp<S, B, Item>
+where
+  S: Observable<Item, Err, MapToObserver<O, B>>,
+  O: Observer<B, Err>,
+  B: Clone,
+{
+  type Unsub = S::Unsub;
+
+  fn actual_subscribe(self, observer: O) -> Self::Unsub {
+    self
+      .source
+      .actual_subscribe(MapToObserver { observer, value: self.value })
   }
 }
 
-impl<S, B> Observable for MapToOp<S, B>
-where
-  S: Observable,
+impl<Item, Err, S, B> ObservableExt<B, Err> for MapToOp<S, B, Item> where
+  S: ObservableExt<Item, Err>
 {
-  type Item = B;
-  type Err = S::Err;
-}
-
-impl<'a, B, S> LocalObservable<'a> for MapToOp<S, B>
-where
-  S: LocalObservable<'a>,
-  B: Clone + 'a,
-  S::Item: 'a,
-{
-  type Unsub = S::Unsub;
-  observable_impl!(LocalSubscription,'a);
-}
-
-impl<B, S> SharedObservable for MapToOp<S, B>
-where
-  S: SharedObservable,
-  B: Clone + Send + Sync + 'static,
-  S::Item: 'static,
-{
-  type Unsub = S::Unsub;
-  observable_impl!(SharedSubscription, Send + Sync + 'static);
 }
 
 #[derive(Clone)]
-pub struct MapToObserver<O, B, Item> {
+pub struct MapToObserver<O, B> {
   observer: O,
   value: B,
-  _marker: TypeHint<*const Item>,
 }
 
-impl<Item, Err, O, B> Observer for MapToObserver<O, B, Item>
+impl<Item, Err, O, B> Observer<Item, Err> for MapToObserver<O, B>
 where
-  O: Observer<Item = B, Err = Err>,
+  O: Observer<B, Err>,
   B: Clone,
 {
-  type Item = Item;
-  type Err = Err;
+  #[inline]
   fn next(&mut self, _: Item) {
     self.observer.next(self.value.clone())
   }
 
-  fn error(&mut self, err: Self::Err) {
+  #[inline]
+  fn error(self, err: Err) {
     self.observer.error(err)
   }
 
-  fn complete(&mut self) {
+  #[inline]
+  fn complete(self) {
     self.observer.complete()
+  }
+
+  #[inline]
+  fn is_finished(&self) -> bool {
+    self.observer.is_finished()
   }
 }
 
@@ -98,22 +84,6 @@ mod test {
 
     observable::of(100).map_to(5).subscribe(|v| i += v);
     assert_eq!(i, 5);
-  }
-
-  #[cfg(not(target_arch = "wasm32"))]
-  #[test]
-  fn fork_and_shared() {
-    // type to type can fork
-    let m = observable::from_iter(0..100).map_to(5);
-    m.map_to(6).into_shared().subscribe(|_| {});
-
-    // type mapped to other type can fork
-    let m = observable::from_iter(vec!['a', 'b', 'c']).map_to(1);
-    m.map_to(2.0).into_shared().subscribe(|_| {});
-
-    // ref to ref can fork
-    let m = observable::of(&1).map_to(3);
-    m.map_to(4).into_shared().subscribe(|_| {});
   }
 
   #[test]

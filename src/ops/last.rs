@@ -6,73 +6,60 @@ pub struct LastOp<S, Item> {
   pub(crate) last: Option<Item>,
 }
 
-impl<Item, S> Observable for LastOp<S, Item>
-where
-  S: Observable<Item = Item>,
-{
-  type Item = Item;
-  type Err = S::Err;
-}
-
-#[doc(hidden)]
-macro_rules! observable_impl {
-  ($subscription:ty, $($marker:ident +)* $lf: lifetime) => {
-  fn actual_subscribe<O>(
-    self,
-    observer:O,
-  ) -> Self::Unsub
-  where O: Observer<Item=Self::Item,Err= Self::Err> + $($marker +)* $lf {
-    self.source.actual_subscribe(LastObserver {
-      observer,
-      last: self.last,
-    })
+impl<S, Item> LastOp<S, Item> {
+  #[inline]
+  pub(crate) fn new(source: S) -> Self {
+    LastOp { source, last: None }
   }
 }
-}
 
-impl<'a, Item, S> LocalObservable<'a> for LastOp<S, Item>
+impl<Item, S, Err, O> Observable<Item, Err, O> for LastOp<S, Item>
 where
-  S: LocalObservable<'a, Item = Item>,
-  Item: 'a + Clone,
+  S: Observable<Item, Err, LastObserver<O, Item>>,
+  O: Observer<Item, Err>,
 {
   type Unsub = S::Unsub;
-  observable_impl!(LocalSubscription, 'a);
+  fn actual_subscribe(self, observer: O) -> Self::Unsub {
+    self
+      .source
+      .actual_subscribe(LastObserver { observer, last: self.last })
+  }
 }
 
-impl<Item, S> SharedObservable for LastOp<S, Item>
-where
-  S: SharedObservable<Item = Item>,
-  Item: Send + Sync + 'static + Clone,
+impl<Item, S, Err> ObservableExt<Item, Err> for LastOp<S, Item> where
+  S: ObservableExt<Item, Err>
 {
-  type Unsub = S::Unsub;
-  observable_impl!(SharedSubscription, Send + Sync + 'static);
 }
-
 pub struct LastObserver<S, T> {
   observer: S,
   last: Option<T>,
 }
 
-impl<O, Item, Err> Observer for LastObserver<O, Item>
+impl<O, Item, Err> Observer<Item, Err> for LastObserver<O, Item>
 where
-  O: Observer<Item = Item, Err = Err>,
-  Item: Clone,
+  O: Observer<Item, Err>,
 {
-  type Item = Item;
-  type Err = Err;
+  #[inline]
   fn next(&mut self, value: Item) {
     self.last = Some(value);
   }
 
-  fn error(&mut self, err: Self::Err) {
+  #[inline]
+  fn error(self, err: Err) {
     self.observer.error(err)
   }
 
-  fn complete(&mut self) {
-    if let Some(v) = &self.last {
-      self.observer.next(v.clone())
+  #[inline]
+  fn complete(mut self) {
+    if let Some(v) = self.last.take() {
+      self.observer.next(v)
     }
     self.observer.complete();
+  }
+
+  #[inline]
+  fn is_finished(&self) -> bool {
+    self.observer.is_finished()
   }
 }
 
@@ -86,11 +73,11 @@ mod test {
     let mut errors = 0;
     let mut last_item = None;
 
-    observable::from_iter(0..100).last_or(200).subscribe_all(
-      |v| last_item = Some(v),
-      |_| errors += 1,
-      || completed += 1,
-    );
+    observable::from_iter(0..100)
+      .last_or(200)
+      .on_complete(|| completed += 1)
+      .on_error(|_| errors += 1)
+      .subscribe(|v| last_item = Some(v));
 
     assert_eq!(errors, 0);
     assert_eq!(completed, 1);
@@ -103,11 +90,11 @@ mod test {
     let mut errors = 0;
     let mut last_item = None;
 
-    observable::empty().last_or(100).subscribe_all(
-      |v| last_item = Some(v),
-      |_| errors += 1,
-      || completed += 1,
-    );
+    observable::empty()
+      .last_or(100)
+      .on_error(|_| errors += 1)
+      .on_complete(|| completed += 1)
+      .subscribe(|v| last_item = Some(v));
 
     assert_eq!(errors, 0);
     assert_eq!(completed, 1);
@@ -120,11 +107,11 @@ mod test {
     let mut errors = 0;
     let mut last_item = None;
 
-    observable::from_iter(0..2).last().subscribe_all(
-      |v| last_item = Some(v),
-      |_| errors += 1,
-      || completed += 1,
-    );
+    observable::from_iter(0..2)
+      .last()
+      .on_complete(|| completed += 1)
+      .on_error(|_| errors += 1)
+      .subscribe(|v| last_item = Some(v));
 
     assert_eq!(errors, 0);
     assert_eq!(completed, 1);
@@ -137,11 +124,11 @@ mod test {
     let mut errors = 0;
     let mut last_item = None;
 
-    observable::empty().last().subscribe_all(
-      |v: i32| last_item = Some(v),
-      |_| errors += 1,
-      || completed += 1,
-    );
+    observable::empty()
+      .last()
+      .on_error(|_| errors += 1)
+      .on_complete(|| completed += 1)
+      .subscribe(|v: i32| last_item = Some(v));
 
     assert_eq!(errors, 0);
     assert_eq!(completed, 1);
@@ -167,32 +154,18 @@ mod test {
   fn last_or_support_fork() {
     let mut default = 0;
     let mut default2 = 0;
-    let o = observable::create(|subscriber| {
+    let o = observable::create(|subscriber: Subscriber<_>| {
       subscriber.complete();
     })
     .last_or(100);
     let o1 = o.clone().last_or(0);
     let o2 = o.clone().last_or(0);
-    o1.subscribe(|v| default = v);
-    o2.subscribe(|v| default2 = v);
+    let u1: Box<dyn FnMut(i32) + '_> = Box::new(|v| default = v);
+    let u2: Box<dyn FnMut(i32) + '_> = Box::new(|v| default2 = v);
+    o1.subscribe(u1);
+    o2.subscribe(u2);
     assert_eq!(default, 100);
     assert_eq!(default, 100);
-  }
-
-  #[cfg(not(target_arch = "wasm32"))]
-  #[test]
-  fn last_fork_and_shared() {
-    observable::of(0)
-      .last_or(0)
-      .into_shared()
-      .into_shared()
-      .subscribe(|_| {});
-
-    observable::of(0)
-      .last()
-      .into_shared()
-      .into_shared()
-      .subscribe(|_| {});
   }
 
   #[test]

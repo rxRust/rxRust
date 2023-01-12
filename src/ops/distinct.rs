@@ -1,4 +1,4 @@
-use crate::{impl_local_shared_both, prelude::*};
+use crate::prelude::*;
 use std::{cmp::Eq, collections::HashSet, hash::Hash};
 
 #[derive(Clone)]
@@ -6,51 +6,55 @@ pub struct DistinctOp<S> {
   pub(crate) source: S,
 }
 
-impl<S: Observable> Observable for DistinctOp<S> {
-  type Item = S::Item;
-  type Err = S::Err;
+impl<Item, Err, O, S> Observable<Item, Err, O> for DistinctOp<S>
+where
+  S: Observable<Item, Err, DistinctObserver<O, Item>>,
+  O: Observer<Item, Err>,
+  Item: Eq + Hash + Clone,
+{
+  type Unsub = S::Unsub;
+  fn actual_subscribe(self, observer: O) -> Self::Unsub {
+    self
+      .source
+      .actual_subscribe(DistinctObserver { observer, seen: HashSet::new() })
+  }
 }
 
-impl_local_shared_both! {
-  impl<S> DistinctOp<S>;
-  type Unsub = S::Unsub;
-  macro method($self: ident, $observer: ident, $ctx: ident) {
-    $self.source.actual_subscribe(DistinctObserver {
-      observer: $observer,
-      seen: HashSet::new(),
-    })
-  }
-  where
-    S: @ctx::Observable,
-    S::Item: Eq + Hash + Clone
-      @ctx::local_only(+ 'o)
-      @ctx::shared_only(+ Send + Sync + 'static)
+impl<Item, Err, S> ObservableExt<Item, Err> for DistinctOp<S> where
+  S: ObservableExt<Item, Err>
+{
 }
-struct DistinctObserver<O, Item> {
+
+pub struct DistinctObserver<O, Item> {
   observer: O,
   seen: HashSet<Item>,
 }
 
-impl<O, Item, Err> Observer for DistinctObserver<O, Item>
+impl<O, Item, Err> Observer<Item, Err> for DistinctObserver<O, Item>
 where
-  O: Observer<Item = Item, Err = Err>,
+  O: Observer<Item, Err>,
   Item: Hash + Eq + Clone,
 {
-  type Item = Item;
-  type Err = Err;
-  fn next(&mut self, value: Self::Item) {
+  fn next(&mut self, value: Item) {
     if !self.seen.contains(&value) {
       self.seen.insert(value.clone());
       self.observer.next(value);
     }
   }
 
-  fn error(&mut self, err: Self::Err) {
+  #[inline]
+  fn error(self, err: Err) {
     self.observer.error(err)
   }
 
-  fn complete(&mut self) {
+  #[inline]
+  fn complete(self) {
     self.observer.complete()
+  }
+
+  #[inline]
+  fn is_finished(&self) -> bool {
+    self.observer.is_finished()
   }
 }
 
@@ -60,45 +64,41 @@ pub struct DistinctKeyOp<S, F> {
   pub(crate) key: F,
 }
 
-impl<S: Observable, F> Observable for DistinctKeyOp<S, F> {
-  type Item = S::Item;
-  type Err = S::Err;
-}
-
-impl_local_shared_both! {
-  impl<S, F, K> DistinctKeyOp<S, F>;
+impl<Item, Err, O, S, F, K> Observable<Item, Err, O> for DistinctKeyOp<S, F>
+where
+  S: Observable<Item, Err, DistinctKeyObserver<O, F, K>>,
+  O: Observer<Item, Err>,
+  F: Fn(&Item) -> K,
+  K: Eq + Hash + Clone,
+{
   type Unsub = S::Unsub;
-  macro method($self: ident, $observer: ident, $ctx: ident) {
-    $self.source.actual_subscribe(DistinctKeyObserver {
-      observer: $observer,
-      key: $self.key,
+
+  fn actual_subscribe(self, observer: O) -> Self::Unsub {
+    self.source.actual_subscribe(DistinctKeyObserver {
+      observer,
+      key: self.key,
       seen: HashSet::new(),
     })
   }
-  where
-    S: @ctx::Observable,
-    F: Fn(&S::Item) -> K
-      @ctx::local_only(+ 'o)
-      @ctx::shared_only(+ Send + Sync + 'static),
-    K: Eq + Hash + Clone
-      @ctx::local_only(+ 'o)
-      @ctx::shared_only(+ Send + Sync + 'static),
 }
-struct DistinctKeyObserver<O, F, K> {
+
+impl<Item, Err, S, F> ObservableExt<Item, Err> for DistinctKeyOp<S, F> where
+  S: ObservableExt<Item, Err>
+{
+}
+pub struct DistinctKeyObserver<O, F, K> {
   observer: O,
   key: F,
   seen: HashSet<K>,
 }
 
-impl<O, F, K, Item, Err> Observer for DistinctKeyObserver<O, F, K>
+impl<O, F, K, Item, Err> Observer<Item, Err> for DistinctKeyObserver<O, F, K>
 where
-  O: Observer<Item = Item, Err = Err>,
+  O: Observer<Item, Err>,
   K: Hash + Eq + Clone,
   F: Fn(&Item) -> K,
 {
-  type Item = Item;
-  type Err = Err;
-  fn next(&mut self, value: Self::Item) {
+  fn next(&mut self, value: Item) {
     let key = (self.key)(&value);
     if !self.seen.contains(&key) {
       self.seen.insert(key);
@@ -106,12 +106,19 @@ where
     }
   }
 
-  fn error(&mut self, err: Self::Err) {
+  #[inline]
+  fn error(self, err: Err) {
     self.observer.error(err)
   }
 
-  fn complete(&mut self) {
+  #[inline]
+  fn complete(self) {
     self.observer.complete()
+  }
+
+  #[inline]
+  fn is_finished(&self) -> bool {
+    self.observer.is_finished()
   }
 }
 
@@ -120,51 +127,56 @@ pub struct DistinctUntilChangedOp<S> {
   pub(crate) source: S,
 }
 
-impl<S: Observable> Observable for DistinctUntilChangedOp<S> {
-  type Item = S::Item;
-  type Err = S::Err;
+impl<Item, Err, O, S> Observable<Item, Err, O> for DistinctUntilChangedOp<S>
+where
+  S: Observable<Item, Err, DistinctUntilChangedObserver<O, Item>>,
+  O: Observer<Item, Err>,
+  Item: PartialEq + Clone,
+{
+  type Unsub = S::Unsub;
+
+  fn actual_subscribe(self, observer: O) -> Self::Unsub {
+    self
+      .source
+      .actual_subscribe(DistinctUntilChangedObserver { observer, last: None })
+  }
 }
 
-impl_local_shared_both! {
-  impl<S> DistinctUntilChangedOp<S>;
-  type Unsub = S::Unsub;
-  macro method($self: ident, $observer: ident, $ctx: ident) {
-    $self.source.actual_subscribe(DistinctUntilChangedObserver {
-      observer: $observer,
-      last: None,
-    })
-  }
-  where
-    S: @ctx::Observable,
-    S::Item: PartialEq + Clone
-      @ctx::local_only(+ 'o)
-      @ctx::shared_only(+ Send + Sync + 'static)
+impl<Item, Err, S> ObservableExt<Item, Err> for DistinctUntilChangedOp<S> where
+  S: ObservableExt<Item, Err>
+{
 }
-struct DistinctUntilChangedObserver<O, Item> {
+
+pub struct DistinctUntilChangedObserver<O, Item> {
   observer: O,
   last: Option<Item>,
 }
 
-impl<O, Item, Err> Observer for DistinctUntilChangedObserver<O, Item>
+impl<O, Item, Err> Observer<Item, Err> for DistinctUntilChangedObserver<O, Item>
 where
-  O: Observer<Item = Item, Err = Err>,
+  O: Observer<Item, Err>,
   Item: PartialEq + Clone,
 {
-  type Item = Item;
-  type Err = Err;
-  fn next(&mut self, value: Self::Item) {
+  fn next(&mut self, value: Item) {
     if self.last.is_none() || self.last.as_ref().unwrap() != &value {
       self.last = Some(value.clone());
       self.observer.next(value);
     }
   }
 
-  fn error(&mut self, err: Self::Err) {
+  #[inline]
+  fn error(self, err: Err) {
     self.observer.error(err)
   }
 
-  fn complete(&mut self) {
+  #[inline]
+  fn complete(self) {
     self.observer.complete()
+  }
+
+  #[inline]
+  fn is_finished(&self) -> bool {
+    self.observer.is_finished()
   }
 }
 
@@ -174,48 +186,49 @@ pub struct DistinctUntilKeyChangedOp<S, F> {
   pub(crate) key: F,
 }
 
-impl<S: Observable, F> Observable for DistinctUntilKeyChangedOp<S, F> {
-  type Item = S::Item;
-  type Err = S::Err;
+impl<Item, Err, O, S, F, K> Observable<Item, Err, O>
+  for DistinctUntilKeyChangedOp<S, F>
+where
+  S: Observable<Item, Err, DistinctUntilKeyChangedObserver<O, F, Item>>,
+  O: Observer<Item, Err>,
+  K: Eq,
+  Item: Clone,
+  F: Fn(&Item) -> K,
+{
+  type Unsub = S::Unsub;
+
+  fn actual_subscribe(self, observer: O) -> Self::Unsub {
+    self
+      .source
+      .actual_subscribe(DistinctUntilKeyChangedObserver {
+        observer,
+        key: self.key,
+        last: None,
+      })
+  }
 }
 
-impl_local_shared_both! {
-  impl<S, F, K> DistinctUntilKeyChangedOp<S, F>;
-  type Unsub = S::Unsub;
-  macro method($self: ident, $observer: ident, $ctx: ident) {
-    $self.source.actual_subscribe(DistinctUntilKeyChangedObserver {
-      observer: $observer,
-      key: $self.key,
-      last: None,
-    })
-  }
-  where
-    F: Fn(&S::Item) -> K
-      @ctx::local_only(+ 'o)
-      @ctx::shared_only(+ Send + Sync + 'static),
-    S: @ctx::Observable,
-    K: Eq,
-    S::Item: Clone
-      @ctx::local_only(+ 'o)
-      @ctx::shared_only(+ Send + Sync + 'static)
+impl<Item, Err, S, F> ObservableExt<Item, Err>
+  for DistinctUntilKeyChangedOp<S, F>
+where
+  S: ObservableExt<Item, Err>,
+{
 }
-struct DistinctUntilKeyChangedObserver<O, Item, F> {
+pub struct DistinctUntilKeyChangedObserver<O, F, Item> {
   observer: O,
   key: F,
   last: Option<Item>,
 }
 
-impl<O, F, K, Item, Err> Observer
-  for DistinctUntilKeyChangedObserver<O, Item, F>
+impl<O, F, K, Item, Err> Observer<Item, Err>
+  for DistinctUntilKeyChangedObserver<O, F, Item>
 where
-  O: Observer<Item = Item, Err = Err>,
+  O: Observer<Item, Err>,
   Item: Clone,
   K: Eq,
   F: Fn(&Item) -> K,
 {
-  type Item = Item;
-  type Err = Err;
-  fn next(&mut self, value: Self::Item) {
+  fn next(&mut self, value: Item) {
     if self.last.is_none()
       || (self.key)(self.last.as_ref().unwrap()) != (self.key)(&value)
     {
@@ -224,12 +237,19 @@ where
     }
   }
 
-  fn error(&mut self, err: Self::Err) {
+  #[inline]
+  fn error(self, err: Err) {
     self.observer.error(err)
   }
 
-  fn complete(&mut self) {
+  #[inline]
+  fn complete(self) {
     self.observer.complete()
+  }
+
+  #[inline]
+  fn is_finished(&self) -> bool {
+    self.observer.is_finished()
   }
 }
 
@@ -245,19 +265,8 @@ mod tests {
     observable::from_iter(0..20)
       .map(|v| v % 5)
       .distinct()
-      .subscribe(move |v| x.borrow_mut().push(v))
-      .unsubscribe();
+      .subscribe(move |v| x.borrow_mut().push(v));
     assert_eq!(&*x_c.borrow(), &[0, 1, 2, 3, 4]);
-  }
-
-  #[cfg(not(target_arch = "wasm32"))]
-  #[test]
-  fn shared() {
-    observable::from_iter(0..10)
-      .distinct()
-      .into_shared()
-      .into_shared()
-      .subscribe(|_| {});
   }
 
   #[test]
@@ -278,19 +287,8 @@ mod tests {
     observable::from_iter(&[1, 2, 2, 1, 2, 3])
       .map(|v| v % 5)
       .distinct_until_changed()
-      .subscribe(move |v| x.borrow_mut().push(v))
-      .unsubscribe();
+      .subscribe(move |v| x.borrow_mut().push(v));
     assert_eq!(&*x_c.borrow(), &[1, 2, 1, 2, 3]);
-  }
-
-  #[cfg(not(target_arch = "wasm32"))]
-  #[test]
-  fn distinct_until_changed_shared() {
-    observable::from_iter(0..10)
-      .distinct_until_changed()
-      .into_shared()
-      .into_shared()
-      .subscribe(|_| {});
   }
 
   #[test]
@@ -315,8 +313,7 @@ mod tests {
     )
     .map(|v| v)
     .distinct_until_key_changed(|tup: &(i32, i32)| tup.0)
-    .subscribe(move |v| x.borrow_mut().push(v))
-    .unsubscribe();
+    .subscribe(move |v| x.borrow_mut().push(v));
     assert_eq!(&*x_c.borrow(), &[(1, 2), (2, 2), (1, 1), (2, 2), (3, 2)]);
   }
 
@@ -327,10 +324,9 @@ mod tests {
     observable::from_iter(
       vec![(1, 2), (2, 2), (2, 1), (1, 1), (2, 2), (3, 2)].into_iter(),
     )
-    .map(|v| v)
     .distinct_key(|tup: &(i32, i32)| tup.0)
-    .subscribe(move |v| x.borrow_mut().push(v))
-    .unsubscribe();
+    .subscribe(move |v| x.borrow_mut().push(v));
+
     assert_eq!(&*x_c.borrow(), &[(1, 2), (2, 2), (3, 2)]);
   }
 }

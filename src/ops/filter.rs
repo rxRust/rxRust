@@ -6,91 +6,61 @@ pub struct FilterOp<S, F> {
   pub(crate) filter: F,
 }
 
-#[doc(hidden)]
-macro_rules! observable_impl {
-    ($subscription:ty, $source:ident, $($marker:ident +)* $lf: lifetime) => {
-  type Unsub = $source::Unsub;
-  fn actual_subscribe<O>(
-    self,
-    observer:O,
-  ) -> Self::Unsub
-  where O: Observer<Item=Self::Item,Err= Self::Err> + $($marker +)* $lf {
-    let filter = self.filter;
-    self.source.actual_subscribe(FilterObserver {
-      filter,
-      observer
-    })
+impl<Item, Err, O, S, F> Observable<Item, Err, O> for FilterOp<S, F>
+where
+  S: Observable<Item, Err, FilterObserver<O, F>>,
+  O: Observer<Item, Err>,
+  F: FnMut(&Item) -> bool,
+{
+  type Unsub = S::Unsub;
+
+  fn actual_subscribe(self, observer: O) -> Self::Unsub {
+    self
+      .source
+      .actual_subscribe(FilterObserver { filter: self.filter, observer })
   }
 }
-}
 
-impl<S, F> Observable for FilterOp<S, F>
-where
-  S: Observable,
-  F: FnMut(&S::Item) -> bool,
+impl<Item, Err, S, F> ObservableExt<Item, Err> for FilterOp<S, F> where
+  S: ObservableExt<Item, Err>
 {
-  type Item = S::Item;
-  type Err = S::Err;
 }
 
-impl<'a, S, F> LocalObservable<'a> for FilterOp<S, F>
-where
-  S: LocalObservable<'a>,
-  F: FnMut(&S::Item) -> bool + 'a,
-{
-  observable_impl!(LocalSubscription, S, 'a);
-}
-
-impl<S, F> SharedObservable for FilterOp<S, F>
-where
-  S: SharedObservable,
-  F: FnMut(&S::Item) -> bool + Send + Sync + 'static,
-{
-  observable_impl!(SharedSubscription, S, Send + Sync + 'static);
-}
-
-pub struct FilterObserver<S, F> {
-  observer: S,
+pub struct FilterObserver<O, F> {
+  observer: O,
   filter: F,
 }
 
-impl<Item, Err, O, F> Observer for FilterObserver<O, F>
+impl<Item, Err, O, F> Observer<Item, Err> for FilterObserver<O, F>
 where
-  O: Observer<Item = Item, Err = Err>,
+  O: Observer<Item, Err>,
   F: FnMut(&Item) -> bool,
 {
-  type Item = Item;
-  type Err = Err;
   fn next(&mut self, value: Item) {
     if (self.filter)(&value) {
       self.observer.next(value)
     }
   }
 
-  fn error(&mut self, err: Self::Err) {
+  #[inline]
+  fn error(self, err: Err) {
     self.observer.error(err)
   }
 
-  fn complete(&mut self) {
+  #[inline]
+  fn complete(self) {
     self.observer.complete()
+  }
+
+  #[inline]
+  fn is_finished(&self) -> bool {
+    self.observer.is_finished()
   }
 }
 
 #[cfg(test)]
 mod test {
   use crate::prelude::*;
-
-  #[cfg(not(target_arch = "wasm32"))]
-  #[test]
-  fn fork_and_shared() {
-    observable::from_iter(0..10)
-      .filter(|v| v % 2 == 0)
-      .clone()
-      .filter(|_| true)
-      .clone()
-      .into_shared()
-      .subscribe(|_| {});
-  }
 
   #[test]
   fn smoke() {

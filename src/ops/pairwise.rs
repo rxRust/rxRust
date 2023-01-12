@@ -1,31 +1,28 @@
-use crate::{impl_local_shared_both, prelude::*};
+use crate::prelude::*;
 
 #[derive(Clone)]
 pub struct PairwiseOp<S> {
   pub(crate) source: S,
 }
 
-impl<S: Observable> Observable for PairwiseOp<S> {
-  type Item = (S::Item, S::Item);
-  type Err = S::Err;
+impl<Item, Err, O, S> Observable<(Item, Item), Err, O> for PairwiseOp<S>
+where
+  S: Observable<Item, Err, PairwiseObserver<O, Item>>,
+  O: Observer<(Item, Item), Err>,
+  Item: Clone,
+{
+  type Unsub = S::Unsub;
+
+  fn actual_subscribe(self, observer: O) -> Self::Unsub {
+    self
+      .source
+      .actual_subscribe(PairwiseObserver { observer, pair: (None, None) })
+  }
 }
 
-impl_local_shared_both! {
-  impl<S> PairwiseOp<S>;
-  type Unsub = S::Unsub;
-  macro method($self: ident, $observer: ident, $ctx: ident) {
-    $self
-    .source
-    .actual_subscribe(PairwiseObserver{
-      observer: $observer,
-      pair: (None, None),
-    })
-  }
-  where
-    S: @ctx::Observable,
-    S::Item: Clone
-      @ctx::shared_only(+ Send + Sync + 'static)
-      @ctx::local_only(+ 'o)
+impl<Item, Err, S> ObservableExt<(Item, Item), Err> for PairwiseOp<S> where
+  S: ObservableExt<Item, Err>
+{
 }
 
 #[derive(Clone)]
@@ -34,15 +31,12 @@ pub struct PairwiseObserver<O, Item> {
   pair: (Option<Item>, Option<Item>),
 }
 
-impl<O, Item, Err> Observer for PairwiseObserver<O, Item>
+impl<O, Item, Err> Observer<Item, Err> for PairwiseObserver<O, Item>
 where
-  O: Observer<Item = (Item, Item), Err = Err>,
+  O: Observer<(Item, Item), Err>,
   Item: Clone,
 {
-  type Item = Item;
-  type Err = Err;
-
-  fn next(&mut self, value: Self::Item) {
+  fn next(&mut self, value: Item) {
     let (_x, y) = std::mem::take(&mut self.pair);
     self.pair = (y, Some(value));
 
@@ -51,12 +45,19 @@ where
     }
   }
 
-  fn complete(&mut self) {
+  #[inline]
+  fn complete(self) {
     self.observer.complete();
   }
 
-  fn error(&mut self, err: Self::Err) {
+  #[inline]
+  fn error(self, err: Err) {
     self.observer.error(err)
+  }
+
+  #[inline]
+  fn is_finished(&self) -> bool {
+    self.observer.is_finished()
   }
 }
 

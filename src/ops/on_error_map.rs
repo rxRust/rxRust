@@ -1,62 +1,72 @@
-use crate::{impl_local_shared_both, prelude::*};
+use crate::prelude::*;
 
 #[derive(Clone)]
-pub struct OnErrorMapOp<S, M> {
-  pub(crate) source: S,
-  pub(crate) func: M,
+pub struct OnErrorMapOp<S, M, Err> {
+  source: S,
+  func: M,
+  _m: TypeHint<Err>,
 }
 
-impl<Err, S, M> Observable for OnErrorMapOp<S, M>
-where
-  S: Observable,
-  M: FnMut(S::Err) -> Err,
-{
-  type Item = S::Item;
-  type Err = Err;
-}
-
-impl_local_shared_both! {
-  impl<Err, S, M>  OnErrorMapOp<S, M>;
-  type Unsub = S::Unsub;
-  macro method($self: ident, $observer: ident, $ctx: ident) {
-    let map = $self.func;
-    $self.source.actual_subscribe(OnErrorMapObserver {
-      observer: $observer,
-      map,
-      _marker: TypeHint::new(),
-    })
+impl<S, M, Err> OnErrorMapOp<S, M, Err> {
+  #[inline]
+  pub fn new(source: S, func: M) -> Self {
+    Self { source, func, _m: TypeHint::default() }
   }
-  where
-    S: @ctx::Observable,
-    S::Err: @ctx::local_only('o) @ctx::shared_only('static),
-    M: FnMut(S::Err) -> Err
-      + @ctx::local_only('o) @ctx::shared_only( Send + Sync + 'static)
+}
+
+impl<Item, Err, OutputErr, O, S, M> Observable<Item, OutputErr, O>
+  for OnErrorMapOp<S, M, Err>
+where
+  S: Observable<Item, Err, OnErrorMapObserver<O, M>>,
+  O: Observer<Item, OutputErr>,
+  M: FnMut(Err) -> OutputErr,
+{
+  type Unsub = S::Unsub;
+
+  fn actual_subscribe(self, observer: O) -> Self::Unsub {
+    self
+      .source
+      .actual_subscribe(OnErrorMapObserver { observer, map: self.func })
+  }
+}
+
+impl<Item, Err, OutputErr, S, M> ObservableExt<Item, OutputErr>
+  for OnErrorMapOp<S, M, Err>
+where
+  S: ObservableExt<Item, Err>,
+  M: FnMut(Err) -> OutputErr,
+{
 }
 
 #[derive(Clone)]
-pub struct OnErrorMapObserver<O, M, Err> {
+pub struct OnErrorMapObserver<O, M> {
   observer: O,
   map: M,
-  _marker: TypeHint<*const Err>,
 }
 
-impl<Item, Err, O, M, B> Observer for OnErrorMapObserver<O, M, Err>
+impl<Item, Err, O, M, B> Observer<Item, Err> for OnErrorMapObserver<O, M>
 where
   M: FnMut(Err) -> B,
-  O: Observer<Item = Item, Err = B>,
+  O: Observer<Item, B>,
 {
-  type Item = Item;
-  type Err = Err;
-  fn next(&mut self, value: Self::Item) {
+  #[inline]
+  fn next(&mut self, value: Item) {
     self.observer.next(value)
   }
 
-  fn error(&mut self, err: Err) {
+  #[inline]
+  fn error(mut self, err: Err) {
     self.observer.error((self.map)(err))
   }
 
-  fn complete(&mut self) {
+  #[inline]
+  fn complete(self) {
     self.observer.complete()
+  }
+
+  #[inline]
+  fn is_finished(&self) -> bool {
+    self.observer.is_finished()
   }
 }
 
@@ -66,85 +76,47 @@ mod test {
 
   #[test]
   fn primitive_type() {
-    create(|subscribe| {
-      subscribe.next(());
-      subscribe.error("Hello");
-      subscribe.complete();
+    let _ = create(|mut subscriber: Subscriber<_>| {
+      subscriber.next(());
+      subscriber.error("Hello");
     })
     .on_error_map(|_| "Test")
-    .subscribe_err(|_| {}, |error| assert_eq!(error, "Test"));
+    .on_error(|error| assert_eq!(error, "Test"))
+    .subscribe(|_| {});
   }
 
   #[test]
   fn reference_lifetime_should_work() {
     let mut i = 0;
 
-    create(|subscribe| {
-      subscribe.next(());
-      subscribe.error(100);
-      subscribe.complete();
+    create(|mut subscriber: Subscriber<_>| {
+      subscriber.next(());
+      subscriber.error(100);
     })
     .on_error_map(|x| x)
-    .subscribe_err(|_| {}, |v| i += v);
+    .on_error(|v| i += v)
+    .subscribe(|_| {});
     assert_eq!(i, 100);
-  }
-
-  #[cfg(not(target_arch = "wasm32"))]
-  #[test]
-  fn fork_and_shared() {
-    // type to type can fork
-    let m = create(|subscribe| {
-      subscribe.next(());
-      subscribe.error("Hello World");
-      subscribe.complete();
-    })
-    .on_error_map(|v| v);
-    m.on_error_map(|v| v)
-      .into_shared()
-      .subscribe_err(|_| {}, |e| assert_eq!(e, "Hello World"));
-    //
-    // type mapped to other type can fork
-    let m = create(|subscribe| {
-      subscribe.next(());
-      subscribe.error("Hello World");
-      subscribe.complete();
-    })
-    .on_error_map(|_| 1);
-    m.on_error_map(|v| v as f32)
-      .into_shared()
-      .subscribe_err(|_| {}, |e| assert_eq!(e, 1f32));
-
-    // ref to ref can fork
-    let m = create(|subscribe| {
-      subscribe.next(());
-      subscribe.error(&100);
-      subscribe.complete();
-    })
-    .on_error_map(|v| v);
-    m.on_error_map(|v| v)
-      .into_shared()
-      .subscribe_err(|_| {}, |_| {});
   }
 
   #[test]
   fn map_types_mixed() {
     let mut i = 0;
-    observable::create(|subscribe| {
-      subscribe.next(());
-      subscribe.error("a");
-      subscribe.complete();
+    observable::create(|mut subscriber: Subscriber<_>| {
+      subscriber.next(());
+      subscriber.error("a");
     })
     .on_error_map(|_v| 1)
-    .subscribe_err(|_| (), |v| i += v);
+    .on_error(|v| i += v)
+    .subscribe(|_| ());
     assert_eq!(i, 1);
   }
 
   #[test]
   fn map_to_void() {
-    create(|subscribe| {
-      subscribe.next("Hello");
-      subscribe.error("World");
-      subscribe.complete();
+    create(|mut publisher: Subscriber<_>| {
+      publisher.next("Hello");
+      publisher.error("World");
     })
     .on_error_map(|_| ())
     .subscribe(|_| {});
@@ -152,13 +124,13 @@ mod test {
 
   #[test]
   fn map_flat_map_from_iter() {
-    create(|subscribe| {
-      subscribe.next("Hello");
-      subscribe.error("World");
-      subscribe.complete();
+    create(|mut publisher: Subscriber<_>| {
+      publisher.next("Hello");
+      publisher.error("World");
     })
     .flat_map(|_| from_iter(vec!['a', 'b', 'c']).on_error_map(|_| "World"))
-    .subscribe_err(|_| {}, |_| {});
+    .on_error(|_| {})
+    .subscribe(|_| {});
   }
 
   #[test]

@@ -1,6 +1,7 @@
-use crate::{impl_helper::*, impl_local_shared_both, prelude::*};
-use futures::FutureExt;
-use observable::of;
+use crate::{
+  prelude::*,
+  scheduler::{FutureTask, NormalReturn, Scheduler, TaskHandle},
+};
 use std::future::Future;
 
 /// Converts a `Future` to an observable sequence. Even though if the future
@@ -25,10 +26,7 @@ pub fn from_future<F, Item, S>(f: F, scheduler: S) -> FutureObservable<F, S>
 where
   F: Future<Output = Item>,
 {
-  FutureObservable {
-    future: f,
-    scheduler,
-  }
+  FutureObservable { future: f, scheduler }
 }
 
 #[derive(Clone)]
@@ -37,29 +35,30 @@ pub struct FutureObservable<F, S> {
   scheduler: S,
 }
 
-impl<Item, F, S> Observable for FutureObservable<F, S>
+impl<O, F, S> Observable<F::Output, (), O> for FutureObservable<F, S>
 where
-  F: Future<Output = Item>,
+  F: Future,
+  S: Scheduler<FutureTask<F, O, NormalReturn<()>>>,
+  O: Observer<F::Output, ()>,
 {
-  type Item = Item;
-  type Err = ();
+  type Unsub = TaskHandle<NormalReturn<()>>;
+
+  #[inline]
+  fn actual_subscribe(self, observer: O) -> Self::Unsub {
+    let Self { future, scheduler } = self;
+    scheduler.schedule(FutureTask::new(future, item_task, observer), None)
+  }
 }
 
-impl_local_shared_both! {
-  impl<F, Item, S> FutureObservable<F, S>;
-  type Unsub = SpawnHandle;
-  macro method($self: ident, $observer: ident, $ctx: ident) {
-    let f = $self
-      .future
-      .map(move |v| $ctx::actual_subscribe(of::of(v), $observer));
-    let (future, handle) = futures::future::abortable(f);
-    $self.scheduler.spawn(future.map(|_| ()));
-    SpawnHandle::new(handle)
-  }
-  where
-    @ctx::local_only('o: 'static,)
-    F: Future<Output = Item> @ctx::shared_only(+ Send + Sync) + 'static,
-    S: @ctx::Scheduler
+impl<F: Future, S> ObservableExt<F::Output, ()> for FutureObservable<F, S> {}
+
+fn item_task<Item, O>(item: Item, mut observer: O) -> NormalReturn<()>
+where
+  O: Observer<Item, ()>,
+{
+  observer.next(item);
+  observer.complete();
+  NormalReturn::new(())
 }
 
 /// Converts a `Future` to an observable sequence like
@@ -69,89 +68,64 @@ impl_local_shared_both! {
 pub fn from_future_result<F, S, Item, Err>(
   future: F,
   scheduler: S,
-) -> FutureResultObservable<F, S, Item, Err>
+) -> FutureResultObservable<F, S>
 where
-  F: Future,
-  <F as Future>::Output: Into<Result<Item, Err>>,
+  F: Future<Output = Result<Item, Err>>,
 {
-  FutureResultObservable {
-    future,
-    scheduler,
-    _marker: TypeHint::new(),
-  }
+  FutureResultObservable { future, scheduler }
 }
 
 #[derive(Clone)]
-pub struct FutureResultObservable<F, S, Item, Err> {
+pub struct FutureResultObservable<F, S> {
   future: F,
   scheduler: S,
-  _marker: TypeHint<(Item, Err)>,
 }
 
-impl<Item, S, Err, F> Observable for FutureResultObservable<F, S, Item, Err>
+impl<Item, S, Err, O, F> Observable<Item, Err, O>
+  for FutureResultObservable<F, S>
 where
-  F: Future,
-  <F as Future>::Output: Into<Result<Item, Err>>,
+  O: Observer<Item, Err>,
+  F: Future<Output = Result<Item, Err>>,
+  S: Scheduler<FutureTask<F, O, NormalReturn<()>>>,
 {
-  type Item = Item;
-  type Err = Err;
+  type Unsub = TaskHandle<NormalReturn<()>>;
+
+  fn actual_subscribe(self, observer: O) -> Self::Unsub {
+    let Self { future, scheduler } = self;
+    scheduler.schedule(FutureTask::new(future, result_task, observer), None)
+  }
 }
 
-impl_local_shared_both! {
-  impl<Item, Err, S, F> FutureResultObservable<F, S, Item, Err>;
-  type Unsub = SpawnHandle;
-  macro method($self: ident, $observer: ident, $ctx: ident) {
-    let f = $self
-      .future
-      .map(move |v|$ctx::actual_subscribe( of::of_result(v.into()), $observer));
-    let (future, handle) = futures::future::abortable(f);
-    $self.scheduler.spawn(future.map(|_| ()));
-    SpawnHandle::new(handle)
+fn result_task<Item, Err, O>(
+  value: Result<Item, Err>,
+  mut observer: O,
+) -> NormalReturn<()>
+where
+  O: Observer<Item, Err>,
+{
+  match value {
+    Ok(v) => {
+      observer.next(v);
+      observer.complete();
+    }
+    Err(err) => {
+      observer.error(err);
+    }
   }
-  where
-    @ctx::local_only('o: 'static,)
-    S: @ctx::Scheduler,
-    F: Future @ctx::shared_only(+ Send + Sync) + 'static,
-    <F as Future>::Output: Into<Result<Item, Err>>,
-    S: @ctx::Scheduler
+  NormalReturn::new(())
+}
+
+impl<Item, S, Err, F> ObservableExt<Item, Err> for FutureResultObservable<F, S> where
+  F: Future<Output = Result<Item, Err>>
+{
 }
 
 #[cfg(test)]
 mod tests {
   use super::*;
   use bencher::Bencher;
-  #[cfg(not(target_arch = "wasm32"))]
-  use futures::executor::ThreadPool;
   use futures::{executor::LocalPool, future};
-  #[cfg(not(target_arch = "wasm32"))]
-  use std::sync::{Arc, Mutex};
   use std::{cell::RefCell, rc::Rc};
-
-  #[cfg(not(target_arch = "wasm32"))]
-  #[test]
-  fn shared() {
-    let res = Arc::new(Mutex::new(0));
-    let c_res = res.clone();
-    let pool = ThreadPool::new().unwrap();
-    {
-      from_future_result(future::ok(1), pool.clone())
-        .into_shared()
-        .subscribe(move |v| {
-          *res.lock().unwrap() = v;
-        });
-      std::thread::sleep(std::time::Duration::from_millis(10));
-      assert_eq!(*c_res.lock().unwrap(), 1);
-    }
-    // from_future
-    let res = c_res.clone();
-    from_future(future::ready(2), pool)
-      .into_shared()
-      .subscribe(move |v| {
-        *res.lock().unwrap() = v;
-      });
-    std::thread::sleep(std::time::Duration::from_millis(10));
-    assert_eq!(*c_res.lock().unwrap(), 2);
-  }
 
   #[test]
   fn local() {

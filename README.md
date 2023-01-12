@@ -7,13 +7,11 @@
 
 ## Usage
 
-`1.0.x` version requires Rust nightly before GAT stable, `latest` and `0.15.0` versions work with Rust stable.
-
 Add this to your Cargo.toml:
 
 ```toml
 [dependencies]
-rxrust = "1.0.0-alpha.3"
+rxrust = "1.0.0-beta.0"
 ```
 
 ## Example 
@@ -40,8 +38,8 @@ In `rxrust` almost all extensions consume the upstream. So when you try to subsc
 ```rust ignore
  # use rxrust::prelude::*;
  let o = observable::from_iter(0..10);
- o.subscribe(|_| { println!("consume in first")} );
- o.subscribe(|_| { println!("consume in second")} );
+ o.subscribe(|_| println!("consume in first"));
+ o.subscribe(|_| println!("consume in second"));
 ```
 
 In this case, we must clone the stream.
@@ -49,29 +47,30 @@ In this case, we must clone the stream.
 ```rust
  # use rxrust::prelude::*;
  let o = observable::from_iter(0..10);
- o.clone().subscribe(|_| {println!("consume in first")});
- o.clone().subscribe(|_| {println!("consume in second")});
+ o.clone().subscribe(|_| println!("consume in first"));
+ o.clone().subscribe(|_| println!("consume in second"));
 ```
+
+If you want share the same observable, you can use `Subject`.
 
 ## Scheduler
 
-`rxrust` use the runtime of the `Future` as the scheduler, `LocalPool` and `ThreadPool` in `futures::executor` can be used as schedulers directly, and `tokio::runtime::Runtime` also supported, but need enable the feature `futures-scheduler`. Across `LocalScheduler` and `SharedScheduler` to implement custom `Scheduler`.
+`rxrust` use the runtime of the `Future` as the scheduler, `LocalPool` and `ThreadPool` in `futures::executor` can be used as schedulers directly, and `tokio::runtime::Runtime` also supported, but need enable the feature `futures-scheduler`. Across `Scheduler`  to implement custom `Scheduler`.
 
 ```rust 
 use rxrust::prelude::*;
-use futures::executor::ThreadPool;
 
-let pool_scheduler = ThreadPool::new().unwrap();
+// `FuturesThreadPoolScheduler` is the alias of `futures::executor::ThreadPool`.
+let threads_scheduler = FuturesThreadPoolScheduler::new().unwrap();
+
 observable::from_iter(0..10)
-  .subscribe_on(pool_scheduler.clone())
+  .subscribe_on(threads_scheduler.clone())
   .map(|v| v*2)
-  .into_shared()
-  .observe_on(pool_scheduler)
-  .into_shared()
-  .subscribe(|v| {println!("{},", v)});
+  .observe_on(threads_scheduler)
+  .subscribe(|v| println!("{},", v));
 ```
 
-Also, `rxrust` supports WebAssembly by enabling the feature `wasm-scheduler` and using the crate `wasm-bindgen`. Simple example is [here](https://github.com/utilForever/rxrust-with-wasm). Note that `wasm-scheduler` only supports `LocalScheduler`.
+Also, `rxrust` supports WebAssembly by enabling the feature `wasm-scheduler` and using the crate `wasm-bindgen`. Simple example is [here](https://github.com/utilForever/rxrust-with-wasm). 
 
 ## Converts from a Future
 
@@ -79,14 +78,13 @@ Just use `observable::from_future` to convert a `Future` to an observable sequen
 
 ```rust
 use rxrust::prelude::*;
-use futures::{ future, executor::LocalPool };
 
-let mut local_scheduler = LocalPool::new();
-observable::from_future(future::ready(1), local_scheduler.spawner())
+let mut scheduler_pool = FuturesLocalSchedulerPool::new();
+observable::from_future(std::future::ready(1), scheduler_pool.spawner())
   .subscribe(move |v| println!("subscribed with {}", v));
 
-// Wait `LocalPool` finish.
-local_scheduler.run();
+// Wait `task` finish.
+scheduler_pool.run();
 ```
 
 A `from_future_result` function also provided to propagating error from `Future`.

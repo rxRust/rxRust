@@ -1,70 +1,89 @@
-use crate::prelude::*;
-use std::{
-  cell::RefCell,
-  rc::Rc,
-  sync::{Arc, Mutex},
+use crate::{
+  prelude::*,
+  rc::{MutArc, MutRc, RcDerefMut},
 };
 
 #[derive(Clone)]
 pub struct FinalizeOp<S, F> {
-  pub(crate) source: S,
-  pub(crate) func: F,
+  source: S,
+  func: F,
 }
 
-impl<S, F> Observable for FinalizeOp<S, F>
-where
-  S: Observable,
-  F: FnMut(),
-{
-  type Item = S::Item;
-  type Err = S::Err;
+#[derive(Clone)]
+pub struct FinalizeOpThreads<S, F> {
+  source: S,
+  func: F,
 }
 
-impl<'a, S, F> LocalObservable<'a> for FinalizeOp<S, F>
-where
-  S: LocalObservable<'a>,
-  F: FnMut() + 'static,
-{
-  type Unsub = FinalizerSubscription<S::Unsub, Rc<RefCell<Option<F>>>>;
+macro_rules! impl_finalize_op {
+  ($name: ident, $rc:ident) => {
+    impl<S, F> $name<S, F> {
+      #[inline]
+      pub fn new(source: S, func: F) -> Self {
+        Self { source, func }
+      }
+    }
 
-  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
-  where
-    O: Observer<Item = Self::Item, Err = Self::Err> + 'a,
-  {
-    let func = Rc::new(RefCell::new(Some(self.func)));
-    let subscription = self.source.actual_subscribe(FinalizerObserver {
-      observer,
-      func: func.clone(),
-    });
+    impl<Item, Err, O, S, F> Observable<Item, Err, O> for $name<S, F>
+    where
+      O: Observer<Item, Err>,
+      S: Observable<Item, Err, FinalizerObserver<O, $rc<Option<F>>>>,
+      F: FnOnce(),
+    {
+      type Unsub = FinalizerSubscription<S::Unsub, $rc<Option<F>>>;
 
-    FinalizerSubscription { subscription, func }
-  }
+      fn actual_subscribe(self, observer: O) -> Self::Unsub {
+        let func = $rc::own(Some(self.func));
+        let subscription = self
+          .source
+          .actual_subscribe(FinalizerObserver { observer, func: func.clone() });
+        FinalizerSubscription { subscription, func }
+      }
+    }
+
+    impl<Item, Err, S, F> ObservableExt<Item, Err> for $name<S, F> where
+      S: ObservableExt<Item, Err>
+    {
+    }
+  };
 }
 
-impl<S, F> SharedObservable for FinalizeOp<S, F>
-where
-  S: SharedObservable,
-  F: FnMut() + Send + Sync + 'static,
-  S::Unsub: Send + Sync,
-{
-  type Unsub = FinalizerSubscription<S::Unsub, Arc<Mutex<Option<F>>>>;
-
-  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
-  where
-    O: Observer<Item = Self::Item, Err = Self::Err> + Sync + Send + 'static,
-  {
-    let func = Arc::new(Mutex::new(Some(self.func)));
-    let subscription = self.source.actual_subscribe(FinalizerObserver {
-      observer,
-      func: func.clone(),
-    });
-    FinalizerSubscription { subscription, func }
-  }
-}
-
-struct FinalizerObserver<O, F> {
+impl_finalize_op!(FinalizeOp, MutRc);
+impl_finalize_op!(FinalizeOpThreads, MutArc);
+pub struct FinalizerObserver<O, F> {
   observer: O,
   func: F,
+}
+
+impl<Item, Err, O, F, C> Observer<Item, Err> for FinalizerObserver<O, C>
+where
+  C: RcDerefMut<Target = Option<F>>,
+  O: Observer<Item, Err>,
+  F: FnOnce(),
+{
+  #[inline]
+  fn next(&mut self, value: Item) {
+    self.observer.next(value);
+  }
+
+  fn error(self, err: Err) {
+    self.observer.error(err);
+    if let Some(func) = self.func.rc_deref_mut().take() {
+      func()
+    }
+  }
+
+  fn complete(self) {
+    self.observer.complete();
+    if let Some(func) = self.func.rc_deref_mut().take() {
+      func()
+    }
+  }
+
+  #[inline]
+  fn is_finished(&self) -> bool {
+    self.observer.is_finished()
+  }
 }
 
 pub struct FinalizerSubscription<U, F> {
@@ -72,15 +91,15 @@ pub struct FinalizerSubscription<U, F> {
   func: F,
 }
 
-impl<Target, U> SubscriptionLike
-  for FinalizerSubscription<U, Arc<Mutex<Option<Target>>>>
+impl<C, F, U> Subscription for FinalizerSubscription<U, C>
 where
-  Target: FnMut(),
-  U: SubscriptionLike,
+  U: Subscription,
+  C: RcDerefMut<Target = Option<F>>,
+  F: FnOnce(),
 {
-  fn unsubscribe(&mut self) {
+  fn unsubscribe(self) {
     self.subscription.unsubscribe();
-    if let Some(mut func) = (self.func.lock().unwrap()).take() {
+    if let Some(func) = self.func.rc_deref_mut().take() {
       func()
     }
   }
@@ -88,128 +107,6 @@ where
   #[inline]
   fn is_closed(&self) -> bool {
     self.subscription.is_closed()
-  }
-}
-
-impl<Target, U> SubscriptionLike
-  for FinalizerSubscription<U, Rc<RefCell<Option<Target>>>>
-where
-  Target: FnMut(),
-  U: SubscriptionLike,
-{
-  fn unsubscribe(&mut self) {
-    self.subscription.unsubscribe();
-    if let Some(mut func) = (self.func.borrow_mut()).take() {
-      func()
-    }
-  }
-
-  #[inline]
-  fn is_closed(&self) -> bool {
-    self.subscription.is_closed()
-  }
-}
-
-impl<Target, U> SubscriptionLike
-  for FinalizerSubscription<U, Box<Option<Target>>>
-where
-  Target: FnMut(),
-  U: SubscriptionLike,
-{
-  fn unsubscribe(&mut self) {
-    self.subscription.unsubscribe();
-    if let Some(mut func) = (self.func).take() {
-      func()
-    }
-  }
-
-  #[inline]
-  fn is_closed(&self) -> bool {
-    self.subscription.is_closed()
-  }
-}
-
-impl<Item, Err, O, Target> Observer
-  for FinalizerObserver<O, Arc<Mutex<Option<Target>>>>
-where
-  O: Observer<Item = Item, Err = Err>,
-  Target: FnMut(),
-{
-  type Item = Item;
-  type Err = Err;
-  #[inline]
-  fn next(&mut self, value: Item) {
-    self.observer.next(value);
-  }
-
-  fn error(&mut self, err: Err) {
-    self.observer.error(err);
-    if let Some(mut func) = (self.func.lock().unwrap()).take() {
-      func()
-    }
-  }
-
-  fn complete(&mut self) {
-    self.observer.complete();
-    if let Some(mut func) = (self.func.lock().unwrap()).take() {
-      func()
-    }
-  }
-}
-
-impl<Item, Err, O, Target> Observer
-  for FinalizerObserver<O, Rc<RefCell<Option<Target>>>>
-where
-  O: Observer<Item = Item, Err = Err>,
-  Target: FnMut(),
-{
-  type Item = Item;
-  type Err = Err;
-  #[inline]
-  fn next(&mut self, value: Item) {
-    self.observer.next(value);
-  }
-
-  fn error(&mut self, err: Err) {
-    self.observer.error(err);
-    if let Some(mut func) = (self.func.borrow_mut()).take() {
-      func()
-    }
-  }
-
-  fn complete(&mut self) {
-    self.observer.complete();
-    if let Some(mut func) = (self.func.borrow_mut()).take() {
-      func()
-    }
-  }
-}
-
-impl<Item, Err, O, Target> Observer
-  for FinalizerObserver<O, Box<Option<Target>>>
-where
-  O: Observer<Item = Item, Err = Err>,
-  Target: FnMut(),
-{
-  type Item = Item;
-  type Err = Err;
-  #[inline]
-  fn next(&mut self, value: Item) {
-    self.observer.next(value);
-  }
-
-  fn error(&mut self, err: Err) {
-    self.observer.error(err);
-    if let Some(mut func) = (self.func).take() {
-      func()
-    }
-  }
-
-  fn complete(&mut self) {
-    self.observer.complete();
-    if let Some(mut func) = (self.func).take() {
-      func()
-    }
   }
 }
 
@@ -243,7 +140,7 @@ mod test {
     // Given
     let finalized = Rc::new(Cell::new(false));
     let nexted = Rc::new(Cell::new(false));
-    let mut s = LocalSubject::new();
+    let mut s = Subject::default();
     // When
     let finalized_clone = finalized.clone();
     let nexted_clone = nexted.clone();
@@ -263,11 +160,11 @@ mod test {
     // Given
     let finalized = Rc::new(Cell::new(false));
     let nexted = Rc::new(Cell::new(false));
-    let mut s = LocalSubject::new();
+    let mut s = Subject::default();
     // When
     let finalized_clone = finalized.clone();
     let nexted_clone = nexted.clone();
-    let mut subscription = s
+    let subscription = s
       .clone()
       .finalize(move || finalized_clone.set(true))
       .subscribe(move |_| nexted_clone.set(true));
@@ -285,17 +182,15 @@ mod test {
     let finalized = Rc::new(Cell::new(false));
     let nexted = Rc::new(Cell::new(false));
     let errored = Rc::new(Cell::new(false));
-    let mut s: LocalSubject<i32, &'static str> = LocalSubject::new();
+    let mut s: Subject<i32, &'static str> = Subject::default();
     // When
     let finalized_clone = finalized.clone();
     let nexted_clone = nexted.clone();
     let errored_clone = errored.clone();
     s.clone()
       .finalize(move || finalized_clone.set(true))
-      .subscribe_err(
-        move |_| nexted_clone.set(true),
-        move |_| errored_clone.set(true),
-      );
+      .on_error(move |_| errored_clone.set(true))
+      .subscribe(move |_| nexted_clone.set(true));
     s.next(1);
     s.next(2);
     s.error("oops");
@@ -309,17 +204,18 @@ mod test {
   fn finalize_only_once() {
     // Given
     let finalize_count = Rc::new(Cell::new(0));
-    let mut s: LocalSubject<i32, &'static str> = LocalSubject::new();
+    let mut s: Subject<i32, &'static str> = Subject::default();
     // When
     let finalized_clone = finalize_count.clone();
-    let mut subscription = s
+    let subscription = s
       .clone()
       .finalize(move || finalized_clone.set(finalized_clone.get() + 1))
-      .subscribe_err(|_| (), |_| ());
+      .on_error(|_| {})
+      .subscribe(|_| {});
     s.next(1);
     s.next(2);
     s.error("oops");
-    s.complete();
+
     subscription.unsubscribe();
     // Then
     assert_eq!(finalize_count.get(), 1);
@@ -329,14 +225,12 @@ mod test {
   fn finalize_shared() {
     // Given
     let finalized = Arc::new(AtomicBool::new(false));
-    let mut s = SharedSubject::new();
+    let mut s = SubjectThreads::default();
     // When
     let finalized_clone = finalized.clone();
-    let mut subscription = s
+    let subscription = s
       .clone()
-      .into_shared()
-      .finalize(move || finalized_clone.store(true, Ordering::Relaxed))
-      .into_shared()
+      .finalize_threads(move || finalized_clone.store(true, Ordering::Relaxed))
       .subscribe(|_| ());
     s.next(1);
     s.next(2);
