@@ -121,6 +121,14 @@ impl<'a, Item: Clone, Err> LocalObservable<'a>
   }
 }
 
+impl<'a, Item, Err> std::ops::Deref for BehaviorSubject<Item, Err> {
+  type Target = Item;
+
+  fn deref(&self) -> &Self::Target {
+    &self.value
+  }
+}
+
 #[cfg(test)]
 mod test {
   use crate::prelude::*;
