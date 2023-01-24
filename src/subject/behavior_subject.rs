@@ -131,6 +131,17 @@ impl<'a, Item: Clone, Err: 'a> Behavior
   }
 }
 
+impl<'a, Item: Clone, Err: 'a> Behavior
+for SharedBehaviorSubject<Item, Err>
+{
+  type Item<'i> = std::sync::MutexGuard<'i, Item> where Item: 'i, Self: 'i;
+
+  fn peek(&self) -> Self::Item<'_> {
+    self.value.rc_deref()
+  }
+}
+
+
 #[cfg(test)]
 mod test {
   use crate::prelude::*;

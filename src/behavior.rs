@@ -7,8 +7,10 @@ pub trait Behavior {
     /// Example:
     /// ```
     /// use rxrust::prelude::*;
-    /// let mut behavior = LocalBehaviorSubject::new(0);
-    /// behavior.clone().subscribe(|value| println!("{value}"));
+    /// let mut behavior = SharedBehaviorSubject::new(0);
+    /// behavior.clone()
+    ///     .into_shared()
+    ///     .subscribe(|value| println!("{value}"));
     /// behavior.next(7);
     /// println!("{}", behavior.peek())
     ///
