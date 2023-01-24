@@ -25,6 +25,7 @@ pub mod shared;
 pub mod subject;
 pub mod subscription;
 pub mod type_hint;
+pub mod behavior;
 
 pub mod prelude {
 
@@ -44,6 +45,7 @@ pub mod prelude {
   pub use crate::subscription;
   pub use crate::subscription::*;
   pub use crate::type_hint::TypeHint;
+  pub use crate::behavior::*;
   pub use observer::Observer;
   pub use shared::*;
 }

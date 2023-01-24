@@ -121,6 +121,16 @@ impl<'a, Item: Clone, Err> LocalObservable<'a>
   }
 }
 
+impl<'a, Item: Clone, Err: 'a> Behavior
+  for LocalBehaviorSubject<'a, Item, Err>
+{
+  type Item<'i> = std::cell::Ref<'i, Item> where Item: 'i, Self: 'i;
+
+  fn peek(&self) -> Self::Item<'_> {
+    self.value.rc_deref()
+  }
+}
+
 #[cfg(test)]
 mod test {
   use crate::prelude::*;
