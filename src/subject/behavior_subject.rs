@@ -121,26 +121,23 @@ impl<'a, Item: Clone, Err> LocalObservable<'a>
   }
 }
 
-impl<'a, Item: Clone, Err: 'a> Behavior
+impl<'a, Item: Clone + 'static, Err: Clone> Behavior
   for LocalBehaviorSubject<'a, Item, Err>
 {
-  type Item<'i> = std::cell::Ref<'i, Item> where Item: 'i, Self: 'i;
-
-  fn peek(&self) -> Self::Item<'_> {
-    self.value.rc_deref()
+  fn peek(&self) -> <Self as Observer>::Item {
+    let r = self.value.rc_deref();
+    r.clone()
   }
 }
 
-impl<'a, Item: Clone, Err: 'a> Behavior
+impl<Item: Clone + 'static, Err: Clone> Behavior
 for SharedBehaviorSubject<Item, Err>
 {
-  type Item<'i> = std::sync::MutexGuard<'i, Item> where Item: 'i, Self: 'i;
-
-  fn peek(&self) -> Self::Item<'_> {
-    self.value.rc_deref()
+  fn peek(&self) -> <Self as Observer>::Item {
+    let r = self.value.rc_deref();
+    r.clone()
   }
 }
-
 
 #[cfg(test)]
 mod test {
