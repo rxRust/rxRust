@@ -131,7 +131,7 @@ impl<'a, Item: Clone + 'static, Err: Clone> Behavior
 }
 
 impl<Item: Clone + 'static, Err: Clone> Behavior
-for SharedBehaviorSubject<Item, Err>
+  for SharedBehaviorSubject<Item, Err>
 {
   fn peek(&self) -> <Self as Observer>::Item {
     let r = self.value.rc_deref();
