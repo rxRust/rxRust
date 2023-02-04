@@ -1,5 +1,22 @@
 ## [Unreleased](https://github.com/rxRust/rxRust/compare/v1.0.0-alpha.4...HEAD)
 
+### Refactor
+This is a big refactor for rxRust, almost reimplement everything and many api was broken. Use a simpler and more directly way to implement.
+
+- removed `shared` mod, all observable subscription and operator if need different implement to support cross thread split to two type, the cross-thread version name with a `Threads` suffix. And the cross-thread operator chain method named end with `_threads`. 
+- `LocalObservable` and `SharedObservable` has been removed, use `Observable` instead.
+- `LocalScheduler` and `SharedScheduler` has been removed, use `Scheduler` instead.
+- `Item` `Err` in `Observer` use generic type instead of associated type.
+- `SubscriptionLike` rename to `Subscription`.
+ 
+
+
+### Features
+- **operator**: add `on_error` operator to process error.
+- **operator**: `on_complete` operator do some work when `Observer::complete` called.
+- **operator**: add `complete_status` operator to track the complete status of the observable, and can use to block the thread until the observable finished.
+- **test**: reimplement the `FakeTimer` help us to control the timer when we write unit test.
+
 ### Bug Fixes
 - **operator**: `distinct_until_changed` only require the value implement `PartialEq` not `Eq`.
 - **operator**: `group_by` should not subscribe to value source anew on each new group 
