@@ -1,3 +1,7 @@
+//! A subject is a sort of bridge or proxy that acts both as an observer
+//! and as an Observable. Because it is an observer, it can subscribe to
+//! one or more Observables.
+
 use crate::{
   prelude::*,
   rc::{MutArc, MutRc, RcDeref, RcDerefMut},
@@ -15,6 +19,8 @@ pub trait SubjectSize {
 
 type PublisherVec<'a, Item, Err> =
   MutRc<Option<SmallVec<[Box<dyn Publisher<Item, Err> + 'a>; 1]>>>;
+
+/// A not threads safe subject.
 pub struct Subject<'a, Item, Err> {
   observers: PublisherVec<'a, Item, Err>,
   chamber: PublisherVec<'a, Item, Err>,
@@ -22,9 +28,43 @@ pub struct Subject<'a, Item, Err> {
 
 type PublisherVecThreads<Item, Err> =
   MutArc<Option<SmallVec<[Box<dyn Publisher<Item, Err> + Send>; 1]>>>;
+
+/// A threads safe subject.
 pub struct SubjectThreads<Item, Err> {
   observers: PublisherVecThreads<Item, Err>,
   chamber: PublisherVecThreads<Item, Err>,
+}
+
+type PublisherMutRefValueVec<'a, Item, Err> = MutRc<
+  Option<SmallVec<[Box<dyn for<'r> Publisher<&'r mut Item, Err> + 'a>; 1]>>,
+>;
+
+/// A subject emit mut reference elements.
+pub struct MutRefItemSubject<'a, Item, Err> {
+  observers: PublisherMutRefValueVec<'a, Item, Err>,
+  chamber: PublisherMutRefValueVec<'a, Item, Err>,
+}
+
+type PublisherMutRefErrVec<'a, Item, Err> = MutRc<
+  Option<SmallVec<[Box<dyn for<'r> Publisher<Item, &'r mut Err> + 'a>; 1]>>,
+>;
+
+/// A subject emit mut reference errors.
+pub struct MutRefErrSubject<'a, Item, Err> {
+  observers: PublisherMutRefErrVec<'a, Item, Err>,
+  chamber: PublisherMutRefErrVec<'a, Item, Err>,
+}
+
+type PublisherMutRefValueErrVec<'a, Item, Err> = MutRc<
+  Option<
+    SmallVec<[Box<dyn for<'r> Publisher<&'r mut Item, &'r mut Err> + 'a>; 1]>,
+  >,
+>;
+
+/// A subject emit both mut reference elements and errors.
+pub struct MutRefItemErrSubject<'a, Item, Err> {
+  observers: PublisherMutRefValueErrVec<'a, Item, Err>,
+  chamber: PublisherMutRefValueErrVec<'a, Item, Err>,
 }
 
 macro_rules! impl_subject_trivial {
@@ -69,8 +109,6 @@ macro_rules! impl_subject_trivial {
       }
     }
 
-    impl<$($lf,)? Item, Err> ObservableExt<Item, Err> for $ty {}
-
     impl<$($lf,)? Item, Err> Default for $ty {
       fn default() -> Self {
         Self {
@@ -97,31 +135,48 @@ macro_rules! impl_subject_trivial {
 }
 impl_subject_trivial!(Subject<'a, Item,Err>, MutRc, 'a);
 impl_subject_trivial!(SubjectThreads< Item, Err>, MutArc);
+impl_subject_trivial!(MutRefItemSubject<'a, Item,Err>, MutRc, 'a);
+impl_subject_trivial!(MutRefErrSubject<'a, Item,Err>, MutRc, 'a);
+impl_subject_trivial!(MutRefItemErrSubject<'a, Item,Err>, MutRc, 'a);
+
+impl<'a, Item, Err> ObservableExt<Item, Err> for Subject<'a, Item, Err> {}
+impl<Item, Err> ObservableExt<Item, Err> for SubjectThreads<Item, Err> {}
+impl<'a, Item, Err> ObservableExt<&mut Item, Err>
+  for MutRefItemSubject<'a, Item, Err>
+{
+}
+
+impl<'a, Item, Err> ObservableExt<Item, &mut Err>
+  for MutRefErrSubject<'a, Item, Err>
+{
+}
+
+impl<'a, Item, Err> ObservableExt<&mut Item, &mut Err>
+  for MutRefItemErrSubject<'a, Item, Err>
+{
+}
 
 macro_rules! impl_observer_methods {
-  () => {
-    #[inline]
-    fn next(&mut self, value: Item) {
+  ($item: ty$({ $item_clone: ident})?, $err: ty$({$err_clone: ident})?) => {
+    fn next(&mut self, value: $item) {
       self.load();
       if let Some(observers) = self.observers.rc_deref_mut().as_mut() {
         observers.iter_mut().for_each(|p| {
-          p.p_next(value.clone());
+          p.p_next(value$(.$item_clone())?);
         });
       }
     }
 
-    #[inline]
-    fn error(mut self, err: Err) {
+    fn error(mut self, err: $err) {
       self.load();
       if let Some(observers) = self.observers.rc_deref_mut().take() {
         observers
           .into_iter()
           .filter(|o| !o.p_is_closed())
-          .for_each(|o| o.p_error(err.clone()));
+          .for_each(|o| o.p_error(err$(.$err_clone())?));
       }
     }
 
-    #[inline]
     fn complete(mut self) {
       self.load();
       if let Some(observers) = self.observers.rc_deref_mut().take() {
@@ -142,18 +197,32 @@ macro_rules! impl_observer_methods {
 impl<'a, Item: Clone, Err: Clone> Observer<Item, Err>
   for Subject<'a, Item, Err>
 {
-  impl_observer_methods!();
+  impl_observer_methods!(Item { clone }, Err { clone });
 }
 
 impl<Item: Clone, Err: Clone> Observer<Item, Err>
   for SubjectThreads<Item, Err>
 {
-  impl_observer_methods!();
+  impl_observer_methods!(Item { clone }, Err { clone });
 }
 
-// impl<$($lf,)? $item, $err> ContextFrom for $ty {
-//   type Ctx = $ctx;
-// }
+impl<'a, Item, Err: Clone> Observer<&mut Item, Err>
+  for MutRefItemSubject<'a, Item, Err>
+{
+  impl_observer_methods!(&mut Item, Err { clone });
+}
+
+impl<'a, Item: Clone, Err> Observer<Item, &mut Err>
+  for MutRefErrSubject<'a, Item, Err>
+{
+  impl_observer_methods!(Item { clone }, &mut Err);
+}
+
+impl<'a, Item, Err> Observer<&mut Item, &mut Err>
+  for MutRefItemErrSubject<'a, Item, Err>
+{
+  impl_observer_methods!(&mut Item, &mut Err);
+}
 
 macro_rules! impl_observable_for_subject {
   ($subscriber:ident) => {
@@ -185,7 +254,30 @@ where
   impl_observable_for_subject!(SubscriberThreads);
 }
 
-// todo: support pass reference.
+impl<'a, Item, Err, O> Observable<&mut Item, Err, O>
+  for MutRefItemSubject<'a, Item, Err>
+where
+  O: for<'r> Observer<&'r mut Item, Err> + 'a,
+{
+  impl_observable_for_subject!(Subscriber);
+}
+
+impl<'a, Item, Err, O> Observable<Item, &mut Err, O>
+  for MutRefErrSubject<'a, Item, Err>
+where
+  O: for<'r> Observer<Item, &'r mut Err> + 'a,
+{
+  impl_observable_for_subject!(Subscriber);
+}
+
+impl<'a, Item, Err, O> Observable<&mut Item, &mut Err, O>
+  for MutRefItemErrSubject<'a, Item, Err>
+where
+  O: for<'i, 'e> Observer<&'i mut Item, &'e mut Err> + 'a,
+{
+  impl_observable_for_subject!(Subscriber);
+}
+
 #[cfg(test)]
 mod test {
   use super::*;
@@ -202,6 +294,54 @@ mod test {
       assert_eq!(subject.len(), 1);
     }
     assert_eq!(value, 2);
+  }
+
+  #[test]
+  fn mut_ref_item() {
+    let mut value = 0;
+    {
+      let mut subject = MutRefItemSubject::<'_, i32, ()>::default();
+      subject.clone().subscribe(
+        (|v| {
+          *v = 2;
+        }) as for<'r> fn(&'r mut i32),
+      );
+      subject.next(&mut value);
+    }
+    assert_eq!(value, 2);
+  }
+
+  #[test]
+  fn mut_ref_error() {
+    let mut err = 0;
+    {
+      let subject = MutRefErrSubject::default();
+      subject
+        .clone()
+        .on_error((|v: &mut i32| *v = 2) as for<'r> fn(&'r mut i32))
+        .subscribe(|()| {});
+
+      subject.error(&mut err);
+    }
+    assert_eq!(err, 2);
+  }
+
+  #[test]
+  fn mut_ref_item_error() {
+    let mut value = 0;
+    let mut err = 0;
+
+    let mut subject = MutRefItemErrSubject::default();
+    subject
+      .clone()
+      .on_error((|v: &mut i32| *v = 2) as for<'r> fn(&'r mut i32))
+      .subscribe((|v: &mut i32| *v = 2) as for<'r> fn(&'r mut i32));
+
+    subject.next(&mut value);
+    subject.error(&mut err);
+
+    assert_eq!(value, 2);
+    assert_eq!(err, 2);
   }
 
   #[test]

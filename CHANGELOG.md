@@ -9,9 +9,8 @@ This is a big refactor for rxRust, almost reimplement everything and many api wa
 - `Item` `Err` in `Observer` use generic type instead of associated type.
 - `SubscriptionLike` rename to `Subscription`.
  
-
-
 ### Features
+- **subject**: add three subject `MutRefItemSubject`, `MutRefErrSubject`, `MutRefItemErrSubject` to support emit mut reference of value or error.
 - **operator**: add `on_error` operator to process error.
 - **operator**: `on_complete` operator do some work when `Observer::complete` called.
 - **operator**: add `complete_status` operator to track the complete status of the observable, and can use to block the thread until the observable finished.

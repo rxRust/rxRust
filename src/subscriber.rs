@@ -29,7 +29,7 @@ impl<O> SubscriberThreads<O> {
   }
 }
 
-pub(crate) trait Publisher<Item, Err> {
+pub trait Publisher<Item, Err> {
   fn p_next(&mut self, value: Item);
   fn p_error(self: Box<Self>, err: Err);
   fn p_complete(self: Box<Self>);
