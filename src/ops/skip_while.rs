@@ -1,27 +1,9 @@
-use crate::prelude::*;
+use crate::{impl_local_shared_both, prelude::*};
 
 #[derive(Clone)]
 pub struct SkipWhileOp<S, F> {
   pub(crate) source: S,
-  pub(crate) callback: F,
-}
-
-#[doc(hidden)]
-macro_rules! observable_impl {
-    ($subscription:ty, $source:ident, $($marker:ident +)* $lf: lifetime) => {
-  type Unsub = $source::Unsub;
-  fn actual_subscribe<O>(
-    self,
-    observer:O,
-  ) -> Self::Unsub
-  where O: Observer<Item=Self::Item,Err= Self::Err> + $($marker +)* $lf {
-
-    self.source.actual_subscribe(SkipWhileObserver {
-      observer,
-      callback: self.callback,
-    })
-  }
-}
+  pub(crate) predicate: F,
 }
 
 impl<S, F> Observable for SkipWhileOp<S, F>
@@ -33,25 +15,28 @@ where
   type Err = S::Err;
 }
 
-impl<'a, S, F> LocalObservable<'a> for SkipWhileOp<S, F>
-where
-  S: LocalObservable<'a>,
-  F: FnMut(&S::Item) -> bool + 'a,
-{
-  observable_impl!(LocalSubscription, S, 'a);
-}
-
-impl<S, F> SharedObservable for SkipWhileOp<S, F>
-where
-  S: SharedObservable,
-  F: FnMut(&S::Item) -> bool + Send + Sync + 'static,
-{
-  observable_impl!(SharedSubscription, S, Send + Sync + 'static);
+impl_local_shared_both! {
+  impl<S, F> SkipWhileOp<S, F>;
+  type Unsub = S::Unsub;
+  macro method($self: ident, $observer: ident, $ctx: ident) {
+    let observer = SkipWhileObserver {
+      observer: $observer,
+      predicate: $self.predicate,
+      done_skip: false
+    };
+    $self.source.actual_subscribe(observer)
+  }
+  where
+    S: @ctx::Observable,
+    F: FnMut(&S::Item) -> bool +
+      @ctx::local_only('o)
+      @ctx::shared_only(Send + Sync + 'static)
 }
 
 pub struct SkipWhileObserver<O, F> {
   observer: O,
-  callback: F,
+  predicate: F,
+  done_skip: bool,
 }
 
 impl<O, Item, Err, F> Observer for SkipWhileObserver<O, F>
@@ -61,16 +46,22 @@ where
 {
   type Item = Item;
   type Err = Err;
+
   fn next(&mut self, value: Item) {
-    if !(self.callback)(&value) {
+    if self.done_skip {
+      self.observer.next(value);
+    } else if !(self.predicate)(&value) {
+      self.done_skip = true;
       self.observer.next(value);
     }
   }
 
-  fn error(&mut self, err: Self::Err) {
-    self.observer.error(err)
+  #[inline]
+  fn error(&mut self, err: Err) {
+    self.observer.error(err);
   }
 
+  #[inline]
   fn complete(&mut self) {
     self.observer.complete()
   }

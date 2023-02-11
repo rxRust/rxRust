@@ -547,7 +547,7 @@ pub trait Observable: Sized {
     }
   }
 
-  /// Ignore values while result of a callback is true.
+  /// Discard items emitted by an Observable until a specified condition becomes false.
   ///
   /// `skip_while` returns an Observable that ignores values while result of an
   /// callback is true emitted by the source Observable.
@@ -559,7 +559,7 @@ pub trait Observable: Sized {
   /// # use rxrust::prelude::*;
   ///
   /// observable::from_iter(0..10)
-  ///   .skip_while(|v| v < &5)
+  ///   .skip_while(|v| v != &5)
   ///   .subscribe(|v| println!("{}", v));
   ///
   /// // print logs:
@@ -570,13 +570,13 @@ pub trait Observable: Sized {
   /// // 9
   /// ```
   #[inline]
-  fn skip_while<F>(self, callback: F) -> SkipWhileOp<Self, F>
+  fn skip_while<F>(self, predicate: F) -> SkipWhileOp<Self, F>
   where
     F: FnMut(&Self::Item) -> bool,
   {
     SkipWhileOp {
       source: self,
-      callback,
+      predicate,
     }
   }
 
