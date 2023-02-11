@@ -333,6 +333,33 @@ mod tests {
     assert!(stamp.elapsed() >= duration);
   }
 
+  #[cfg(not(target_arch = "wasm32"))]
+  #[test]
+  fn timer_at_shall_complete_with_invalid_timestamp_with_no_delay() {
+    let mut local = LocalPool::new();
+
+    let is_completed = Arc::new(AtomicBool::new(false));
+    let is_completed_c = is_completed.clone();
+
+    let duration = Duration::from_secs(1);
+    let now = Instant::now();
+    let execute_at = now.checked_sub(duration).unwrap(); // execute 1 sec in past
+
+    observable::timer_at("aString", execute_at, local.spawner())
+      .subscribe_complete(
+        |_| {},
+        move || {
+          is_completed_c.store(true, Ordering::Relaxed);
+        },
+      );
+
+    local.run();
+
+    assert!(now.elapsed() < duration);
+    assert!(is_completed.load(Ordering::Relaxed));
+  }
+
+  #[cfg(target_arch = "wasm32")]
   #[test]
   fn timer_at_shall_complete_with_invalid_timestamp_with_no_delay() {
     let mut local = LocalPool::new();
