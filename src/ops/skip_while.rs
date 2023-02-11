@@ -77,7 +77,7 @@ mod test {
     let mut next_count = 0;
 
     observable::from_iter(0..100)
-      .skip_while(|v| v < &95)
+      .skip_while(|v| v != &95)
       .subscribe_complete(|_| next_count += 1, || completed = true);
 
     assert_eq!(next_count, 5);
@@ -89,12 +89,12 @@ mod test {
     let mut nc1 = 0;
     let mut nc2 = 0;
     {
-      let skip_while5 = observable::from_iter(0..100).skip_while(|v| v < &95);
+      let skip_while5 = observable::from_iter(0..100).skip_while(|v| v != &95);
       let f1 = skip_while5.clone();
       let f2 = skip_while5;
 
-      f1.skip_while(|v| v < &95).subscribe(|_| nc1 += 1);
-      f2.skip_while(|v| v < &95).subscribe(|_| nc2 += 1);
+      f1.skip_while(|v| v != &95).subscribe(|_| nc1 += 1);
+      f2.skip_while(|v| v != &95).subscribe(|_| nc2 += 1);
     }
     assert_eq!(nc1, 5);
     assert_eq!(nc2, 5);
@@ -104,8 +104,8 @@ mod test {
   #[test]
   fn ininto_shared() {
     observable::from_iter(0..100)
-      .skip_while(|v| v < &95)
-      .skip_while(|v| v < &95)
+      .skip_while(|v| v != &95)
+      .skip_while(|v| v != &95)
       .into_shared()
       .subscribe(|_| {});
   }
