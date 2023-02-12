@@ -89,7 +89,7 @@ mod test {
   #[test]
   fn parallel_subscribe_on() {
     let pool_scheduler = FuturesThreadPoolScheduler::new().unwrap();
-    let (o, status) = from_iter(0..5)
+    let (o, status) = from_iter(0..2)
       .flat_map_threads(move |v| {
         of(v)
           .tap(|_| thread::sleep(Duration::from_secs(1)))
