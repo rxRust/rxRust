@@ -18,13 +18,14 @@ This is a big refactor for rxRust, almost reimplement everything and many api wa
 - **operator**: add `complete_status` operator to track the complete status of the observable, and can use to block the thread until the observable finished.
 - **operator**: add `to_future` operator to convert an observable into a `Future`.
 - **operator**: add `to_stream` operator to convert an observable into a `Stream`.
+- **operator**: add `delay_subscription` to only delay the initial subscription.
 - **test**: reimplement the `FakeTimer` help us to control the timer when we write unit test.
 
 ### Bug Fixes
 
 - **operator**: `distinct_until_changed` only require the value implement `PartialEq` not `Eq`.
 - **operator**: `group_by` should not subscribe to value source anew on each new group
-
+- **operator**: `delay` operator not really delay the emission but on delay the init subscription.
 ## [1.0.0-alpha.4](https://github.com/rxRust/rxRust/releases/tag/v1.0.0-alpha.4)
 
 ### Features

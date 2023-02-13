@@ -76,8 +76,8 @@ mod test {
     let emitted = Arc::new(Mutex::new(vec![]));
     let c_emitted = emitted.clone();
     observable::from_iter(0..10)
-      .subscribe_on(pool.clone())
-      .delay(Duration::from_millis(10), pool)
+      .delay_threads(Duration::from_millis(10), pool.clone())
+      .subscribe_on(pool)
       .subscribe(move |v| {
         emitted.lock().unwrap().push(v);
       })
