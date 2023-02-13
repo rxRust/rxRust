@@ -34,6 +34,7 @@ pub use defer::*;
 
 use crate::ops::combine_latest::CombineLatestOpThread;
 use crate::ops::complete_status::{CompleteStatus, StatusOp};
+use crate::ops::delay::{DelayOpThreads, DelaySubscriptionOp};
 use crate::ops::finalize::FinalizeOpThreads;
 use crate::ops::future::{ObservableFuture, ObservableFutureObserver};
 use crate::ops::merge::MergeOpThreads;
@@ -1156,9 +1157,58 @@ pub trait ObservableExt<Item, Err>: Sized {
     DelayOp { source: self, delay: dur, scheduler }
   }
 
+  /// A threads safe version of `delay`
+  #[inline]
+  fn delay_threads<SD>(
+    self,
+    dur: Duration,
+    scheduler: SD,
+  ) -> DelayOpThreads<Self, SD> {
+    DelayOpThreads { source: self, delay: dur, scheduler }
+  }
+
   #[inline]
   fn delay_at<SD>(self, at: Instant, scheduler: SD) -> DelayOp<Self, SD> {
     DelayOp {
+      source: self,
+      delay: at.elapsed(),
+      scheduler,
+    }
+  }
+
+  /// A threads safe version of `delay_at`
+  #[inline]
+  fn delay_at_threads<SD>(
+    self,
+    at: Instant,
+    scheduler: SD,
+  ) -> DelayOpThreads<Self, SD> {
+    DelayOpThreads {
+      source: self,
+      delay: at.elapsed(),
+      scheduler,
+    }
+  }
+
+  /// It's similar to delay but rather than timeshifting the emissions from
+  /// the source Observable, it timeshifts the moment of subscription to that
+  /// Observable.
+  #[inline]
+  fn delay_subscription<SD>(
+    self,
+    dur: Duration,
+    scheduler: SD,
+  ) -> DelaySubscriptionOp<Self, SD> {
+    DelaySubscriptionOp { source: self, delay: dur, scheduler }
+  }
+
+  #[inline]
+  fn delay_subscription_at<SD>(
+    self,
+    at: Instant,
+    scheduler: SD,
+  ) -> DelaySubscriptionOp<Self, SD> {
+    DelaySubscriptionOp {
       source: self,
       delay: at.elapsed(),
       scheduler,
