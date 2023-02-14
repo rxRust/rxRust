@@ -88,7 +88,7 @@ macro_rules! impl_delay_op {
       SD: Scheduler<OnceTask<$rc<Option<O>>, NormalReturn<()>>>,
     {
       fn next(&mut self, value: Item) {
-        fn delay_emit_task<Item, Err>(
+        fn delay_emit_value<Item, Err>(
           (mut observer, value): (impl Observer<Item, Err>, Item),
         ) -> NormalReturn<()> {
           observer.next(value);
@@ -96,7 +96,7 @@ macro_rules! impl_delay_op {
         }
 
         let observer = self.observer.clone();
-        let task = OnceTask::new(delay_emit_task, (observer, value));
+        let task = OnceTask::new(delay_emit_value, (observer, value));
         self.subscription.retain();
         let handler = self.scheduler.schedule(task, Some(self.delay));
         self.subscription.append($box_unsub::new(handler));

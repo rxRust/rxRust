@@ -1,6 +1,6 @@
 use crate::{
   prelude::*,
-  rc::{MutArc, RcDerefMut},
+  rc::{MutArc, MutRc},
   scheduler::{NormalReturn, OnceTask, Scheduler},
 };
 #[derive(Clone)]
@@ -9,114 +9,122 @@ pub struct ObserveOnOp<S, SD> {
   pub(crate) scheduler: SD,
 }
 
-impl<S, SD, Item, Err, O> Observable<Item, Err, O> for ObserveOnOp<S, SD>
-where
-  S: Observable<Item, Err, ObserveOnObserver<O, SD>>,
-  O: Observer<Item, Err>,
-  SD: Scheduler<OnceTask<(MutArc<Option<O>>, Item, RcHandler), NormalReturn<()>>>
-    + Scheduler<OnceTask<(MutArc<Option<O>>, Err, RcHandler), NormalReturn<()>>>
-    + Scheduler<OnceTask<(MutArc<Option<O>>, RcHandler), NormalReturn<()>>>,
-  S::Unsub: Send + 'static,
-{
-  type Unsub = MultiSubscriptionThreads;
-
-  fn actual_subscribe(self, observer: O) -> Self::Unsub {
-    let mut unsub = MultiSubscriptionThreads::default();
-    let observer = ObserveOnObserver {
-      observer: MutArc::own(Some(observer)),
-      scheduler: self.scheduler,
-      subscription: unsub.clone(),
-    };
-    let u = self.source.actual_subscribe(observer);
-    unsub.append(BoxSubscriptionThreads::new(u));
-    unsub
-  }
-}
-
-impl<S, SD, Item, Err> ObservableExt<Item, Err> for ObserveOnOp<S, SD> where
-  S: ObservableExt<Item, Err>
-{
-}
-
 pub struct ObserveOnObserver<O, SD> {
+  observer: MutRc<Option<O>>,
+  scheduler: SD,
+  subscription: MultiSubscription<'static>,
+}
+
+#[derive(Clone)]
+pub struct ObserveOnOpThreads<S, SD> {
+  pub(crate) source: S,
+  pub(crate) scheduler: SD,
+}
+
+pub struct ObserveOnObserverThreads<O, SD> {
   observer: MutArc<Option<O>>,
   scheduler: SD,
   subscription: MultiSubscriptionThreads,
 }
 
-type RcHandler = MutArc<Option<TaskHandle<NormalReturn<()>>>>;
-macro_rules! schedule_task {
-  ($this: ident, $task_fn: ident, $($args: expr),*) => {{
+macro_rules! impl_observer_on_op {
+  ($op: ty, $rc: ident, $observer: ident, $multi_unsub: ty, $box_unsub: ident) => {
+    impl<Item, Err, O, S, SD> Observable<Item, Err, O> for $op
+    where
+      O: Observer<Item, Err>,
+      S: Observable<Item, Err, $observer<O, SD>>,
+      SD: Scheduler<OnceTask<($rc<Option<O>>, Item), NormalReturn<()>>>,
+      SD: Scheduler<OnceTask<($rc<Option<O>>, Err), NormalReturn<()>>>,
+      SD: Scheduler<OnceTask<$rc<Option<O>>, NormalReturn<()>>>,
+    {
+      type Unsub = ZipSubscription<S::Unsub, $multi_unsub>;
 
-    if !$this.subscription.is_closed() {
-      let proxy_handler = MutArc::own(None);
-      let handler = $this
-        .scheduler
-        .schedule(OnceTask::new($task_fn, ($($args,)* proxy_handler.clone())), None);
-      *proxy_handler.rc_deref_mut() = Some(handler);
-      $this.subscription.append(BoxSubscriptionThreads::new(proxy_handler));
+      fn actual_subscribe(self, observer: O) -> Self::Unsub {
+        let Self { source, scheduler } = self;
+        let subscription: $multi_unsub = <_>::default();
+        let observer = $rc::own(Some(observer));
+        let observer = $observer {
+          scheduler,
+          observer,
+          subscription: subscription.clone(),
+        };
+        let unsub = source.actual_subscribe(observer);
+        ZipSubscription::new(unsub, subscription)
+      }
     }
 
-  }};
+    impl<Item, Err, O, SD> Observer<Item, Err> for $observer<O, SD>
+    where
+      O: Observer<Item, Err>,
+      SD: Scheduler<OnceTask<($rc<Option<O>>, Item), NormalReturn<()>>>,
+      SD: Scheduler<OnceTask<($rc<Option<O>>, Err), NormalReturn<()>>>,
+      SD: Scheduler<OnceTask<$rc<Option<O>>, NormalReturn<()>>>,
+    {
+      fn next(&mut self, value: Item) {
+        fn delay_emit_value<Item, Err>(
+          (mut observer, value): (impl Observer<Item, Err>, Item),
+        ) -> NormalReturn<()> {
+          observer.next(value);
+          NormalReturn::new(())
+        }
+
+        let observer = self.observer.clone();
+        let task = OnceTask::new(delay_emit_value, (observer, value));
+        self.subscription.retain();
+        let handler = self.scheduler.schedule(task, None);
+        self.subscription.append($box_unsub::new(handler));
+      }
+
+      #[inline]
+      fn error(mut self, err: Err) {
+        fn delay_emit_err<Item, Err>(
+          (observer, err): (impl Observer<Item, Err>, Err),
+        ) -> NormalReturn<()> {
+          observer.error(err);
+          NormalReturn::new(())
+        }
+
+        let observer = self.observer.clone();
+        let task = OnceTask::new(delay_emit_err, (observer, err));
+        self.subscription.retain();
+        let handler = self.scheduler.schedule(task, None);
+        self.subscription.append($box_unsub::new(handler));
+      }
+
+      #[inline]
+      fn complete(mut self) {
+        fn delay_complete<Item, Err>(
+          observer: impl Observer<Item, Err>,
+        ) -> NormalReturn<()> {
+          observer.complete();
+          NormalReturn::new(())
+        }
+
+        let observer = self.observer.clone();
+        let task = OnceTask::new(delay_complete, observer);
+        self.subscription.retain();
+
+        let handler = self.scheduler.schedule(task, None);
+        self.subscription.append($box_unsub::new(handler));
+      }
+
+      #[inline]
+      fn is_finished(&self) -> bool {
+        self.observer.is_finished()
+      }
+    }
+
+    impl<Item, Err, S, SD> ObservableExt<Item, Err> for $op where
+      S: ObservableExt<Item, Err>
+    {
+    }
+  };
 }
 
-impl<Item, Err, O, SD> Observer<Item, Err> for ObserveOnObserver<O, SD>
-where
-  O: Observer<Item, Err>,
-  SD: Scheduler<OnceTask<(MutArc<Option<O>>, Item, RcHandler), NormalReturn<()>>>
-    + Scheduler<OnceTask<(MutArc<Option<O>>, Err, RcHandler), NormalReturn<()>>>
-    + Scheduler<OnceTask<(MutArc<Option<O>>, RcHandler), NormalReturn<()>>>,
-{
-  fn next(&mut self, value: Item) {
-    schedule_task!(self, next_task, self.observer.clone(), value);
-  }
+impl_observer_on_op!(ObserveOnOp<S,SD>, MutRc, ObserveOnObserver, MultiSubscription<'static>, BoxSubscription);
 
-  fn error(mut self, err: Err) {
-    schedule_task!(self, err_task, self.observer.clone(), err);
-  }
-
-  fn complete(mut self) {
-    schedule_task!(self, complete_task, self.observer.clone())
-  }
-
-  #[inline]
-  fn is_finished(&self) -> bool {
-    self.observer.is_finished()
-  }
-}
-
-fn next_task<Item, Err, O>(
-  (mut observer, item, handler): (O, Item, RcHandler),
-) -> NormalReturn<()>
-where
-  O: Observer<Item, Err>,
-{
-  handler.rc_deref_mut().take();
-  observer.next(item);
-  NormalReturn::new(())
-}
-
-fn err_task<Item, Err, O>(
-  (observer, err, handler): (O, Err, RcHandler),
-) -> NormalReturn<()>
-where
-  O: Observer<Item, Err>,
-{
-  handler.rc_deref_mut().take();
-  observer.error(err);
-  NormalReturn::new(())
-}
-
-fn complete_task<Item, Err, O>(
-  (observer, handler): (O, RcHandler),
-) -> NormalReturn<()>
-where
-  O: Observer<Item, Err>,
-{
-  handler.rc_deref_mut().take();
-  observer.complete();
-  NormalReturn::new(())
-}
+impl_observer_on_op!(ObserveOnOpThreads<S,SD>, MutArc, ObserveOnObserverThreads,
+   MultiSubscriptionThreads, BoxSubscriptionThreads);
 
 #[cfg(test)]
 mod test {
@@ -170,7 +178,7 @@ mod test {
       }
       p.complete();
     })
-    .observe_on(pool)
+    .observe_on_threads(pool)
     .complete_status();
     let _ = o.subscribe(move |_v| {
       let mut thread = observe_thread.lock().unwrap();
@@ -195,7 +203,7 @@ mod test {
     let c_emitted = emitted.clone();
     observable::from_iter(0..10)
       .delay_threads(Duration::from_millis(10), scheduler.clone())
-      .observe_on(scheduler)
+      .observe_on_threads(scheduler)
       .subscribe(move |v| {
         emitted.lock().unwrap().push(v);
       })

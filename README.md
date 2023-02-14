@@ -66,7 +66,7 @@ let threads_scheduler = FuturesThreadPoolScheduler::new().unwrap();
 observable::from_iter(0..10)
   .subscribe_on(threads_scheduler.clone())
   .map(|v| v*2)
-  .observe_on(threads_scheduler)
+  .observe_on_threads(threads_scheduler)
   .subscribe(|v| println!("{},", v));
 ```
 
