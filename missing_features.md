@@ -44,7 +44,7 @@ Operators that transform items that are emitted by an Observable.
 Operators that selectively emit items from a source Observable.
 
 - [x] Debounce — only emit an item from an Observable if a particular timespan has passed without it emitting another item
-  - [x] Throttle 
+  - [x] Throttle
   - [x] ThrottleTime
   - [x] Debounce
 - [x] Distinct — suppress duplicate items emitted by an Observable
@@ -63,6 +63,7 @@ Operators that selectively emit items from a source Observable.
 - [x] TakeWhile — emit items emitted by an Observable while a specified condition is true
 
 ### Combining Observables
+
 Operators that work with multiple source Observables to create a single Observable
 
 - [ ] And/Then/When — combine sets of items emitted by two or more Observables by means of Pattern and Plan intermediaries
@@ -75,12 +76,14 @@ Operators that work with multiple source Observables to create a single Observab
 - [x] Zip — combine the emissions of multiple Observables together via a specified function and emit single items for each combination based on the results of this function
 
 ### Error Handling Operators
+
 Operators that help to recover from error notifications from an Observable
 
 - [ ] Catch — recover from an onError notification by continuing the sequence without error
 - [ ] Retry — if a source Observable sends an onError notification, resubscribe to it in the hopes that it will complete without error
 
 ### Observable Utility Operators
+
 A toolbox of useful Operators for working with Observables
 
 - [x] Delay — shift the emissions from an Observable forward in time by a particular amount
@@ -97,6 +100,7 @@ A toolbox of useful Operators for working with Observables
 - [ ] Using — create a disposable resource that has the same lifespan as the Observable
 
 ### Conditional and Boolean Operators
+
 Operators that evaluate one or more Observables or items emitted by Observables
 
 - [x] All — determine whether all items emitted by an Observable meet some criteria
@@ -110,6 +114,7 @@ Operators that evaluate one or more Observables or items emitted by Observables
 - [x] TakeWhile — discard items emitted by an Observable after a specified condition becomes false
 
 ### Mathematical and Aggregate Operators
+
 Operators that operate on the entire sequence of items emitted by an Observable
 
 - [x] Average — calculates the average of numbers emitted by an Observable and emits this average
@@ -125,14 +130,18 @@ Operators that operate on the entire sequence of items emitted by an Observable
 - [ ] backpressure operators — strategies for coping with Observables that produce items more rapidly than their observers consume them
 
 ### Connectable Observable Operators
+
 Specialty Observables that have more precisely-controlled subscription dynamics
 
--  [x] Connect — instruct a connectable Observable to begin emitting items to its subscribers
--  [x] Publish — convert an ordinary Observable into a connectable Observable
--  [x] RefCount — make a Connectable Observable behave like an ordinary Observable
--  [ ] Replay — ensure that all observers see the same sequence of emitted items, even if they subscribe after the Observable has begun emitting items
+- [x] Connect — instruct a connectable Observable to begin emitting items to its subscribers
+- [x] Publish — convert an ordinary Observable into a connectable Observable
+- [x] RefCount — make a Connectable Observable behave like an ordinary Observable
+- [ ] Replay — ensure that all observers see the same sequence of emitted items, even if they subscribe after the Observable has begun emitting items
 
 ### Operators to Convert Observables
+
+- [x] Future - `to_future` converts an observable to a `Future`
+- [x] Stream - `to_stream` converts an observable to `Stream`
 - [ ] To — convert an Observable into another object or data structure
 
 ## Subjects

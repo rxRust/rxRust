@@ -35,12 +35,14 @@ pub use defer::*;
 use crate::ops::combine_latest::CombineLatestOpThread;
 use crate::ops::complete_status::{CompleteStatus, StatusOp};
 use crate::ops::finalize::FinalizeOpThreads;
+use crate::ops::future::{ObservableFuture, ObservableFutureObserver};
 use crate::ops::merge::MergeOpThreads;
 use crate::ops::merge_all::MergeAllOpThreads;
 use crate::ops::on_complete::OnCompleteOp;
 use crate::ops::ref_count::{ShareOp, ShareOpThreads};
 use crate::ops::sample::SampleOpThreads;
 use crate::ops::skip_until::SkipUntilOpThreads;
+use crate::ops::stream::{ObservableStream, ObservableStreamObserver};
 use crate::ops::take_until::TakeUntilOpThreads;
 use crate::ops::with_latest_from::WithLatestFromOpThreads;
 use crate::ops::zip::ZipOpThreads;
@@ -1620,6 +1622,59 @@ pub trait ObservableExt<Item, Err>: Sized {
   #[inline]
   fn complete_status(self) -> (StatusOp<Self>, Arc<CompleteStatus>) {
     ops::complete_status::complete_status(self)
+  }
+
+  /// Converts this observable into a `Future` that resolves to `Result<Result<Item, Err>, ObservableError>`.
+  ///
+  /// # Error
+  /// - ObservableError::Empty: If the observable emitted no values.
+  /// - Observable::MultipleValues: If the observable emitted more than one value.
+  ///
+  /// # Example
+  /// ```
+  /// use rxrust::prelude::*;
+  ///
+  /// #[tokio::main]
+  /// async fn main() {
+  ///   let observable = observable::of(12);
+  ///   let value = observable.to_future().await.unwrap().ok();
+  ///   assert_eq!(value, Some(12));
+  /// }
+  /// ```
+  #[inline]
+  fn to_future(self) -> ObservableFuture<Item, Err>
+  where
+    Self: Observable<Item, Err, ObservableFutureObserver<Item, Err>>,
+  {
+    ObservableFuture::new(self)
+  }
+
+  /// Converts this observable into a stream that emits the values of the observable.
+  ///
+  /// # Example
+  /// ```
+  /// use rxrust::prelude::*;
+  /// use futures::StreamExt;
+  ///
+  /// #[tokio::main]
+  /// async fn main() {
+  ///   let observable = observable::from_iter([1,2,3]);
+  ///   let mut stream = observable.to_stream();
+  ///   let mut values = vec![];
+  ///
+  ///   while let Some(Ok(x)) = stream.next().await {
+  ///     values.push(x);
+  ///   }
+  ///
+  ///   assert_eq!(values, vec![1,2,3]);
+  /// }
+  /// ```
+  #[inline]
+  fn to_stream(self) -> ObservableStream<Item, Err>
+  where
+    Self: Observable<Item, Err, ObservableStreamObserver<Item, Err>>,
+  {
+    ObservableStream::new(self)
   }
 }
 
