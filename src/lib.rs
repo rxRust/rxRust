@@ -11,11 +11,7 @@ extern crate float_cmp;
 #[macro_use]
 extern crate bencher;
 
-#[cfg(test)]
-pub mod test_scheduler;
-
 pub mod behavior;
-pub mod impl_helper;
 pub mod observable;
 pub mod observer;
 pub mod ops;

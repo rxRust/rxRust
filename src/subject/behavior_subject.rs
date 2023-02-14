@@ -91,21 +91,14 @@ where
 {
 }
 
-impl<'a, Item: Clone + 'static, Err: Clone> Behavior
-  for LocalBehaviorSubject<'a, Item, Err>
+impl<Item, Err, Subject> Behavior<Item, Err>
+for BehaviorSubject<Item, Subject>
+  where
+      Subject: Observer<Item, Err>,
+      Item: Clone,
 {
-  fn peek(&self) -> <Self as Observer>::Item {
-    let r = self.value.rc_deref();
-    r.clone()
-  }
-}
-
-impl<Item: Clone + 'static, Err: Clone> Behavior
-  for SharedBehaviorSubject<Item, Err>
-{
-  fn peek(&self) -> <Self as Observer>::Item {
-    let r = self.value.rc_deref();
-    r.clone()
+  fn peek(&self) -> Item {
+    self.value.clone()
   }
 }
 
