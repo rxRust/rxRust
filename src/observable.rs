@@ -1,7 +1,8 @@
 #![macro_use]
 mod trivial;
+use std::hash::*;
+use std::sync::Arc;
 pub use trivial::*;
-
 mod from_iter;
 pub use from_iter::{from_iter, repeat};
 
@@ -15,15 +16,7 @@ pub mod interval;
 pub use interval::{interval, interval_at};
 
 pub(crate) mod connectable_observable;
-pub use connectable_observable::{Connect, ConnectableObservable};
-
-mod observable_block_all;
-#[cfg(test)]
-pub use observable_block_all::*;
-
-mod observable_block;
-#[cfg(test)]
-pub use observable_block::*;
+pub use connectable_observable::ConnectableObservable;
 
 pub mod from_fn;
 pub use from_fn::*;
@@ -34,27 +27,35 @@ pub use timer::{timer, timer_at};
 pub mod start;
 pub use start::start;
 
-mod observable_all;
-pub use observable_all::*;
-mod observable_err;
-pub use observable_err::*;
-mod observable_next;
-pub use observable_next::*;
+mod subscribe_item;
+pub use subscribe_item::*;
 mod defer;
-mod observable_comp;
 pub use defer::*;
 
+use crate::ops::combine_latest::CombineLatestOpThread;
+use crate::ops::complete_status::{CompleteStatus, StatusOp};
+use crate::ops::finalize::FinalizeOpThreads;
+use crate::ops::future::{ObservableFuture, ObservableFutureObserver};
+use crate::ops::merge::MergeOpThreads;
+use crate::ops::merge_all::MergeAllOpThreads;
+use crate::ops::on_complete::OnCompleteOp;
+use crate::ops::ref_count::{ShareOp, ShareOpThreads};
+use crate::ops::sample::SampleOpThreads;
+use crate::ops::skip_until::SkipUntilOpThreads;
+use crate::ops::stream::{ObservableStream, ObservableStreamObserver};
+use crate::ops::take_until::TakeUntilOpThreads;
+use crate::ops::with_latest_from::WithLatestFromOpThreads;
+use crate::ops::zip::ZipOpThreads;
+use crate::ops::FlatMapOpThreads;
 use crate::prelude::*;
-pub use observable_comp::*;
+pub use ops::box_it::BoxIt;
 
 use crate::ops::default_if_empty::DefaultIfEmptyOp;
 use crate::ops::distinct::{DistinctKeyOp, DistinctUntilKeyChangedOp};
 use crate::ops::on_error_map::OnErrorMapOp;
 use crate::ops::pairwise::PairwiseOp;
 use crate::ops::tap::TapOp;
-use crate::scheduler::Instant;
 use ops::{
-  box_it::{BoxOp, IntoBox},
   buffer::{BufferWithCountOp, BufferWithCountOrTimerOp, BufferWithTimeOp},
   combine_latest::CombineLatestOp,
   contains::ContainsOp,
@@ -65,7 +66,6 @@ use ops::{
   filter::FilterOp,
   filter_map::FilterMapOp,
   finalize::FinalizeOp,
-  flatten::FlattenOp,
   group_by::GroupByOp,
   last::LastOp,
   map::MapOp,
@@ -90,16 +90,28 @@ use ops::{
   zip::ZipOp,
   Accum, AverageOp, CountOp, FlatMapOp, MinMaxOp, ReduceOp, SumOp,
 };
-use std::ops::{Add, Mul};
-use std::time::Duration;
+use std::{
+  ops::{Add, Mul},
+  time::{Duration, Instant},
+};
+#[cfg(test)]
+pub mod fake_timer;
 
-type ALLOp<O, F> =
-  DefaultIfEmptyOp<TakeOp<FilterOp<MapOp<O, F>, fn(&bool) -> bool>>>;
+type ALLOp<S, F, Item> = DefaultIfEmptyOp<
+  TakeOp<FilterOp<MapOp<S, F, Item>, fn(&bool) -> bool>>,
+  bool,
+>;
 
-pub trait Observable: Sized {
-  type Item;
-  type Err;
+pub trait Observable<Item, Err, O>
+where
+  O: Observer<Item, Err>,
+{
+  type Unsub: Subscription;
 
+  fn actual_subscribe(self, observer: O) -> Self::Unsub;
+}
+
+pub trait ObservableExt<Item, Err>: Sized {
   /// emit only the first item emitted by an Observable
   #[inline]
   fn first(self) -> TakeOp<Self> {
@@ -107,9 +119,8 @@ pub trait Observable: Sized {
   }
 
   /// emit only the first item emitted by an Observable
-  #[inline]
-  fn first_or(self, default: Self::Item) -> DefaultIfEmptyOp<TakeOp<Self>> {
-    self.first().default_if_empty(default)
+  fn first_or(self, default: Item) -> DefaultIfEmptyOp<TakeOp<Self>, Item> {
+    DefaultIfEmptyOp::new(self.first(), default)
   }
 
   /// Emit only the last final item emitted by a source observable or a
@@ -133,48 +144,48 @@ pub trait Observable: Sized {
   #[inline]
   fn last_or(
     self,
-    default: Self::Item,
-  ) -> DefaultIfEmptyOp<LastOp<Self, Self::Item>> {
-    self.last().default_if_empty(default)
+    default: Item,
+  ) -> DefaultIfEmptyOp<LastOp<Self, Item>, Item> {
+    DefaultIfEmptyOp::new(self.last(), default)
   }
 
   /// Emit only item n (0-indexed) emitted by an Observable
   #[inline]
-  fn element_at(self, nth: u32) -> TakeOp<SkipOp<Self>> {
-    self.skip(nth).first()
+  fn element_at(self, nth: usize) -> TakeOp<SkipOp<Self>> {
+    TakeOp::new(self.skip(nth), 1)
   }
 
   /// Do not emit any items from an Observable but mirror its termination
   /// notification
   #[inline]
-  fn ignore_elements(self) -> FilterOp<Self, fn(&Self::Item) -> bool> {
+  fn ignore_elements(self) -> FilterOp<Self, fn(&Item) -> bool> {
     fn always_false<Item>(_: &Item) -> bool {
       false
     }
-    self.filter(always_false as fn(&Self::Item) -> bool)
+    self.filter(always_false as fn(&Item) -> bool)
   }
 
   /// Determine whether all items emitted by an Observable meet some criteria
   #[inline]
-  fn all<F>(self, pred: F) -> ALLOp<Self, F>
+  fn all<F>(self, pred: F) -> ALLOp<Self, F, Item>
   where
-    F: Fn(Self::Item) -> bool,
+    F: Fn(Item) -> bool,
   {
     fn not(b: &bool) -> bool {
       !b
     }
-    self
-      .map(pred)
-      .filter(not as fn(&bool) -> bool)
-      .first_or(true)
+    let map: MapOp<Self, F, Item> = MapOp::new(self, pred);
+    let filter_map = FilterOp {
+      source: map,
+      filter: not as fn(&bool) -> bool,
+    };
+    let take = TakeOp::new(filter_map, 1);
+    DefaultIfEmptyOp::new(take, true)
   }
 
   /// Determine whether an Observable emits a particular item or not
-  fn contains(self, target: Self::Item) -> ContainsOp<Self, Self::Item> {
-    ContainsOp {
-      source: self,
-      target,
-    }
+  fn contains(self, target: Item) -> ContainsOp<Self, Item> {
+    ContainsOp { source: self, target }
   }
 
   /// Emits only last final item emitted by a source observable.
@@ -196,11 +207,8 @@ pub trait Observable: Sized {
   /// // 99
   /// ```
   #[inline]
-  fn last(self) -> LastOp<Self, Self::Item> {
-    LastOp {
-      source: self,
-      last: None,
-    }
+  fn last(self) -> LastOp<Self, Item> {
+    LastOp { source: self, last: None }
   }
 
   /// Call a function when observable completes, errors or is unsubscribed from.
@@ -209,10 +217,15 @@ pub trait Observable: Sized {
   where
     F: FnMut(),
   {
-    FinalizeOp {
-      source: self,
-      func: f,
-    }
+    FinalizeOp::new(self, f)
+  }
+
+  /// A threads safe version of `finalize`
+  fn finalize_threads<F>(self, f: F) -> FinalizeOpThreads<Self, F>
+  where
+    F: FnMut(),
+  {
+    FinalizeOpThreads::new(self, f)
   }
 
   /// Creates an Observable that combines all the emissions from Observables
@@ -222,8 +235,8 @@ pub trait Observable: Sized {
   ///
   /// ```
   /// # use rxrust::prelude::*;
-  /// let mut source = LocalSubject::new();
-  /// let numbers = LocalSubject::new();
+  /// let mut source = Subject::default();
+  /// let numbers = Subject::default();
   /// // create a even stream by filter
   /// let even = numbers.clone().filter((|v| *v % 2 == 0) as fn(&i32) -> bool);
   /// // create an odd stream by filter
@@ -239,14 +252,20 @@ pub trait Observable: Sized {
   /// out.subscribe(|v: i32| println!("{} ", v));
   /// ```
   #[inline]
-  fn flatten<Inner, A>(self) -> FlattenOp<Self, Inner>
+  fn flatten<'a, Item2, Err2>(self) -> MergeAllOp<'a, Self, Item>
   where
-    Inner: Observable<Item = A, Err = Self::Err>,
+    Item: ObservableExt<Item2, Err2>,
   {
-    FlattenOp {
-      source: self,
-      marker: std::marker::PhantomData::<Inner>,
-    }
+    MergeAllOp::new(self, usize::MAX)
+  }
+
+  /// A threads safe version of `flatten`
+  #[inline]
+  fn flatten_threads<Item2, Err2>(self) -> MergeAllOpThreads<Self, Item>
+  where
+    Item: ObservableExt<Item2, Err2>,
+  {
+    MergeAllOpThreads::new(self, usize::MAX)
   }
 
   ///  Applies given function to each item emitted by this Observable, where
@@ -254,18 +273,26 @@ pub trait Observable: Sized {
   ///  merges the emissions of these resulting Observables, emitting these
   ///  merged results as its own sequence.
   #[inline]
-  fn flat_map<Inner, B, F>(self, f: F) -> FlatMapOp<Self, Inner, F>
+  fn flat_map<'a, V, Item2, F>(self, f: F) -> FlatMapOp<'a, Self, V, F, Item>
   where
-    Inner: Observable<Item = B, Err = Self::Err>,
-    F: Fn(Self::Item) -> Inner,
+    F: Fn(Item) -> V,
+    MapOp<Self, F, Item>: ObservableExt<V, Err>,
+    V: ObservableExt<Item2, Err>,
   {
-    FlattenOp {
-      source: MapOp {
-        source: self,
-        func: f,
-      },
-      marker: std::marker::PhantomData::<Inner>,
-    }
+    self.map(f).merge_all(usize::MAX)
+  }
+
+  #[inline]
+  fn flat_map_threads<V, Item2, F>(
+    self,
+    f: F,
+  ) -> FlatMapOpThreads<Self, V, F, Item>
+  where
+    F: Fn(Item) -> V,
+    MapOp<Self, F, Item>: ObservableExt<V, Err>,
+    V: ObservableExt<Item2, Err>,
+  {
+    self.map(f).merge_all_threads(usize::MAX)
   }
 
   /// Groups items emitted by the source Observable into Observables.
@@ -289,7 +316,7 @@ pub trait Observable: Sized {
   ///   Person{ name: String::from("Gregory"), age: 24 },
   ///   Person{ name: String::from("Alice"), age: 28 },
   /// ])
-  /// .group_by(|person: &Person| person.age)
+  /// .group_by::<_,_,Subject<_,_>>(|person: &Person| person.age)
   /// .flat_map(|group| group.reduce(|acc, person: Person| format!("{} {}", acc, person.name)))
   /// .subscribe(|result| println!("{}", result));
   ///
@@ -299,51 +326,39 @@ pub trait Observable: Sized {
   /// //  Gregory
   /// ```
   #[inline]
-  fn group_by<D, Key, Sub>(self, discr: D) -> GroupByOp<Self, D, Sub>
+  fn group_by<D, Key, Subject>(self, discr: D) -> GroupByOp<Self, D, Subject>
   where
-    D: FnMut(&Self::Item) -> Key,
-    Sub: Observer<Item = Self::Item>,
+    D: FnMut(&Item) -> Key,
+    Key: Hash + Eq + Clone,
+    Subject: Clone + Default + Observer<Item, Err>,
   {
-    GroupByOp {
-      source: self,
-      discr,
-      _subject: TypeHint::new(),
-    }
+    GroupByOp::new(self, discr)
   }
 
   /// Creates a new stream which calls a closure on each element and uses
   /// its return as the value.
   #[inline]
-  fn map<B, F>(self, f: F) -> MapOp<Self, F>
+  fn map<B, F>(self, f: F) -> MapOp<Self, F, Item>
   where
-    F: FnMut(Self::Item) -> B,
+    F: FnMut(Item) -> B,
   {
-    MapOp {
-      source: self,
-      func: f,
-    }
+    MapOp::new(self, f)
   }
 
   /// Creates a new stream which calls a closure on each error and uses
   /// its return as emitted error.
   #[inline]
-  fn on_error_map<B, F>(self, f: F) -> OnErrorMapOp<Self, F>
+  fn on_error_map<B, F>(self, f: F) -> OnErrorMapOp<Self, F, Err>
   where
-    F: FnMut(Self::Err) -> B,
+    F: FnMut(Err) -> B,
   {
-    OnErrorMapOp {
-      source: self,
-      func: f,
-    }
+    OnErrorMapOp::new(self, f)
   }
 
   /// Maps emissions to a constant value.
   #[inline]
-  fn map_to<B>(self, value: B) -> MapToOp<Self, B> {
-    MapToOp {
-      source: self,
-      value,
-    }
+  fn map_to<B>(self, value: B) -> MapToOp<Self, B, Item> {
+    MapToOp::new(self, value)
   }
 
   /// combine two Observables into one by merging their emissions
@@ -352,7 +367,7 @@ pub trait Observable: Sized {
   ///
   /// ```
   /// # use rxrust::prelude::*;
-  /// let numbers = LocalSubject::new();
+  /// let numbers = Subject::default();
   /// // create a even stream by filter
   /// let even = numbers.clone().filter(|v| *v % 2 == 0);
   /// // create an odd stream by filter
@@ -365,14 +380,20 @@ pub trait Observable: Sized {
   /// merged.subscribe(|v: &i32| println!("{} ", v));
   /// ```
   #[inline]
-  fn merge<S>(self, o: S) -> MergeOp<Self, S>
+  fn merge<S>(self, other: S) -> MergeOp<Self, S>
   where
-    S: Observable<Item = Self::Item, Err = Self::Err>,
+    S: ObservableExt<Item, Err>,
   {
-    MergeOp {
-      source1: self,
-      source2: o,
-    }
+    MergeOp::new(self, other)
+  }
+
+  /// A threads safe version of `merge`
+  #[inline]
+  fn merge_threads<S>(self, other: S) -> MergeOpThreads<Self, S>
+  where
+    S: ObservableExt<Item, Err>,
+  {
+    MergeOpThreads::new(self, other)
   }
 
   /// Converts a higher-order Observable into a first-order Observable which
@@ -395,11 +416,23 @@ pub trait Observable: Sized {
   /// local.run();
   /// ```
   #[inline]
-  fn merge_all(self, concurrent: usize) -> MergeAllOp<Self> {
-    MergeAllOp {
-      source: self,
-      concurrent,
-    }
+  fn merge_all<'a, Item2>(self, concurrent: usize) -> MergeAllOp<'a, Self, Item>
+  where
+    Item: ObservableExt<Item2, Err>,
+  {
+    MergeAllOp::new(self, concurrent)
+  }
+
+  /// A threads safe version of `merge_all`
+  #[inline]
+  fn merge_all_threads<Item2>(
+    self,
+    concurrent: usize,
+  ) -> MergeAllOpThreads<Self, Item>
+  where
+    Item: ObservableExt<Item2, Err>,
+  {
+    MergeAllOpThreads::new(self, concurrent)
   }
 
   /// Emit only those items from an Observable that pass a predicate test
@@ -421,12 +454,9 @@ pub trait Observable: Sized {
   #[inline]
   fn filter<F>(self, filter: F) -> FilterOp<Self, F>
   where
-    F: Fn(&Self::Item) -> bool,
+    F: Fn(&Item) -> bool,
   {
-    FilterOp {
-      source: self,
-      filter,
-    }
+    FilterOp { source: self, filter }
   }
 
   /// The closure must return an Option<T>. filter_map creates an iterator which
@@ -455,35 +485,11 @@ pub trait Observable: Sized {
   /// assert_eq!(res, [1, 3, 5]);
   /// ```
   #[inline]
-  fn filter_map<F, SourceItem, Item>(self, f: F) -> FilterMapOp<Self, F>
+  fn filter_map<F, OutputItem>(self, f: F) -> FilterMapOp<Self, F, Item>
   where
-    F: FnMut(SourceItem) -> Option<Item>,
+    F: FnMut(Item) -> Option<OutputItem>,
   {
-    FilterMapOp { source: self, f }
-  }
-
-  /// box an observable to a safety object and convert it to a simple type
-  /// `BoxOp`, which only care `Item` and `Err` Observable emitted.
-  ///
-  /// # Example
-  /// ```
-  /// use rxrust::prelude::*;
-  /// use ops::box_it::LocalBoxOp;
-  ///
-  /// let mut boxed: LocalBoxOp<'_, i32, ()> = observable::of(1)
-  ///   .map(|v| v).box_it();
-  ///
-  /// // BoxOp can box any observable type
-  /// boxed = observable::empty().box_it();
-  ///
-  /// boxed.subscribe(|_| {});
-  /// ```
-  #[inline]
-  fn box_it<O: IntoBox<Self>>(self) -> BoxOp<O>
-  where
-    BoxOp<O>: Observable<Item = Self::Item, Err = Self::Err>,
-  {
-    O::box_it(self)
+    FilterMapOp::new(self, f)
   }
 
   /// Ignore the first `count` values emitted by the source Observable.
@@ -509,48 +515,58 @@ pub trait Observable: Sized {
   /// // 10
   /// ```
   #[inline]
-  fn skip(self, count: u32) -> SkipOp<Self> {
-    SkipOp {
-      source: self,
-      count,
-    }
+  fn skip(self, count: usize) -> SkipOp<Self> {
+    SkipOp::new(self, count)
   }
 
-  /// Ignore the values emitted by the source Observable until the `predicate`
-  /// returns true for the value.
-  ///
-  /// `skip_until` returns an Observable that skips values emitted by the source
-  /// Observable until the result of the predicate is true for the value. The
-  /// resulting Observable will include and emit the matching value.
+  /// Discard items emitted by an Observable until a second Observable emits an item
   ///
   /// # Example
-  /// Ignore the numbers in the 0-10 range until the Observer emits 5.
+  /// Ignore the numbers in the 0-10 range until the Observer emits 5 and trigger
+  ///  the notify observable.
   ///
   /// ```
   /// # use rxrust::prelude::*;
   ///
   /// let mut items = vec![];
+  /// let notifier = Subject::<(), ()>::default();
+  /// let mut c_notifier = notifier.clone();
   /// observable::from_iter(0..10)
-  ///   .skip_until(|v| v == &5)
+  ///   .tap(move |v| {
+  ///     if v == &5 {
+  ///       c_notifier.next(());
+  ///     }
+  ///   })
+  ///   .skip_until(notifier)
   ///   .subscribe(|v| items.push(v));
   ///
   /// assert_eq!((5..10).collect::<Vec<i32>>(), items);
   /// ```
   #[inline]
-  fn skip_until<F>(self, predicate: F) -> SkipUntilOp<Self, F>
+  fn skip_until<NotifyItem, NotifyErr, Other>(
+    self,
+    notifier: Other,
+  ) -> SkipUntilOp<Self, Other, NotifyItem, NotifyErr>
   where
-    F: FnMut(&Self::Item) -> bool,
+    Other: ObservableExt<NotifyItem, NotifyErr>,
   {
-    SkipUntilOp {
-      source: self,
-      predicate,
-    }
+    SkipUntilOp::new(self, notifier)
   }
 
-  /// Ignore values while result of a callback is true.
+  /// A threads safe version of `skip_until_threads`
+  #[inline]
+  fn skip_until_threads<NotifyItem, NotifyErr, Other>(
+    self,
+    notifier: Other,
+  ) -> SkipUntilOpThreads<Self, Other, NotifyItem, NotifyErr>
+  where
+    Other: ObservableExt<NotifyItem, NotifyErr>,
+  {
+    SkipUntilOpThreads::new(self, notifier)
+  }
+
+  /// Discard items emitted by an Observable until a specified condition becomes false
   ///
-  /// `skip_while` returns an Observable that ignores values while result of an
-  /// callback is true emitted by the source Observable.
   ///
   /// # Example
   /// Suppress the first 5 items of an infinite 1-second interval Observable
@@ -570,14 +586,11 @@ pub trait Observable: Sized {
   /// // 9
   /// ```
   #[inline]
-  fn skip_while<F>(self, callback: F) -> SkipWhileOp<Self, F>
+  fn skip_while<F>(self, predicate: F) -> SkipWhileOp<Self, F>
   where
-    F: FnMut(&Self::Item) -> bool,
+    F: FnMut(&Item) -> bool,
   {
-    SkipWhileOp {
-      source: self,
-      callback,
-    }
+    SkipWhileOp { source: self, predicate }
   }
 
   /// Ignore the last `count` values emitted by the source Observable.
@@ -606,10 +619,7 @@ pub trait Observable: Sized {
   /// ```
   #[inline]
   fn skip_last(self, count: usize) -> SkipLastOp<Self> {
-    SkipLastOp {
-      source: self,
-      count,
-    }
+    SkipLastOp { source: self, count }
   }
 
   /// Emits only the first `count` values emitted by the source Observable.
@@ -626,7 +636,6 @@ pub trait Observable: Sized {
   /// # use rxrust::prelude::*;
   ///
   /// observable::from_iter(0..10).take(5).subscribe(|v| println!("{}", v));
-
   /// // print logs:
   /// // 0
   /// // 1
@@ -636,11 +645,8 @@ pub trait Observable: Sized {
   /// ```
   ///
   #[inline]
-  fn take(self, count: u32) -> TakeOp<Self> {
-    TakeOp {
-      source: self,
-      count,
-    }
+  fn take(self, count: usize) -> TakeOp<Self> {
+    TakeOp::new(self, count)
   }
 
   /// Emits the values emitted by the source Observable until a `notifier`
@@ -652,11 +658,19 @@ pub trait Observable: Sized {
   /// Observable and completes. If the `notifier` doesn't emit any value and
   /// completes then `take_until` will pass all values.
   #[inline]
-  fn take_until<T>(self, notifier: T) -> TakeUntilOp<Self, T> {
-    TakeUntilOp {
-      source: self,
-      notifier,
-    }
+  fn take_until<Notify, NotifyItem, NotifyErr>(
+    self,
+    notifier: Notify,
+  ) -> TakeUntilOp<Self, Notify, NotifyItem, NotifyErr> {
+    TakeUntilOp::new(self, notifier)
+  }
+
+  #[inline]
+  fn take_until_threads<Notify, NotifyItem, NotifyErr>(
+    self,
+    notifier: Notify,
+  ) -> TakeUntilOpThreads<Self, Notify, NotifyItem, NotifyErr> {
+    TakeUntilOpThreads::new(self, notifier)
   }
 
   /// Emits values while result of an callback is true.
@@ -686,13 +700,9 @@ pub trait Observable: Sized {
   #[inline]
   fn take_while<F>(self, callback: F) -> TakeWhileOp<Self, F>
   where
-    F: FnMut(&Self::Item) -> bool,
+    F: FnMut(&Item) -> bool,
   {
-    TakeWhileOp {
-      source: self,
-      callback,
-      inclusive: false,
-    }
+    TakeWhileOp { source: self, callback, inclusive: false }
   }
 
   /// Emits values while result of an callback is true and the last one that
@@ -719,13 +729,9 @@ pub trait Observable: Sized {
   #[inline]
   fn take_while_inclusive<F>(self, callback: F) -> TakeWhileOp<Self, F>
   where
-    F: FnMut(&Self::Item) -> bool,
+    F: FnMut(&Item) -> bool,
   {
-    TakeWhileOp {
-      source: self,
-      callback,
-      inclusive: true,
-    }
+    TakeWhileOp { source: self, callback, inclusive: true }
   }
 
   /// Emits only the last `count` values emitted by the source Observable.
@@ -755,10 +761,7 @@ pub trait Observable: Sized {
   ///
   #[inline]
   fn take_last(self, count: usize) -> TakeLastOp<Self> {
-    TakeLastOp {
-      source: self,
-      count,
-    }
+    TakeLastOp { source: self, count }
   }
 
   /// Emits item it has most recently emitted since the previous sampling
@@ -789,14 +792,26 @@ pub trait Observable: Sized {
   /// // ...
   /// ```
   #[inline]
-  fn sample<O>(self, sampling: O) -> SampleOp<Self, O>
+  fn sample<Sample, SampleItem, SampleErr>(
+    self,
+    sampling: Sample,
+  ) -> SampleOp<Self, Sample, SampleItem>
   where
-    O: Observable,
+    Sample: ObservableExt<SampleItem, SampleErr>,
   {
-    SampleOp {
-      source: self,
-      sampling,
-    }
+    SampleOp::new(self, sampling)
+  }
+
+  /// A threads safe version of `sample`
+  #[inline]
+  fn sample_threads<Sample, SampleItem, SampleErr>(
+    self,
+    sampling: Sample,
+  ) -> SampleOpThreads<Self, Sample, SampleItem>
+  where
+    Sample: ObservableExt<SampleItem, SampleErr>,
+  {
+    SampleOpThreads::new(self, sampling)
   }
 
   /// The Scan operator applies a function to the first item emitted by the
@@ -843,16 +858,12 @@ pub trait Observable: Sized {
     self,
     initial_value: OutputItem,
     binary_op: BinaryOp,
-  ) -> ScanOp<Self, BinaryOp, OutputItem>
+  ) -> ScanOp<Self, BinaryOp, OutputItem, Item>
   where
-    BinaryOp: Fn(OutputItem, Self::Item) -> OutputItem,
+    BinaryOp: Fn(OutputItem, Item) -> OutputItem,
     OutputItem: Clone,
   {
-    ScanOp {
-      source_observable: self,
-      binary_op,
-      initial_value,
-    }
+    ScanOp::new(self, binary_op, initial_value)
   }
 
   /// Works like [`scan_initial`](Observable::scan_initial) but starts with a
@@ -866,9 +877,9 @@ pub trait Observable: Sized {
   fn scan<OutputItem, BinaryOp>(
     self,
     binary_op: BinaryOp,
-  ) -> ScanOp<Self, BinaryOp, OutputItem>
+  ) -> ScanOp<Self, BinaryOp, OutputItem, Item>
   where
-    BinaryOp: Fn(OutputItem, Self::Item) -> OutputItem,
+    BinaryOp: Fn(OutputItem, Item) -> OutputItem,
     OutputItem: Default + Clone,
   {
     self.scan_initial(OutputItem::default(), binary_op)
@@ -901,15 +912,15 @@ pub trait Observable: Sized {
     self,
     initial: OutputItem,
     binary_op: BinaryOp,
-  ) -> ReduceOp<Self, BinaryOp, OutputItem>
+  ) -> ReduceOp<Self, BinaryOp, OutputItem, Item>
   where
-    BinaryOp: Fn(OutputItem, Self::Item) -> OutputItem,
+    BinaryOp: Fn(OutputItem, Item) -> OutputItem,
     OutputItem: Clone,
   {
     // realised as a composition of `scan`, and `last`
-    self
-      .scan_initial(initial.clone(), binary_op)
-      .last_or(initial)
+    let scan = self.scan_initial(initial.clone(), binary_op);
+    let last = LastOp { source: scan, last: None };
+    DefaultIfEmptyOp::new(last, initial)
   }
 
   /// Works like [`reduce_initial`](Observable::reduce_initial) but starts with
@@ -923,9 +934,9 @@ pub trait Observable: Sized {
   fn reduce<OutputItem, BinaryOp>(
     self,
     binary_op: BinaryOp,
-  ) -> DefaultIfEmptyOp<LastOp<ScanOp<Self, BinaryOp, OutputItem>, OutputItem>>
+  ) -> ReduceOp<Self, BinaryOp, OutputItem, Item>
   where
-    BinaryOp: Fn(OutputItem, Self::Item) -> OutputItem,
+    BinaryOp: Fn(OutputItem, Item) -> OutputItem,
     OutputItem: Default + Clone,
   {
     self.reduce_initial(OutputItem::default(), binary_op)
@@ -948,25 +959,21 @@ pub trait Observable: Sized {
   /// // 7
   /// ```
   #[inline]
-  fn max(self) -> MinMaxOp<Self, Self::Item>
+  fn max(self) -> MinMaxOp<Self, Item>
   where
-    Self::Item: Clone + Send + PartialOrd<Self::Item>,
+    Item: PartialOrd<Item> + Clone,
   {
-    fn get_greater<Item>(i: Option<Item>, v: Item) -> Option<Item>
-    where
-      Item: Clone + PartialOrd<Item>,
-    {
-      i.map(|vv| if vv < v { v.clone() } else { vv }).or(Some(v))
-    }
-    let get_greater_func =
-      get_greater as fn(Option<Self::Item>, Self::Item) -> Option<Self::Item>;
+    let max_fn = |max, v| match max {
+      Some(max) if max > v => Some(max),
+      _ => Some(v),
+    };
+    let scan =
+      self.scan_initial(None, max_fn as fn(Option<Item>, Item) -> Option<Item>);
+    let last = LastOp::new(scan);
 
-    self
-      .scan_initial(None, get_greater_func)
-      .last()
-      // we can safely unwrap, because we will ever get this item
-      // once a max value exists and is there.
-      .map(|v| v.unwrap())
+    // we can safely unwrap, because we will ever get this item
+    // once a max value exists and is there.
+    MapOp::new(last, |v| v.unwrap())
   }
 
   /// Emits the item from the source observable that had the minimum value.
@@ -986,26 +993,21 @@ pub trait Observable: Sized {
   /// // 3
   /// ```
   #[inline]
-  fn min(self) -> MinMaxOp<Self, Self::Item>
+  fn min(self) -> MinMaxOp<Self, Item>
   where
-    Self::Item: Clone + Send + PartialOrd<Self::Item>,
+    Item: Clone + PartialOrd<Item>,
   {
-    fn get_lesser<Item>(i: Option<Item>, v: Item) -> Option<Item>
-    where
-      Item: Clone + PartialOrd<Item>,
-    {
-      i.map(|vv| if vv > v { v.clone() } else { vv }).or(Some(v))
-    }
+    let min_fn = |min, v| match min {
+      Some(min) if min < v => Some(min),
+      _ => Some(v),
+    };
+    let scan =
+      self.scan_initial(None, min_fn as fn(Option<Item>, Item) -> Option<Item>);
+    let last = LastOp::new(scan);
 
-    let get_lesser_func =
-      get_lesser as fn(Option<Self::Item>, Self::Item) -> Option<Self::Item>;
-
-    self
-      .scan_initial(None, get_lesser_func)
-      .last()
-      // we can safely unwrap, because we will ever get this item
-      // once a max value exists and is there.
-      .map(|v| v.unwrap())
+    // we can safely unwrap, because we will ever get this item
+    // once a max value exists and is there.
+    MapOp::new(last, |v| v.unwrap())
   }
 
   /// Calculates the sum of numbers emitted by an source observable and emits
@@ -1027,9 +1029,9 @@ pub trait Observable: Sized {
   /// // 5
   /// ```
   #[inline]
-  fn sum(self) -> SumOp<Self, Self::Item>
+  fn sum(self) -> SumOp<Self, Item>
   where
-    Self::Item: Clone + Default + Add<Self::Item, Output = Self::Item>,
+    Item: Clone + Default + Add<Item, Output = Item>,
   {
     self.reduce(|acc, v| acc + v)
   }
@@ -1055,7 +1057,7 @@ pub trait Observable: Sized {
   /// // 5
   /// ```
   #[inline]
-  fn count(self) -> CountOp<Self, Self::Item> {
+  fn count(self) -> CountOp<Self, Item> {
     self.reduce(|acc, _v| acc + 1)
   }
 
@@ -1078,13 +1080,15 @@ pub trait Observable: Sized {
   /// // 5
   /// ```
   #[inline]
-  fn average(self) -> AverageOp<Self, Self::Item>
+  fn average(self) -> AverageOp<Self, Item>
   where
-    Self::Item: Clone
-      + Send
-      + Default
-      + Add<Self::Item, Output = Self::Item>
-      + Mul<f64, Output = Self::Item>,
+    Item: Clone + Default + Add<Item, Output = Item> + Mul<f64, Output = Item>,
+    ScanOp<Self, fn(Accum<Item>, Item) -> Accum<Item>, Accum<Item>, Item>:
+      ObservableExt<Accum<Item>, Err>,
+    LastOp<
+      ScanOp<Self, fn(Accum<Item>, Item) -> Accum<Item>, Accum<Item>, Item>,
+      Accum<Item>,
+    >: ObservableExt<Accum<Item>, Err>,
   {
     /// Computing an average by multiplying accumulated nominator by a
     /// reciprocal of accumulated denominator. In this way some generic
@@ -1092,7 +1096,7 @@ pub trait Observable: Sized {
     /// averaged (e.g. vectors)
     fn average_floats<T>(acc: Accum<T>) -> T
     where
-      T: Default + Clone + Send + Mul<f64, Output = T>,
+      T: Default + Clone + Mul<f64, Output = T>,
     {
       // Note: we will never be dividing by zero here, as
       // the acc.1 will be always >= 1.
@@ -1113,12 +1117,9 @@ pub trait Observable: Sized {
     }
 
     // our starting point
-    let start = (Self::Item::default(), 0);
-
-    let acc =
-      accumulate_item as fn(Accum<Self::Item>, Self::Item) -> Accum<Self::Item>;
-    let avg = average_floats as fn(Accum<Self::Item>) -> Self::Item;
-
+    let start = (Item::default(), 0);
+    let acc = accumulate_item as fn(Accum<Item>, Item) -> Accum<Item>;
+    let avg = average_floats as fn(Accum<Item>) -> Item;
     self.scan_initial(start, acc).last().map(avg)
   }
 
@@ -1139,25 +1140,20 @@ pub trait Observable: Sized {
   /// Because the Observable is multicasting it makes the stream `hot`.
   /// This is an alias for `publish().ref_count()`
   #[inline]
-  fn share<Subject>(
-    self,
-  ) -> <ConnectableObservable<Self, Subject> as Connect>::R
-  where
-    Subject: Default,
-    ConnectableObservable<Self, Subject>: Connect,
-  {
-    self.publish::<Subject>().into_ref_count()
+  fn share<'a>(self) -> ShareOp<'a, Item, Err, Self> {
+    ShareOp::new(self)
+  }
+
+  #[inline]
+  fn share_threads(self) -> ShareOpThreads<Item, Err, Self> {
+    ShareOpThreads::new(self)
   }
 
   /// Delays the emission of items from the source Observable by a given timeout
   /// or until a given `Instant`.
   #[inline]
   fn delay<SD>(self, dur: Duration, scheduler: SD) -> DelayOp<Self, SD> {
-    DelayOp {
-      source: self,
-      delay: dur,
-      scheduler,
-    }
+    DelayOp { source: self, delay: dur, scheduler }
   }
 
   #[inline]
@@ -1196,12 +1192,11 @@ pub trait Observable: Sized {
   /// ```rust
   /// use rxrust::prelude::*;
   /// use std::thread;
-  /// use futures::executor::ThreadPool;
   ///
-  /// let pool = ThreadPool::new().unwrap();
+  /// let pool = FuturesThreadPoolScheduler::new().unwrap();
   /// let a = observable::from_iter(1..5).subscribe_on(pool);
   /// let b = observable::from_iter(5..10);
-  /// a.merge(b).into_shared().subscribe(|v|{
+  /// a.merge_threads(b).subscribe(|v|{
   ///   let handle = thread::current();
   ///   print!("{}({:?}) ", v, handle.id())
   /// });
@@ -1214,10 +1209,7 @@ pub trait Observable: Sized {
   /// we are now using the `NewThread` Scheduler for that specific Observable.
   #[inline]
   fn subscribe_on<SD>(self, scheduler: SD) -> SubscribeOnOP<Self, SD> {
-    SubscribeOnOP {
-      source: self,
-      scheduler,
-    }
+    SubscribeOnOP { source: self, scheduler }
   }
 
   /// Re-emits all notifications from source Observable with specified
@@ -1228,10 +1220,7 @@ pub trait Observable: Sized {
   /// Observable.
   #[inline]
   fn observe_on<SD>(self, scheduler: SD) -> ObserveOnOp<Self, SD> {
-    ObserveOnOp {
-      source: self,
-      scheduler,
-    }
+    ObserveOnOp { source: self, scheduler }
   }
 
   /// Emits a value from the source Observable only after a particular time span
@@ -1242,11 +1231,7 @@ pub trait Observable: Sized {
     duration: Duration,
     scheduler: SD,
   ) -> DebounceOp<Self, SD> {
-    DebounceOp {
-      source: self,
-      duration,
-      scheduler,
-    }
+    DebounceOp { source: self, duration, scheduler }
   }
 
   /// Emits a value from the source Observable, then ignores subsequent source
@@ -1256,11 +1241,10 @@ pub trait Observable: Sized {
   /// ```
   /// use rxrust::{ prelude::*, ops::throttle::ThrottleEdge };
   /// use std::time::Duration;
-  /// use futures::executor::LocalPool;
   ///
-  /// let mut local_scheduler = LocalPool::new();
-  /// let spawner = local_scheduler.spawner();
-  /// observable::interval(Duration::from_millis(1), spawner.clone())
+  /// let mut local_pool = FuturesLocalSchedulerPool::new();
+  /// let scheduler = local_pool.spawner();
+  /// observable::interval(Duration::from_millis(1), scheduler.clone())
   ///   .throttle(
   ///     |val| -> Duration {
   ///       if val % 2 == 0 {
@@ -1269,11 +1253,11 @@ pub trait Observable: Sized {
   ///         Duration::from_millis(5)
   ///       }
   ///     },
-  ///     ThrottleEdge::Leading, spawner)
+  ///     ThrottleEdge::leading(), scheduler)
   ///   .take(5)
   ///   .subscribe(move |v| println!("{}", v));
   ///
-  /// local_scheduler.run();
+  /// local_pool.run();
   /// ```
   #[inline]
   fn throttle<SD, F>(
@@ -1283,7 +1267,7 @@ pub trait Observable: Sized {
     scheduler: SD,
   ) -> ThrottleOp<Self, SD, F>
   where
-    F: Fn(&Self::Item) -> Duration,
+    F: Fn(&Item) -> Duration,
   {
     ThrottleOp {
       source: self,
@@ -1300,17 +1284,17 @@ pub trait Observable: Sized {
   /// ```
   /// use rxrust::{ prelude::*, ops::throttle::ThrottleEdge };
   /// use std::time::Duration;
-  /// use futures::executor::LocalPool;
   ///
-  /// let mut local_scheduler = LocalPool::new();
-  /// let spawner = local_scheduler.spawner();
-  /// observable::interval(Duration::from_millis(1), spawner.clone())
+  /// let mut local_pool = FuturesLocalSchedulerPool::new();
+  /// let scheduler = local_pool.spawner();
+  /// observable::interval(Duration::from_millis(1), scheduler.clone())
   ///   .throttle_time(
-  ///     Duration::from_millis(9), ThrottleEdge::Leading, spawner)
+  ///     Duration::from_millis(9), ThrottleEdge::leading(), scheduler)
   ///   .take(5)
   ///   .subscribe(move |v| println!("{}", v));
   ///
-  /// local_scheduler.run();
+  /// // wait task finish.
+  /// local_pool.run();
   /// ```
   #[inline]
   #[allow(clippy::type_complexity)]
@@ -1319,9 +1303,9 @@ pub trait Observable: Sized {
     duration: Duration,
     edge: ThrottleEdge,
     scheduler: SD,
-  ) -> ThrottleOp<Self, SD, Box<dyn Fn(&Self::Item) -> Duration + Send + Sync>>
+  ) -> ThrottleOp<Self, SD, Box<dyn Fn(&Item) -> Duration + Send + Sync>>
   where
-    Self::Item: 'static,
+    Item: 'static,
   {
     self.throttle(Box::new(move |_| duration), edge, scheduler)
   }
@@ -1363,11 +1347,20 @@ pub trait Observable: Sized {
   ///
   ///  In other words, it zips two observables together, into a single one.
   #[inline]
-  fn zip<U>(self, other: U) -> ZipOp<Self, U>
+  fn zip<Other, Item2>(self, other: Other) -> ZipOp<Self, Other>
   where
-    U: Observable,
+    Other: ObservableExt<Item2, Err>,
   {
-    ZipOp { a: self, b: other }
+    ZipOp::new(self, other)
+  }
+
+  /// A threads safe version of `zip`
+  #[inline]
+  fn zip_threads<Other, Item2>(self, other: Other) -> ZipOpThreads<Self, Other>
+  where
+    Other: ObservableExt<Item2, Err>,
+  {
+    ZipOpThreads::new(self, other)
   }
 
   /// Combines the source Observable with other Observables to create an
@@ -1378,11 +1371,27 @@ pub trait Observable: Sized {
   /// using that value plus the latest values from other input Observables,
   /// then emits the output of that formula.
   #[inline]
-  fn with_latest_from<U>(self, other: U) -> WithLatestFromOp<Self, U>
+  fn with_latest_from<From, OtherItem>(
+    self,
+    from: From,
+  ) -> WithLatestFromOp<Self, From>
   where
-    U: Observable,
+    From: ObservableExt<OtherItem, Err>,
+    OtherItem: Clone,
   {
-    WithLatestFromOp { a: self, b: other }
+    WithLatestFromOp::new(self, from)
+  }
+
+  #[inline]
+  fn with_latest_from_threads<From, OtherItem>(
+    self,
+    from: From,
+  ) -> WithLatestFromOpThreads<Self, From>
+  where
+    From: ObservableExt<OtherItem, Err>,
+    OtherItem: Clone,
+  {
+    WithLatestFromOpThreads::new(self, from)
   }
 
   /// Emits default value if Observable completed with empty result
@@ -1401,13 +1410,9 @@ pub trait Observable: Sized {
   #[inline]
   fn default_if_empty(
     self,
-    default_value: Self::Item,
-  ) -> DefaultIfEmptyOp<Self> {
-    DefaultIfEmptyOp {
-      source: self,
-      is_empty: true,
-      default_value,
-    }
+    default_value: Item,
+  ) -> DefaultIfEmptyOp<Self, Item> {
+    DefaultIfEmptyOp::new(self, default_value)
   }
 
   /// Buffers emitted values of type T in a Vec<T> and
@@ -1433,10 +1438,7 @@ pub trait Observable: Sized {
   /// ```
   #[inline]
   fn buffer_with_count(self, count: usize) -> BufferWithCountOp<Self> {
-    BufferWithCountOp {
-      source: self,
-      count,
-    }
+    BufferWithCountOp { source: self, count }
   }
 
   /// Buffers emitted values of type T in a Vec<T> and
@@ -1452,11 +1454,10 @@ pub trait Observable: Sized {
   /// ```
   /// use rxrust::prelude::*;
   /// use std::time::Duration;
-  /// use futures::executor::ThreadPool;
   ///
-  /// let pool = ThreadPool::new().unwrap();
+  /// let pool = FuturesThreadPoolScheduler::new().unwrap();
   ///
-  /// observable::create(|mut subscriber| {
+  /// observable::create(|mut subscriber: SubscriberThreads<_>| {
   ///   subscriber.next(0);
   ///   subscriber.next(1);
   ///   std::thread::sleep(Duration::from_millis(100));
@@ -1465,7 +1466,6 @@ pub trait Observable: Sized {
   ///   subscriber.complete();
   /// })
   ///   .buffer_with_time(Duration::from_millis(50), pool)
-  ///   .into_shared()
   ///   .subscribe(|vec| println!("{:?}", vec));
   ///
   /// // Prints:
@@ -1478,11 +1478,7 @@ pub trait Observable: Sized {
     time: Duration,
     scheduler: S,
   ) -> BufferWithTimeOp<Self, S> {
-    BufferWithTimeOp {
-      source: self,
-      time,
-      scheduler,
-    }
+    BufferWithTimeOp { source: self, time, scheduler }
   }
 
   /// Buffers emitted values of type T in a Vec<T> and
@@ -1494,11 +1490,10 @@ pub trait Observable: Sized {
   /// ```
   /// use rxrust::prelude::*;
   /// use std::time::Duration;
-  /// use futures::executor::ThreadPool;
   ///
-  /// let pool = ThreadPool::new().unwrap();
+  /// let pool = FuturesThreadPoolScheduler::new().unwrap();
   ///
-  /// observable::create(|mut subscriber| {
+  /// observable::create(|mut subscriber: SubscriberThreads<_>| {
   ///   subscriber.next(0);
   ///   subscriber.next(1);
   ///   subscriber.next(2);
@@ -1508,7 +1503,6 @@ pub trait Observable: Sized {
   ///   subscriber.complete();
   /// })
   ///   .buffer_with_count_and_time(2, Duration::from_millis(50), pool)
-  ///   .into_shared()
   ///   .subscribe(|vec| println!("{:?}", vec));
   ///
   /// // Prints:
@@ -1523,12 +1517,7 @@ pub trait Observable: Sized {
     time: Duration,
     scheduler: S,
   ) -> BufferWithCountOrTimerOp<Self, S> {
-    BufferWithCountOrTimerOp {
-      source: self,
-      count,
-      time,
-      scheduler,
-    }
+    BufferWithCountOrTimerOp { source: self, count, time, scheduler }
   }
 
   /// Emits item which is combining latest items from two observables.
@@ -1561,30 +1550,35 @@ pub trait Observable: Sized {
   /// // 2, 1
   /// // 3, 1
   /// ```
-  fn combine_latest<O, BinaryOp, OutputItem>(
+  fn combine_latest<Other, OtherItem, BinaryOp, OutputItem>(
     self,
-    other: O,
+    other: Other,
     binary_op: BinaryOp,
-  ) -> CombineLatestOp<Self, O, BinaryOp>
+  ) -> CombineLatestOp<Self, Other, BinaryOp>
   where
-    O: Observable<Err = Self::Err>,
-    BinaryOp: FnMut(Self::Item, O::Item) -> OutputItem,
+    Other: ObservableExt<OtherItem, Err>,
+    BinaryOp: FnMut(Item, OtherItem) -> OutputItem,
   {
-    CombineLatestOp {
-      a: self,
-      b: other,
-      binary_op,
-    }
+    CombineLatestOp::new(self, other, binary_op)
+  }
+
+  fn combine_latest_threads<Other, OtherItem, BinaryOp, OutputItem>(
+    self,
+    other: Other,
+    binary_op: BinaryOp,
+  ) -> CombineLatestOpThread<Self, Other, BinaryOp>
+  where
+    Other: ObservableExt<OtherItem, Err>,
+    BinaryOp: FnMut(Item, OtherItem) -> OutputItem,
+  {
+    CombineLatestOpThread::new(self, other, binary_op)
   }
 
   /// Returns an observable that, at the moment of subscription, will
   /// synchronously emit all values provided to this operator, then subscribe
   /// to the source and mirror all of its emissions to subscribers.
   fn start_with<B>(self, values: Vec<B>) -> StartWithOp<Self, B> {
-    StartWithOp {
-      source: self,
-      values,
-    }
+    StartWithOp { source: self, values }
   }
 
   /// Groups pairs of consecutive emissions together and emits them as an pair
@@ -1597,20 +1591,91 @@ pub trait Observable: Sized {
   #[inline]
   fn tap<F>(self, f: F) -> TapOp<Self, F>
   where
-    F: FnMut(&Self::Item),
+    F: FnMut(&Item),
   {
-    TapOp {
-      source: self,
-      func: f,
-    }
+    TapOp { source: self, func: f }
   }
-}
 
-pub trait LocalObservable<'a>: Observable {
-  type Unsub: SubscriptionLike;
-  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
+  /// Process the error of the observable and the return observable can't catch the error any more.
+  #[inline]
+  #[must_use]
+  fn on_error<F>(self, f: F) -> OnErrorMapOp<Self, F, Err>
   where
-    O: Observer<Item = Self::Item, Err = Self::Err> + 'a;
+    F: FnMut(Err),
+  {
+    OnErrorMapOp::new(self, f)
+  }
+
+  #[inline]
+  #[must_use]
+  fn on_complete<F>(self, f: F) -> OnCompleteOp<Self, F>
+  where
+    F: FnOnce(),
+  {
+    OnCompleteOp { source: self, func: f }
+  }
+
+  /// Turn the observable to an new observable that will track its complete
+  /// status.
+  /// The second element of return tuple provide ability let you can query if it
+  /// completed  or error occur. You can also wait the observable finish.
+  #[inline]
+  fn complete_status(self) -> (StatusOp<Self>, Arc<CompleteStatus>) {
+    ops::complete_status::complete_status(self)
+  }
+
+  /// Converts this observable into a `Future` that resolves to `Result<Result<Item, Err>, ObservableError>`.
+  ///
+  /// # Error
+  /// - ObservableError::Empty: If the observable emitted no values.
+  /// - Observable::MultipleValues: If the observable emitted more than one value.
+  ///
+  /// # Example
+  /// ```
+  /// use rxrust::prelude::*;
+  ///
+  /// #[tokio::main]
+  /// async fn main() {
+  ///   let observable = observable::of(12);
+  ///   let value = observable.to_future().await.unwrap().ok();
+  ///   assert_eq!(value, Some(12));
+  /// }
+  /// ```
+  #[inline]
+  fn to_future(self) -> ObservableFuture<Item, Err>
+  where
+    Self: Observable<Item, Err, ObservableFutureObserver<Item, Err>>,
+  {
+    ObservableFuture::new(self)
+  }
+
+  /// Converts this observable into a stream that emits the values of the observable.
+  ///
+  /// # Example
+  /// ```
+  /// use rxrust::prelude::*;
+  /// use futures::StreamExt;
+  ///
+  /// #[tokio::main]
+  /// async fn main() {
+  ///   let observable = observable::from_iter([1,2,3]);
+  ///   let mut stream = observable.to_stream();
+  ///   let mut values = vec![];
+  ///
+  ///   while let Some(Ok(x)) = stream.next().await {
+  ///     values.push(x);
+  ///   }
+  ///
+  ///   assert_eq!(values, vec![1,2,3]);
+  /// }
+  /// ```
+  #[inline]
+  fn to_stream(self) -> ObservableStream<Item, Err>
+  where
+    Self: Observable<Item, Err, ObservableStreamObserver<Item, Err>>,
+  {
+    ObservableStream::new(self)
+  }
 }
 
 #[cfg(test)]
@@ -1644,7 +1709,8 @@ mod tests {
 
     observable::from_iter(0..2)
       .first()
-      .subscribe_complete(|_| next_count += 1, || completed += 1);
+      .on_complete(|| completed += 1)
+      .subscribe(|_| next_count += 1);
 
     assert_eq!(completed, 1);
     assert_eq!(next_count, 1);
@@ -1668,7 +1734,8 @@ mod tests {
 
     observable::from_iter(0..2)
       .first_or(100)
-      .subscribe_complete(|_| next_count += 1, || completed = true);
+      .on_complete(|| completed = true)
+      .subscribe(|_| next_count += 1);
 
     assert_eq!(next_count, 1);
     assert!(completed);
@@ -1677,7 +1744,8 @@ mod tests {
     let mut v = 0;
     observable::empty()
       .first_or(100)
-      .subscribe_complete(|value| v = value, || completed = true);
+      .on_complete(|| completed = true)
+      .subscribe(|value| v = value);
 
     assert!(completed);
     assert_eq!(v, 100);
@@ -1713,14 +1781,16 @@ mod tests {
   fn first_or_support_fork() {
     let mut default = 0;
     let mut default2 = 0;
-    let o = observable::create(|subscriber| {
+    let o = observable::create(|subscriber: Subscriber<_>| {
       subscriber.complete();
     })
     .first_or(100);
     let o1 = o.clone().first_or(0);
     let o2 = o.clone().first_or(0);
-    o1.subscribe(|v| default = v);
-    o2.subscribe(|v| default2 = v);
+    let u1: Box<dyn FnMut(i32) + '_> = Box::new(|v| default = v);
+    let u2: Box<dyn FnMut(i32) + '_> = Box::new(|v| default2 = v);
+    o1.subscribe(u1);
+    o2.subscribe(u2);
     assert_eq!(default, 100);
     assert_eq!(default, 100);
   }
@@ -1741,15 +1811,6 @@ mod tests {
 
   fn ignore_emements_bench(b: &mut bencher::Bencher) {
     b.iter(smoke_ignore_elements);
-  }
-
-  #[cfg(not(target_arch = "wasm32"))]
-  #[test]
-  fn shared_ignore_elements() {
-    observable::from_iter(0..20)
-      .ignore_elements()
-      .into_shared()
-      .subscribe(|_| panic!());
   }
 
   #[test]

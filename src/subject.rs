@@ -1,325 +1,354 @@
-use crate::prelude::*;
-use std::ops::DerefMut;
+//! A subject is a sort of bridge or proxy that acts both as an observer
+//! and as an Observable. Because it is an observer, it can subscribe to
+//! one or more Observables.
+
+use crate::{
+  prelude::*,
+  rc::{MutArc, MutRc, RcDeref, RcDerefMut},
+  subscriber::Subscriber,
+};
 
 pub mod behavior_subject;
 pub use behavior_subject::*;
+use smallvec::SmallVec;
 
-pub enum ObserverTrigger<Item, Err> {
-  Item(Item),
-  Err(Err),
-  Complete,
-}
-pub struct InnerSubject<O: Observer + ?Sized, S: SubscriptionLike> {
-  observers: Vec<SubjectObserver<Box<O>, S>>,
-  subscription: SingleSubscription,
+pub trait SubjectSize {
+  fn is_empty(&self) -> bool;
+  fn len(&self) -> usize;
 }
 
-#[derive(Default, Clone)]
-pub struct Subject<T, B> {
-  inner: T,
-  chamber: T,
-  buffer: B,
+type PublisherVec<'a, Item, Err> =
+  MutRc<Option<SmallVec<[Box<dyn Publisher<Item, Err> + 'a>; 1]>>>;
+
+/// A not threads safe subject.
+pub struct Subject<'a, Item, Err> {
+  observers: PublisherVec<'a, Item, Err>,
+  chamber: PublisherVec<'a, Item, Err>,
 }
 
-pub type SharedSubject<Item, Err> = Subject<
-  MutArc<
-    InnerSubject<
-      dyn Observer<Item = Item, Err = Err> + Send + Sync,
-      MutArc<SingleSubscription>,
-    >,
-  >,
-  MutArc<Vec<ObserverTrigger<Item, Err>>>,
+type PublisherVecThreads<Item, Err> =
+  MutArc<Option<SmallVec<[Box<dyn Publisher<Item, Err> + Send>; 1]>>>;
+
+/// A threads safe subject.
+pub struct SubjectThreads<Item, Err> {
+  observers: PublisherVecThreads<Item, Err>,
+  chamber: PublisherVecThreads<Item, Err>,
+}
+
+type PublisherMutRefValueVec<'a, Item, Err> = MutRc<
+  Option<SmallVec<[Box<dyn for<'r> Publisher<&'r mut Item, Err> + 'a>; 1]>>,
 >;
 
-pub type LocalSubject<'a, Item, Err> = Subject<
-  MutRc<
-    InnerSubject<
-      dyn Observer<Item = Item, Err = Err> + 'a,
-      MutRc<SingleSubscription>,
-    >,
-  >,
-  MutRc<Vec<ObserverTrigger<Item, Err>>>,
+/// A subject emit mut reference elements.
+pub struct MutRefItemSubject<'a, Item, Err> {
+  observers: PublisherMutRefValueVec<'a, Item, Err>,
+  chamber: PublisherMutRefValueVec<'a, Item, Err>,
+}
+
+type PublisherMutRefErrVec<'a, Item, Err> = MutRc<
+  Option<SmallVec<[Box<dyn for<'r> Publisher<Item, &'r mut Err> + 'a>; 1]>>,
 >;
 
-impl<Item, Err> SharedSubject<Item, Err> {
-  #[inline]
-  pub fn new() -> Self {
-    Self::default()
-  }
+/// A subject emit mut reference errors.
+pub struct MutRefErrSubject<'a, Item, Err> {
+  observers: PublisherMutRefErrVec<'a, Item, Err>,
+  chamber: PublisherMutRefErrVec<'a, Item, Err>,
 }
 
-impl<'a, Item, Err> LocalSubject<'a, Item, Err> {
-  #[inline]
-  pub fn new() -> Self {
-    Self::default()
-  }
+type PublisherMutRefValueErrVec<'a, Item, Err> = MutRc<
+  Option<
+    SmallVec<[Box<dyn for<'r> Publisher<&'r mut Item, &'r mut Err> + 'a>; 1]>,
+  >,
+>;
+
+/// A subject emit both mut reference elements and errors.
+pub struct MutRefItemErrSubject<'a, Item, Err> {
+  observers: PublisherMutRefValueErrVec<'a, Item, Err>,
+  chamber: PublisherMutRefValueErrVec<'a, Item, Err>,
 }
 
-fn emit_buffer<'a, O, B, Item, Err, T>(mut observer: O, b: &'a B)
-where
-  O: DerefMut,
-  O::Target: Observer<Item = Item, Err = Err>,
-  B: RcDerefMut<Target<'a> = T> + 'a,
-  T: DerefMut<Target = Vec<ObserverTrigger<Item, Err>>>,
-{
-  loop {
-    let v = b.rc_deref_mut().pop();
-    if let Some(to_emit) = v {
-      match to_emit {
-        ObserverTrigger::Item(v) => observer.next(v),
-        ObserverTrigger::Err(err) => observer.error(err),
-        ObserverTrigger::Complete => observer.complete(),
+macro_rules! impl_subject_trivial {
+  ($ty: ty, $rc:ident $(,$lf:lifetime)?) => {
+    impl<$($lf,)? Item, Err> Subscription for $ty {
+      fn unsubscribe(self) {
+        self.observers.rc_deref_mut().take();
+        self.chamber.rc_deref_mut().take();
       }
-    } else {
-      break;
+
+      fn is_closed(&self) -> bool {
+        self.observers.rc_deref().is_none()
+      }
     }
-  }
-}
 
-macro_rules! impl_observer {
-  () => {
-    type Item = Item;
-    type Err = Err;
-
-    fn next(&mut self, value: Self::Item) {
-      if let Ok(mut inner) = self.inner.try_rc_deref_mut() {
-        inner.load(self.chamber.rc_deref_mut().unload());
-        inner.next(value);
-        emit_buffer(inner, &self.buffer)
-      } else {
+    impl<$($lf,)? Item, Err>  SubjectSize for $ty {
+      fn is_empty(&self) -> bool{
         self
-          .buffer
-          .rc_deref_mut()
-          .push(ObserverTrigger::Item(value));
+        .observers
+        .rc_deref().as_ref().map_or(true, |observers| {
+          observers.is_empty()
+            && self.chamber.rc_deref().as_ref().unwrap().is_empty()
+        })
+      }
+
+      fn len(&self) -> usize {
+        self
+          .observers
+          .rc_deref().as_ref().map_or(0, |observers| {
+            observers.len() + self.chamber.rc_deref().as_ref().unwrap().len()
+          })
       }
     }
 
-    fn error(&mut self, err: Self::Err) {
-      if let Ok(mut inner) = self.inner.try_rc_deref_mut() {
-        inner.load(self.chamber.rc_deref_mut().unload());
-        inner.error(err);
-        emit_buffer(inner, &self.buffer)
-      } else {
-        self.buffer.rc_deref_mut().push(ObserverTrigger::Err(err));
+    impl<$($lf,)? Item, Err>  Clone for $ty {
+      #[inline]
+      fn clone(&self) -> Self {
+        Self {
+          observers: self.observers.clone(),
+          chamber: self.chamber.clone()
+        }
       }
     }
 
-    fn complete(&mut self) {
-      if let Ok(mut inner) = self.inner.try_rc_deref_mut() {
-        inner.load(self.chamber.rc_deref_mut().unload());
-        inner.complete();
-        emit_buffer(inner, &self.buffer)
+    impl<$($lf,)? Item, Err> Default for $ty {
+      fn default() -> Self {
+        Self {
+          observers: $rc::own(Some(<_>::default())) ,
+          chamber: $rc::own(Some(<_>::default()))
+        }
+      }
+    }
+
+    impl<$($lf,)? Item, Err> $ty {
+      /// Retains only the subscriber that not finished.
+      pub fn retain(&mut self) {
+        if let Some(observers) = self.observers.rc_deref_mut().as_mut(){
+          observers.retain(|p| !p.p_is_closed() );
+        }
+      }
+      fn load(&mut self) {
+        if let Some(observers) = self.observers.rc_deref_mut().as_mut() {
+          observers.append(self.chamber.rc_deref_mut().as_mut().unwrap());
+        }
+      }
+    }
+  }
+}
+impl_subject_trivial!(Subject<'a, Item,Err>, MutRc, 'a);
+impl_subject_trivial!(SubjectThreads< Item, Err>, MutArc);
+impl_subject_trivial!(MutRefItemSubject<'a, Item,Err>, MutRc, 'a);
+impl_subject_trivial!(MutRefErrSubject<'a, Item,Err>, MutRc, 'a);
+impl_subject_trivial!(MutRefItemErrSubject<'a, Item,Err>, MutRc, 'a);
+
+impl<'a, Item, Err> ObservableExt<Item, Err> for Subject<'a, Item, Err> {}
+impl<Item, Err> ObservableExt<Item, Err> for SubjectThreads<Item, Err> {}
+impl<'a, Item, Err> ObservableExt<&mut Item, Err>
+  for MutRefItemSubject<'a, Item, Err>
+{
+}
+
+impl<'a, Item, Err> ObservableExt<Item, &mut Err>
+  for MutRefErrSubject<'a, Item, Err>
+{
+}
+
+impl<'a, Item, Err> ObservableExt<&mut Item, &mut Err>
+  for MutRefItemErrSubject<'a, Item, Err>
+{
+}
+
+macro_rules! impl_observer_methods {
+  ($item: ty$({ $item_clone: ident})?, $err: ty$({$err_clone: ident})?) => {
+    fn next(&mut self, value: $item) {
+      self.load();
+      if let Some(observers) = self.observers.rc_deref_mut().as_mut() {
+        observers.iter_mut().for_each(|p| {
+          p.p_next(value$(.$item_clone())?);
+        });
+      }
+    }
+
+    fn error(mut self, err: $err) {
+      self.load();
+      if let Some(observers) = self.observers.rc_deref_mut().take() {
+        observers
+          .into_iter()
+          .filter(|o| !o.p_is_closed())
+          .for_each(|o| o.p_error(err$(.$err_clone())?));
+      }
+    }
+
+    fn complete(mut self) {
+      self.load();
+      if let Some(observers) = self.observers.rc_deref_mut().take() {
+        observers
+          .into_iter()
+          .filter(|o| !o.p_is_closed())
+          .for_each(|subscriber| subscriber.p_complete());
+      }
+    }
+
+    #[inline]
+    fn is_finished(&self) -> bool {
+      self.observers.rc_deref().is_none()
+    }
+  };
+}
+
+impl<'a, Item: Clone, Err: Clone> Observer<Item, Err>
+  for Subject<'a, Item, Err>
+{
+  impl_observer_methods!(Item { clone }, Err { clone });
+}
+
+impl<Item: Clone, Err: Clone> Observer<Item, Err>
+  for SubjectThreads<Item, Err>
+{
+  impl_observer_methods!(Item { clone }, Err { clone });
+}
+
+impl<'a, Item, Err: Clone> Observer<&mut Item, Err>
+  for MutRefItemSubject<'a, Item, Err>
+{
+  impl_observer_methods!(&mut Item, Err { clone });
+}
+
+impl<'a, Item: Clone, Err> Observer<Item, &mut Err>
+  for MutRefErrSubject<'a, Item, Err>
+{
+  impl_observer_methods!(Item { clone }, &mut Err);
+}
+
+impl<'a, Item, Err> Observer<&mut Item, &mut Err>
+  for MutRefItemErrSubject<'a, Item, Err>
+{
+  impl_observer_methods!(&mut Item, &mut Err);
+}
+
+macro_rules! impl_observable_for_subject {
+  ($subscriber:ident) => {
+    type Unsub = $subscriber<O>;
+
+    fn actual_subscribe(self, observer: O) -> Self::Unsub {
+      if let Some(chamber) = self.chamber.rc_deref_mut().as_mut() {
+        let subscriber = $subscriber::new(Some(observer));
+        chamber.push(Box::new(subscriber.clone()));
+        subscriber
       } else {
-        self.buffer.rc_deref_mut().push(ObserverTrigger::Complete);
+        $subscriber::new(None)
       }
     }
   };
 }
 
-impl<'a, Item: Clone, Err: Clone> Observer for LocalSubject<'a, Item, Err> {
-  impl_observer!();
-}
-
-impl<Item: Clone, Err: Clone> Observer for SharedSubject<Item, Err> {
-  impl_observer!();
-}
-
-impl<Item, Err> Observable for SharedSubject<Item, Err> {
-  type Item = Item;
-  type Err = Err;
-}
-
-impl<Item, Err> SharedObservable for SharedSubject<Item, Err> {
-  type Unsub = MutArc<SingleSubscription>;
-  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
-  where
-    O: Observer<Item = Self::Item, Err = Self::Err> + Sync + Send + 'static,
-  {
-    self.chamber.rc_deref_mut().subscribe(Box::new(observer))
-  }
-}
-
-impl<'a, Item, Err> Observable for LocalSubject<'a, Item, Err> {
-  type Item = Item;
-  type Err = Err;
-}
-
-impl<'a, Item, Err> LocalObservable<'a> for LocalSubject<'a, Item, Err> {
-  type Unsub = MutRc<SingleSubscription>;
-  fn actual_subscribe<O>(self, observer: O) -> Self::Unsub
-  where
-    O: Observer<Item = Self::Item, Err = Self::Err> + 'a,
-  {
-    self.chamber.rc_deref_mut().subscribe(Box::new(observer))
-  }
-}
-
-impl<O, U> SubscriptionLike for InnerSubject<O, U>
+impl<'a, Item, Err, O> Observable<Item, Err, O> for Subject<'a, Item, Err>
 where
-  O: Observer + ?Sized,
-  U: SubscriptionLike,
+  O: Observer<Item, Err> + 'a,
 {
-  fn unsubscribe(&mut self) {
-    self
-      .observers
-      .iter_mut()
-      .for_each(|o| o.subscription.unsubscribe());
-    self.observers.clear();
-    self.subscription.unsubscribe();
-  }
-
-  #[inline]
-  fn is_closed(&self) -> bool {
-    self.subscription.is_closed()
-  }
+  impl_observable_for_subject!(Subscriber);
 }
 
-impl<T: SubscriptionLike, B> SubscriptionLike for Subject<T, B> {
-  #[inline]
-  fn unsubscribe(&mut self) {
-    self.inner.unsubscribe()
-  }
-
-  #[inline]
-  fn is_closed(&self) -> bool {
-    self.inner.is_closed()
-  }
-}
-
-impl<O, U> TearDownSize for InnerSubject<O, U>
+impl<Item, Err, O> Observable<Item, Err, O> for SubjectThreads<Item, Err>
 where
-  O: Observer + ?Sized,
-  U: SubscriptionLike,
+  O: Observer<Item, Err> + Send + 'static,
 {
-  #[inline]
-  fn teardown_size(&self) -> usize {
-    self.observers.len()
-  }
+  impl_observable_for_subject!(SubscriberThreads);
 }
 
-impl<T: TearDownSize, B> TearDownSize for Subject<T, B> {
-  #[inline]
-  fn teardown_size(&self) -> usize {
-    self.inner.teardown_size() + self.chamber.teardown_size()
-  }
-}
-
-pub(crate) struct SubjectObserver<O, S> {
-  pub observer: O,
-  pub subscription: S,
-}
-
-impl<O: Observer + ?Sized, S: SubscriptionLike> Default for InnerSubject<O, S> {
-  fn default() -> Self {
-    InnerSubject {
-      observers: vec![],
-      subscription: Default::default(),
-    }
-  }
-}
-
-impl<O, U> Observer for InnerSubject<O, U>
+impl<'a, Item, Err, O> Observable<&mut Item, Err, O>
+  for MutRefItemSubject<'a, Item, Err>
 where
-  O: Observer + ?Sized,
-  U: SubscriptionLike,
-  O::Item: Clone,
-  O::Err: Clone,
+  O: for<'r> Observer<&'r mut Item, Err> + 'a,
 {
-  type Item = O::Item;
-  type Err = O::Err;
-
-  fn next(&mut self, value: Self::Item) {
-    if !self.subscription.is_closed() {
-      let any_finished =
-        self.observers.iter_mut().fold(false, |finished, o| {
-          if !o.subscription.is_closed() {
-            o.observer.next(value.clone());
-          }
-          finished || o.subscription.is_closed()
-        });
-
-      if any_finished {
-        self.observers.retain(|o| !o.subscription.is_closed());
-      }
-    } else {
-      self.observers.clear();
-    }
-  }
-
-  fn error(&mut self, err: Self::Err) {
-    if !self.is_closed() {
-      self
-        .observers
-        .iter_mut()
-        .for_each(|subscriber| subscriber.observer.error(err.clone()));
-      self.observers.clear();
-    }
-  }
-
-  fn complete(&mut self) {
-    if !self.is_closed() {
-      self
-        .observers
-        .iter_mut()
-        .for_each(|subscriber| subscriber.observer.complete());
-      self.observers.clear();
-    }
-  }
+  impl_observable_for_subject!(Subscriber);
 }
 
-impl<O, U> InnerSubject<O, U>
+impl<'a, Item, Err, O> Observable<Item, &mut Err, O>
+  for MutRefErrSubject<'a, Item, Err>
 where
-  O: Observer + ?Sized,
-  U: SubscriptionLike + Default + Clone,
+  O: for<'r> Observer<Item, &'r mut Err> + 'a,
 {
-  fn subscribe(&mut self, observer: Box<O>) -> U {
-    let subscription = U::default();
-    let observer = SubjectObserver {
-      observer,
-      subscription: subscription.clone(),
-    };
-    self.observers.push(observer);
-    subscription
-  }
+  impl_observable_for_subject!(Subscriber);
+}
 
-  fn load(&mut self, mut observers: Vec<SubjectObserver<Box<O>, U>>) {
-    self.observers.append(&mut observers);
-  }
-
-  #[inline]
-  fn unload(&mut self) -> Vec<SubjectObserver<Box<O>, U>> {
-    std::mem::take(&mut self.observers)
-  }
+impl<'a, Item, Err, O> Observable<&mut Item, &mut Err, O>
+  for MutRefItemErrSubject<'a, Item, Err>
+where
+  O: for<'i, 'e> Observer<&'i mut Item, &'e mut Err> + 'a,
+{
+  impl_observable_for_subject!(Subscriber);
 }
 
 #[cfg(test)]
 mod test {
   use super::*;
-  #[cfg(not(target_arch = "wasm32"))]
-  use crate::scheduler::Instant;
-  #[cfg(not(target_arch = "wasm32"))]
-  use futures::executor::ThreadPool;
-  #[cfg(not(target_arch = "wasm32"))]
-  use std::time::Duration;
 
   #[test]
   fn smoke() {
-    let test_code = MutArc::own("".to_owned());
-    let mut subject = SharedSubject::new();
-    let c_test_code = test_code.clone();
-    subject.clone().into_shared().subscribe(move |v: &str| {
-      *c_test_code.rc_deref_mut() = v.to_owned();
-    });
-    subject.next("test shared subject");
-    assert_eq!(*test_code.rc_deref_mut(), "test shared subject");
-    assert_eq!(subject.teardown_size(), 1);
+    let mut value = 0;
+    {
+      let mut subject = Subject::default();
+      subject.clone().subscribe(|v| {
+        value = v;
+      });
+      subject.next(2);
+      assert_eq!(subject.len(), 1);
+    }
+    assert_eq!(value, 2);
+  }
+
+  #[test]
+  fn mut_ref_item() {
+    let mut value = 0;
+    {
+      let mut subject = MutRefItemSubject::<'_, i32, ()>::default();
+      subject.clone().subscribe(
+        (|v| {
+          *v = 2;
+        }) as for<'r> fn(&'r mut i32),
+      );
+      subject.next(&mut value);
+    }
+    assert_eq!(value, 2);
+  }
+
+  #[test]
+  fn mut_ref_error() {
+    let mut err = 0;
+    {
+      let subject = MutRefErrSubject::default();
+      subject
+        .clone()
+        .on_error((|v: &mut i32| *v = 2) as for<'r> fn(&'r mut i32))
+        .subscribe(|()| {});
+
+      subject.error(&mut err);
+    }
+    assert_eq!(err, 2);
+  }
+
+  #[test]
+  fn mut_ref_item_error() {
+    let mut value = 0;
+    let mut err = 0;
+
+    let mut subject = MutRefItemErrSubject::default();
+    subject
+      .clone()
+      .on_error((|v: &mut i32| *v = 2) as for<'r> fn(&'r mut i32))
+      .subscribe((|v: &mut i32| *v = 2) as for<'r> fn(&'r mut i32));
+
+    subject.next(&mut value);
+    subject.error(&mut err);
+
+    assert_eq!(value, 2);
+    assert_eq!(err, 2);
   }
 
   #[test]
   fn base_data_flow() {
     let mut i = 0;
     {
-      let mut broadcast = LocalSubject::default();
+      let mut broadcast = Subject::default();
       broadcast.clone().subscribe(|v| i = v * 2);
       broadcast.next(1);
     }
@@ -329,12 +358,13 @@ mod test {
   #[test]
   #[should_panic]
   fn error() {
-    let mut broadcast = LocalSubject::new();
+    let mut broadcast = Subject::default();
     broadcast
       .clone()
-      .subscribe_err(|_: i32| {}, |e: _| panic!("{}", e));
-    broadcast.next(1);
+      .on_error(|err| panic!("{}", err))
+      .subscribe(|_| {});
 
+    broadcast.next(1);
     broadcast.error(&"should panic!");
   }
 
@@ -343,7 +373,7 @@ mod test {
     let mut i = 0;
 
     {
-      let mut subject = LocalSubject::new();
+      let mut subject = Subject::default();
       subject.clone().subscribe(|v| i = v).unsubscribe();
       subject.next(100);
     }
@@ -351,67 +381,12 @@ mod test {
     assert_eq!(i, 0);
   }
 
-  #[cfg(not(target_arch = "wasm32"))]
-  #[test]
-  fn empty_local_subject_can_convert_into_shared() {
-    let pool = ThreadPool::new().unwrap();
-    use std::sync::{Arc, Mutex};
-    let value = Arc::new(Mutex::new(0));
-    let c_v = value.clone();
-    let subject = SharedSubject::new();
-    let mut subject_c = subject.clone();
-    let stamp = Instant::now();
-    pool.schedule(
-      move |_| {
-        subject_c.next(100);
-        subject_c.complete();
-      },
-      Some(Duration::from_millis(25)),
-      (),
-    );
-    subject
-      .clone()
-      .into_shared()
-      .observe_on(pool)
-      .into_shared()
-      .subscribe_blocking(move |v: i32| {
-        *value.lock().unwrap() = v;
-      });
-    assert!(stamp.elapsed() > Duration::from_millis(25));
-    assert_eq!(*c_v.lock().unwrap(), 100);
-  }
-
   #[test]
   fn subject_subscribe_subject() {
-    let mut local = LocalSubject::new();
-    let local2 = LocalSubject::new();
+    let mut local = Subject::default();
+    let local2 = Subject::default();
     local.clone().actual_subscribe(local2);
     local.next(1);
     local.error(2);
-  }
-
-  #[test]
-  fn fix_recursive_next() {
-    let mut subject = Subject::default();
-    let mut c_subject = subject.clone();
-
-    subject.clone().subscribe(move |i| {
-      if i < 2 {
-        c_subject.next(i + 1)
-      }
-    });
-
-    subject.next(0);
-
-    let mut subject = Subject::default();
-    let mut c_subject = subject.clone();
-
-    subject.clone().into_shared().subscribe(move |i| {
-      if i < 2 {
-        c_subject.next(i + 1)
-      }
-    });
-
-    subject.next(0);
   }
 }

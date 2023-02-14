@@ -1,82 +1,74 @@
 use crate::prelude::*;
 
 #[derive(Clone)]
-pub struct FilterMapOp<S, F> {
-  pub(crate) source: S,
-  pub(crate) f: F,
+pub struct FilterMapOp<S, F, Item> {
+  source: S,
+  f: F,
+  _m: TypeHint<Item>,
 }
 
-#[doc(hidden)]
-macro_rules! observable_impl {
-    ($subscription:ty, $($marker:ident +)* $lf: lifetime) => {
-  fn actual_subscribe<O>(
-    self,
-    observer: O,
-  ) -> Self::Unsub
-  where O: Observer<Item=Self::Item,Err= Self::Err> + $($marker +)* $lf {
+impl<S, F, Item> FilterMapOp<S, F, Item> {
+  #[inline]
+  pub fn new(source: S, f: F) -> Self {
+    Self { source, f, _m: TypeHint::default() }
+  }
+}
+
+impl<OutputItem, Item, Err, O, S, F> Observable<OutputItem, Err, O>
+  for FilterMapOp<S, F, Item>
+where
+  S: Observable<Item, Err, FilterMapObserver<O, F>>,
+  O: Observer<OutputItem, Err>,
+  F: FnMut(Item) -> Option<OutputItem>,
+{
+  type Unsub = S::Unsub;
+
+  fn actual_subscribe(self, observer: O) -> Self::Unsub {
     self.source.actual_subscribe(FilterMapObserver {
       down_observer: observer,
       f: self.f,
-      _marker: TypeHint::new(),
     })
   }
 }
-}
 
-impl<Item, S, F> Observable for FilterMapOp<S, F>
+impl<OutputItem, Item, Err, S, F> ObservableExt<OutputItem, Err>
+  for FilterMapOp<S, F, Item>
 where
-  S: Observable,
-  F: FnMut(S::Item) -> Option<Item>,
-{
-  type Item = Item;
-  type Err = S::Err;
-}
-
-impl<'a, Item, S, F> LocalObservable<'a> for FilterMapOp<S, F>
-where
-  S: LocalObservable<'a>,
-  F: FnMut(S::Item) -> Option<Item> + 'a,
-  S::Item: 'a,
-{
-  type Unsub = S::Unsub;
-  observable_impl!(LocalSubscription, 'a);
-}
-
-impl<Item, S, F> SharedObservable for FilterMapOp<S, F>
-where
-  S: SharedObservable,
-  F: FnMut(S::Item) -> Option<Item> + Send + Sync + 'static,
-  S::Item: 'static,
-{
-  type Unsub = S::Unsub;
-  observable_impl!(SharedSubscription, Send + Sync + 'static);
-}
-
-pub struct FilterMapObserver<O, F, Item> {
-  down_observer: O,
-  f: F,
-  _marker: TypeHint<*const Item>,
-}
-
-impl<O, F, Item, Err, OutputItem> Observer for FilterMapObserver<O, F, Item>
-where
-  O: Observer<Item = OutputItem, Err = Err>,
+  S: ObservableExt<Item, Err>,
   F: FnMut(Item) -> Option<OutputItem>,
 {
-  type Item = Item;
-  type Err = Err;
+}
+
+pub struct FilterMapObserver<O, F> {
+  down_observer: O,
+  f: F,
+}
+
+impl<O, F, Item, Err, OutputItem> Observer<Item, Err>
+  for FilterMapObserver<O, F>
+where
+  O: Observer<OutputItem, Err>,
+  F: FnMut(Item) -> Option<OutputItem>,
+{
   fn next(&mut self, value: Item) {
     if let Some(v) = (self.f)(value) {
       self.down_observer.next(v)
     }
   }
 
-  fn error(&mut self, err: Self::Err) {
+  #[inline]
+  fn error(self, err: Err) {
     self.down_observer.error(err)
   }
 
-  fn complete(&mut self) {
+  #[inline]
+  fn complete(self) {
     self.down_observer.complete()
+  }
+
+  #[inline]
+  fn is_finished(&self) -> bool {
+    self.down_observer.is_finished()
   }
 }
 
@@ -93,23 +85,11 @@ mod test {
     assert_eq!(i, 3);
   }
 
-  #[cfg(not(target_arch = "wasm32"))]
-  #[test]
-  fn filter_map_shared_and_fork() {
-    observable::of(1)
-      .filter_map(|_| Some("str"))
-      .clone()
-      .into_shared()
-      .subscribe(|_| {});
-  }
-
-  #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn filter_map_return_ref() {
     observable::of(&1)
       .filter_map(Some)
       .clone()
-      .into_shared()
       .subscribe(|_| {});
   }
 

@@ -1,4 +1,4 @@
-use crate::{impl_helper::*, impl_local_shared_both, prelude::*};
+use crate::prelude::*;
 #[derive(Clone)]
 pub struct TakeWhileOp<S, F> {
   pub(crate) source: S,
@@ -6,72 +6,70 @@ pub struct TakeWhileOp<S, F> {
   pub(crate) inclusive: bool,
 }
 
-impl<S, F> Observable for TakeWhileOp<S, F>
+impl<S, F, Item, Err, O> Observable<Item, Err, O> for TakeWhileOp<S, F>
 where
-  S: Observable,
-  F: FnMut(&S::Item) -> bool,
+  O: Observer<Item, Err>,
+  TakeWhileObserver<O, F>: Observer<Item, Err>,
+  S: Observable<Item, Err, TakeWhileObserver<O, F>>,
+  F: FnMut(&Item) -> bool,
 {
-  type Item = S::Item;
-  type Err = S::Err;
-}
+  type Unsub = S::Unsub;
 
-impl_local_shared_both! {
-  impl<S, F> TakeWhileOp<S, F>;
-  type Unsub = @ctx::Rc<ProxySubscription<S::Unsub>>;
-  macro method($self: ident, $observer: ident, $ctx: ident) {
-    let subscription = $ctx::Rc::own(ProxySubscription::default());
+  fn actual_subscribe(self, observer: O) -> Self::Unsub {
     let observer = TakeWhileObserver {
-      observer: $observer,
-      subscription: subscription.clone(),
-      callback: $self.callback,
-      inclusive: $self.inclusive,
+      observer: Some(observer),
+      callback: self.callback,
+      inclusive: self.inclusive,
     };
-    let s = $self.source.actual_subscribe(observer);
-    subscription.rc_deref_mut().proxy(s);
-    subscription
+    self.source.actual_subscribe(observer)
   }
-  where
-    S: @ctx::Observable,
-    @ctx::local_only(
-      F: FnMut(&S::Item) -> bool + 'o,
-      S::Unsub: 'o
-    )
-    @ctx::shared_only(F: FnMut(&S::Item) -> bool + Send + Sync + 'static )
 }
 
-pub struct TakeWhileObserver<O, S, F> {
-  observer: O,
-  subscription: S,
+impl<S, F, Item, Err> ObservableExt<Item, Err> for TakeWhileOp<S, F> where
+  S: ObservableExt<Item, Err>
+{
+}
+
+pub struct TakeWhileObserver<O, F> {
+  observer: Option<O>,
   callback: F,
   inclusive: bool,
 }
 
-impl<O, U, Item, Err, F> Observer for TakeWhileObserver<O, U, F>
+impl<O, Item, Err, F> Observer<Item, Err> for TakeWhileObserver<O, F>
 where
-  O: Observer<Item = Item, Err = Err>,
-  U: SubscriptionLike,
+  O: Observer<Item, Err>,
   F: FnMut(&Item) -> bool,
 {
-  type Item = Item;
-  type Err = Err;
   fn next(&mut self, value: Item) {
-    if (self.callback)(&value) {
-      self.observer.next(value);
-    } else {
-      if self.inclusive {
-        self.observer.next(value);
+    if let Some(observer) = self.observer.as_mut() {
+      if (self.callback)(&value) {
+        observer.next(value);
+      } else {
+        if self.inclusive {
+          observer.next(value);
+        }
+        self.observer.take().unwrap().complete()
       }
-      self.observer.complete();
-      self.subscription.unsubscribe();
     }
   }
 
-  fn error(&mut self, err: Self::Err) {
-    self.observer.error(err)
+  #[inline]
+  fn error(self, err: Err) {
+    if let Some(o) = self.observer {
+      o.error(err)
+    }
   }
 
-  fn complete(&mut self) {
-    self.observer.complete()
+  #[inline]
+  fn complete(self) {
+    if let Some(o) = self.observer {
+      o.complete()
+    }
+  }
+
+  fn is_finished(&self) -> bool {
+    self.observer.as_ref().map_or(true, |o| o.is_finished())
   }
 }
 
@@ -86,7 +84,8 @@ mod test {
 
     observable::from_iter(0..100)
       .take_while(|v| v < &5)
-      .subscribe_complete(|_| next_count += 1, || completed = true);
+      .on_complete(|| completed = true)
+      .subscribe(|_| next_count += 1);
 
     assert_eq!(next_count, 5);
     assert!(completed);
@@ -99,7 +98,8 @@ mod test {
 
     observable::from_iter(0..100)
       .take_while_inclusive(|v| v < &5)
-      .subscribe_complete(|_| next_count += 1, || completed = true);
+      .on_complete(|| completed = true)
+      .subscribe(|_| next_count += 1);
 
     assert_eq!(next_count, 6);
     assert!(completed);
@@ -119,16 +119,6 @@ mod test {
     }
     assert_eq!(nc1, 5);
     assert_eq!(nc2, 5);
-  }
-
-  #[cfg(not(target_arch = "wasm32"))]
-  #[test]
-  fn into_shared() {
-    observable::from_iter(0..100)
-      .take_while(|v| v < &5)
-      .take_while(|v| v < &5)
-      .into_shared()
-      .subscribe(|_| {});
   }
 
   #[test]

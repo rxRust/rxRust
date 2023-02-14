@@ -1,5 +1,8 @@
-use crate::{impl_helper::*, impl_local_shared_both, prelude::*};
-use std::{ops::DerefMut, time::Duration};
+use crate::{
+  prelude::*,
+  rc::{MutArc, RcDerefMut},
+};
+use std::{time::Duration, vec};
 
 #[derive(Clone)]
 pub struct BufferWithCountOp<S> {
@@ -7,62 +10,100 @@ pub struct BufferWithCountOp<S> {
   pub(crate) count: usize,
 }
 
-impl<S: Observable> Observable for BufferWithCountOp<S> {
-  type Item = Vec<S::Item>;
-  type Err = S::Err;
-}
-
-impl_local_shared_both! {
-  impl<S> BufferWithCountOp<S>;
+impl<Item, Err, O, S> Observable<Vec<Item>, Err, O> for BufferWithCountOp<S>
+where
+  S: Observable<Item, Err, BufferWithCountObserver<O, Item>>,
+  O: Observer<Vec<Item>, Err>,
+{
   type Unsub = S::Unsub;
-  macro method($self: ident, $observer: ident, $ctx: ident) {
-    $self
-    .source
-    .actual_subscribe(BufferWithCountObserver{
-      observer: $observer,
-      buffer: vec![],
-      count:$self.count
+
+  fn actual_subscribe(self, observer: O) -> Self::Unsub {
+    self.source.actual_subscribe(BufferWithCountObserver {
+      buffer: BufferObserver { observer, data: vec![] },
+      count: self.count,
     })
   }
+}
+
+impl<Item, Err, S> ObservableExt<Vec<Item>, Err> for BufferWithCountOp<S> where
+  S: ObservableExt<Item, Err>
+{
+}
+
+#[derive(Clone)]
+pub struct BufferObserver<O, Item> {
+  observer: O,
+  data: Vec<Item>,
+}
+
+impl<O, Item, Err> Observer<Item, Err> for BufferObserver<O, Item>
+where
+  O: Observer<Vec<Item>, Err>,
+{
+  #[inline]
+  fn next(&mut self, value: Item) {
+    self.data.push(value);
+  }
+
+  fn complete(mut self) {
+    self.emit();
+    self.observer.complete();
+  }
+
+  #[inline]
+  fn error(self, err: Err) {
+    self.observer.error(err)
+  }
+
+  #[inline]
+  fn is_finished(&self) -> bool {
+    self.observer.is_finished()
+  }
+}
+
+impl<O, Item> BufferObserver<O, Item> {
+  fn emit<Err>(&mut self)
   where
-    S: @ctx::Observable,
-    S::Item: @ctx::shared_only(Send + Sync + 'static) @ctx::local_only('o)
+    O: Observer<Vec<Item>, Err>,
+  {
+    if !self.data.is_empty() {
+      let buffer = std::mem::take(&mut self.data);
+      self.observer.next(buffer);
+    }
+  }
 }
 
 #[derive(Clone)]
 pub struct BufferWithCountObserver<O, Item> {
-  observer: O,
-  buffer: Vec<Item>,
+  buffer: BufferObserver<O, Item>,
   count: usize,
 }
 
-impl<O, Item, Err> Observer for BufferWithCountObserver<O, Item>
+impl<O, Item, Err> Observer<Item, Err> for BufferWithCountObserver<O, Item>
 where
-  O: Observer<Item = Vec<Item>, Err = Err>,
+  O: Observer<Vec<Item>, Err>,
 {
-  type Item = Item;
-  type Err = Err;
+  fn next(&mut self, value: Item) {
+    self.buffer.next(value);
 
-  fn next(&mut self, value: Self::Item) {
-    self.buffer.push(value);
-
-    if self.buffer.len() >= self.count {
-      let buffer = std::mem::take(&mut self.buffer);
-      self.observer.next(buffer);
+    if self.buffer.data.len() >= self.count {
+      self.buffer.emit()
     }
   }
 
-  fn complete(&mut self) {
-    if !self.buffer.is_empty() {
-      let buffer = std::mem::take(&mut self.buffer);
-      self.observer.next(buffer);
-    }
-
-    self.observer.complete();
+  #[inline]
+  fn complete(self) {
+    self.buffer.complete()
   }
 
-  fn error(&mut self, err: Self::Err) {
-    self.observer.error(err)
+  #[inline]
+  fn error(self, err: Err) {
+    self.buffer.error(err)
+  }
+
+  #[inline]
+  fn is_finished(&self) -> bool {
+    self.buffer.is_finished()
   }
 }
 
@@ -73,114 +114,50 @@ pub struct BufferWithTimeOp<Source, Scheduler> {
   pub(crate) scheduler: Scheduler,
 }
 
-#[derive(Clone)]
-pub struct BufferWithTimeObserver<O, B, U> {
-  observer: O,
-  buffer: B,
-  handler: U,
-}
+type RcBufferObserver<O, Item> = MutArc<Option<BufferObserver<O, Item>>>;
 
-macro_rules! new_buffer_time_observer {
-  ($observer:ident, $scheduler: expr, $time: expr,  $ctx: ident) => {{
-    let observer = $ctx::Rc::own($observer);
-    let mut observer_c = observer.clone();
-    let buffer = $ctx::Rc::own(vec![]);
-    let buffer_c = buffer.clone();
-
-    let handler = $scheduler.schedule_repeating(
-      move |_| {
-        let b = &mut *buffer_c.rc_deref_mut();
-        if !b.is_empty() {
-          observer_c.next(std::mem::take(b));
-        }
-      },
-      $time,
-      None,
-    );
-    let handler = $ctx::Rc::own(handler);
-    BufferWithTimeObserver {
-      observer,
-      buffer,
-      handler,
-    }
-  }};
-}
-
-impl<S: Observable, SD> Observable for BufferWithTimeOp<S, SD> {
-  type Item = Vec<S::Item>;
-  type Err = S::Err;
-}
-
-impl_local_shared_both! {
-  impl<Source, SD> BufferWithTimeOp<Source, SD>;
-  type Unsub = TimeSubscription<@ctx::Rc<SpawnHandle>, Source::Unsub>;
-  macro method($self:ident, $observer: ident, $ctx: ident) {
-    let observer = new_buffer_time_observer!(
-      $observer, $self.scheduler, $self.time, $ctx
-    );
-    let handler = observer.handler.clone();
-    let subscription = $self.source.actual_subscribe(observer);
-    TimeSubscription{ handler, subscription }
-  }
-  where
-    @ctx::local_only('o: 'static,)
-    Source: @ctx::Observable,
-    Source::Item: @ctx::shared_only(Send + Sync +) 'static,
-    SD: @ctx::Scheduler + 'static,
-}
-
-pub struct TimeSubscription<H, U> {
-  handler: H,
-  subscription: U,
-}
-
-impl<U: SubscriptionLike, H: SubscriptionLike> SubscriptionLike
-  for TimeSubscription<H, U>
-{
-  fn unsubscribe(&mut self) {
-    self.handler.unsubscribe();
-    self.subscription.unsubscribe();
-  }
-
-  fn is_closed(&self) -> bool {
-    self.handler.is_closed()
-  }
-}
-
-impl<O, B, U, Item, Err> Observer for BufferWithTimeObserver<O, B, U>
+fn emit_buffer<O, Item, Err>(
+  observer: &mut RcBufferObserver<O, Item>,
+  _seq: usize,
+) -> bool
 where
-  O: Observer<Item = Vec<Item>, Err = Err>,
-  B: RcDerefMut + 'static,
-  U: SubscriptionLike,
-  for<'r> B::Target<'r>: DerefMut<Target = O::Item>,
+  O: Observer<Vec<Item>, Err>,
 {
-  type Item = Item;
-  type Err = Err;
-
-  fn next(&mut self, value: Self::Item) {
-    if !self.handler.is_closed() {
-      self.buffer.rc_deref_mut().push(value);
+  if !observer.is_finished() {
+    if let Some(v) = observer.rc_deref_mut().as_mut() {
+      v.emit()
     }
+    true
+  } else {
+    false
   }
+}
 
-  fn error(&mut self, err: Self::Err) {
-    if !self.handler.is_closed() {
-      self.handler.unsubscribe();
-      self.observer.error(err);
-    }
+impl<S, Item, Err, O, SD> Observable<Vec<Item>, Err, O>
+  for BufferWithTimeOp<S, SD>
+where
+  O: Observer<Vec<Item>, Err>,
+  S: Observable<Item, Err, RcBufferObserver<O, Item>>,
+  SD: Scheduler<RepeatTask<RcBufferObserver<O, Item>>>,
+{
+  type Unsub = ZipSubscription<TaskHandle<NormalReturn<()>>, S::Unsub>;
+
+  fn actual_subscribe(self, observer: O) -> Self::Unsub {
+    let Self { source, time, scheduler } = self;
+    let observer = BufferObserver { observer, data: vec![] };
+    let observer = MutArc::own(Some(observer));
+
+    let handler = scheduler
+      .schedule(RepeatTask::new(time, emit_buffer, observer.clone()), None);
+
+    let subscription = source.actual_subscribe(observer);
+    ZipSubscription::new(handler, subscription)
   }
+}
 
-  fn complete(&mut self) {
-    if !self.handler.is_closed() {
-      let buffer = std::mem::take(&mut *self.buffer.rc_deref_mut());
-      if !buffer.is_empty() {
-        self.observer.next(buffer);
-      }
-
-      self.handler.unsubscribe();
-      self.observer.complete();
-    }
-  }
+impl<Item, Err, S, SD> ObservableExt<Item, Err> for BufferWithTimeOp<S, SD> where
+  S: ObservableExt<Item, Err>
+{
 }
 
 #[derive(Clone)]
@@ -191,88 +168,68 @@ pub struct BufferWithCountOrTimerOp<Source, Scheduler> {
   pub(crate) scheduler: Scheduler,
 }
 
-impl<S: Observable, SD> Observable for BufferWithCountOrTimerOp<S, SD> {
-  type Item = Vec<S::Item>;
-  type Err = S::Err;
-}
+type RcBufferWitchCountObserver<O, Item> =
+  MutArc<Option<BufferWithCountObserver<O, Item>>>;
 
-impl_local_shared_both! {
-  impl<Source, SD> BufferWithCountOrTimerOp<Source, SD>;
-  type Unsub = TimeSubscription<@ctx::Rc<SpawnHandle>, Source::Unsub>;
-  macro method($self:ident, $observer: ident, $ctx: ident) {
-    let observer = new_buffer_time_observer!(
-      $observer,
-      $self.scheduler,
-      $self.time,
-      $ctx
-    );
-    let handler = observer.handler.clone();
-    let subscription = $self
-      .source
-      .actual_subscribe(BufferWithCountOrTimerObserver {
-        observer,
-        count: $self.count,
-      });
-      TimeSubscription{ handler, subscription }
-  }
-  where
-    @ctx::local_only('o: 'static,)
-    Source: @ctx::Observable,
-    // Source::Unsub: 'static,
-    Source::Item: @ctx::shared_only(Send + Sync +) 'static,
-    SD: @ctx::Scheduler + 'static,
-}
-
-#[derive(Clone)]
-pub struct BufferWithCountOrTimerObserver<O, B, U> {
-  observer: BufferWithTimeObserver<O, B, U>,
-  count: usize,
-}
-
-impl<O, B, U, Item> Observer for BufferWithCountOrTimerObserver<O, B, U>
+fn emit_count_buffer<O, Item, Err>(
+  observer: &mut RcBufferWitchCountObserver<O, Item>,
+  _seq: usize,
+) -> bool
 where
-  O: Observer<Item = Vec<Item>>,
-  B: RcDerefMut + 'static,
-  for<'r> B::Target<'r>: DerefMut<Target = O::Item>,
-  U: SubscriptionLike,
+  O: Observer<Vec<Item>, Err>,
 {
-  type Item = Item;
-  type Err = O::Err;
-
-  fn next(&mut self, value: Self::Item) {
-    if !self.observer.handler.is_closed() {
-      self.observer.next(value);
-
-      let mut rc_buffer = self.observer.buffer.rc_deref_mut();
-      if rc_buffer.len() >= self.count {
-        let buffer = std::mem::take(&mut *rc_buffer);
-        self.observer.observer.next(buffer);
-      }
+  if !observer.is_finished() {
+    if let Some(v) = observer.rc_deref_mut().as_mut() {
+      v.buffer.emit()
     }
+    true
+  } else {
+    false
   }
+}
 
-  #[inline]
-  fn error(&mut self, err: Self::Err) {
-    self.observer.error(err);
-  }
+impl<S, SD, Item, Err, O> Observable<Vec<Item>, Err, O>
+  for BufferWithCountOrTimerOp<S, SD>
+where
+  O: Observer<Vec<Item>, Err>,
+  S: Observable<Item, Err, RcBufferWitchCountObserver<O, Item>>,
+  SD: Scheduler<RepeatTask<RcBufferWitchCountObserver<O, Item>>>,
+{
+  type Unsub = ZipSubscription<TaskHandle<NormalReturn<()>>, S::Unsub>;
 
-  #[inline]
-  fn complete(&mut self) {
-    self.observer.complete()
+  fn actual_subscribe(self, observer: O) -> Self::Unsub {
+    let Self { source, time, scheduler, count } = self;
+
+    let observer = BufferWithCountObserver {
+      buffer: BufferObserver { observer, data: vec![] },
+      count,
+    };
+    let observer = MutArc::own(Some(observer));
+
+    let handler = scheduler.schedule(
+      RepeatTask::new(time, emit_count_buffer, observer.clone()),
+      None,
+    );
+
+    let subscription = source.actual_subscribe(observer);
+    ZipSubscription::new(handler, subscription)
   }
+}
+
+impl<Item, Err, S, SD> ObservableExt<Item, Err>
+  for BufferWithCountOrTimerOp<S, SD>
+where
+  S: ObservableExt<Item, Err>,
+{
 }
 
 #[cfg(test)]
 mod tests {
   use crate::prelude::*;
   use futures::executor::LocalPool;
-  #[cfg(not(target_arch = "wasm32"))]
-  use futures::executor::ThreadPool;
   use std::cell::RefCell;
   use std::rc::Rc;
   use std::sync::atomic::{AtomicBool, Ordering};
-  #[cfg(not(target_arch = "wasm32"))]
-  use std::sync::{Arc, Mutex};
   use std::time::Duration;
 
   #[test]
@@ -287,21 +244,6 @@ mod tests {
     assert_eq!(expected, actual);
   }
 
-  #[cfg(not(target_arch = "wasm32"))]
-  #[test]
-  fn it_shall_buffer_with_count_shared() {
-    let expected =
-      vec![vec![0, 1], vec![2, 3], vec![4, 5], vec![6, 7], vec![8, 9]];
-    let actual = Arc::new(Mutex::new(vec![]));
-    let actual_c = actual.clone();
-    observable::from_iter(0..10)
-      .buffer_with_count(2)
-      .into_shared()
-      .subscribe(move |vec| actual_c.lock().unwrap().push(vec));
-
-    assert_eq!(expected, *actual.lock().unwrap());
-  }
-
   #[test]
   fn it_shall_emit_buffer_on_completed() {
     let expected = vec![vec![0, 1], vec![2, 3], vec![4]];
@@ -310,7 +252,7 @@ mod tests {
     let is_completed = Rc::new(AtomicBool::new(false));
     let is_completed_c = is_completed.clone();
 
-    observable::create(|subscriber| {
+    observable::create(|mut subscriber: Subscriber<_>| {
       subscriber.next(0);
       subscriber.next(1);
       subscriber.next(2);
@@ -319,10 +261,8 @@ mod tests {
       subscriber.complete();
     })
     .buffer_with_count(2)
-    .subscribe_complete(
-      |vec| actual.push(vec),
-      move || is_completed_c.store(true, Ordering::Relaxed),
-    );
+    .on_complete(move || is_completed_c.store(true, Ordering::Relaxed))
+    .subscribe(|vec| actual.push(vec));
 
     assert_eq!(expected, actual);
     assert!(is_completed.load(Ordering::Relaxed));
@@ -334,7 +274,7 @@ mod tests {
     let mut actual = vec![];
     let mut err_called = false;
 
-    observable::create(|subscriber| {
+    observable::create(|mut subscriber: Subscriber<_>| {
       subscriber.next(0);
       subscriber.next(1);
       subscriber.next(2);
@@ -343,7 +283,8 @@ mod tests {
       subscriber.error(());
     })
     .buffer_with_count(2)
-    .subscribe_err(|vec| actual.push(vec), |_| err_called = true);
+    .on_error(|_| err_called = true)
+    .subscribe(|vec| actual.push(vec));
 
     assert_eq!(expected, actual);
     assert!(err_called);
@@ -371,7 +312,7 @@ mod tests {
   fn it_shall_not_block_with_error_on_time_local() {
     let mut local = LocalPool::new();
 
-    observable::create(|subscriber| {
+    observable::create(|mut subscriber: Subscriber<_>| {
       subscriber.next(0);
       subscriber.next(1);
       subscriber.next(2);
@@ -383,82 +324,6 @@ mod tests {
     // if this call blocks execution, the observer's handle has not been
     // unsubscribed
     local.run();
-  }
-
-  #[cfg(not(target_arch = "wasm32"))]
-  #[test]
-  fn it_shall_buffer_with_time_shared() {
-    let pool = ThreadPool::new().unwrap();
-
-    let expected = vec![vec![0, 1, 2], vec![3, 4, 5, 6]];
-    let actual = Arc::new(Mutex::new(vec![]));
-    let actual_c = actual.clone();
-
-    let is_completed = Arc::new(AtomicBool::new(false));
-    let is_completed_c = is_completed.clone();
-
-    observable::create(|subscriber| {
-      let sleep = Duration::from_millis(100);
-      subscriber.next(0);
-      subscriber.next(1);
-      subscriber.next(2);
-      std::thread::sleep(sleep);
-      subscriber.next(3);
-      subscriber.next(4);
-      subscriber.next(5);
-      subscriber.next(6);
-      subscriber.complete();
-    })
-    .buffer_with_time(Duration::from_millis(50), pool)
-    .into_shared()
-    .subscribe_blocking_all(
-      move |vec| {
-        let mut a = actual_c.lock().unwrap();
-        (*a).push(vec);
-      },
-      |()| {},
-      move || is_completed_c.store(true, Ordering::Relaxed),
-    );
-
-    assert_eq!(expected, *actual.lock().unwrap());
-    assert!(is_completed.load(Ordering::Relaxed));
-  }
-
-  #[cfg(not(target_arch = "wasm32"))]
-  #[test]
-  fn it_shall_not_emit_buffer_with_time_on_error() {
-    let pool = ThreadPool::new().unwrap();
-
-    let expected = vec![vec![0, 1, 2]];
-    let actual = Arc::new(Mutex::new(vec![]));
-    let actual_c = actual.clone();
-
-    let error_called = Arc::new(AtomicBool::new(false));
-    let error_called_c = error_called.clone();
-
-    observable::create(|subscriber| {
-      let sleep = Duration::from_millis(100);
-      subscriber.next(0);
-      subscriber.next(1);
-      subscriber.next(2);
-      std::thread::sleep(sleep);
-      subscriber.next(3);
-      subscriber.next(4);
-      subscriber.error(());
-    })
-    .buffer_with_time(Duration::from_millis(50), pool)
-    .into_shared()
-    .subscribe_blocking_all(
-      move |vec| {
-        let mut a = actual_c.lock().unwrap();
-        (*a).push(vec);
-      },
-      move |_| error_called_c.store(true, Ordering::Relaxed),
-      || {},
-    );
-
-    assert_eq!(expected, *actual.lock().unwrap());
-    assert!(error_called.load(Ordering::Relaxed));
   }
 
   #[test]
@@ -495,97 +360,19 @@ mod tests {
     let error_called = Rc::new(AtomicBool::new(false));
     let error_called_c = error_called.clone();
 
-    observable::create(|subscriber| {
+    observable::create(|mut subscriber: Subscriber<_>| {
       subscriber.next(0);
       subscriber.next(1);
       subscriber.next(2);
       subscriber.error(());
-      subscriber.next(3);
-      subscriber.next(4);
     })
     .buffer_with_count_and_time(2, Duration::from_millis(500), local.spawner())
-    .subscribe_err(
-      move |vec| actual_c.borrow_mut().push(vec),
-      move |_| error_called_c.store(true, Ordering::Relaxed),
-    );
+    .on_error(move |_| error_called_c.store(true, Ordering::Relaxed))
+    .subscribe(move |vec| actual_c.borrow_mut().push(vec));
 
     local.run();
 
     assert_eq!(expected, *actual.borrow());
-    assert!(error_called.load(Ordering::Relaxed));
-  }
-
-  #[cfg(not(target_arch = "wasm32"))]
-  #[test]
-  fn it_shall_buffer_with_count_or_time_shared() {
-    let pool = ThreadPool::new().unwrap();
-
-    let expected = vec![vec![0, 1], vec![2], vec![3, 4]];
-    let actual = Arc::new(Mutex::new(vec![]));
-    let actual_c = actual.clone();
-
-    let is_completed = Arc::new(AtomicBool::new(false));
-    let is_completed_c = is_completed.clone();
-
-    observable::create(|subscriber| {
-      let sleep = Duration::from_millis(100);
-      subscriber.next(0);
-      subscriber.next(1);
-      subscriber.next(2);
-      std::thread::sleep(sleep);
-      subscriber.next(3);
-      subscriber.next(4);
-      subscriber.complete();
-    })
-    .buffer_with_count_and_time(2, Duration::from_millis(50), pool)
-    .into_shared()
-    .subscribe_blocking_all(
-      move |vec| {
-        let mut a = actual_c.lock().unwrap();
-        (*a).push(vec);
-      },
-      |()| {},
-      move || is_completed_c.store(true, Ordering::Relaxed),
-    );
-
-    assert_eq!(expected, *actual.lock().unwrap());
-    assert!(is_completed.load(Ordering::Relaxed));
-  }
-
-  #[cfg(not(target_arch = "wasm32"))]
-  #[test]
-  fn it_shall_buffer_with_count_or_time_shared_on_error() {
-    let pool = ThreadPool::new().unwrap();
-
-    let expected = vec![vec![0, 1], vec![2]];
-    let actual = Arc::new(Mutex::new(vec![]));
-    let actual_c = actual.clone();
-
-    let error_called = Arc::new(AtomicBool::new(false));
-    let error_called_c = error_called.clone();
-
-    observable::create(|subscriber| {
-      let sleep = Duration::from_millis(100);
-      subscriber.next(0);
-      subscriber.next(1);
-      subscriber.next(2);
-      std::thread::sleep(sleep);
-      subscriber.next(3);
-      subscriber.error(());
-      subscriber.next(4);
-    })
-    .buffer_with_count_and_time(2, Duration::from_millis(50), pool)
-    .into_shared()
-    .subscribe_blocking_all(
-      move |vec| {
-        let mut a = actual_c.lock().unwrap();
-        (*a).push(vec);
-      },
-      move |_| error_called_c.store(true, Ordering::Relaxed),
-      || {},
-    );
-
-    assert_eq!(expected, *actual.lock().unwrap());
     assert!(error_called.load(Ordering::Relaxed));
   }
 }

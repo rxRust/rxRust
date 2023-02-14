@@ -1,4 +1,4 @@
-use crate::{impl_local_shared_both, prelude::*};
+use crate::prelude::*;
 use std::iter::{Repeat, Take};
 
 /// Creates an observable that produces values from an iterator.
@@ -38,23 +38,22 @@ where
 #[derive(Clone)]
 pub struct ObservableIter<Iter>(Iter);
 
-impl_local_shared_both! {
-  impl<Iter> ObservableIter<Iter>;
-  type Unsub = SingleSubscription;
-  macro method($self: ident, $observer: ident, $_: ident) {
-    $self.0.into_iter().for_each(|v| $observer.next(v));
-    $observer.complete();
-    SingleSubscription::default()
-  }
-  where Iter: IntoIterator,
-}
-
-impl<Iter> Observable for ObservableIter<Iter>
+impl<O, Iter> Observable<Iter::Item, (), O> for ObservableIter<Iter>
 where
   Iter: IntoIterator,
+  O: Observer<Iter::Item, ()>,
 {
-  type Item = Iter::Item;
-  type Err = ();
+  type Unsub = ();
+
+  fn actual_subscribe(self, mut observer: O) -> Self::Unsub {
+    self.0.into_iter().for_each(|v| observer.next(v));
+    observer.complete();
+  }
+}
+
+impl<Iter> ObservableExt<Iter::Item, ()> for ObservableIter<Iter> where
+  Iter: IntoIterator
+{
 }
 
 /// Creates an observable producing same value repeated N times.
@@ -96,7 +95,8 @@ mod test {
     let mut hit_count = 0;
     let mut completed = false;
     observable::from_iter(0..100)
-      .subscribe_complete(|_| hit_count += 1, || completed = true);
+      .on_complete(|| completed = true)
+      .subscribe(|_| hit_count += 1);
 
     assert_eq!(hit_count, 100);
     assert!(completed);
@@ -107,7 +107,8 @@ mod test {
     let mut hit_count = 0;
     let mut completed = false;
     observable::from_iter(vec![0; 100])
-      .subscribe_complete(|_| hit_count += 1, || completed = true);
+      .on_complete(|| completed = true)
+      .subscribe(|_| hit_count += 1);
 
     assert_eq!(hit_count, 100);
     assert!(completed);
@@ -117,13 +118,12 @@ mod test {
   fn repeat_three_times() {
     let mut hit_count = 0;
     let mut completed = false;
-    repeat(123, 5).subscribe_complete(
-      |v| {
+    repeat(123, 5)
+      .on_complete(|| completed = true)
+      .subscribe(|v| {
         hit_count += 1;
         assert_eq!(123, v);
-      },
-      || completed = true,
-    );
+      });
     assert_eq!(5, hit_count);
     assert!(completed);
   }
@@ -132,13 +132,12 @@ mod test {
   fn repeat_zero_times() {
     let mut hit_count = 0;
     let mut completed = false;
-    repeat(123, 0).subscribe_complete(
-      |v| {
+    repeat(123, 0)
+      .on_complete(|| completed = true)
+      .subscribe(|v| {
         hit_count += 1;
         assert_eq!(123, v);
-      },
-      || completed = true,
-    );
+      });
     assert_eq!(0, hit_count);
     assert!(completed);
   }

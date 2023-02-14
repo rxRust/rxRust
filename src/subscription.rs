@@ -1,100 +1,20 @@
-use crate::prelude::{MutArc, MutRc, RcDerefMut};
 use smallvec::SmallVec;
+
+use crate::rc::{MutArc, MutRc, RcDeref, RcDerefMut};
 
 /// Subscription returns from `Observable.subscribe(Subscriber)` to allow
 ///  unsubscribing.
-pub trait SubscriptionLike {
+pub trait Subscription {
   /// This allows deregistering an stream before it has finished receiving all
   /// events (i.e. before onCompleted is called).
-  fn unsubscribe(&mut self);
+  fn unsubscribe(self);
 
-  fn is_closed(&self) -> bool;
-}
-
-pub trait TearDownSize: SubscriptionLike {
-  fn teardown_size(&self) -> usize;
-}
-
-impl<S: SubscriptionLike + ?Sized> SubscriptionLike for Box<S> {
-  #[inline]
-  fn unsubscribe(&mut self) {
-    (**self).unsubscribe()
-  }
+  /// detect if the subscription already be unsubscribed.
   #[inline]
   fn is_closed(&self) -> bool {
-    (**self).is_closed()
-  }
-}
-
-pub type SharedSubscription =
-  MutArc<MultiSubscription<Box<dyn SubscriptionLike + Send + Sync>>>;
-pub type LocalSubscription =
-  MutRc<MultiSubscription<Box<dyn SubscriptionLike>>>;
-pub struct MultiSubscription<T> {
-  closed: bool,
-  teardown: SmallVec<[T; 1]>,
-}
-
-impl<T: SubscriptionLike> SubscriptionLike for MultiSubscription<T> {
-  #[inline(always)]
-  fn is_closed(&self) -> bool {
-    self.closed
+    false
   }
 
-  fn unsubscribe(&mut self) {
-    if !self.closed {
-      self.closed = true;
-      for v in &mut self.teardown {
-        v.unsubscribe();
-      }
-    }
-  }
-}
-
-impl<T: SubscriptionLike> MultiSubscription<T> {
-  pub fn add(&mut self, mut v: T) {
-    if self.closed {
-      v.unsubscribe();
-    } else {
-      self.teardown.retain(|v| !v.is_closed());
-      self.teardown.push(v);
-    }
-  }
-}
-
-impl LocalSubscription {
-  pub fn add<S: SubscriptionLike + 'static>(&self, s: S) {
-    self.rc_deref_mut().add(Box::new(s));
-  }
-}
-
-impl SharedSubscription {
-  pub fn add<S: SubscriptionLike + Send + Sync + 'static>(&self, s: S) {
-    self.rc_deref_mut().add(Box::new(s));
-  }
-}
-
-impl<T> Default for MultiSubscription<T> {
-  fn default() -> Self {
-    MultiSubscription {
-      closed: false,
-      teardown: SmallVec::new(),
-    }
-  }
-}
-
-impl<T: SubscriptionLike> TearDownSize for MultiSubscription<T> {
-  #[inline]
-  fn teardown_size(&self) -> usize {
-    self.teardown.len()
-  }
-}
-
-/// Wrapper around a subscription which provides the
-/// `unsubscribe_when_dropped()` method.
-pub struct SubscriptionWrapper<T: SubscriptionLike>(pub(crate) T);
-
-impl<T: SubscriptionLike> SubscriptionWrapper<T> {
   /// Activates "RAII" behavior for this subscription. That means
   /// `unsubscribe()` will be called automatically as soon as the returned
   /// value goes out of scope.
@@ -102,24 +22,11 @@ impl<T: SubscriptionLike> SubscriptionWrapper<T> {
   /// **Attention:** If you don't assign the return value to a variable,
   /// `unsubscribe()` is called immediately, which is probably not what you
   /// want!
-  pub fn unsubscribe_when_dropped(self) -> SubscriptionGuard<T> {
-    SubscriptionGuard(self.0)
-  }
-
-  /// Consumes this wrapper and returns the underlying subscription.
-  pub fn into_inner(self) -> T {
-    self.0
-  }
-}
-
-impl<T: SubscriptionLike> SubscriptionLike for SubscriptionWrapper<T> {
-  #[inline]
-  fn is_closed(&self) -> bool {
-    self.0.is_closed()
-  }
-  #[inline]
-  fn unsubscribe(&mut self) {
-    self.0.unsubscribe()
+  fn unsubscribe_when_dropped(self) -> SubscriptionGuard<Self>
+  where
+    Self: Sized,
+  {
+    SubscriptionGuard::new(self)
   }
 }
 
@@ -133,63 +40,177 @@ impl<T: SubscriptionLike> SubscriptionLike for SubscriptionWrapper<T> {
 /// attribute
 ///
 /// If you want to drop it immediately, wrap it in its own scope
-#[derive(Debug)]
 #[must_use]
-pub struct SubscriptionGuard<T: SubscriptionLike>(pub(crate) T);
+pub struct SubscriptionGuard<T: Subscription>(pub(crate) Option<T>);
 
-impl<T: SubscriptionLike> SubscriptionGuard<T> {
-  /// Wraps an existing subscription with a guard to enable RAII behavior for
-  /// it.
-  pub fn new(subscription: T) -> SubscriptionGuard<T> {
-    SubscriptionGuard(subscription)
+pub struct ZipSubscription<A, B> {
+  a: A,
+  b: B,
+}
+
+#[derive(Clone)]
+pub struct MultiSubscription<'a>(
+  MutRc<Option<SmallVec<[Option<BoxSubscription<'a>>; 1]>>>,
+);
+#[derive(Clone)]
+pub struct MultiSubscriptionThreads(
+  MutArc<Option<SmallVec<[Option<BoxSubscriptionThreads>; 1]>>>,
+);
+
+pub struct BoxSubscription<'a>(Box<dyn BoxSubscriptionInner + 'a>);
+pub struct BoxSubscriptionThreads(Box<dyn BoxSubscriptionInner + Send>);
+
+impl<A: Subscription, B: Subscription> ZipSubscription<A, B> {
+  #[inline]
+  pub fn new(a: A, b: B) -> Self {
+    ZipSubscription { a, b }
   }
 }
 
-impl<T: SubscriptionLike> Drop for SubscriptionGuard<T> {
-  #[inline]
-  fn drop(&mut self) {
-    self.0.unsubscribe()
+impl<U: Subscription, H: Subscription> Subscription for ZipSubscription<H, U> {
+  fn unsubscribe(self) {
+    self.a.unsubscribe();
+    self.b.unsubscribe();
+  }
+
+  fn is_closed(&self) -> bool {
+    self.b.is_closed()
   }
 }
 
-#[derive(Default, Clone)]
-pub struct SingleSubscription(bool);
+macro_rules! impl_multi_subscription {
+  ($ty:ty, $box_ty: ty $(,$lf: lifetime)?) => {
+    impl<$($lf)?> Subscription for $ty {
+      fn unsubscribe(self) {
+        let vec = self.0.rc_deref_mut().take();
+        if let Some(vec) = vec {
+          vec.into_iter().for_each(|u| {
+            if let Some(unsub) = u {
+              unsub.0.boxed_unsubscribe();
+            }
+          })
+        }
+      }
+    }
 
-impl SubscriptionLike for SingleSubscription {
+    impl<$($lf)?>  $ty {
+      pub fn teardown_size(&self) -> usize {
+        self.0.rc_deref_mut().as_mut().map_or(0, |vec| vec.len())
+      }
+      pub fn append(&mut self, v: $box_ty) {
+        if let Some(vec) = self.0.rc_deref_mut().as_mut() {
+          vec.push(Some(v));
+        }
+      }
+      pub fn retain(&mut self) {
+        if let Some(vec) = self.0.rc_deref_mut().as_mut() {
+          vec.retain(|v| v.is_some());
+        }
+      }
+    }
+  };
+}
+
+impl Subscription for () {
   #[inline]
-  fn unsubscribe(&mut self) {
-    self.0 = true;
-  }
+  fn unsubscribe(self) {}
 
   #[inline]
   fn is_closed(&self) -> bool {
-    self.0
+    true
   }
 }
 
-pub struct ProxySubscription<T: SubscriptionLike>(Option<T>);
+impl_multi_subscription!(MultiSubscription<'a>, BoxSubscription<'a>, 'a);
+impl_multi_subscription!(MultiSubscriptionThreads, BoxSubscriptionThreads);
 
-impl<T: SubscriptionLike> ProxySubscription<T> {
-  pub fn proxy(&mut self, proxy: T) -> Option<T> {
-    self.0.replace(proxy)
+impl<'a> Default for MultiSubscription<'a> {
+  fn default() -> Self {
+    Self(MutRc::own(Some(<_>::default())))
   }
 }
 
-impl<T: SubscriptionLike> SubscriptionLike for ProxySubscription<T> {
-  fn unsubscribe(&mut self) {
-    if let Some(s) = &mut self.0 {
-      s.unsubscribe()
+impl Default for MultiSubscriptionThreads {
+  fn default() -> Self {
+    Self(MutArc::own(Some(<_>::default())))
+  }
+}
+
+impl<T: Subscription> SubscriptionGuard<T> {
+  /// Wraps an existing subscription with a guard to enable RAII behavior for
+  /// it.
+  pub fn new(subscription: T) -> SubscriptionGuard<T> {
+    SubscriptionGuard(Some(subscription))
+  }
+}
+
+impl<T: Subscription> Drop for SubscriptionGuard<T> {
+  fn drop(&mut self) {
+    if let Some(u) = self.0.take() {
+      u.unsubscribe()
+    }
+  }
+}
+
+impl<T, S> Subscription for T
+where
+  T: RcDerefMut<Target = Option<S>> + RcDeref<Target = Option<S>>,
+  S: Subscription,
+{
+  #[inline]
+  fn unsubscribe(self) {
+    if let Some(u) = self.rc_deref_mut().take() {
+      u.unsubscribe()
     }
   }
 
   fn is_closed(&self) -> bool {
-    self.0.as_ref().map_or(false, |s| s.is_closed())
+    self.rc_deref().is_none()
+  }
+}
+trait BoxSubscriptionInner {
+  fn boxed_unsubscribe(self: Box<Self>);
+
+  fn boxed_is_closed(&self) -> bool;
+}
+
+impl<T: Subscription> BoxSubscriptionInner for T {
+  #[inline]
+  fn boxed_unsubscribe(self: Box<Self>) {
+    self.unsubscribe()
+  }
+
+  #[inline]
+  fn boxed_is_closed(&self) -> bool {
+    (*self).is_closed()
   }
 }
 
-impl<T: SubscriptionLike> Default for ProxySubscription<T> {
-  fn default() -> Self {
-    Self(Default::default())
+impl<'a> BoxSubscription<'a> {
+  #[inline]
+  pub fn new(subscription: impl Subscription + 'a) -> Self {
+    Self(Box::new(subscription))
+  }
+}
+
+impl BoxSubscriptionThreads {
+  #[inline]
+  pub fn new(subscription: impl Subscription + Send + 'static) -> Self {
+    Self(Box::new(subscription))
+  }
+}
+
+impl<'a> Subscription for BoxSubscription<'a> {
+  #[inline]
+  fn unsubscribe(self) {
+    self.0.boxed_unsubscribe()
+  }
+}
+
+impl Subscription for BoxSubscriptionThreads {
+  #[inline]
+  fn unsubscribe(self) {
+    self.0.boxed_unsubscribe()
   }
 }
 
@@ -199,29 +220,29 @@ mod test {
   use super::*;
   #[test]
   fn add_remove_for_local() {
-    let local = LocalSubscription::default();
-    let l1 = LocalSubscription::default();
-    let l2 = LocalSubscription::default();
-    let l3 = LocalSubscription::default();
-    local.add(l1);
+    let mut local = MultiSubscription::default();
+    let l1 = MultiSubscription::default();
+    let l2 = MultiSubscription::default();
+    let l3 = MultiSubscription::default();
+    local.append(BoxSubscription::new(l1));
     assert_eq!(local.teardown_size(), 1);
-    local.add(l2);
+    local.append(BoxSubscription::new(l2));
     assert_eq!(local.teardown_size(), 2);
-    local.add(l3);
+    local.append(BoxSubscription::new(l3));
     assert_eq!(local.teardown_size(), 3);
   }
 
   #[test]
   fn add_remove_for_shared() {
-    let shared = SharedSubscription::default();
-    let l1 = SharedSubscription::default();
-    let l2 = SharedSubscription::default();
-    let l3 = SharedSubscription::default();
-    shared.add(l1);
+    let mut shared = MultiSubscriptionThreads::default();
+    let l1 = MultiSubscriptionThreads::default();
+    let l2 = MultiSubscriptionThreads::default();
+    let l3 = MultiSubscriptionThreads::default();
+    shared.append(BoxSubscriptionThreads::new(l1));
     assert_eq!(shared.teardown_size(), 1);
-    shared.add(l2);
+    shared.append(BoxSubscriptionThreads::new(l2));
     assert_eq!(shared.teardown_size(), 2);
-    shared.add(l3);
+    shared.append(BoxSubscriptionThreads::new(l3));
     assert_eq!(shared.teardown_size(), 3);
   }
 }

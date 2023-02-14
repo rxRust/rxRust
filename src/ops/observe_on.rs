@@ -1,114 +1,122 @@
-#[cfg(not(all(target_arch = "wasm32")))]
-use crate::scheduler::SharedScheduler;
-use crate::{impl_helper::*, impl_local_shared_both, prelude::*};
+use crate::{
+  prelude::*,
+  rc::{MutArc, RcDerefMut},
+  scheduler::{NormalReturn, OnceTask, Scheduler},
+};
 #[derive(Clone)]
 pub struct ObserveOnOp<S, SD> {
   pub(crate) source: S,
   pub(crate) scheduler: SD,
 }
 
-impl<S: Observable, SD> Observable for ObserveOnOp<S, SD> {
-  type Item = S::Item;
-  type Err = S::Err;
-}
+impl<S, SD, Item, Err, O> Observable<Item, Err, O> for ObserveOnOp<S, SD>
+where
+  S: Observable<Item, Err, ObserveOnObserver<O, SD>>,
+  O: Observer<Item, Err>,
+  SD: Scheduler<OnceTask<(MutArc<Option<O>>, Item, RcHandler), NormalReturn<()>>>
+    + Scheduler<OnceTask<(MutArc<Option<O>>, Err, RcHandler), NormalReturn<()>>>
+    + Scheduler<OnceTask<(MutArc<Option<O>>, RcHandler), NormalReturn<()>>>,
+  S::Unsub: Send + 'static,
+{
+  type Unsub = MultiSubscriptionThreads;
 
-impl_local_shared_both! {
-  impl<S, SD> ObserveOnOp<S, SD>;
-  type Unsub = S::Unsub;
-  macro method($self: ident, $observer: ident, $ctx: ident) {
+  fn actual_subscribe(self, observer: O) -> Self::Unsub {
+    let mut unsub = MultiSubscriptionThreads::default();
     let observer = ObserveOnObserver {
-      observer: $ctx::Rc::own($observer),
-      scheduler: $self.scheduler,
-      subscription: $ctx::RcMultiSubscription::default(),
+      observer: MutArc::own(Some(observer)),
+      scheduler: self.scheduler,
+      subscription: unsub.clone(),
     };
-
-    $self.source.actual_subscribe(observer)
+    let u = self.source.actual_subscribe(observer);
+    unsub.append(BoxSubscriptionThreads::new(u));
+    unsub
   }
-  where
-    @ctx::local_only('o: 'static,)
-    @ctx::shared_only(
-      S::Item: Send + Sync +'static,
-      S::Err: Send + Sync + 'static,
-    )
-    SD: @ctx::Scheduler @ctx::shared_only(+ Send + Sync) + 'static,
-    S: @ctx::Observable
-
 }
 
-struct ObserveOnObserver<O, SD, S> {
-  observer: O,
+impl<S, SD, Item, Err> ObservableExt<Item, Err> for ObserveOnOp<S, SD> where
+  S: ObservableExt<Item, Err>
+{
+}
+
+pub struct ObserveOnObserver<O, SD> {
+  observer: MutArc<Option<O>>,
   scheduler: SD,
-  subscription: S,
+  subscription: MultiSubscriptionThreads,
 }
 
-macro_rules! impl_observer {
-  () => {
-    type Item = O::Item;
-    type Err = O::Err;
+type RcHandler = MutArc<Option<TaskHandle<NormalReturn<()>>>>;
+macro_rules! schedule_task {
+  ($this: ident, $task_fn: ident, $($args: expr),*) => {{
 
-    fn next(&mut self, value: Self::Item) {
-      self.observer_schedule(move |mut observer, v| observer.next(v), value)
+    if !$this.subscription.is_closed() {
+      let proxy_handler = MutArc::own(None);
+      let handler = $this
+        .scheduler
+        .schedule(OnceTask::new($task_fn, ($($args,)* proxy_handler.clone())), None);
+      *proxy_handler.rc_deref_mut() = Some(handler);
+      $this.subscription.append(BoxSubscriptionThreads::new(proxy_handler));
     }
-    fn error(&mut self, err: Self::Err) {
-      self.observer_schedule(|mut observer, v| observer.error(v), err)
-    }
-    fn complete(&mut self) {
-      self.observer_schedule(|mut observer, _| observer.complete(), ())
-    }
-  };
+
+  }};
 }
 
-#[cfg(not(all(target_arch = "wasm32")))]
-impl<O, SD> Observer for ObserveOnObserver<MutArc<O>, SD, SharedSubscription>
+impl<Item, Err, O, SD> Observer<Item, Err> for ObserveOnObserver<O, SD>
 where
-  O: Observer + Send + 'static,
-  O::Item: Send + 'static,
-  O::Err: Send + 'static,
-  SD: SharedScheduler,
+  O: Observer<Item, Err>,
+  SD: Scheduler<OnceTask<(MutArc<Option<O>>, Item, RcHandler), NormalReturn<()>>>
+    + Scheduler<OnceTask<(MutArc<Option<O>>, Err, RcHandler), NormalReturn<()>>>
+    + Scheduler<OnceTask<(MutArc<Option<O>>, RcHandler), NormalReturn<()>>>,
 {
-  impl_observer!();
+  fn next(&mut self, value: Item) {
+    schedule_task!(self, next_task, self.observer.clone(), value);
+  }
+
+  fn error(mut self, err: Err) {
+    schedule_task!(self, err_task, self.observer.clone(), err);
+  }
+
+  fn complete(mut self) {
+    schedule_task!(self, complete_task, self.observer.clone())
+  }
+
+  #[inline]
+  fn is_finished(&self) -> bool {
+    self.observer.is_finished()
+  }
 }
 
-impl<O, SD> Observer for ObserveOnObserver<MutRc<O>, SD, LocalSubscription>
+fn next_task<Item, Err, O>(
+  (mut observer, item, handler): (O, Item, RcHandler),
+) -> NormalReturn<()>
 where
-  O: Observer + 'static,
-  SD: LocalScheduler,
+  O: Observer<Item, Err>,
 {
-  impl_observer!();
+  handler.rc_deref_mut().take();
+  observer.next(item);
+  NormalReturn::new(())
 }
 
-macro_rules! impl_scheduler {
-  (
-    $scheduler_bound:ident,
-    $rc: ident,
-    $t_subscription: ty,
-    $($send: ident)?
-  ) => {
-    impl<O, SD> ObserveOnObserver<$rc<O>, SD, $t_subscription>
-    where
-      SD: $scheduler_bound,
-    {
-      fn observer_schedule<S, Task>(&mut self, task: Task, state: S)
-      where
-        S:$($send + )? 'static,
-        O:$($send + )? 'static,
-        Task: FnOnce($rc<O>, S) +$($send + )? 'static,
-      {
-        let subscription = self.scheduler.schedule(
-          |(observer, state)| task(observer, state),
-          None,
-          (self.observer.clone(), state),
-        );
-
-        self.subscription.add(subscription);
-      }
-    }
-  };
+fn err_task<Item, Err, O>(
+  (observer, err, handler): (O, Err, RcHandler),
+) -> NormalReturn<()>
+where
+  O: Observer<Item, Err>,
+{
+  handler.rc_deref_mut().take();
+  observer.error(err);
+  NormalReturn::new(())
 }
 
-#[cfg(not(all(target_arch = "wasm32")))]
-impl_scheduler!(SharedScheduler, MutArc, SharedSubscription, Send);
-impl_scheduler!(LocalScheduler, MutRc, LocalSubscription,);
+fn complete_task<Item, Err, O>(
+  (observer, handler): (O, RcHandler),
+) -> NormalReturn<()>
+where
+  O: Observer<Item, Err>,
+{
+  handler.rc_deref_mut().take();
+  observer.complete();
+  NormalReturn::new(())
+}
 
 #[cfg(test)]
 mod test {
@@ -144,6 +152,8 @@ mod test {
   #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn switch_thread() {
+    use crate::ops::complete_status::CompleteStatus;
+
     let id = thread::spawn(move || {}).thread().id();
     let changed_thread = Arc::new(AtomicBool::default());
     let c_changed_thread = changed_thread.clone();
@@ -153,21 +163,23 @@ mod test {
 
     let pool = ThreadPool::builder().pool_size(100).create().unwrap();
 
-    observable::create(|s| {
+    let (o, status) = observable::create(|mut p: SubscriberThreads<_>| {
       while !changed_thread.load(Ordering::Relaxed) {
-        s.next(());
+        p.next(());
         *emit_thread.lock().unwrap() = thread::current().id();
       }
-      s.complete();
+      p.complete();
     })
     .observe_on(pool)
-    .into_shared()
-    .subscribe_blocking(move |_v| {
+    .complete_status();
+    let _ = o.subscribe(move |_v| {
       let mut thread = observe_thread.lock().unwrap();
       thread.insert(thread::current().id());
 
       c_changed_thread.store(thread.len() > 1, Ordering::Relaxed);
     });
+
+    CompleteStatus::wait_for_end(status);
 
     let current_id = thread::current().id();
     assert_eq!(*emit_thread.lock().unwrap(), current_id);
@@ -182,10 +194,8 @@ mod test {
     let emitted = Arc::new(Mutex::new(vec![]));
     let c_emitted = emitted.clone();
     observable::from_iter(0..10)
-      .into_shared()
       .observe_on(scheduler.clone())
       .delay(Duration::from_millis(10), scheduler)
-      .into_shared()
       .subscribe(move |v| {
         emitted.lock().unwrap().push(v);
       })
@@ -193,6 +203,7 @@ mod test {
     std::thread::sleep(Duration::from_millis(20));
     assert_eq!(c_emitted.lock().unwrap().len(), 0);
   }
+
   #[test]
   fn bench() {
     do_bench();

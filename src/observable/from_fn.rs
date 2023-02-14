@@ -1,33 +1,62 @@
-use crate::{impl_local_shared_both, prelude::*};
+use crate::{prelude::*, subscriber::Subscriber};
 
-/// param `subscribe`: the function that is called when the Observable is
-/// initially subscribed to. This function is given a Subscriber, to which
+/// param `func`: the function that is called when the Observable is
+/// initially subscribed to. This function is given a `Observer`, to which
 /// new values can be `next`ed, or an `error` method can be called to raise
 /// an error, or `complete` can be called to notify of a successful
 /// completion.
-pub fn create<F, Item, Err>(subscribe: F) -> ObservableFn<F, Item, Err>
+pub fn create<F, Item, Err, P>(func: F) -> ObservableFn<F, P>
 where
-  F: FnOnce(&mut dyn Observer<Item = Item, Err = Err>),
+  F: FnOnce(P),
+  P: Observer<Item, Err> + Subscription,
 {
-  ObservableFn(subscribe, TypeHint::new())
+  ObservableFn { func, _hint: TypeHint::default() }
 }
 
-#[derive(Clone)]
-pub struct ObservableFn<F, Item, Err>(F, TypeHint<(Item, Err)>);
-
-impl<F, Item, Err> Observable for ObservableFn<F, Item, Err> {
-  type Item = Item;
-  type Err = Err;
+pub struct ObservableFn<F, P> {
+  func: F,
+  _hint: TypeHint<P>,
 }
 
-impl_local_shared_both! {
-  impl<F, Item, Err> ObservableFn<F, Item, Err>;
-  type Unsub = SingleSubscription;
-  macro method($self: ident, $observer: ident, $ctx: ident) {
-    ($self.0)(&mut $observer);
-    SingleSubscription::default()
+macro_rules! impl_observable {
+  ($subscriber:ident $($bounds: tt)*) => {
+    impl<F, Item, Err, O> Observable<Item, Err, O>
+      for ObservableFn<F, $subscriber<O>>
+    where
+      F: FnOnce($subscriber<O>),
+      O: Observer<Item, Err> $($bounds)*
+    {
+      type Unsub = $subscriber<O>;
+
+      fn actual_subscribe(self, observer: O) -> Self::Unsub {
+        let subscriber = $subscriber::new(Some(observer));
+        (self.func)(subscriber.clone());
+        subscriber
+      }
+    }
+
+    impl<F, Item, Err, O> ObservableExt<Item, Err>
+      for ObservableFn<F, $subscriber<O>>
+    where
+      F: FnOnce($subscriber<O>),
+      O: Observer<Item, Err>{}
+  };
+}
+
+impl_observable!(Subscriber);
+impl_observable!(SubscriberThreads + Send + 'static);
+
+impl<F, P> Clone for ObservableFn<F, P>
+where
+  F: Clone,
+{
+  #[inline]
+  fn clone(&self) -> Self {
+    Self {
+      func: self.func.clone(),
+      _hint: TypeHint::new(),
+    }
   }
-  where F: FnOnce(&mut dyn Observer<Item = Item, Err = Err>)
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -46,20 +75,15 @@ mod test {
     let c_err = err.clone();
     let c_complete = complete.clone();
 
-    observable::create(|subscriber| {
+    observable::create(|mut subscriber: Subscriber<_>| {
       subscriber.next(&1);
       subscriber.next(&2);
       subscriber.next(&3);
       subscriber.complete();
-      subscriber.next(&3);
-      subscriber.error("never dispatch error");
     })
-    .into_shared()
-    .subscribe_all(
-      move |_| *next.lock().unwrap() += 1,
-      move |_: &str| *err.lock().unwrap() += 1,
-      move || *complete.lock().unwrap() += 1,
-    );
+    .on_complete(move || *complete.lock().unwrap() += 1)
+    .on_error(move |_: &str| *err.lock().unwrap() += 1)
+    .subscribe(move |_| *next.lock().unwrap() += 1);
 
     assert_eq!(*c_next.lock().unwrap(), 3);
     assert_eq!(*c_complete.lock().unwrap(), 1);
@@ -67,7 +91,7 @@ mod test {
   }
   #[test]
   fn support_fork() {
-    let o = observable::create(|subscriber| {
+    let o = observable::create(|mut subscriber: Subscriber<_>| {
       subscriber.next(&1);
       subscriber.next(&2);
       subscriber.next(&3);
@@ -77,22 +101,15 @@ mod test {
     let sum2 = Arc::new(Mutex::new(0));
     let c_sum1 = sum1.clone();
     let c_sum2 = sum2.clone();
-    o.clone().subscribe(move |v| *sum1.lock().unwrap() += v);
-    o.clone().subscribe(move |v| *sum2.lock().unwrap() += v);
+    let u1: Box<dyn FnMut(&i32) + Send> =
+      Box::new(move |v| *sum1.lock().unwrap() += v);
+    let u2: Box<dyn FnMut(&i32) + Send> =
+      Box::new(move |v| *sum2.lock().unwrap() += v);
+    o.clone().subscribe(u1);
+    o.clone().subscribe(u2);
 
     assert_eq!(*c_sum1.lock().unwrap(), 10);
     assert_eq!(*c_sum2.lock().unwrap(), 10);
-  }
-
-  #[test]
-  fn fork_and_share() {
-    let observable = observable::create(|_| {});
-    observable.clone().into_shared().subscribe(|_: i32| {});
-    observable.clone().into_shared().subscribe(|_| {});
-
-    let observable = observable::create(|_| {}).into_shared();
-    observable.clone().subscribe(|_: i32| {});
-    observable.clone().subscribe(|_| {});
   }
 
   #[test]
