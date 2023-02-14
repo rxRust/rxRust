@@ -39,6 +39,7 @@ use crate::ops::finalize::FinalizeOpThreads;
 use crate::ops::future::{ObservableFuture, ObservableFutureObserver};
 use crate::ops::merge::MergeOpThreads;
 use crate::ops::merge_all::MergeAllOpThreads;
+use crate::ops::observe_on::ObserveOnOpThreads;
 use crate::ops::on_complete::OnCompleteOp;
 use crate::ops::ref_count::{ShareOp, ShareOpThreads};
 use crate::ops::sample::SampleOpThreads;
@@ -1271,6 +1272,15 @@ pub trait ObservableExt<Item, Err>: Sized {
   #[inline]
   fn observe_on<SD>(self, scheduler: SD) -> ObserveOnOp<Self, SD> {
     ObserveOnOp { source: self, scheduler }
+  }
+
+  /// A thread safe version of `observe_on`
+  #[inline]
+  fn observe_on_threads<SD>(
+    self,
+    scheduler: SD,
+  ) -> ObserveOnOpThreads<Self, SD> {
+    ObserveOnOpThreads { source: self, scheduler }
   }
 
   /// Emits a value from the source Observable only after a particular time span
