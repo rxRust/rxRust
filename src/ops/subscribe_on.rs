@@ -73,17 +73,18 @@ mod test {
   #[test]
   fn pool_unsubscribe() {
     let pool = ThreadPool::new().unwrap();
-    let emitted = Arc::new(Mutex::new(vec![]));
+    let emitted = Arc::new(Mutex::new(0));
     let c_emitted = emitted.clone();
     observable::from_iter(0..10)
       .delay_threads(Duration::from_millis(10), pool.clone())
       .subscribe_on(pool)
-      .subscribe(move |v| {
-        emitted.lock().unwrap().push(v);
+      .subscribe(move |_| {
+        eprintln!("accept value");
+        *emitted.lock().unwrap() += 1;
       })
       .unsubscribe();
     std::thread::sleep(Duration::from_millis(20));
-    assert_eq!(c_emitted.lock().unwrap().len(), 0);
+    assert_eq!(*c_emitted.lock().unwrap(), 0);
   }
 
   #[test]
