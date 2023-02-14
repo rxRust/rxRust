@@ -18,6 +18,8 @@ This is a big refactor for rxRust, almost reimplement everything and many api wa
 - **operator**: add `complete_status` operator to track the complete status of the observable, and can use to block the thread until the observable finished.
 - **operator**: add `to_future` operator to convert an observable into a `Future`.
 - **operator**: add `to_stream` operator to convert an observable into a `Stream`.
+- **operator**: add `collect` operator to collect all the items emitted into a collection.
+- **operator**: add `collect_into` operator to collect all the items emitted into a given collection.
 - **test**: reimplement the `FakeTimer` help us to control the timer when we write unit test.
 
 ### Bug Fixes

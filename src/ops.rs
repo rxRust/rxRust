@@ -1,5 +1,6 @@
 pub mod box_it;
 pub mod buffer;
+pub mod collect;
 pub mod combine_latest;
 pub mod complete_status;
 pub mod contains;
