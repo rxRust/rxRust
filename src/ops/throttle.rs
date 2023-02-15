@@ -59,7 +59,7 @@ where
       edge,
       duration_selector,
       trailing_value: MutArc::own(None),
-      task_handler: TaskHandle::value(NormalReturn::new(())),
+      task_handler: TaskHandle::value_handle(NormalReturn::new(())),
       scheduler,
     })
   }
