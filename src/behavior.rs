@@ -38,10 +38,7 @@ pub trait Behavior<Item, Err>: Observer<Item, Err> {
   /// // 2
   ///
   /// ```
-  fn next_by(
-    &mut self,
-    f: impl FnOnce(Item) -> Item,
-  ) {
+  fn next_by(&mut self, f: impl FnOnce(Item) -> Item) {
     let data = f(self.peek());
     self.next(data);
   }

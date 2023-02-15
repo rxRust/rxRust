@@ -13,6 +13,7 @@ This is a big refactor for rxRust, almost reimplement everything and many api wa
 ### Features
 
 - **subject**: add three subject `MutRefItemSubject`, `MutRefErrSubject`, `MutRefItemErrSubject` to support emit mut reference of value or error.
+- **observable**: add `Behavior` trait, implemented by `BehaviorSubject`, that provides peaking into the behaviour's contents and updating its value based on the previous one.   
 - **operator**: add `on_error` operator to process error.
 - **operator**: `on_complete` operator do some work when `Observer::complete` called.
 - **operator**: add `complete_status` operator to track the complete status of the observable, and can use to block the thread until the observable finished.
