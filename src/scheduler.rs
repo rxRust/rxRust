@@ -1,18 +1,22 @@
-use crate::prelude::*;
-use futures::{future::RemoteHandle, ready, FutureExt, Stream};
+use crate::{
+  prelude::*,
+  rc::{MutArc, RcDeref, RcDerefMut},
+};
+use futures::{future::CatchUnwind, ready, FutureExt, Stream};
 use pin_project_lite::pin_project;
 use std::{
-  cell::RefCell,
+  any::Any,
+  fmt,
   future::Future,
+  panic::{self, AssertUnwindSafe},
   pin::Pin,
-  task::{Context, Poll, RawWaker, RawWakerVTable, Waker},
+  task::{Context, Poll},
 };
 
-pub struct TaskHandle<T>(RefCell<Option<InnerHandle<T>>>);
-
-enum InnerHandle<T> {
-  Handle(RemoteHandle<T>),
-  Value(T),
+pub struct TaskHandle<T>(MutArc<HandleInfo<T>>);
+struct HandleInfo<T> {
+  keep_running: bool,
+  value: Option<Result<T, Box<dyn Any + Send>>>,
 }
 
 pub trait Scheduler<T>: Clone
@@ -153,12 +157,11 @@ impl<T: Subscription> SubscribeReturn<T> {
 }
 
 impl<T> TaskHandle<T> {
-  pub fn value(v: T) -> Self {
-    Self(RefCell::new(Some(InnerHandle::Value(v))))
-  }
-
-  fn remote_handle(handle: RemoteHandle<T>) -> Self {
-    Self(RefCell::new(Some(InnerHandle::Handle(handle))))
+  pub fn value_handle(v: T) -> Self {
+    Self(MutArc::own(HandleInfo {
+      keep_running: true,
+      value: Some(Ok(v)),
+    }))
   }
 }
 trait TaskReturn {}
@@ -169,17 +172,14 @@ impl<T> TaskReturn for NormalReturn<T> {}
 impl<T: 'static> Subscription for TaskHandle<NormalReturn<T>> {
   #[inline]
   fn unsubscribe(self) {
-    self.0.borrow_mut().take();
+    let mut inner = self.0.rc_deref_mut();
+    inner.keep_running = false;
+    inner.value.take();
   }
 
   #[inline]
   fn is_closed(&self) -> bool {
-    self.sync_remote();
-    self
-      .0
-      .borrow()
-      .as_ref()
-      .map_or(true, |h| matches!(h, InnerHandle::Value(_)))
+    self.0.rc_deref().value.is_some()
   }
 }
 
@@ -187,55 +187,73 @@ impl<T: Subscription + 'static> Subscription
   for TaskHandle<SubscribeReturn<T>>
 {
   fn unsubscribe(self) {
-    self.sync_remote();
-    if let Some(InnerHandle::Value(u)) = self.0.borrow_mut().take() {
-      u.0.unsubscribe()
+    let mut info = self.0.rc_deref_mut();
+    eprintln!("unsubscribe");
+    info.keep_running = false;
+    match info.value.take() {
+      Some(Ok(v)) => v.0.unsubscribe(),
+      Some(Err(e)) => panic::resume_unwind(e),
+      None => {}
     }
   }
 
   #[inline]
   fn is_closed(&self) -> bool {
-    self.sync_remote();
-
-    self.0.borrow().as_ref().map_or(true, |inner| match inner {
-      InnerHandle::Handle(_) => false,
-      InnerHandle::Value(u) => u.0.is_closed(),
-    })
-  }
-}
-
-impl<T: 'static> TaskHandle<T> {
-  fn sync_remote(&self) {
-    let inner = &mut *self.0.borrow_mut();
-
-    if let Some(InnerHandle::Handle(handler)) = inner {
-      let waker = unsafe { Waker::from_raw(MOCK_RAW_WAKER) };
-      let mut cx = Context::from_waker(&waker);
-      let future = Pin::new(handler);
-      if let Poll::Ready(value) = future.poll(&mut cx) {
-        *inner = Some(InnerHandle::Value(value));
-      }
+    let info = self.0.rc_deref();
+    match info.value.as_ref() {
+      Some(Ok(u)) => u.0.is_closed(),
+      _ => false,
     }
   }
 }
 
-const VTABLE: RawWakerVTable = RawWakerVTable::new(
-  |data: *const ()| RawWaker::new(data, &VTABLE),
-  |_data: *const ()| (),
-  |_data: *const ()| (),
-  |_data: *const ()| (),
-);
-
-const MOCK_RAW_WAKER: RawWaker =
-  RawWaker::new((&VTABLE as *const RawWakerVTable).cast(), &VTABLE);
-
-impl<T> Drop for TaskHandle<T> {
-  #[inline]
-  fn drop(&mut self) {
-    if let Some(InnerHandle::Handle(handle)) = self.0.borrow_mut().take() {
-      handle.forget()
-    }
+pin_project! {
+  /// A future which sends its output to the corresponding `RemoteHandle`.
+  /// Created by [`remote_handle`](crate::future::FutureExt::remote_handle).
+  #[cfg_attr(docsrs, doc(cfg(feature = "channel")))]
+  struct Remote<Fut: Future> {
+      handle_info: MutArc<HandleInfo<Fut::Output>>,
+      #[pin]
+      future: CatchUnwind<AssertUnwindSafe<Fut>>,
   }
+}
+
+impl<Fut: Future + fmt::Debug> fmt::Debug for Remote<Fut> {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    f.debug_tuple("Remote").field(&self.future).finish()
+  }
+}
+
+impl<Fut: Future> Future for Remote<Fut> {
+  type Output = ();
+
+  fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+    let this = self.project();
+
+    let mut info = this.handle_info.rc_deref_mut();
+    if !info.keep_running {
+      // Cancelled, bail out
+      return Poll::Ready(());
+    }
+    info.value = Some(ready!(this.future.poll(cx)));
+
+    Poll::Ready(())
+  }
+}
+
+fn remote_handle<Fut: Future>(
+  future: Fut,
+) -> (Remote<Fut>, TaskHandle<Fut::Output>) {
+  let handle =
+    TaskHandle(MutArc::own(HandleInfo { keep_running: true, value: None }));
+
+  // Unwind Safety: See the docs for RemoteHandle.
+  let wrapped = Remote {
+    future: AssertUnwindSafe(future).catch_unwind(),
+    handle_info: handle.0.clone(),
+  };
+
+  (wrapped, handle)
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -264,9 +282,9 @@ macro_rules! impl_scheduler_method {
         }
         task.await
       };
-      let (fut, handle) = fut.remote_handle();
+      let (fut, handle) = remote_handle(fut);
       $spawn_macro!(self, fut);
-      TaskHandle::remote_handle(handle)
+      handle
     }
   };
 }
@@ -382,7 +400,7 @@ mod test {
       let c_last = last.clone();
       let pool = ThreadPool::new().unwrap();
       let (o, status) = observable::from_iter(0..1000)
-        .observe_on(pool)
+        .observe_on_threads(pool)
         .complete_status();
       o.subscribe(move |v| *c_last.lock().unwrap() = v);
       CompleteStatus::wait_for_end(status);
@@ -427,7 +445,7 @@ mod test {
       let scheduler = local.handle().clone();
 
       let (o, status) = observable::from_iter(0..1000)
-        .observe_on(scheduler)
+        .observe_on_threads(scheduler)
         .complete_status();
       o.subscribe(move |v| *c_last.lock().unwrap() = v);
       CompleteStatus::wait_for_end(status);
@@ -450,7 +468,7 @@ mod test {
       let c_last = last.clone();
       let pool = runtime::Runtime::new().unwrap().handle().clone();
       let (o, status) = observable::from_iter(0..1000)
-        .observe_on(pool)
+        .observe_on_threads(pool)
         .complete_status();
       o.subscribe(move |v| *c_last.lock().unwrap() = v);
       CompleteStatus::wait_for_end(status);
