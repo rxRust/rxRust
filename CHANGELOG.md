@@ -13,7 +13,7 @@ This is a big refactor for rxRust, almost reimplement everything and many api wa
 ### Features
 
 - **subject**: add three subject `MutRefItemSubject`, `MutRefErrSubject`, `MutRefItemErrSubject` to support emit mut reference of value or error.
-- **observable**: add `Behavior` trait, implemented by `BehaviorSubject`, that provides peaking into the behaviour's contents and updating its value based on the previous one.   
+- **observable**: add `Behavior` trait, implemented by `BehaviorSubject`, that provides peaking into the behaviour's contents and updating its value based on the previous one.
 - **operator**: add `on_error` operator to process error.
 - **operator**: `on_complete` operator do some work when `Observer::complete` called.
 - **operator**: add `complete_status` operator to track the complete status of the observable, and can use to block the thread until the observable finished.
@@ -21,6 +21,8 @@ This is a big refactor for rxRust, almost reimplement everything and many api wa
 - **operator**: add `to_stream` operator to convert an observable into a `Stream`.
 - **operator**: add `collect` operator to collect all the items emitted into a collection.
 - **operator**: add `collect_into` operator to collect all the items emitted into a given collection.
+- **operator**: add `from_stream` converts an `Stream` into an `Observable`.
+- **operator**: add `from_stream_result` converts an `Stream<Result<Item, Err>` into a fallible `Observable`.
 - **test**: reimplement the `FakeTimer` help us to control the timer when we write unit test.
 
 ### Bug Fixes
@@ -29,6 +31,7 @@ This is a big refactor for rxRust, almost reimplement everything and many api wa
 - **operator**: `group_by` should not subscribe to value source anew on each new group
 - **operator**: `delay` operator not really delay the emission but on delay the init subscription.
 - **scheduler**: unsubscribe the handle of parallels scheduler not always cancel the remote task.
+
 ## [1.0.0-alpha.4](https://github.com/rxRust/rxRust/releases/tag/v1.0.0-alpha.4)
 
 ### Features

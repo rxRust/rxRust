@@ -1,4 +1,5 @@
 #![macro_use]
+
 mod trivial;
 use std::hash::*;
 use std::sync::Arc;
@@ -11,6 +12,11 @@ pub use of::{of, of_fn, of_option, of_result};
 
 pub(crate) mod from_future;
 pub use from_future::{from_future, from_future_result};
+
+pub(crate) mod from_stream;
+pub(crate) mod from_stream_result;
+pub use from_stream::from_stream;
+pub use from_stream_result::from_stream_result;
 
 pub mod interval;
 pub use interval::{interval, interval_at};
