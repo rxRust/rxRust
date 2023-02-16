@@ -32,6 +32,7 @@ pub use subscribe_item::*;
 mod defer;
 pub use defer::*;
 
+use crate::ops::collect::CollectOp;
 use crate::ops::combine_latest::CombineLatestOpThread;
 use crate::ops::complete_status::{CompleteStatus, StatusOp};
 use crate::ops::delay::{DelayOpThreads, DelaySubscriptionOp};
@@ -1682,6 +1683,60 @@ pub trait ObservableExt<Item, Err>: Sized {
   #[inline]
   fn complete_status(self) -> (StatusOp<Self>, Arc<CompleteStatus>) {
     ops::complete_status::complete_status(self)
+  }
+
+  /// Collects all the items emitted by the observable into a collection.
+  ///
+  /// # Example
+  /// ```
+  /// use rxrust::prelude::*;
+  ///
+  /// let mut subject = Subject::default();
+  /// subject.clone()
+  ///   .collect::<Vec<_>>()
+  ///   .subscribe(|values| {
+  ///     println!("{values:?}");
+  /// });
+  ///
+  /// subject.next(2);
+  /// subject.next(4);
+  /// subject.next(6);
+  ///
+  /// // prints: [2,4,6]
+  /// ```
+  #[inline]
+  fn collect<C>(self) -> CollectOp<Self, C>
+  where
+    C: IntoIterator + Extend<C::Item> + Default,
+  {
+    self.collect_into(C::default())
+  }
+
+  /// Collects all the items emitted by the observable into the given collection.
+  ///
+  /// # Example
+  /// ```
+  /// use rxrust::prelude::*;
+  ///
+  /// #[tokio::main]
+  /// async fn main() {
+  ///   let observable = observable::from_iter(['x', 'y', 'z']);
+  ///   let base = vec!['a', 'b', 'c'];
+  ///   let values = observable.collect_into::<Vec<_>>(base)
+  ///       .to_future()
+  ///       .await
+  ///       .unwrap()
+  ///       .ok();
+  ///
+  ///   assert_eq!(values, Some(vec!['a', 'b', 'c', 'x', 'y', 'z']));
+  /// }
+  /// ```
+  #[inline]
+  fn collect_into<C>(self, collection: C) -> CollectOp<Self, C>
+  where
+    C: IntoIterator + Extend<C::Item>,
+  {
+    CollectOp::new(self, collection)
   }
 
   /// Converts this observable into a `Future` that resolves to `Result<Result<Item, Err>, ObservableError>`.
