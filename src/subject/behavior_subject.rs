@@ -91,6 +91,16 @@ where
 {
 }
 
+impl<Item, Err, Subject> Behavior<Item, Err> for BehaviorSubject<Item, Subject>
+where
+  Subject: Observer<Item, Err>,
+  Item: Clone,
+{
+  fn peek(&self) -> Item {
+    self.value.clone()
+  }
+}
+
 #[cfg(test)]
 mod test {
   use crate::prelude::*;
