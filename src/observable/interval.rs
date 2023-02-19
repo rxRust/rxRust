@@ -2,7 +2,10 @@ use crate::{
   prelude::*,
   scheduler::{NormalReturn, RepeatTask, Scheduler, TaskHandle},
 };
-use std::time::{Duration, Instant};
+use std::{
+  convert::Infallible,
+  time::{Duration, Instant},
+};
 
 /// Creates an observable which will fire at `dur` time into the future,
 /// and will repeat every `dur` interval after.
@@ -33,9 +36,9 @@ pub struct IntervalObservable<S> {
   delay: Option<Duration>,
 }
 
-impl<S, O> Observable<usize, (), O> for IntervalObservable<S>
+impl<S, O> Observable<usize, Infallible, O> for IntervalObservable<S>
 where
-  O: Observer<usize, ()>,
+  O: Observer<usize, Infallible>,
   S: Scheduler<RepeatTask<O>>,
 {
   type Unsub = TaskHandle<NormalReturn<()>>;
@@ -46,11 +49,11 @@ where
   }
 }
 
-impl<S> ObservableExt<usize, ()> for IntervalObservable<S> {}
+impl<S> ObservableExt<usize, Infallible> for IntervalObservable<S> {}
 
 fn interval_task<O>(observer: &mut O, seq: usize) -> bool
 where
-  O: Observer<usize, ()>,
+  O: Observer<usize, Infallible>,
 {
   if !observer.is_finished() {
     observer.next(seq);

@@ -319,6 +319,7 @@ mod tests {
       subscriber.error(());
     })
     .buffer_with_time(Duration::from_millis(500), local.spawner())
+    .on_error(|_| {})
     .subscribe(|_| {});
 
     // if this call blocks execution, the observer's handle has not been

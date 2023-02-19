@@ -48,6 +48,7 @@ use crate::ops::merge::MergeOpThreads;
 use crate::ops::merge_all::MergeAllOpThreads;
 use crate::ops::observe_on::ObserveOnOpThreads;
 use crate::ops::on_complete::OnCompleteOp;
+use crate::ops::on_error::OnErrorOp;
 use crate::ops::ref_count::{ShareOp, ShareOpThreads};
 use crate::ops::sample::SampleOpThreads;
 use crate::ops::skip_until::SkipUntilOpThreads;
@@ -1666,11 +1667,11 @@ pub trait ObservableExt<Item, Err>: Sized {
   /// Process the error of the observable and the return observable can't catch the error any more.
   #[inline]
   #[must_use]
-  fn on_error<F>(self, f: F) -> OnErrorMapOp<Self, F, Err>
+  fn on_error<F>(self, f: F) -> OnErrorOp<Self, F, Err>
   where
-    F: FnMut(Err),
+    F: FnOnce(Err),
   {
-    OnErrorMapOp::new(self, f)
+    OnErrorOp::new(self, f)
   }
 
   #[inline]
