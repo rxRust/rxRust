@@ -2,7 +2,7 @@ use crate::{
   prelude::*,
   scheduler::{FutureTask, NormalReturn, Scheduler, TaskHandle},
 };
-use std::future::Future;
+use std::{convert::Infallible, future::Future};
 
 /// Converts a `Future` to an observable sequence. Even though if the future
 /// poll value has `Result::Err` type, also emit as a normal value, not trigger
@@ -35,11 +35,11 @@ pub struct FutureObservable<F, S> {
   scheduler: S,
 }
 
-impl<O, F, S> Observable<F::Output, (), O> for FutureObservable<F, S>
+impl<O, F, S> Observable<F::Output, Infallible, O> for FutureObservable<F, S>
 where
   F: Future,
   S: Scheduler<FutureTask<F, O, NormalReturn<()>>>,
-  O: Observer<F::Output, ()>,
+  O: Observer<F::Output, Infallible>,
 {
   type Unsub = TaskHandle<NormalReturn<()>>;
 
@@ -54,7 +54,7 @@ impl<F: Future, S> ObservableExt<F::Output, ()> for FutureObservable<F, S> {}
 
 fn item_task<Item, O>(item: Item, mut observer: O) -> NormalReturn<()>
 where
-  O: Observer<Item, ()>,
+  O: Observer<Item, Infallible>,
 {
   observer.next(item);
   observer.complete();

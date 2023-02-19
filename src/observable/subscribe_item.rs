@@ -1,3 +1,5 @@
+use std::convert::Infallible;
+
 use crate::prelude::*;
 
 #[derive(Clone)]
@@ -5,7 +7,7 @@ pub struct ObserverItem<N> {
   next: N,
 }
 
-impl<Item, N> Observer<Item, ()> for ObserverItem<N>
+impl<Item, N> Observer<Item, Infallible> for ObserverItem<N>
 where
   N: FnMut(Item),
 {
@@ -14,7 +16,7 @@ where
   }
 
   #[inline]
-  fn error(self, _err: ()) {}
+  fn error(self, _err: Infallible) {}
 
   #[inline]
   fn complete(self) {}
@@ -36,7 +38,7 @@ pub trait ObservableItem<Item, F> {
 
 impl<S, Item, F> ObservableItem<Item, F> for S
 where
-  S: Observable<Item, (), ObserverItem<F>>,
+  S: Observable<Item, Infallible, ObserverItem<F>>,
   F: FnMut(Item),
 {
   type Unsub = S::Unsub;

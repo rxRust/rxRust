@@ -1,3 +1,5 @@
+use std::convert::Infallible;
+
 use crate::prelude::*;
 
 /// Creates an observable producing a multiple values.
@@ -55,9 +57,9 @@ pub fn of<Item>(v: Item) -> OfObservable<Item> {
 #[derive(Clone)]
 pub struct OfObservable<Item>(pub(crate) Item);
 
-impl<Item, O> Observable<Item, (), O> for OfObservable<Item>
+impl<Item, O> Observable<Item, Infallible, O> for OfObservable<Item>
 where
-  O: Observer<Item, ()>,
+  O: Observer<Item, Infallible>,
 {
   type Unsub = ();
 
@@ -67,7 +69,7 @@ where
   }
 }
 
-impl<Item> ObservableExt<Item, ()> for OfObservable<Item> {}
+impl<Item> ObservableExt<Item, Infallible> for OfObservable<Item> {}
 /// Creates an observable that emits value or the error from a [`Result`] given.
 ///
 /// Completes immediately after.
@@ -144,9 +146,9 @@ pub fn of_option<Item>(o: Option<Item>) -> OptionObservable<Item> {
 #[derive(Clone)]
 pub struct OptionObservable<Item>(pub(crate) Option<Item>);
 
-impl<Item, O> Observable<Item, (), O> for OptionObservable<Item>
+impl<Item, O> Observable<Item, Infallible, O> for OptionObservable<Item>
 where
-  O: Observer<Item, ()>,
+  O: Observer<Item, Infallible>,
 {
   type Unsub = ();
 
@@ -158,7 +160,7 @@ where
   }
 }
 
-impl<Item> ObservableExt<Item, ()> for OptionObservable<Item> {}
+impl<Item> ObservableExt<Item, Infallible> for OptionObservable<Item> {}
 
 /// Creates an observable that emits the return value of a callable.
 ///
@@ -186,10 +188,10 @@ where
 #[derive(Clone)]
 pub struct CallableObservable<F>(pub(crate) F);
 
-impl<Item, F, O> Observable<Item, (), O> for CallableObservable<F>
+impl<Item, F, O> Observable<Item, Infallible, O> for CallableObservable<F>
 where
   F: FnOnce() -> Item,
-  O: Observer<Item, ()>,
+  O: Observer<Item, Infallible>,
 {
   type Unsub = ();
 
@@ -199,7 +201,7 @@ where
   }
 }
 
-impl<Item, F> ObservableExt<Item, ()> for CallableObservable<F> where
+impl<Item, F> ObservableExt<Item, Infallible> for CallableObservable<F> where
   F: FnOnce() -> Item
 {
 }

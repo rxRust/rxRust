@@ -300,7 +300,7 @@ mod test {
   fn mut_ref_item() {
     let mut value = 0;
     {
-      let mut subject = MutRefItemSubject::<'_, i32, ()>::default();
+      let mut subject = MutRefItemSubject::<'_, i32, _>::default();
       subject.clone().subscribe(
         (|v| {
           *v = 2;

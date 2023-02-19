@@ -5,6 +5,7 @@ use crate::{
 };
 use std::{
   collections::VecDeque,
+  convert::Infallible,
   time::{Duration, Instant},
 };
 
@@ -23,11 +24,11 @@ enum TimerObserver {
     at: Instant,
     seq: usize,
     duration: Duration,
-    task: Box<dyn Publisher<usize, ()>>,
+    task: Box<dyn Publisher<usize, Infallible>>,
   },
   Timer {
     at: Instant,
-    task: Box<dyn Publisher<Instant, ()>>,
+    task: Box<dyn Publisher<Instant, Infallible>>,
   },
 }
 
@@ -133,9 +134,9 @@ pub struct DelayObservable {
   timer: FakeClock,
 }
 
-impl<O> Observable<usize, (), O> for IntervalObservable
+impl<O> Observable<usize, Infallible, O> for IntervalObservable
 where
-  O: Observer<usize, ()> + 'static,
+  O: Observer<usize, Infallible> + 'static,
 {
   type Unsub = Subscriber<O>;
 
@@ -152,11 +153,11 @@ where
   }
 }
 
-impl ObservableExt<usize, ()> for IntervalObservable {}
+impl ObservableExt<usize, Infallible> for IntervalObservable {}
 
-impl<O> Observable<Instant, (), O> for DelayObservable
+impl<O> Observable<Instant, Infallible, O> for DelayObservable
 where
-  O: Observer<Instant, ()> + 'static,
+  O: Observer<Instant, Infallible> + 'static,
 {
   type Unsub = Subscriber<O>;
 
@@ -171,4 +172,4 @@ where
   }
 }
 
-impl ObservableExt<Instant, ()> for DelayObservable {}
+impl ObservableExt<Instant, Infallible> for DelayObservable {}

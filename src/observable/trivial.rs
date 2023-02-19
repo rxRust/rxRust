@@ -1,3 +1,5 @@
+use std::convert::Infallible;
+
 use crate::prelude::*;
 
 /// Creates an observable that emits no items, just terminates with an error.
@@ -46,9 +48,9 @@ pub fn empty<Item>() -> EmptyObservable<Item> {
 #[derive(Clone)]
 pub struct EmptyObservable<Item>(TypeHint<Item>);
 
-impl<Item, O> Observable<Item, (), O> for EmptyObservable<Item>
+impl<Item, O> Observable<Item, Infallible, O> for EmptyObservable<Item>
 where
-  O: Observer<Item, ()>,
+  O: Observer<Item, Infallible>,
 {
   type Unsub = ();
 
@@ -57,7 +59,7 @@ where
   }
 }
 
-impl<Item> ObservableExt<Item, ()> for EmptyObservable<Item> {}
+impl<Item> ObservableExt<Item, Infallible> for EmptyObservable<Item> {}
 /// Creates an observable that never emits anything.
 ///
 /// Neither emits a value, nor completes, nor emits an error.
@@ -69,9 +71,9 @@ pub fn never() -> NeverObservable {
 #[derive(Clone)]
 pub struct NeverObservable;
 
-impl<O> Observable<(), (), O> for NeverObservable
+impl<O> Observable<(), Infallible, O> for NeverObservable
 where
-  O: Observer<(), ()>,
+  O: Observer<(), Infallible>,
 {
   type Unsub = ();
 
@@ -80,7 +82,7 @@ where
   }
 }
 
-impl ObservableExt<(), ()> for NeverObservable {}
+impl ObservableExt<(), Infallible> for NeverObservable {}
 #[cfg(test)]
 mod test {
   use crate::prelude::*;

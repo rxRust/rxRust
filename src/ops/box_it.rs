@@ -11,7 +11,7 @@ pub trait BoxIt<O>: Sized {
   /// ```
   /// use rxrust::{prelude::*, ops::box_it::BoxOp};
   ///
-  /// let mut boxed: BoxOp<'_, i32, ()> = observable::of(1)
+  /// let mut boxed: BoxOp<'_, i32, _> = observable::of(1)
   ///   .map(|v| v).box_it();
   ///
   /// // BoxOp can box any observable type
@@ -176,7 +176,7 @@ mod test {
   #[test]
   fn box_observable() {
     let mut test = 0;
-    let mut boxed: BoxOp<'_, i32, ()> = observable::of(100).box_it();
+    let mut boxed: BoxOp<'_, i32, _> = observable::of(100).box_it();
     boxed.subscribe(|v| test = v);
 
     boxed = observable::empty().box_it();
@@ -186,7 +186,7 @@ mod test {
 
   #[test]
   fn shared_box_observable() {
-    let mut boxed: BoxOpThreads<i32, ()> = observable::of(100).box_it();
+    let mut boxed: BoxOpThreads<i32, _> = observable::of(100).box_it();
     boxed.subscribe(|_| {});
 
     boxed = observable::empty().box_it();

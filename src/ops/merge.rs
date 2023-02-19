@@ -100,7 +100,10 @@ pub struct MergeObserver<O> {
 
 #[cfg(test)]
 mod test {
-  use crate::prelude::*;
+  use crate::{
+    prelude::*,
+    rc::{MutArc, RcDeref, RcDerefMut},
+  };
   use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc, Mutex,
@@ -206,11 +209,19 @@ mod test {
     let o = observable::create(|mut s: Subscriber<_>| {
       s.next(1);
       s.next(2);
-      s.error(());
     });
 
     let m = o.clone().merge(o);
-    m.clone().merge(m).subscribe(|_| {});
+    let values = MutArc::own(vec![]);
+
+    {
+      let values = values.clone();
+      m.clone().merge(m).subscribe(|x| {
+        values.rc_deref_mut().push(x);
+      });
+    }
+
+    assert_eq!(values.rc_deref().clone(), vec![1, 2, 1, 2, 1, 2, 1, 2]);
   }
 
   #[test]

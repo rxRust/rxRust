@@ -20,6 +20,7 @@ pub mod merge;
 pub mod merge_all;
 pub mod observe_on;
 pub mod on_complete;
+pub mod on_error;
 pub mod on_error_map;
 pub mod pairwise;
 pub mod ref_count;

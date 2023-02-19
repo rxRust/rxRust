@@ -1,5 +1,8 @@
 use crate::prelude::*;
-use std::iter::{Repeat, Take};
+use std::{
+  convert::Infallible,
+  iter::{Repeat, Take},
+};
 
 /// Creates an observable that produces values from an iterator.
 ///
@@ -38,10 +41,10 @@ where
 #[derive(Clone)]
 pub struct ObservableIter<Iter>(Iter);
 
-impl<O, Iter> Observable<Iter::Item, (), O> for ObservableIter<Iter>
+impl<O, Iter> Observable<Iter::Item, Infallible, O> for ObservableIter<Iter>
 where
   Iter: IntoIterator,
-  O: Observer<Iter::Item, ()>,
+  O: Observer<Iter::Item, Infallible>,
 {
   type Unsub = ();
 
@@ -51,7 +54,7 @@ where
   }
 }
 
-impl<Iter> ObservableExt<Iter::Item, ()> for ObservableIter<Iter> where
+impl<Iter> ObservableExt<Iter::Item, Infallible> for ObservableIter<Iter> where
   Iter: IntoIterator
 {
 }

@@ -118,7 +118,7 @@ mod test {
       publisher.next("Hello");
       publisher.error("World");
     })
-    .on_error_map(|_| ())
+    .on_error(|_| ())
     .subscribe(|_| {});
   }
 

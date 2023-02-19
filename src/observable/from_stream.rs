@@ -1,6 +1,7 @@
 use futures::{ready, Future, Stream};
 use pin_project_lite::pin_project;
 use std::{
+  convert::Infallible,
   pin::Pin,
   task::{Context, Poll},
 };
@@ -55,10 +56,10 @@ pub struct StreamObservable<S, SD> {
   scheduler: SD,
 }
 
-impl<O, S, SD> Observable<S::Item, (), O> for StreamObservable<S, SD>
+impl<O, S, SD> Observable<S::Item, Infallible, O> for StreamObservable<S, SD>
 where
   S: Stream,
-  O: Observer<S::Item, ()>,
+  O: Observer<S::Item, Infallible>,
   SD: Scheduler<StreamObserverFuture<S, O>>,
 {
   type Unsub = TaskHandle<NormalReturn<()>>;
@@ -70,7 +71,7 @@ where
   }
 }
 
-impl<S, SD> ObservableExt<S::Item, ()> for StreamObservable<S, SD> where
+impl<S, SD> ObservableExt<S::Item, Infallible> for StreamObservable<S, SD> where
   S: Stream
 {
 }
@@ -86,7 +87,7 @@ pin_project! {
 impl<S, O> Future for StreamObserverFuture<S, O>
 where
   S: Stream,
-  O: Observer<S::Item, ()>,
+  O: Observer<S::Item, Infallible>,
 {
   type Output = NormalReturn<()>;
 

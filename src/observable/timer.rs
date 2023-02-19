@@ -2,7 +2,10 @@ use crate::{
   prelude::*,
   scheduler::{NormalReturn, OnceTask, Scheduler, TaskHandle},
 };
-use std::time::{Duration, Instant};
+use std::{
+  convert::Infallible,
+  time::{Duration, Instant},
+};
 
 // Returns an observable which will emit a single `item`
 // once after a given `dur` using a given `scheduler`
@@ -57,9 +60,9 @@ where
   NormalReturn::new(())
 }
 
-impl<Item, O, S> Observable<Item, (), O> for TimerObservable<Item, S>
+impl<Item, O, S> Observable<Item, Infallible, O> for TimerObservable<Item, S>
 where
-  O: Observer<Item, ()>,
+  O: Observer<Item, Infallible>,
   S: Scheduler<OnceTask<(O, Item), NormalReturn<()>>>,
 {
   type Unsub = TaskHandle<NormalReturn<()>>;
@@ -71,7 +74,7 @@ where
   }
 }
 
-impl<Item, S> ObservableExt<Item, ()> for TimerObservable<Item, S> {}
+impl<Item, S> ObservableExt<Item, Infallible> for TimerObservable<Item, S> {}
 
 #[cfg(test)]
 mod tests {
