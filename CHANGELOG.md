@@ -9,6 +9,7 @@ This is a big refactor for rxRust, almost reimplement everything and many api wa
 - `LocalScheduler` and `SharedScheduler` has been removed, use `Scheduler` instead.
 - `Item` `Err` in `Observer` use generic type instead of associated type.
 - `SubscriptionLike` rename to `Subscription`.
+- removed usage of `()` unit for error that can not happen for `Infallible`
 
 ### Features
 
