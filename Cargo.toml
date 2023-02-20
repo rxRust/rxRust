@@ -45,12 +45,22 @@ float-cmp = "0.9.0"
 wasm-bindgen-test = "0.3.29"
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
-tokio = { version = "1.0", features = ["rt", "macros"] }
+tokio = {version = "1.0", features = ["rt", "macros"]}
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
-tokio = { version = "1.0", features = [
-    "rt",
-    "macros",
-    "time",
-    "rt-multi-thread",
-] }
+tokio = {version = "1.0", features = [
+  "rt",
+  "macros",
+  "time",
+  "rt-multi-thread",
+]}
+
+[package.metadata.release]
+pre-release-replacements = [
+  {file = "README.md", search = "rxrust = .*", replace = "{{crate_name}} = \"{{version}}\""},
+  {file = "CHANGELOG.md", search = "Unreleased", replace = "{{version}}"},
+  {file = "CHANGELOG.md", search = "\\.\\.\\.HEAD", replace = "...{{tag_name}}", exactly = 1},
+  {file = "CHANGELOG.md", search = "ReleaseDate", replace = "{{date}}"},
+  {file = "CHANGELOG.md", search = "<!-- next-header -->", replace = "<!-- next-header -->\n\n## [Unreleased] - ReleaseDate", exactly = 1},
+  {file = "CHANGELOG.md", search = "<!-- next-url -->", replace = "<!-- next-url -->\n[Unreleased]: https://github.com/rxRust/rxRust/compare/{{tag_name}}...HEAD", exactly = 1},
+]
