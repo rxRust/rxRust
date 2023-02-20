@@ -10,7 +10,7 @@ license = "MIT"
 name = "rxrust"
 readme = "README.md"
 repository = "https://github.com/rxRust/rxRust"
-version = "1.0.0-alpha.4"
+version = "1.0.0-beta.1"
 
 [dependencies]
 pin-project-lite = "0.2.9"
