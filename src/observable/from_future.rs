@@ -50,7 +50,10 @@ where
   }
 }
 
-impl<F: Future, S> ObservableExt<F::Output, ()> for FutureObservable<F, S> {}
+impl<F: Future, S> ObservableExt<F::Output, Infallible>
+  for FutureObservable<F, S>
+{
+}
 
 fn item_task<Item, O>(item: Item, mut observer: O) -> NormalReturn<()>
 where
