@@ -56,7 +56,7 @@ If you want share the same observable, you can use `Subject`.
 ## Scheduler
 
 `rxrust` use the runtime of the `Future` as the scheduler, `LocalPool` and `ThreadPool` in `futures::executor` can be used as schedulers directly, and `tokio::runtime::Runtime` also supported, but need enable the feature `futures-scheduler`. Across `Scheduler`  to implement custom `Scheduler`.
-
+Some Observable Ops (such as delay, debounce) need the ability to delay, futures-time supports this ability when set with `timer` feature, but you can also customize it by setting the new_timer function to NEW_TIMER_FN variant and removing the `timer` feature.
 ```rust 
 use rxrust::prelude::*;
 

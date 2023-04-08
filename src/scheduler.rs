@@ -2,16 +2,47 @@ use crate::{
   prelude::*,
   rc::{MutArc, RcDeref, RcDerefMut},
 };
-use futures::{future::CatchUnwind, ready, FutureExt, Stream};
+use futures::{future::CatchUnwind, ready, FutureExt};
 use pin_project_lite::pin_project;
+use std::time::Duration;
 use std::{
   any::Any,
   fmt,
   future::Future,
+  mem::swap,
   panic::{self, AssertUnwindSafe},
   pin::Pin,
   task::{Context, Poll},
+  time::Instant,
 };
+
+#[cfg(not(target_arch = "wasm32"))]
+pub type BoxFuture<'a, T> = futures::future::BoxFuture<'a, T>;
+#[cfg(target_arch = "wasm32")]
+pub type BoxFuture<'a, T> = futures::future::LocalBoxFuture<'a, T>;
+
+#[cfg(not(feature = "timer"))]
+pub static mut NEW_TIMER_FN: Option<fn(Duration) -> BoxFuture<'static, ()>> =
+  None;
+#[cfg(feature = "timer")]
+pub static mut NEW_TIMER_FN: Option<fn(Duration) -> BoxFuture<'static, ()>> =
+  Some(new_timer_fn);
+
+#[cfg(feature = "timer")]
+fn new_timer_fn(dur: Duration) -> BoxFuture<'static, ()> {
+  #[cfg(not(target_arch = "wasm32"))]
+  use futures_time::task::sleep;
+  #[cfg(target_arch = "wasm32")]
+  use gloo_timers::future::sleep;
+
+  Box::pin(sleep(dur.into()).map(|_| ()))
+}
+
+fn new_timer(dur: Duration) -> BoxFuture<'static, ()> {
+  unsafe {
+    NEW_TIMER_FN.expect("you can use with defalut timer with feature timer, or set your timer creat func to new_timer_fn")(dur)
+  }
+}
 
 pub struct TaskHandle<T>(MutArc<HandleInfo<T>>);
 struct HandleInfo<T> {
@@ -46,15 +77,11 @@ pin_project! {
   }
 }
 
-#[cfg(target_arch = "wasm32")]
-type Interval = gloo_timers::future::IntervalStream;
-#[cfg(not(target_arch = "wasm32"))]
-type Interval = futures_time::stream::Interval;
-
 pin_project! {
   pub struct RepeatTask<Args> {
-    #[pin]
-    interval: Interval,
+    fur: BoxFuture<'static, ()>,
+    interval: Duration,
+    next: Instant,
     // the task to do and return if you want the task continue repeat.
     task: fn(&mut Args, usize)-> bool,
     args: Args,
@@ -92,16 +119,26 @@ impl<Args> Future for RepeatTask<Args> {
     mut self: Pin<&mut Self>,
     cx: &mut Context<'_>,
   ) -> Poll<Self::Output> {
-    let mut this = self.as_mut().project();
-
     loop {
-      let instant = ready!(this.interval.as_mut().poll_next(cx));
-      match instant {
-        Some(_) if (*this.task)(this.args, *this.seq) => {
+      ready!(self.fur.poll_unpin(cx));
+      {
+        let this = self.as_mut().project();
+        if (*this.task)(this.args, *this.seq) {
           *this.seq += 1;
+        } else {
+          return Poll::Ready(NormalReturn::new(()));
         }
-        _ => return Poll::Ready(NormalReturn::new(())),
       }
+
+      let now = Instant::now();
+      let interval_f32 = self.interval.as_secs_f32();
+      let dur_f32 = (now - self.next).as_secs_f32();
+      let dur =
+        Duration::from_secs_f32((dur_f32 / interval_f32).ceil() * interval_f32);
+      let mut next = now + dur;
+      let mut fur = new_timer(dur);
+      swap(&mut self.fur, &mut fur);
+      swap(&mut self.next, &mut next);
     }
   }
 }
@@ -130,12 +167,14 @@ impl<Args> RepeatTask<Args> {
     task: fn(&mut Args, usize) -> bool,
     args: Args,
   ) -> Self {
-    #[cfg(target_arch = "wasm32")]
-    let interval = Interval::new(dur.as_millis() as u32);
-    #[cfg(not(target_arch = "wasm32"))]
-    let interval = futures_time::stream::interval(dur.into());
-
-    Self { interval, task, args, seq: 0 }
+    Self {
+      fur: new_timer(dur),
+      interval: dur,
+      next: Instant::now() + dur,
+      task,
+      args,
+      seq: 0,
+    }
   }
 }
 
@@ -277,8 +316,7 @@ macro_rules! impl_scheduler_method {
     ) -> TaskHandle<T::Output> {
       let fut = async move {
         if let Some(dur) = delay {
-          let dur: Duration = dur.into();
-          sleep(dur.into()).await;
+          new_timer(dur).await;
         }
         task.await
       };
@@ -300,8 +338,6 @@ macro_rules! futures_local_spawn {
 mod wasm_scheduler {
   use super::*;
   use futures::task::LocalSpawnExt;
-  use gloo_timers::future::sleep;
-  use std::time::Duration;
 
   macro_rules! wasm_bindgen_spawn {
     ($pool: ident, $future: ident) => {
@@ -330,7 +366,6 @@ mod wasm_scheduler {
 #[cfg(not(target_arch = "wasm32"))]
 mod not_wasm_scheduler {
   use super::*;
-  use futures_time::{task::sleep, time::Duration};
 
   #[cfg(feature = "futures-scheduler")]
   mod futures_scheduler {
