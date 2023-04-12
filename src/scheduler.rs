@@ -21,15 +21,8 @@ pub type BoxFuture<'a, T> = futures::future::BoxFuture<'a, T>;
 #[cfg(target_arch = "wasm32")]
 pub type BoxFuture<'a, T> = futures::future::LocalBoxFuture<'a, T>;
 
-#[cfg(not(feature = "timer"))]
-pub static mut NEW_TIMER_FN: Option<fn(Duration) -> BoxFuture<'static, ()>> =
-  None;
 #[cfg(feature = "timer")]
-pub static mut NEW_TIMER_FN: Option<fn(Duration) -> BoxFuture<'static, ()>> =
-  Some(new_timer_fn);
-
-#[cfg(feature = "timer")]
-fn new_timer_fn(dur: Duration) -> BoxFuture<'static, ()> {
+fn new_timer(dur: Duration) -> BoxFuture<'static, ()> {
   #[cfg(not(target_arch = "wasm32"))]
   use futures_time::task::sleep;
   #[cfg(target_arch = "wasm32")]
@@ -38,10 +31,15 @@ fn new_timer_fn(dur: Duration) -> BoxFuture<'static, ()> {
   Box::pin(sleep(dur.into()).map(|_| ()))
 }
 
+#[cfg(not(feature = "timer"))]
+pub static NEW_TIMER_FN: once_cell::sync::OnceCell<
+  fn(Duration) -> BoxFuture<'static, ()>,
+> = once_cell::sync::OnceCell::new();
+#[cfg(not(feature = "timer"))]
 fn new_timer(dur: Duration) -> BoxFuture<'static, ()> {
-  unsafe {
-    NEW_TIMER_FN.expect("you can use with defalut timer with feature timer, or set your timer creat func to new_timer_fn")(dur)
-  }
+  NEW_TIMER_FN
+    .get()
+    .expect("you can use with defalut timer with feature timer, or set your timer creat func to new_timer_fn")(dur)
 }
 
 pub struct TaskHandle<T>(MutArc<HandleInfo<T>>);
