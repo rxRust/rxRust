@@ -155,7 +155,7 @@ where
   }
 }
 
-impl<Item, Err, S, SD> ObservableExt<Item, Err> for BufferWithTimeOp<S, SD> where
+impl<Item, Err, S, SD> ObservableExt<Vec<Item>, Err> for BufferWithTimeOp<S, SD> where
   S: ObservableExt<Item, Err>
 {
 }
@@ -216,7 +216,7 @@ where
   }
 }
 
-impl<Item, Err, S, SD> ObservableExt<Item, Err>
+impl<Item, Err, S, SD> ObservableExt<Vec<Item>, Err>
   for BufferWithCountOrTimerOp<S, SD>
 where
   S: ObservableExt<Item, Err>,
@@ -325,6 +325,25 @@ mod tests {
     // if this call blocks execution, the observer's handle has not been
     // unsubscribed
     local.run();
+  }
+
+  #[test]
+  fn it_shall_buffer_with_time_with_observable_ext() {
+    let mut local = LocalPool::new();
+
+    let expected = vec![vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9]];
+    let actual = Rc::new(RefCell::new(vec![]));
+    let actual_c = actual.clone();
+
+    observable::from_iter(0..10)
+      .buffer_with_time(Duration::from_millis(500), local.spawner())
+      .filter(move |_vec: &Vec<i32>| true)
+      .subscribe(move |vec| actual_c.borrow_mut().push(vec));
+
+    local.run();
+
+    // this can't be really tested as local scheduler runs on a single thread
+    assert_eq!(expected, *actual.borrow());
   }
 
   #[test]

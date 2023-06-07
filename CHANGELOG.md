@@ -33,6 +33,7 @@ This is a big refactor for rxRust, almost reimplement everything and many api wa
 - **operator**: `distinct_until_changed` only require the value implement `PartialEq` not `Eq`.
 - **operator**: `group_by` should not subscribe to value source anew on each new group
 - **operator**: `delay` operator not really delay the emission but on delay the init subscription.
+- **operator**: `buffer_with_time`, `buffer_with_count_and_time` now return the correct item type.
 - **scheduler**: unsubscribe the handle of parallels scheduler not always cancel the remote task.
 
 ## [1.0.0-alpha.4](https://github.com/rxRust/rxRust/releases/tag/v1.0.0-alpha.4)
