@@ -106,7 +106,6 @@ mod tests {
   #[test]
   fn smoke_last() {
     let x = MutRc::own(vec![]);
-    let x_c = x.clone();
     let mut pool = LocalPool::new();
     let interval =
       observable::interval(Duration::from_millis(2), pool.spawner());
@@ -122,13 +121,12 @@ mod tests {
     let sub = debounce_subscribe();
     pool.run();
     sub.unsubscribe();
-    assert_eq!(&*x_c.rc_deref(), &[9]);
+    assert_eq!(&*x.rc_deref(), &[9]);
   }
 
   #[test]
   fn smoke_every() {
     let x = MutRc::own(vec![]);
-    let x_c = x.clone();
     let mut pool = LocalPool::new();
     let interval =
       observable::interval(Duration::from_millis(3), pool.spawner());
@@ -144,6 +142,6 @@ mod tests {
     let sub = debounce_subscribe();
     pool.run();
     sub.unsubscribe();
-    assert_eq!(&*x_c.rc_deref(), &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    assert_eq!(&*x.rc_deref(), &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
   }
 }

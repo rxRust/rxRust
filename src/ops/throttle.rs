@@ -147,7 +147,6 @@ mod tests {
   #[test]
   fn smoke() {
     let x = MutRc::own(vec![]);
-    let x_c = x.clone();
     let mut pool = FuturesLocalSchedulerPool::new();
     let scheduler = pool.spawner();
 
@@ -173,19 +172,18 @@ mod tests {
     let sub = throttle_subscribe(ThrottleEdge::tailing());
     pool.run();
     sub.unsubscribe();
-    assert_eq!(&*x_c.rc_deref(), &[1, 3, 4]);
+    assert_eq!(&*x.rc_deref(), &[1, 3, 4]);
 
     // leading throttle
-    x_c.rc_deref_mut().clear();
+    x.rc_deref_mut().clear();
     throttle_subscribe(ThrottleEdge::leading());
     pool.run();
-    assert_eq!(&*x_c.rc_deref(), &[0, 2, 4]);
+    assert_eq!(&*x.rc_deref(), &[0, 2, 4]);
   }
 
   #[test]
   fn smoke_for_throttle_time() {
     let x = MutRc::own(vec![]);
-    let x_c = x.clone();
     let mut pool = FuturesLocalSchedulerPool::new();
     let scheduler = pool.spawner();
 
@@ -201,13 +199,13 @@ mod tests {
     (throttle_time_subscribe.clone())(ThrottleEdge::tailing());
     pool.run();
 
-    assert_eq!(&*x_c.rc_deref(), &[2, 4]);
+    assert_eq!(&*x.rc_deref(), &[2, 4]);
 
     // leading throttle
-    x_c.rc_deref_mut().clear();
+    x.rc_deref_mut().clear();
     throttle_time_subscribe(ThrottleEdge { tailing: false, leading: true });
     pool.run();
 
-    assert_eq!(&*x_c.rc_deref(), &[0, 3]);
+    assert_eq!(&*x.rc_deref(), &[0, 3]);
   }
 }

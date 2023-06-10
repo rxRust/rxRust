@@ -215,7 +215,6 @@ mod test {
     let values = MutArc::own(vec![]);
 
     {
-      let values = values.clone();
       m.clone().merge(m).subscribe(|x| {
         values.rc_deref_mut().push(x);
       });
