@@ -214,13 +214,12 @@ mod test {
   fn smoke() {
     let zip = observable::from_iter(0..10).zip(observable::from_iter(0..10));
     let zipped_count = Arc::new(AtomicUsize::new(0));
-    let zcc = zipped_count.clone();
     zip
       .clone()
       .count()
       .subscribe(|v| zipped_count.store(v, Ordering::Relaxed));
     let mut zipped_sum = 0;
-    assert_eq!(zcc.load(Ordering::Relaxed), 10);
+    assert_eq!(zipped_count.load(Ordering::Relaxed), 10);
     zip.map(|(a, b)| a + b).sum().subscribe(|v| zipped_sum = v);
     assert_eq!(zipped_sum, 90);
   }
