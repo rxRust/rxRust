@@ -35,11 +35,12 @@ fn new_timer(dur: Duration) -> BoxFuture<'static, ()> {
 pub static NEW_TIMER_FN: once_cell::sync::OnceCell<
   fn(Duration) -> BoxFuture<'static, ()>,
 > = once_cell::sync::OnceCell::new();
+
 #[cfg(not(feature = "timer"))]
 fn new_timer(dur: Duration) -> BoxFuture<'static, ()> {
   NEW_TIMER_FN
     .get()
-    .expect("you can use with defalut timer with feature timer, or set your timer creat func to new_timer_fn")(dur)
+    .expect("you can enable the default timer by `timer` feature, or set yourself timer across function `new_timer_fn`")(dur)
 }
 
 pub struct TaskHandle<T>(MutArc<HandleInfo<T>>);
