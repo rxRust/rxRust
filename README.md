@@ -51,12 +51,12 @@ In this case, we must clone the stream.
  o.clone().subscribe(|_| println!("consume in second"));
 ```
 
-If you want share the same observable, you can use `Subject`.
+If you want to share the same observable, you can use `Subject`.
 
 ## Scheduler
 
-`rxrust` use the runtime of the `Future` as the scheduler, `LocalPool` and `ThreadPool` in `futures::executor` can be used as schedulers directly, and `tokio::runtime::Runtime` also supported, but need enable the feature `futures-scheduler`. Across `Scheduler`  to implement custom `Scheduler`.
-Some Observable Ops (such as delay, debounce) need the ability to delay, futures-time supports this ability when set with `timer` feature, but you can also customize it by setting the new_timer function to NEW_TIMER_FN variant and removing the `timer` feature.
+`rxrust` use the runtime of the `Future` as the scheduler, `LocalPool` and `ThreadPool` in `futures::executor` can be used as schedulers directly, and `tokio::runtime::Runtime` is also supported, but need to enable the feature `futures-scheduler`. Across `Scheduler` to implement custom `Scheduler`.
+Some Observable Ops (such as `delay`, and `debounce`) need the ability to delay, futures-time supports this ability when set with the `timer` feature, but you can also customize it by setting the new_timer function to NEW_TIMER_FN variant and removing the `timer` feature.
 ```rust 
 use rxrust::prelude::*;
 
@@ -70,7 +70,7 @@ observable::from_iter(0..10)
   .subscribe(|v| println!("{},", v));
 ```
 
-Also, `rxrust` supports WebAssembly by enabling the feature `wasm-scheduler` and using the crate `wasm-bindgen`. Simple example is [here](https://github.com/utilForever/rxrust-with-wasm). 
+Also, `rxrust` supports WebAssembly by enabling the feature `wasm-scheduler` and using the crate `wasm-bindgen`. A simple example is [here](https://github.com/utilForever/rxrust-with-wasm). 
 
 ## Converts from a Future
 
@@ -87,7 +87,7 @@ observable::from_future(std::future::ready(1), scheduler_pool.spawner())
 scheduler_pool.run();
 ```
 
-A `from_future_result` function also provided to propagating error from `Future`.
+A `from_future_result` function is also provided to propagate errors from `Future``.
 
 ## Missing Features List
 See [missing features](missing_features.md) to know what rxRust does not have yet.
@@ -101,4 +101,6 @@ Help and contributions can be any of the following:
 - use the project and report issues to the project issues page
 - documentation and README enhancement (VERY important)
 - continuous improvement in a ci Pipeline
-- implement any unimplemented operator, remember to create a pull request before you start your code, so other people know you are work on it.
+- implement any unimplemented operator, remember to create a pull request before you start your code, so other people know you are working on it.
+
+you can enable the default timer by `timer` feature, or set a timer across function `new_timer_fn`
