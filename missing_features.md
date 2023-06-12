@@ -28,8 +28,8 @@ Operators that originate new Observables.
 
 Operators that transform items that are emitted by an Observable.
 
-- [ ] Buffer — periodically gather items from an Observable into bundles and emit these bundles rather than emitting the items one at a time
-  - [ ] `buffer(bufferBoundaries)`
+- [x] Buffer — periodically gather items from an Observable into bundles and emit these bundles rather than emitting the items one at a time
+  - [x] `buffer(closing_notifier)`
   - [x] `buffer_with_count`
   - [x] `buffer_with_time`
   - [x] `buffer_with_count_and_time`

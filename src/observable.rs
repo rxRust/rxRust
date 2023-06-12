@@ -66,7 +66,9 @@ use crate::ops::on_error_map::OnErrorMapOp;
 use crate::ops::pairwise::PairwiseOp;
 use crate::ops::tap::TapOp;
 use ops::{
-  buffer::{BufferWithCountOp, BufferWithCountOrTimerOp, BufferWithTimeOp},
+  buffer::{
+    BufferOp, BufferWithCountOp, BufferWithCountOrTimerOp, BufferWithTimeOp,
+  },
   combine_latest::CombineLatestOp,
   contains::ContainsOp,
   debounce::DebounceOp,
@@ -1481,6 +1483,14 @@ pub trait ObservableExt<Item, Err>: Sized {
     default_value: Item,
   ) -> DefaultIfEmptyOp<Self, Item> {
     DefaultIfEmptyOp::new(self, default_value)
+  }
+
+  #[inline]
+  fn buffer<N>(self, closing_notifier: N) -> BufferOp<Self, N>
+  where
+    N: ObservableExt<(), Err>,
+  {
+    BufferOp { source: self, closing_notifier }
   }
 
   /// Buffers emitted values of type T in a Vec<T> and

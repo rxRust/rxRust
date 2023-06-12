@@ -5,6 +5,30 @@ use crate::{
 use std::{time::Duration, vec};
 
 #[derive(Clone)]
+pub struct BufferOp<S, N> {
+  pub(crate) source: S,
+  pub(crate) closing_notifier: N,
+}
+
+impl<Item, Err, O, S, N> Observable<Vec<Item>, Err, O> for BufferOp<S, N>
+where
+  S: Observable<Item, Err, RcBufferObserver<O, Item>>,
+  O: Observer<Vec<Item>, Err>,
+  N: Observable<(), Err, NotifierObserver<O, Item>>,
+{
+  type Unsub = ZipSubscription<S::Unsub, N::Unsub>;
+  fn actual_subscribe(self, observer: O) -> Self::Unsub {
+    let observer = MutArc::own(Some(BufferObserver { observer, data: vec![] }));
+    ZipSubscription::new(
+      self.source.actual_subscribe(observer.clone()),
+      self
+        .closing_notifier
+        .actual_subscribe(NotifierObserver(observer)),
+    )
+  }
+}
+
+#[derive(Clone)]
 pub struct BufferWithCountOp<S> {
   pub(crate) source: S,
   pub(crate) count: usize,
@@ -34,6 +58,34 @@ impl<Item, Err, S> ObservableExt<Vec<Item>, Err> for BufferWithCountOp<S> where
 pub struct BufferObserver<O, Item> {
   observer: O,
   data: Vec<Item>,
+}
+
+pub struct NotifierObserver<O, Item>(RcBufferObserver<O, Item>);
+
+impl<O, Item, Err> Observer<(), Err> for NotifierObserver<O, Item>
+where
+  O: Observer<Vec<Item>, Err>,
+{
+  fn next(&mut self, _value: ()) {
+    if let Some(v) = self.0.rc_deref_mut().as_mut() {
+      v.emit()
+    }
+  }
+
+  #[inline]
+  fn complete(self) {
+    self.0.complete()
+  }
+
+  #[inline]
+  fn error(self, err: Err) {
+    self.0.error(err)
+  }
+
+  #[inline]
+  fn is_finished(&self) -> bool {
+    self.0.is_finished()
+  }
 }
 
 impl<O, Item, Err> Observer<Item, Err> for BufferObserver<O, Item>
@@ -228,9 +280,30 @@ mod tests {
   use crate::prelude::*;
   use futures::executor::LocalPool;
   use std::cell::RefCell;
+  use std::convert::Infallible;
   use std::rc::Rc;
   use std::sync::atomic::{AtomicBool, Ordering};
   use std::time::Duration;
+
+  #[test]
+  fn it_shall_buffer() {
+    let mut closing_notifier = Subject::<(), Infallible>::default();
+    let mut source = Subject::<i32, Infallible>::default();
+    let expected = vec![vec![0, 1], vec![2]];
+    let actual = Rc::new(RefCell::new(vec![]));
+    let actual_c = actual.clone();
+    source
+      .clone()
+      .buffer(closing_notifier.clone())
+      .subscribe(move |vec| actual_c.borrow_mut().push(vec));
+    source.next(0);
+    source.next(1);
+    closing_notifier.next(());
+    source.next(2);
+    closing_notifier.next(());
+    source.next(3);
+    assert_eq!(expected, *actual.borrow());
+  }
 
   #[test]
   fn it_shall_buffer_with_count() {
