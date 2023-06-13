@@ -28,6 +28,13 @@ where
   }
 }
 
+impl<Item, Err, S, N> ObservableExt<Vec<Item>, Err> for BufferOp<S, N>
+where
+  S: ObservableExt<Item, Err>,
+  N: ObservableExt<(), Err>,
+{
+}
+
 #[derive(Clone)]
 pub struct BufferWithCountOp<S> {
   pub(crate) source: S,
