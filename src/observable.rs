@@ -287,7 +287,7 @@ pub trait ObservableExt<Item, Err>: Sized {
   #[inline]
   fn flat_map<'a, V, Item2, F>(self, f: F) -> FlatMapOp<'a, Self, V, F, Item>
   where
-    F: Fn(Item) -> V,
+    F: FnMut(Item) -> V,
     MapOp<Self, F, Item>: ObservableExt<V, Err>,
     V: ObservableExt<Item2, Err>,
   {
@@ -300,7 +300,7 @@ pub trait ObservableExt<Item, Err>: Sized {
     f: F,
   ) -> FlatMapOpThreads<Self, V, F, Item>
   where
-    F: Fn(Item) -> V,
+    F: FnMut(Item) -> V,
     MapOp<Self, F, Item>: ObservableExt<V, Err>,
     V: ObservableExt<Item2, Err>,
   {
