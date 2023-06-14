@@ -255,6 +255,7 @@ impl<O> InnerObserverThreads<O> {
 #[cfg(test)]
 mod test {
   use crate::observable::fake_timer::FakeClock;
+  use futures::executor::LocalPool;
 
   use super::*;
   use std::{cell::RefCell, rc::Rc, time::Duration};
@@ -292,5 +293,45 @@ mod test {
     subject.next(1);
 
     assert_eq!(&c_values, &[]);
+  }
+
+  #[test]
+  fn it_shall_concat_all() {
+    let local = Rc::new(RefCell::new(LocalPool::new()));
+    let scheduler = local.borrow().spawner();
+    let ticks = Rc::new(RefCell::new(Vec::<usize>::new()));
+
+    interval(Duration::from_millis(100), scheduler.clone())
+      .take(2)
+      .map(move |_| {
+        interval(Duration::from_millis(30), scheduler.clone()).take(5)
+      })
+      .concat_all()
+      .subscribe({
+        let ticks = Rc::clone(&ticks);
+        move |v| (*ticks.borrow_mut()).push(v)
+      });
+    local.borrow_mut().run();
+    assert_eq!(*ticks.borrow(), vec![0, 1, 2, 3, 4, 0, 1, 2, 3, 4]);
+  }
+
+  #[test]
+  fn it_shall_merge_all() {
+    let local = Rc::new(RefCell::new(LocalPool::new()));
+    let scheduler = local.borrow().spawner();
+    let ticks = Rc::new(RefCell::new(Vec::<usize>::new()));
+
+    interval(Duration::from_millis(100), scheduler.clone())
+      .take(2)
+      .map(move |_| {
+        interval(Duration::from_millis(30), scheduler.clone()).take(5)
+      })
+      .merge_all(usize::MAX)
+      .subscribe({
+        let ticks = Rc::clone(&ticks);
+        move |v| (*ticks.borrow_mut()).push(v)
+      });
+    local.borrow_mut().run();
+    assert_eq!(*ticks.borrow(), vec![0, 1, 2, 3, 0, 4, 1, 2, 3, 4]);
   }
 }
