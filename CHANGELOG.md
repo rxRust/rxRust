@@ -24,6 +24,8 @@ This is a big refactor for rxRust, almost reimplement everything and many api wa
 - **operator**: add `to_stream` operator to convert an observable into a `Stream`.
 - **operator**: add `collect` operator to collect all the items emitted into a collection.
 - **operator**: add `collect_into` operator to collect all the items emitted into a given collection.
+- **operator**: add `concat_map` operator to project each source value to an `Observable`, which is merged in the output `Observable`, in a serialized fashion waiting for each one to complete before merging the next.
+- **operator**: add `concat_all` operator to convert a higher-order `Observable` into a first-order `Observable` by concatenating the inner `Observables` in order.
 - **operator**: add `from_stream` converts an `Stream` into an `Observable`.
 - **operator**: add `from_stream_result` converts an `Stream<Result<Item, Err>` into a fallible `Observable`.
 - **test**: reimplement the `FakeTimer` help us to control the timer when we write unit test.

@@ -119,6 +119,9 @@ Operators that operate on the entire sequence of items emitted by an Observable
 
 - [x] Average — calculates the average of numbers emitted by an Observable and emits this average
 - [ ] Concat — emit the emissions from two or more Observables without interleaving them
+  - [ ] Concat
+  - [x] ConcatAll
+  - [x] ConcatMap
 - [x] Count — count the number of items emitted by the source Observable and emit only this value
 - [x] Max — determine, and emit, the maximum-valued item emitted by an Observable
 - [x] Min — determine, and emit, the minimum-valued item emitted by an Observable

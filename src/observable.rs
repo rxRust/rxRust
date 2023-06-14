@@ -295,6 +295,16 @@ pub trait ObservableExt<Item, Err>: Sized {
   }
 
   #[inline]
+  fn concat_map<'a, V, Item2, F>(self, f: F) -> FlatMapOp<'a, Self, V, F, Item>
+  where
+    F: FnMut(Item) -> V,
+    MapOp<Self, F, Item>: ObservableExt<V, Err>,
+    V: ObservableExt<Item2, Err>,
+  {
+    self.map(f).concat_all()
+  }
+
+  #[inline]
   fn flat_map_threads<V, Item2, F>(
     self,
     f: F,
@@ -305,6 +315,19 @@ pub trait ObservableExt<Item, Err>: Sized {
     V: ObservableExt<Item2, Err>,
   {
     self.map(f).merge_all_threads(usize::MAX)
+  }
+
+  #[inline]
+  fn concat_map_threads<V, Item2, F>(
+    self,
+    f: F,
+  ) -> FlatMapOpThreads<Self, V, F, Item>
+  where
+    F: FnMut(Item) -> V,
+    MapOp<Self, F, Item>: ObservableExt<V, Err>,
+    V: ObservableExt<Item2, Err>,
+  {
+    self.map(f).concat_all_threads()
   }
 
   /// Groups items emitted by the source Observable into Observables.
@@ -435,6 +458,14 @@ pub trait ObservableExt<Item, Err>: Sized {
     MergeAllOp::new(self, concurrent)
   }
 
+  #[inline]
+  fn concat_all<'a, Item2>(self) -> MergeAllOp<'a, Self, Item>
+  where
+    Item: ObservableExt<Item2, Err>,
+  {
+    MergeAllOp::new(self, 1)
+  }
+
   /// A threads safe version of `merge_all`
   #[inline]
   fn merge_all_threads<Item2>(
@@ -445,6 +476,14 @@ pub trait ObservableExt<Item, Err>: Sized {
     Item: ObservableExt<Item2, Err>,
   {
     MergeAllOpThreads::new(self, concurrent)
+  }
+
+  #[inline]
+  fn concat_all_threads<Item2>(self) -> MergeAllOpThreads<Self, Item>
+  where
+    Item: ObservableExt<Item2, Err>,
+  {
+    MergeAllOpThreads::new(self, 1)
   }
 
   /// Emit only those items from an Observable that pass a predicate test

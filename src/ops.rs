@@ -401,6 +401,63 @@ mod test {
   }
 
   // -------------------------------------------------------------------
+  // testing ConcatMap operator
+  // -------------------------------------------------------------------
+
+  #[test]
+  fn concat_map_identity() {
+    let return_fn = observable::of;
+    let f = |x| observable::of(x + 1);
+    let m = observable::of(0_i32);
+
+    // left identity
+    let partial_left = |x| return_fn(x).concat_map(f);
+    let comp_left = m.clone().concat_map(partial_left);
+
+    // right identity
+    let partial_right = |x| f(x).concat_map(return_fn);
+    let comp_right = m.concat_map(partial_right);
+
+    let mut left: Option<i32> = None;
+    let mut right: Option<i32> = None;
+
+    comp_left.subscribe(|a| left = Some(a));
+    comp_right.subscribe(|b| right = Some(b));
+
+    assert_eq!(left, right);
+  }
+
+  #[test]
+  fn concat_map_associative() {
+    let f = |i: i32| observable::of(i + 1);
+    let g = |i: i32| observable::of(i + 2);
+    let h = |i: i32| observable::of(i + 3);
+    let m = observable::of(0_i32);
+
+    // left association
+    let partial_left = |x| {
+      let partial = f(x).concat_map(g);
+      partial.concat_map(h)
+    };
+    let comp_left = m.clone().concat_map(partial_left);
+
+    // right association
+    let partial_right = |x| {
+      let partial = |y| g(y).concat_map(h);
+      f(x).concat_map(partial)
+    };
+    let comp_right = m.concat_map(partial_right);
+
+    let mut left: Option<i32> = None;
+    let mut right: Option<i32> = None;
+
+    comp_left.subscribe(|a| left = Some(a));
+    comp_right.subscribe(|b| right = Some(b));
+
+    assert_eq!(left, right);
+  }
+
+  // -------------------------------------------------------------------
   // testing FlatMap operator
   // -------------------------------------------------------------------
 
