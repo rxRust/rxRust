@@ -12,7 +12,7 @@ use futures::{
 use crate::{observable::Observable, observer::Observer};
 
 /// Errors that can prevent an observable future from resolving correctly.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ObservableError {
   /// The observable had no values.
   Empty,
