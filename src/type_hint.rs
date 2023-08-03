@@ -15,8 +15,8 @@ impl<T> Default for TypeHint<T> {
   }
 }
 
-unsafe impl<T> Sync for TypeHint<T> {}
-unsafe impl<T> Send for TypeHint<T> {}
+unsafe impl<T: Sync> Sync for TypeHint<T> {}
+unsafe impl<T: Send> Send for TypeHint<T> {}
 
 impl<T> Clone for TypeHint<T> {
   #[inline]
