@@ -226,7 +226,6 @@ impl<T: Subscription + 'static> Subscription
 {
   fn unsubscribe(self) {
     let mut info = self.0.rc_deref_mut();
-    eprintln!("unsubscribe");
     info.keep_running = false;
     match info.value.take() {
       Some(Ok(v)) => v.0.unsubscribe(),
