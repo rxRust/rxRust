@@ -33,6 +33,7 @@ This is a big refactor for rxRust, almost reimplement everything and many api wa
 
 ### Bug Fixes
 
+- **subscription**: fix `Subscription` may not implement `is_closed` correctly
 - **observable**: `EmptyObservable` not hold `Item` type to avoid bind lifetime with it.
 - **operator**: `distinct_until_changed` only require the value implement `PartialEq` not `Eq`.
 - **operator**: `group_by` should not subscribe to value source anew on each new group

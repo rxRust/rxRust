@@ -10,10 +10,7 @@ pub trait Subscription {
   fn unsubscribe(self);
 
   /// detect if the subscription already be unsubscribed.
-  #[inline]
-  fn is_closed(&self) -> bool {
-    false
-  }
+  fn is_closed(&self) -> bool;
 
   /// Activates "RAII" behavior for this subscription. That means
   /// `unsubscribe()` will be called automatically as soon as the returned
@@ -90,6 +87,13 @@ macro_rules! impl_multi_subscription {
             }
           })
         }
+      }
+
+      fn is_closed(&self) -> bool {
+        self.0.rc_deref().as_ref()
+          .map_or(true, |m| {
+            m.iter().all(|u| u.as_ref().map_or(true, |v| v.is_closed()))
+          })
       }
     }
 
@@ -205,12 +209,22 @@ impl<'a> Subscription for BoxSubscription<'a> {
   fn unsubscribe(self) {
     self.0.boxed_unsubscribe()
   }
+
+  #[inline]
+  fn is_closed(&self) -> bool {
+    self.0.boxed_is_closed()
+  }
 }
 
 impl Subscription for BoxSubscriptionThreads {
   #[inline]
   fn unsubscribe(self) {
     self.0.boxed_unsubscribe()
+  }
+
+  #[inline]
+  fn is_closed(&self) -> bool {
+    self.0.boxed_is_closed()
   }
 }
 
@@ -244,5 +258,11 @@ mod test {
     assert_eq!(shared.teardown_size(), 2);
     shared.append(BoxSubscriptionThreads::new(l3));
     assert_eq!(shared.teardown_size(), 3);
+  }
+
+  #[test]
+  fn fix_box_subscription_no_proxy() {
+    let a = BoxSubscription::new(());
+    assert!(a.is_closed());
   }
 }
