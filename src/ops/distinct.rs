@@ -308,12 +308,10 @@ mod tests {
   fn distinct_until_key_changed() {
     let x = Rc::new(RefCell::new(vec![]));
     let x_c = x.clone();
-    observable::from_iter(
-      vec![(1, 2), (2, 2), (2, 1), (1, 1), (2, 2), (3, 2)].into_iter(),
-    )
-    .map(|v| v)
-    .distinct_until_key_changed(|tup: &(i32, i32)| tup.0)
-    .subscribe(move |v| x.borrow_mut().push(v));
+    observable::from_iter(vec![(1, 2), (2, 2), (2, 1), (1, 1), (2, 2), (3, 2)])
+      .map(|v| v)
+      .distinct_until_key_changed(|tup: &(i32, i32)| tup.0)
+      .subscribe(move |v| x.borrow_mut().push(v));
     assert_eq!(&*x_c.borrow(), &[(1, 2), (2, 2), (1, 1), (2, 2), (3, 2)]);
   }
 
@@ -321,11 +319,9 @@ mod tests {
   fn distinct_key() {
     let x = Rc::new(RefCell::new(vec![]));
     let x_c = x.clone();
-    observable::from_iter(
-      vec![(1, 2), (2, 2), (2, 1), (1, 1), (2, 2), (3, 2)].into_iter(),
-    )
-    .distinct_key(|tup: &(i32, i32)| tup.0)
-    .subscribe(move |v| x.borrow_mut().push(v));
+    observable::from_iter(vec![(1, 2), (2, 2), (2, 1), (1, 1), (2, 2), (3, 2)])
+      .distinct_key(|tup: &(i32, i32)| tup.0)
+      .subscribe(move |v| x.borrow_mut().push(v));
 
     assert_eq!(&*x_c.borrow(), &[(1, 2), (2, 2), (3, 2)]);
   }

@@ -328,8 +328,7 @@ mod test {
   #[test]
   fn count_on_empty_observable() {
     let mut emitted = 0;
-    observable::empty::<i32>()
-      .count()
+    ObservableExt::<i32, _>::count(observable::empty())
       .subscribe(|v| emitted = v);
     assert_eq!(0, emitted);
   }

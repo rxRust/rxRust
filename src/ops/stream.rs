@@ -108,9 +108,9 @@ mod tests {
 
   #[tokio::test]
   async fn to_stream_empty_observable_test() {
-    let mut stream = crate::observable::empty::<i32>().to_stream();
+    let mut stream = crate::observable::empty().to_stream();
 
-    let mut values = vec![];
+    let mut values: Vec<i32> = vec![];
     while let Some(Ok(x)) = stream.next().await {
       values.push(x);
     }
