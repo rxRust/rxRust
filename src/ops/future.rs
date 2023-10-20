@@ -126,6 +126,8 @@ fn send_observable_value<T, E>(
 
 #[cfg(test)]
 mod tests {
+  use futures::executor::block_on;
+
   use crate::{observable::ObservableExt, ops::future::ObservableError};
 
   #[tokio::test]
@@ -138,11 +140,12 @@ mod tests {
     assert_eq!(format!("Number 4"), value);
   }
 
-  #[tokio::test]
-  async fn to_future_error_empty_observable_test() {
-    let fut = crate::observable::empty::<i32>().to_future();
-    let value = fut.await;
-
+  #[test]
+  fn to_future_error_empty_observable_test() {
+    let fut = ObservableExt::<i32, _>::to_future(crate::observable::empty());
+    let value = block_on(fut);
+    // let value = fut.await;
+    // println!("{value:?}");
     assert!(matches!(value, Err(ObservableError::Empty)));
   }
 

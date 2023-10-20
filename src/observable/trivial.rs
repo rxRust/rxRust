@@ -41,14 +41,14 @@ impl<Err> ObservableExt<(), Err> for ThrowObservable<Err> {}
 /// // Result: no thing printed
 /// ```
 #[inline]
-pub fn empty<Item>() -> EmptyObservable<Item> {
-  EmptyObservable(TypeHint::new())
+pub fn empty() -> EmptyObservable {
+  EmptyObservable
 }
 
 #[derive(Clone)]
-pub struct EmptyObservable<Item>(TypeHint<Item>);
+pub struct EmptyObservable;
 
-impl<Item, O> Observable<Item, Infallible, O> for EmptyObservable<Item>
+impl<Item, O> Observable<Item, Infallible, O> for EmptyObservable
 where
   O: Observer<Item, Infallible>,
 {
@@ -59,7 +59,7 @@ where
   }
 }
 
-impl<Item> ObservableExt<Item, Infallible> for EmptyObservable<Item> {}
+impl<Item> ObservableExt<Item, Infallible> for EmptyObservable {}
 /// Creates an observable that never emits anything.
 ///
 /// Neither emits a value, nor completes, nor emits an error.
@@ -108,9 +108,10 @@ mod test {
   fn empty() {
     let mut hits = 0;
     let mut completed = false;
-    observable::empty()
-      .on_complete(|| completed = true)
-      .subscribe(|()| hits += 1);
+    ObservableExt::<(), _>::on_complete(observable::empty(), || {
+      completed = true
+    })
+    .subscribe(|()| hits += 1);
 
     assert_eq!(hits, 0);
     assert!(completed);
