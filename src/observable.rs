@@ -54,6 +54,7 @@ use crate::ops::sample::SampleOpThreads;
 use crate::ops::skip_until::SkipUntilOpThreads;
 use crate::ops::stream::{ObservableStream, ObservableStreamObserver};
 use crate::ops::take_until::TakeUntilOpThreads;
+use crate::ops::timestamp::TimestampOp;
 use crate::ops::with_latest_from::WithLatestFromOpThreads;
 use crate::ops::zip::ZipOpThreads;
 use crate::ops::FlatMapOpThreads;
@@ -394,6 +395,16 @@ pub trait ObservableExt<Item, Err>: Sized {
   #[inline]
   fn map_to<B>(self, value: B) -> MapToOp<Self, B, Item> {
     MapToOp::new(self, value)
+  }
+
+  /// Creates a new stream which maps each element to a tuple of the element
+  /// and the time that it was observed.
+  #[inline]
+  fn timestamp(self) -> TimestampOp<Self, Item> {
+    fn timestamp<Item>(v: Item) -> (Item, Instant) {
+      (v, Instant::now())
+    }
+    self.map(timestamp)
   }
 
   /// combine two Observables into one by merging their emissions
@@ -2003,5 +2014,50 @@ mod tests {
 
   fn all_bench(b: &mut bencher::Bencher) {
     b.iter(smoke_all);
+  }
+
+  #[test]
+  fn timestamp() {
+    let mut vs = Vec::new();
+    let mut ts = Vec::new();
+
+    let before = Instant::now();
+
+    observable::from_iter(0..3).timestamp().subscribe(|(v, t)| {
+      vs.push(v);
+      ts.push(t);
+    });
+
+    let after = Instant::now();
+
+    assert_eq!(vs, vec![0, 1, 2]);
+    assert_eq!(ts.len(), 3);
+
+    for i in 0..3 {
+      assert!(
+        ts[i] <= after,
+        "element {} in accumulated timestamps ({:#?}) was after end ({:#?})",
+        i,
+        ts,
+        after
+      );
+      assert!(
+        ts[i] >= before,
+        "element {} in accumulated timestamps ({:#?}) was before start ({:#?})",
+        i,
+        ts,
+        after
+      );
+    }
+
+    for i in 1..3 {
+      assert!(
+        ts[i - 1] <= ts[i],
+        "element {} ({:#?}) is not after previous element ({:#?})",
+        i,
+        ts[i],
+        ts[i - 1]
+      );
+    }
   }
 }

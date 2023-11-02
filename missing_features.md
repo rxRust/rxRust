@@ -96,7 +96,7 @@ A toolbox of useful Operators for working with Observables
 - [x] SubscribeOn — specify the scheduler an Observable should use when it is subscribed to
 - [ ] TimeInterval — convert an Observable that emits items into one that emits indications of the amount of time elapsed between those emissions
 - [ ] Timeout — mirror the source Observable, but issue an error notification if a particular period of time elapses without any emitted items
-- [ ] Timestamp — attach a timestamp to each item emitted by an Observable
+- [x] Timestamp — attach a timestamp to each item emitted by an Observable
 - [ ] Using — create a disposable resource that has the same lifespan as the Observable
 
 ### Conditional and Boolean Operators
