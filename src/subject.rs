@@ -11,6 +11,7 @@ use crate::{
 pub mod behavior_subject;
 pub use behavior_subject::*;
 use smallvec::SmallVec;
+use crate::rc::AssociatedRefPtr;
 
 pub trait SubjectSize {
   fn is_empty(&self) -> bool;
@@ -276,6 +277,26 @@ where
   O: for<'i, 'e> Observer<&'i mut Item, &'e mut Err> + 'a,
 {
   impl_observable_for_subject!(Subscriber);
+}
+
+impl<'a, Item, Error> AssociatedRefPtr for Subject<'a, Item, Error> {
+  type Rc<T> = MutRc<T>;
+}
+
+impl<Item, Error> AssociatedRefPtr for SubjectThreads<Item, Error> {
+  type Rc<T> = MutArc<T>;
+}
+
+impl<'a, Item, Error> AssociatedRefPtr for MutRefErrSubject<'a, Item, Error> {
+  type Rc<T> = MutRc<T>;
+}
+
+impl<'a, Item, Error> AssociatedRefPtr for MutRefItemSubject<'a, Item, Error> {
+  type Rc<T> = MutRc<T>;
+}
+
+impl<'a, Item, Error> AssociatedRefPtr for MutRefItemErrSubject<'a, Item, Error> {
+  type Rc<T> = MutRc<T>;
 }
 
 #[cfg(test)]
