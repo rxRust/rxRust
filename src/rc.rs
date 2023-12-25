@@ -22,20 +22,38 @@ pub trait RcDerefMut: Clone {
   fn rc_deref_mut(&self) -> Self::MutRef<'_>;
 }
 
+pub trait AssociatedRefPtr {
+
+  type Rc<T>: RcDeref<Target = T> + RcDerefMut<Target = T> + From<T>;
+
+}
+
 #[derive(Default)]
 pub struct MutRc<T>(Rc<RefCell<T>>);
 #[derive(Default)]
 pub struct MutArc<T>(Arc<Mutex<T>>);
 
+impl<T> From<T> for MutArc<T> {
+  fn from(t: T) -> Self {
+    Self(Arc::from(Mutex::from(t)))
+  }
+}
+
+impl<T> From<T> for MutRc<T> {
+  fn from(t: T) -> Self {
+    Self(Rc::from(RefCell::from(t)))
+  }
+}
+
 impl<T> MutArc<T> {
   pub fn own(t: T) -> Self {
-    Self(Arc::new(Mutex::new(t)))
+    Self::from(t)
   }
 }
 
 impl<T> MutRc<T> {
   pub fn own(t: T) -> Self {
-    Self(Rc::new(RefCell::new(t)))
+    Self::from(t)
   }
 }
 
