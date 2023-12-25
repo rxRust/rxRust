@@ -1,26 +1,30 @@
 use crate::prelude::*;
+use crate::rc::{AssociatedRefPtr, RcDeref, RcDerefMut};
 
 #[derive(Clone)]
-pub struct BehaviorSubject<Item, Subject> {
+pub struct BehaviorSubject<Item, Subject: AssociatedRefPtr> {
   pub(crate) subject: Subject,
-  pub(crate) value: Item,
+  pub(crate) value: Subject::Rc<Item>,
 }
 
-impl<Item, Subject: Default> BehaviorSubject<Item, Subject> {
+impl<Item, Subject: Default + AssociatedRefPtr> BehaviorSubject<Item, Subject> {
   pub fn new(value: Item) -> Self {
-    Self { subject: <_>::default(), value }
+    Self {
+      subject: <_>::default(),
+      value: value.into()
+    }
   }
 }
 
-impl<Item, Err, Subject> Observer<Item, Err> for BehaviorSubject<Item, Subject>
+impl<Item, Err, Subject: AssociatedRefPtr> Observer<Item, Err> for BehaviorSubject<Item, Subject>
 where
   Subject: Observer<Item, Err>,
   Item: Clone,
 {
   #[inline]
   fn next(&mut self, value: Item) {
-    self.value = value;
-    Observer::next(&mut self.subject, self.value.clone());
+    *self.value.rc_deref_mut() = value.clone();
+    Observer::next(&mut self.subject, value);
   }
 
   #[inline]
@@ -39,7 +43,7 @@ where
   }
 }
 
-impl<Item, Subject> Subscription for BehaviorSubject<Item, Subject>
+impl<Item, Subject: AssociatedRefPtr> Subscription for BehaviorSubject<Item, Subject>
 where
   Subject: Subscription,
 {
@@ -54,7 +58,7 @@ where
   }
 }
 
-impl<Item, Subject> SubjectSize for BehaviorSubject<Item, Subject>
+impl<Item, Subject: AssociatedRefPtr> SubjectSize for BehaviorSubject<Item, Subject>
 where
   Subject: SubjectSize,
 {
@@ -69,7 +73,7 @@ where
   }
 }
 
-impl<Item, Err, O, Subject> Observable<Item, Err, O>
+impl<Item, Err, O, Subject: AssociatedRefPtr> Observable<Item, Err, O>
   for BehaviorSubject<Item, Subject>
 where
   Subject: Observable<Item, Err, O>,
@@ -79,25 +83,25 @@ where
   type Unsub = Subject::Unsub;
 
   fn actual_subscribe(self, mut observer: O) -> Self::Unsub {
-    observer.next(self.value.clone());
+    observer.next(self.value.rc_deref().clone());
     self.subject.actual_subscribe(observer)
   }
 }
 
-impl<Item, Err, Subject> ObservableExt<Item, Err>
+impl<Item, Err, Subject: AssociatedRefPtr> ObservableExt<Item, Err>
   for BehaviorSubject<Item, Subject>
 where
   Subject: ObservableExt<Item, Err>,
 {
 }
 
-impl<Item, Err, Subject> Behavior<Item, Err> for BehaviorSubject<Item, Subject>
+impl<Item, Err, Subject: AssociatedRefPtr> Behavior<Item, Err> for BehaviorSubject<Item, Subject>
 where
   Subject: Observer<Item, Err>,
   Item: Clone,
 {
   fn peek(&self) -> Item {
-    self.value.clone()
+    self.value.rc_deref().clone()
   }
 }
 
@@ -164,5 +168,18 @@ mod test {
     local.clone().actual_subscribe(local2);
     local.next(1);
     local.error(2);
+  }
+
+  #[test]
+  fn behaviour_keeping_between_clones() {
+    let mut vec = Vec::new();
+    {
+      let mut behavior_subject = BehaviorSubject::<_, Subject<_, _>>::new(42);
+      behavior_subject.clone().subscribe(|n| vec.push(n));
+      for i in 0..5 {
+        behavior_subject.clone().next_by(|n| n + 1);
+      }
+    }
+    assert_eq!((42..=47).collect::<Vec<_>>(), vec)
   }
 }
