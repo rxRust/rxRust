@@ -11,12 +11,13 @@ impl<Item, Subject: Default + AssociatedRefPtr> BehaviorSubject<Item, Subject> {
   pub fn new(value: Item) -> Self {
     Self {
       subject: <_>::default(),
-      value: value.into()
+      value: value.into(),
     }
   }
 }
 
-impl<Item, Err, Subject: AssociatedRefPtr> Observer<Item, Err> for BehaviorSubject<Item, Subject>
+impl<Item, Err, Subject: AssociatedRefPtr> Observer<Item, Err>
+  for BehaviorSubject<Item, Subject>
 where
   Subject: Observer<Item, Err>,
   Item: Clone,
@@ -43,7 +44,8 @@ where
   }
 }
 
-impl<Item, Subject: AssociatedRefPtr> Subscription for BehaviorSubject<Item, Subject>
+impl<Item, Subject: AssociatedRefPtr> Subscription
+  for BehaviorSubject<Item, Subject>
 where
   Subject: Subscription,
 {
@@ -58,7 +60,8 @@ where
   }
 }
 
-impl<Item, Subject: AssociatedRefPtr> SubjectSize for BehaviorSubject<Item, Subject>
+impl<Item, Subject: AssociatedRefPtr> SubjectSize
+  for BehaviorSubject<Item, Subject>
 where
   Subject: SubjectSize,
 {
@@ -95,7 +98,8 @@ where
 {
 }
 
-impl<Item, Err, Subject: AssociatedRefPtr> Behavior<Item, Err> for BehaviorSubject<Item, Subject>
+impl<Item, Err, Subject: AssociatedRefPtr> Behavior<Item, Err>
+  for BehaviorSubject<Item, Subject>
 where
   Subject: Observer<Item, Err>,
   Item: Clone,
@@ -174,9 +178,9 @@ mod test {
   fn behaviour_keeping_between_clones() {
     let mut vec = Vec::new();
     {
-      let mut behavior_subject = BehaviorSubject::<_, Subject<_, _>>::new(42);
+      let behavior_subject = BehaviorSubject::<_, Subject<_, _>>::new(42);
       behavior_subject.clone().subscribe(|n| vec.push(n));
-      for i in 0..5 {
+      for _ in 0..5 {
         behavior_subject.clone().next_by(|n| n + 1);
       }
     }

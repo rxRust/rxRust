@@ -9,9 +9,9 @@ use crate::{
 };
 
 pub mod behavior_subject;
+use crate::rc::AssociatedRefPtr;
 pub use behavior_subject::*;
 use smallvec::SmallVec;
-use crate::rc::AssociatedRefPtr;
 
 pub trait SubjectSize {
   fn is_empty(&self) -> bool;
@@ -295,7 +295,9 @@ impl<'a, Item, Error> AssociatedRefPtr for MutRefItemSubject<'a, Item, Error> {
   type Rc<T> = MutRc<T>;
 }
 
-impl<'a, Item, Error> AssociatedRefPtr for MutRefItemErrSubject<'a, Item, Error> {
+impl<'a, Item, Error> AssociatedRefPtr
+  for MutRefItemErrSubject<'a, Item, Error>
+{
   type Rc<T> = MutRc<T>;
 }
 

@@ -23,9 +23,7 @@ pub trait RcDerefMut: Clone {
 }
 
 pub trait AssociatedRefPtr {
-
   type Rc<T>: RcDeref<Target = T> + RcDerefMut<Target = T> + From<T>;
-
 }
 
 #[derive(Default)]
