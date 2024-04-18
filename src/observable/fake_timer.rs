@@ -1,15 +1,8 @@
 use crate::{
-  observer::Observer,
+  prelude::*,
   rc::{MutRc, RcDeref, RcDerefMut},
-  subscriber::{Publisher, Subscriber},
 };
-use std::{
-  collections::VecDeque,
-  convert::Infallible,
-  time::{Duration, Instant},
-};
-
-use super::{Observable, ObservableExt};
+use std::{collections::VecDeque, convert::Infallible};
 
 #[derive(Clone)]
 pub struct FakeClock(MutRc<InnerTimer>);

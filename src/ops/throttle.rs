@@ -189,9 +189,9 @@ mod tests {
 
     let throttle_time_subscribe = |edge| {
       let x = x.clone();
-      observable::interval(Duration::from_millis(5), scheduler.clone())
+      observable::interval(Duration::from_millis(50), scheduler.clone())
         .take(5)
-        .throttle_time(Duration::from_millis(11), edge, scheduler)
+        .throttle_time(Duration::from_millis(115), edge, scheduler)
         .subscribe(move |v| x.rc_deref_mut().push(v));
     };
 
@@ -203,7 +203,7 @@ mod tests {
 
     // leading throttle
     x.rc_deref_mut().clear();
-    throttle_time_subscribe(ThrottleEdge { tailing: false, leading: true });
+    throttle_time_subscribe(ThrottleEdge::leading());
     pool.run();
 
     assert_eq!(&*x.rc_deref(), &[0, 3]);

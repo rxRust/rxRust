@@ -2,7 +2,7 @@ use crate::{
   prelude::*,
   rc::{MutArc, RcDerefMut},
 };
-use std::{time::Duration, vec};
+use std::vec;
 
 #[derive(Clone)]
 pub struct BufferOp<S, N> {
@@ -290,7 +290,6 @@ mod tests {
   use std::convert::Infallible;
   use std::rc::Rc;
   use std::sync::atomic::{AtomicBool, Ordering};
-  use std::time::Duration;
 
   #[test]
   fn it_shall_buffer() {

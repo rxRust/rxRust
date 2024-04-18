@@ -37,4 +37,10 @@ pub mod prelude {
   pub use crate::subscription::*;
   pub use crate::type_hint::TypeHint;
   pub use observer::Observer;
+
+  #[cfg(not(target_arch = "wasm32"))]
+  pub use std::time::{Duration, Instant};
+
+  #[cfg(target_arch = "wasm32")]
+  pub use web_time::{Duration, Instant};
 }

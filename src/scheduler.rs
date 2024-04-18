@@ -4,7 +4,6 @@ use crate::{
 };
 use futures::{future::CatchUnwind, ready, FutureExt};
 use pin_project_lite::pin_project;
-use std::time::Duration;
 use std::{
   any::Any,
   fmt,
@@ -13,7 +12,6 @@ use std::{
   panic::{self, AssertUnwindSafe},
   pin::Pin,
   task::{Context, Poll},
-  time::Instant,
 };
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -53,11 +51,8 @@ pub trait Scheduler<T>: Clone
 where
   T: Future,
 {
-  fn schedule(
-    &self,
-    task: T,
-    delay: Option<std::time::Duration>,
-  ) -> TaskHandle<T::Output>;
+  fn schedule(&self, task: T, delay: Option<Duration>)
+    -> TaskHandle<T::Output>;
 }
 
 pin_project! {
@@ -80,7 +75,6 @@ pin_project! {
   pub struct RepeatTask<Args> {
     fur: BoxFuture<'static, ()>,
     interval: Duration,
-    next: Instant,
     // the task to do and return if you want the task continue repeat.
     task: fn(&mut Args, usize)-> bool,
     args: Args,
@@ -128,16 +122,8 @@ impl<Args> Future for RepeatTask<Args> {
           return Poll::Ready(NormalReturn::new(()));
         }
       }
-
-      let now = Instant::now();
-      let interval_f32 = self.interval.as_secs_f32();
-      let dur_f32 = (now - self.next).as_secs_f32();
-      let dur =
-        Duration::from_secs_f32((dur_f32 / interval_f32).ceil() * interval_f32);
-      let mut next = now + dur;
-      let mut fur = new_timer(dur);
+      let mut fur = new_timer(self.interval);
       swap(&mut self.fur, &mut fur);
-      swap(&mut self.next, &mut next);
     }
   }
 }
@@ -162,14 +148,13 @@ where
 
 impl<Args> RepeatTask<Args> {
   pub fn new(
-    dur: std::time::Duration,
+    dur: Duration,
     task: fn(&mut Args, usize) -> bool,
     args: Args,
   ) -> Self {
     Self {
       fur: new_timer(dur),
       interval: dur,
-      next: Instant::now() + dur,
       task,
       args,
       seq: 0,
@@ -310,7 +295,7 @@ macro_rules! impl_scheduler_method {
     fn schedule(
       &self,
       task: T,
-      delay: Option<std::time::Duration>,
+      delay: Option<Duration>,
     ) -> TaskHandle<T::Output> {
       let fut = async move {
         if let Some(dur) = delay {

@@ -108,14 +108,14 @@ mod tests {
     let x = MutRc::own(vec![]);
     let mut pool = LocalPool::new();
     let interval =
-      observable::interval(Duration::from_millis(2), pool.spawner());
+      observable::interval(Duration::from_millis(20), pool.spawner());
     let spawner = pool.spawner();
     let debounce_subscribe = || {
       let x = x.clone();
       interval
         .clone()
         .take(10)
-        .debounce(Duration::from_millis(3), spawner.clone())
+        .debounce(Duration::from_millis(30), spawner.clone())
         .subscribe(move |v| x.rc_deref_mut().push(v))
     };
     let sub = debounce_subscribe();
@@ -129,14 +129,14 @@ mod tests {
     let x = MutRc::own(vec![]);
     let mut pool = LocalPool::new();
     let interval =
-      observable::interval(Duration::from_millis(3), pool.spawner());
+      observable::interval(Duration::from_millis(30), pool.spawner());
     let spawner = pool.spawner();
     let debounce_subscribe = || {
       let x = x.clone();
       interval
         .clone()
         .take(10)
-        .debounce(Duration::from_millis(2), spawner.clone())
+        .debounce(Duration::from_millis(20), spawner.clone())
         .subscribe(move |v| x.rc_deref_mut().push(v))
     };
     let sub = debounce_subscribe();
