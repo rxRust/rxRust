@@ -33,6 +33,8 @@ pub use timer::{timer, timer_at};
 pub mod start;
 pub use start::start;
 
+use crate::prelude::*;
+
 mod subscribe_item;
 pub use subscribe_item::*;
 mod defer;
@@ -58,7 +60,6 @@ use crate::ops::timestamp::TimestampOp;
 use crate::ops::with_latest_from::WithLatestFromOpThreads;
 use crate::ops::zip::ZipOpThreads;
 use crate::ops::FlatMapOpThreads;
-use crate::prelude::*;
 pub use ops::box_it::BoxIt;
 
 use crate::ops::default_if_empty::DefaultIfEmptyOp;
@@ -103,10 +104,7 @@ use ops::{
   zip::ZipOp,
   Accum, AverageOp, CountOp, FlatMapOp, MinMaxOp, ReduceOp, SumOp,
 };
-use std::{
-  ops::{Add, Mul},
-  time::{Duration, Instant},
-};
+use std::ops::{Add, Mul};
 #[cfg(test)]
 pub mod fake_timer;
 

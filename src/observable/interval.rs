@@ -1,11 +1,5 @@
-use crate::{
-  prelude::*,
-  scheduler::{NormalReturn, RepeatTask, Scheduler, TaskHandle},
-};
-use std::{
-  convert::Infallible,
-  time::{Duration, Instant},
-};
+use crate::prelude::*;
+use std::convert::Infallible;
 
 /// Creates an observable which will fire at `dur` time into the future,
 /// and will repeat every `dur` interval after.

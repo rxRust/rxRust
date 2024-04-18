@@ -2,7 +2,6 @@ use crate::{
   prelude::*,
   rc::{MutArc, MutRc},
 };
-use std::time::Duration;
 
 #[derive(Debug, Clone)]
 pub struct DelayOp<S, SD> {
@@ -176,7 +175,7 @@ mod tests {
     let pool = ThreadPool::new().unwrap();
     let stamp = Instant::now();
     let (o, status) = observable::of(1)
-      .delay_threads(Duration::from_millis(1), pool)
+      .delay_threads(Duration::from_millis(10), pool)
       .complete_status();
 
     o.subscribe(move |v| {
@@ -184,7 +183,7 @@ mod tests {
     });
     CompleteStatus::wait_for_end(status);
 
-    assert!(stamp.elapsed() >= Duration::from_millis(1));
+    assert!(stamp.elapsed() >= Duration::from_millis(10));
     assert_eq!(*c_value.lock().unwrap(), 1);
   }
 

@@ -1,11 +1,5 @@
-use crate::{
-  prelude::*,
-  scheduler::{NormalReturn, OnceTask, Scheduler, TaskHandle},
-};
-use std::{
-  convert::Infallible,
-  time::{Duration, Instant},
-};
+use crate::prelude::*;
+use std::convert::Infallible;
 
 // Returns an observable which will emit a single `item`
 // once after a given `dur` using a given `scheduler`
@@ -84,8 +78,6 @@ mod tests {
   use futures::executor::ThreadPool;
   use std::sync::atomic::{AtomicBool, AtomicI32, AtomicUsize, Ordering};
   use std::sync::Arc;
-  use std::time::Duration;
-  use std::time::Instant;
 
   #[test]
   fn timer_shall_emit_value() {

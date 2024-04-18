@@ -1,6 +1,5 @@
-use std::time::Instant;
-
 use super::map::MapOp;
+use crate::prelude::Instant;
 
 // Right now, timestamp is implemented as a map operation, so this is
 // a simple typedef rather than a new implementation
