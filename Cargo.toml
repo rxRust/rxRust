@@ -10,7 +10,7 @@ license = "MIT"
 name = "rxrust"
 readme = "README.md"
 repository = "https://github.com/rxRust/rxRust"
-version = "1.0.0-beta.6"
+version = "1.0.0-beta.8"
 
 [dependencies]
 once_cell = "1.17.1"
