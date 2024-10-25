@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use std::{cmp::Eq, collections::HashSet, hash::Hash};
+use std::{collections::HashSet, hash::Hash};
 
 #[derive(Clone)]
 pub struct DistinctOp<S> {
@@ -191,7 +191,7 @@ impl<Item, Err, O, S, F, K> Observable<Item, Err, O>
 where
   S: Observable<Item, Err, DistinctUntilKeyChangedObserver<O, F, Item>>,
   O: Observer<Item, Err>,
-  K: Eq,
+  K: PartialEq,
   Item: Clone,
   F: Fn(&Item) -> K,
 {
@@ -225,13 +225,12 @@ impl<O, F, K, Item, Err> Observer<Item, Err>
 where
   O: Observer<Item, Err>,
   Item: Clone,
-  K: Eq,
+  K: PartialEq,
   F: Fn(&Item) -> K,
 {
   fn next(&mut self, value: Item) {
-    if self.last.is_none()
-      || (self.key)(self.last.as_ref().unwrap()) != (self.key)(&value)
-    {
+    let last = self.last.as_ref();
+    if last.map_or(true, |last| (self.key)(last) != (self.key)(&value)) {
       self.last = Some(value.clone());
       self.observer.next(value);
     }
