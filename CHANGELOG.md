@@ -31,6 +31,7 @@ This is a big refactor for rxRust, almost reimplement everything and many api wa
 - **operator**: add `from_stream_result` converts an `Stream<Result<Item, Err>` into a fallible `Observable`.
 - **test**: reimplement the `FakeTimer` help us to control the timer when we write unit test.
 - **operator**: let `flat_map` and `flat_map_threads` accept `FnMut` instead of `Fn`, allowing for side effects.
+- **observable**: add `Publish` trait, implemented by `PublishSubject`, that emits to an observer only those items that are emitted by the source Observable(s) subsequent to the time of the subscription.
 
 ### Bug Fixes
 

@@ -12,6 +12,7 @@ extern crate float_cmp;
 extern crate bencher;
 
 pub mod behavior;
+pub mod publish;
 pub mod observable;
 pub mod observer;
 pub mod ops;
@@ -25,6 +26,7 @@ pub mod type_hint;
 pub mod prelude {
 
   pub use crate::behavior::*;
+  pub use crate::publish::*;
   pub use crate::observable;
   pub use crate::observable::*;
   pub use crate::observer;

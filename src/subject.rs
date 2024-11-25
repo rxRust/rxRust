@@ -9,8 +9,10 @@ use crate::{
 };
 
 pub mod behavior_subject;
+pub mod publish_subject;
 use crate::rc::AssociatedRefPtr;
 pub use behavior_subject::*;
+pub use publish_subject::*;
 use smallvec::SmallVec;
 
 pub trait SubjectSize {
