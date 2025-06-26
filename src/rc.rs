@@ -57,7 +57,10 @@ impl<T> MutRc<T> {
 
 impl<T> RcDeref for MutRc<T> {
   type Target = T;
-  type Ref<'a >  = Ref<'a, T> where Self: 'a;
+  type Ref<'a>
+    = Ref<'a, T>
+  where
+    Self: 'a;
 
   #[inline]
   fn rc_deref(&self) -> Self::Ref<'_> {
@@ -67,7 +70,10 @@ impl<T> RcDeref for MutRc<T> {
 
 impl<T> RcDeref for MutArc<T> {
   type Target = T;
-  type Ref<'a> = MutexGuard<'a, T> where Self:'a;
+  type Ref<'a>
+    = MutexGuard<'a, T>
+  where
+    Self: 'a;
 
   #[inline]
   fn rc_deref(&self) -> Self::Ref<'_> {
@@ -77,7 +83,10 @@ impl<T> RcDeref for MutArc<T> {
 
 impl<T> RcDerefMut for MutRc<T> {
   type Target = T;
-  type MutRef<'a> = RefMut<'a, T> where Self:'a;
+  type MutRef<'a>
+    = RefMut<'a, T>
+  where
+    Self: 'a;
 
   #[inline]
   fn rc_deref_mut(&self) -> Self::MutRef<'_> {
@@ -87,7 +96,10 @@ impl<T> RcDerefMut for MutRc<T> {
 
 impl<T> RcDerefMut for MutArc<T> {
   type Target = T;
-  type MutRef<'a> = MutexGuard<'a, T> where Self:'a;
+  type MutRef<'a>
+    = MutexGuard<'a, T>
+  where
+    Self: 'a;
 
   #[inline]
   fn rc_deref_mut(&self) -> Self::MutRef<'_> {

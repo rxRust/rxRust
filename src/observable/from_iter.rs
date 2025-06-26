@@ -1,8 +1,5 @@
 use crate::prelude::*;
-use std::{
-  convert::Infallible,
-  iter::{Repeat, Take},
-};
+use std::{convert::Infallible, iter::RepeatN};
 
 /// Creates an observable that produces values from an iterator.
 ///
@@ -81,11 +78,11 @@ impl<Iter> ObservableExt<Iter::Item, Infallible> for ObservableIter<Iter> where
 /// // 123
 /// // 123
 /// ```
-pub fn repeat<Item>(v: Item, n: usize) -> ObservableIter<Take<Repeat<Item>>>
+pub fn repeat<Item>(v: Item, n: usize) -> ObservableIter<RepeatN<Item>>
 where
   Item: Clone,
 {
-  from_iter(std::iter::repeat(v).take(n))
+  from_iter(std::iter::repeat_n(v, n))
 }
 
 #[cfg(test)]
