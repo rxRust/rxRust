@@ -2,6 +2,8 @@
 
 ## [Unreleased] - ReleaseDate
 
+- **scheduler**: support custom impl scheduler for delay operator.
+
 ### Refactor
 
 This is a big refactor for rxRust, almost reimplement everything and many api was broken. Use a simpler and more directly way to implement.

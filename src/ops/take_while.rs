@@ -69,7 +69,7 @@ where
   }
 
   fn is_finished(&self) -> bool {
-    self.observer.as_ref().map_or(true, |o| o.is_finished())
+    self.observer.as_ref().is_none_or(|o| o.is_finished())
   }
 }
 

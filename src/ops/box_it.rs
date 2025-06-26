@@ -37,7 +37,7 @@ trait BoxObservable<'a, Item, Err> {
   fn box_subscribe(
     self: Box<Self>,
     observer: BoxObserver<'a, Item, Err>,
-  ) -> BoxSubscription;
+  ) -> BoxSubscription<'a>;
 }
 
 trait BoxObservableThreads<Item, Err> {
@@ -63,7 +63,7 @@ where
   fn box_subscribe(
     self: Box<Self>,
     observer: BoxObserver<'a, Item, Err>,
-  ) -> BoxSubscription {
+  ) -> BoxSubscription<'a> {
     let u = self.actual_subscribe(observer);
     BoxSubscription::new(u)
   }

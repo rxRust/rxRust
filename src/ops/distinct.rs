@@ -230,7 +230,7 @@ where
 {
   fn next(&mut self, value: Item) {
     let last = self.last.as_ref();
-    if last.map_or(true, |last| (self.key)(last) != (self.key)(&value)) {
+    if last.is_none_or(|last| (self.key)(last) != (self.key)(&value)) {
       self.last = Some(value.clone());
       self.observer.next(value);
     }

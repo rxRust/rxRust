@@ -566,7 +566,6 @@ pub trait ObservableExt<Item, Err>: Sized {
   /// # use rxrust::prelude::*;
   ///
   /// observable::from_iter(0..10).skip(5).subscribe(|v| println!("{}", v));
-
   /// // print logs:
   /// // 6
   /// // 7
@@ -748,7 +747,6 @@ pub trait ObservableExt<Item, Err>: Sized {
   /// observable::from_iter(0..10)
   ///   .take_while(|v| v < &5)
   /// .subscribe(|v| println!("{}", v));
-
   /// // print logs:
   /// // 0
   /// // 1
@@ -777,7 +775,6 @@ pub trait ObservableExt<Item, Err>: Sized {
   /// observable::from_iter(0..10)
   ///   .take_while_inclusive(|v| v < &4)
   /// .subscribe(|v| println!("{}", v));
-
   /// // print logs:
   /// // 0
   /// // 1
@@ -810,7 +807,6 @@ pub trait ObservableExt<Item, Err>: Sized {
   /// observable::from_iter(0..10)
   ///   .take_last(5)
   /// .subscribe(|v| println!("{}", v));
-
   /// // print logs:
   /// // 5
   /// // 6

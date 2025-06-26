@@ -55,6 +55,38 @@ where
     -> TaskHandle<T::Output>;
 }
 
+pub trait AsyncExecutor<T>: Clone
+where
+  T: Future,
+{
+  fn spawn(&self, task: T);
+}
+
+impl<S, T> Scheduler<T> for S
+where
+  S: AsyncExecutor<Remote<ChainFut<BoxFuture<'static, ()>, T>>>
+    + AsyncExecutor<Remote<T>>,
+  T: Future,
+{
+  fn schedule(
+    &self,
+    task: T,
+    delay: Option<Duration>,
+  ) -> TaskHandle<T::Output> {
+    if let Some(dur) = delay {
+      let delay = new_timer(dur);
+      let fut = ChainFut { fut1: delay, fut2: task };
+      let (fut, handle) = remote_handle(fut);
+      self.spawn(fut);
+      handle
+    } else {
+      let (fut, handle) = remote_handle(task);
+      self.spawn(fut);
+      handle
+    }
+  }
+}
+
 pin_project! {
   pub struct OnceTask<Args, R> {
     func: fn(Args) -> R,
@@ -237,6 +269,28 @@ pin_project! {
       handle_info: MutArc<HandleInfo<Fut::Output>>,
       #[pin]
       future: CatchUnwind<AssertUnwindSafe<Fut>>,
+  }
+}
+
+pin_project! {
+  struct ChainFut<Fut1: Future, Fut2: Future> {
+      #[pin]
+      fut1: Fut1,
+      #[pin]
+      fut2: Fut2,
+  }
+}
+
+impl<Fut1: Future, Fut2: Future> Future for ChainFut<Fut1, Fut2> {
+  type Output = Fut2::Output;
+  fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+    let this = self.project();
+
+    if this.fut1.poll(cx).is_ready() {
+      return this.fut2.poll(cx);
+    };
+
+    Poll::Pending
   }
 }
 
