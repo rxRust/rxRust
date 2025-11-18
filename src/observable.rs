@@ -1676,7 +1676,7 @@ pub trait ObservableExt<Item, Err>: Sized {
     self,
     other: Other,
     binary_op: BinaryOp,
-  ) -> CombineLatestOp<Self, Other, BinaryOp>
+  ) -> CombineLatestOp<Self, Other, Item, OtherItem, OutputItem, BinaryOp>
   where
     Other: ObservableExt<OtherItem, Err>,
     BinaryOp: FnMut(Item, OtherItem) -> OutputItem,
@@ -1688,7 +1688,7 @@ pub trait ObservableExt<Item, Err>: Sized {
     self,
     other: Other,
     binary_op: BinaryOp,
-  ) -> CombineLatestOpThread<Self, Other, BinaryOp>
+  ) -> CombineLatestOpThread<Self, Other, Item, OtherItem, OutputItem, BinaryOp>
   where
     Other: ObservableExt<OtherItem, Err>,
     BinaryOp: FnMut(Item, OtherItem) -> OutputItem,
