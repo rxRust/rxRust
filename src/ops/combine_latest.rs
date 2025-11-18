@@ -4,36 +4,41 @@ use crate::{
 };
 
 #[derive(Clone)]
-pub struct CombineLatestOp<A, B, BinaryOp> {
+pub struct CombineLatestOp<A, B, ItemA, ItemB, OutputItem, BinaryOp> {
   a: A,
   b: B,
   binary_op: BinaryOp,
+  _hint: TypeHint<(ItemA, ItemB, OutputItem)>,
 }
 
 #[derive(Clone)]
-pub struct CombineLatestOpThread<A, B, BinaryOp> {
+pub struct CombineLatestOpThread<A, B, ItemA, ItemB, OutputItem, BinaryOp> {
   a: A,
   b: B,
   binary_op: BinaryOp,
+  _hint: TypeHint<(ItemA, ItemB, OutputItem)>,
 }
 
 macro_rules! impl_combine_latest_op {
   ($name: ident, $rc: ident) => {
-    impl<A, B, BinaryOp> $name<A, B, BinaryOp> {
+    impl<A, B, ItemA, ItemB, OutputItem, BinaryOp>
+      $name<A, B, ItemA, ItemB, OutputItem, BinaryOp>
+    {
       #[inline]
       pub(crate) fn new(
         a: A,
         b: B,
         binary_op: BinaryOp,
-      ) -> $name<A, B, BinaryOp> {
-        $name { a, b, binary_op }
+      ) -> $name<A, B, ItemA, ItemB, OutputItem, BinaryOp> {
+        $name { a, b, binary_op, _hint: TypeHint::new() }
       }
     }
 
-    impl<A, B, ItemA, ItemB, Err, O, BinaryOp>
-      Observable<(ItemA, ItemB), Err, O> for $name<A, B, BinaryOp>
+    impl<A, B, ItemA, ItemB, OutputItem, Err, O, BinaryOp>
+      Observable<OutputItem, Err, O>
+      for $name<A, B, ItemA, ItemB, OutputItem, BinaryOp>
     where
-      O: Observer<(ItemA, ItemB), Err>,
+      O: Observer<OutputItem, Err>,
       A: Observable<
         ItemA,
         Err,
@@ -44,6 +49,7 @@ macro_rules! impl_combine_latest_op {
         Err,
         BObserver<$rc<CombineLatestObserver<O, ItemA, ItemB, BinaryOp>>, ItemA>,
       >,
+      BinaryOp: FnMut(ItemA, ItemB) -> OutputItem,
       $rc<CombineLatestObserver<O, ItemA, ItemB, BinaryOp>>:
         Observer<CombineItem<ItemA, ItemB>, Err>,
     {
@@ -63,8 +69,9 @@ macro_rules! impl_combine_latest_op {
       }
     }
 
-    impl<A, B, ItemA, ItemB, Err, BinaryOp> ObservableExt<(ItemA, ItemB), Err>
-      for $name<A, B, BinaryOp>
+    impl<A, B, ItemA, ItemB, OutputItem, Err, BinaryOp>
+      ObservableExt<OutputItem, Err>
+      for $name<A, B, ItemA, ItemB, OutputItem, BinaryOp>
     where
       A: ObservableExt<ItemA, Err>,
       B: ObservableExt<ItemB, Err>,
@@ -247,6 +254,30 @@ mod tests {
           v.as_ref(),
           vec![(0, 0), (1, 0), (2, 0), (2, 1), (3, 1), (3, 2), (4, 2)]
         );
+      }
+    };
+  }
+
+  #[test]
+  fn combine_latest_transform() {
+    let clock = FakeClock::default();
+    let x = Rc::new(RefCell::new(vec![]));
+
+    let interval = clock.interval(Duration::from_millis(2));
+
+    {
+      let x_c = x.clone();
+      interval
+        .combine_latest(clock.interval(Duration::from_millis(3)), |a, b| a + b)
+        .take(7)
+        .subscribe(move |v| {
+          x_c.borrow_mut().push(v);
+        });
+      clock.advance(Duration::from_millis(50));
+      {
+        let v = x.borrow();
+        assert_eq!(v.len(), 7);
+        assert_eq!(v.as_ref(), vec![0, 1, 2, 3, 4, 5, 6]);
       }
     };
   }
