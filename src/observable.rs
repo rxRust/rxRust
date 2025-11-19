@@ -1139,12 +1139,7 @@ pub trait Observable<Item, Err>: Sized {
   fn average(self) -> AverageOp<Self, Item>
   where
     Item: Clone + Default + Add<Item, Output = Item> + Mul<f64, Output = Item>,
-    ScanOp<Self, fn(Accum<Item>, Item) -> Accum<Item>, Accum<Item>, Item>:
-      Observable<Accum<Item>, Err>,
-    LastOp<
-      ScanOp<Self, fn(Accum<Item>, Item) -> Accum<Item>, Accum<Item>, Item>,
-      Accum<Item>,
-    >: Observable<Accum<Item>, Err>,
+    AverageOp<Self, Item>: Observable<Item, Err>,
   {
     /// Computing an average by multiplying accumulated nominator by a
     /// reciprocal of accumulated denominator. In this way some generic
