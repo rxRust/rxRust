@@ -36,11 +36,11 @@ impl ThrottleEdge {
   }
 }
 
-impl<Item, Err, O, S, SD, F> Observable<Item, Err, O> for ThrottleOp<S, SD, F>
+impl<Item, Err, O, S, SD, F> ObservableImpl<Item, Err, O> for ThrottleOp<S, SD, F>
 where
   Item: Clone,
   O: Observer<Item, Err>,
-  S: Observable<Item, Err, ThrottleObserver<O, SD, Item, F>>,
+  S: ObservableImpl<Item, Err, ThrottleObserver<O, SD, Item, F>>,
   F: FnMut(&Item) -> Duration,
   ThrottleObserver<O, SD, Item, F>: Observer<Item, Err>,
 {
@@ -65,8 +65,8 @@ where
   }
 }
 
-impl<Item, Err, S, SD, F> ObservableExt<Item, Err> for ThrottleOp<S, SD, F> where
-  S: ObservableExt<Item, Err>
+impl<Item, Err, S, SD, F> Observable<Item, Err> for ThrottleOp<S, SD, F> where
+  S: Observable<Item, Err>
 {
 }
 

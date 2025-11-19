@@ -24,10 +24,10 @@ macro_rules! impl_finalize_op {
       }
     }
 
-    impl<Item, Err, O, S, F> Observable<Item, Err, O> for $name<S, F>
+    impl<Item, Err, O, S, F> ObservableImpl<Item, Err, O> for $name<S, F>
     where
       O: Observer<Item, Err>,
-      S: Observable<Item, Err, FinalizerObserver<O, $rc<Option<F>>>>,
+      S: ObservableImpl<Item, Err, FinalizerObserver<O, $rc<Option<F>>>>,
       F: FnOnce(),
     {
       type Unsub = FinalizerSubscription<S::Unsub, $rc<Option<F>>>;
@@ -41,8 +41,8 @@ macro_rules! impl_finalize_op {
       }
     }
 
-    impl<Item, Err, S, F> ObservableExt<Item, Err> for $name<S, F> where
-      S: ObservableExt<Item, Err>
+    impl<Item, Err, S, F> Observable<Item, Err> for $name<S, F> where
+      S: Observable<Item, Err>
     {
     }
   };

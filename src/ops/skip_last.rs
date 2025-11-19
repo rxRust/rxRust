@@ -7,9 +7,9 @@ pub struct SkipLastOp<S> {
   pub(crate) count: usize,
 }
 
-impl<Item, Err, O, S> Observable<Item, Err, O> for SkipLastOp<S>
+impl<Item, Err, O, S> ObservableImpl<Item, Err, O> for SkipLastOp<S>
 where
-  S: Observable<Item, Err, SkipLastObserver<O, Item>>,
+  S: ObservableImpl<Item, Err, SkipLastObserver<O, Item>>,
   O: Observer<Item, Err>,
 {
   type Unsub = S::Unsub;
@@ -23,8 +23,8 @@ where
   }
 }
 
-impl<Item, Err, S> ObservableExt<Item, Err> for SkipLastOp<S> where
-  S: ObservableExt<Item, Err>
+impl<Item, Err, S> Observable<Item, Err> for SkipLastOp<S> where
+  S: Observable<Item, Err>
 {
 }
 

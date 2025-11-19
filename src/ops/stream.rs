@@ -8,7 +8,7 @@ use futures::{
   ready, FutureExt, Stream, StreamExt,
 };
 
-use crate::{observable::Observable, observer::Observer};
+use crate::{observable::ObservableImpl, observer::Observer};
 
 enum Message<T, E> {
   Item(Result<T, E>),
@@ -24,7 +24,7 @@ impl<T, E> ObservableStream<T, E> {
   /// Constructs a new `ObservableStream<T, E>` that emits the values from the observable.
   pub fn new<O>(observable: O) -> Self
   where
-    O: Observable<T, E, ObservableStreamObserver<T, E>>,
+    O: ObservableImpl<T, E, ObservableStreamObserver<T, E>>,
   {
     let (sender, receiver) = unbounded::<Message<T, E>>();
     observable.actual_subscribe(ObservableStreamObserver { sender });
@@ -91,7 +91,7 @@ impl<T, E> Observer<T, E> for ObservableStreamObserver<T, E> {
 
 #[cfg(test)]
 mod tests {
-  use crate::observable::ObservableExt;
+  use crate::observable::Observable;
   use futures::StreamExt;
 
   #[tokio::test]

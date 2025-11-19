@@ -14,11 +14,11 @@ impl<S, F, Item> MapOp<S, F, Item> {
   }
 }
 
-impl<Item1, Item2, Err, O, S, F> Observable<Item1, Err, O>
+impl<Item1, Item2, Err, O, S, F> ObservableImpl<Item1, Err, O>
   for MapOp<S, F, Item2>
 where
   O: Observer<Item1, Err>,
-  S: Observable<Item2, Err, MapObserver<O, F>>,
+  S: ObservableImpl<Item2, Err, MapObserver<O, F>>,
   F: FnMut(Item2) -> Item1,
 {
   type Unsub = S::Unsub;
@@ -30,9 +30,9 @@ where
   }
 }
 
-impl<Item1, Item2, Err, S, F> ObservableExt<Item1, Err> for MapOp<S, F, Item2>
+impl<Item1, Item2, Err, S, F> Observable<Item1, Err> for MapOp<S, F, Item2>
 where
-  S: ObservableExt<Item2, Err>,
+  S: Observable<Item2, Err>,
   F: FnMut(Item2) -> Item1,
 {
 }

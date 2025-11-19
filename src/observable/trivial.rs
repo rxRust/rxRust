@@ -14,7 +14,7 @@ pub fn throw<Err>(e: Err) -> ThrowObservable<Err> {
 #[derive(Clone)]
 pub struct ThrowObservable<Err>(Err);
 
-impl<Err, O> Observable<(), Err, O> for ThrowObservable<Err>
+impl<Err, O> ObservableImpl<(), Err, O> for ThrowObservable<Err>
 where
   O: Observer<(), Err>,
 {
@@ -25,7 +25,7 @@ where
   }
 }
 
-impl<Err> ObservableExt<(), Err> for ThrowObservable<Err> {}
+impl<Err> Observable<(), Err> for ThrowObservable<Err> {}
 
 /// Creates an observable that produces no values.
 ///
@@ -48,7 +48,7 @@ pub fn empty() -> EmptyObservable {
 #[derive(Clone)]
 pub struct EmptyObservable;
 
-impl<Item, O> Observable<Item, Infallible, O> for EmptyObservable
+impl<Item, O> ObservableImpl<Item, Infallible, O> for EmptyObservable
 where
   O: Observer<Item, Infallible>,
 {
@@ -59,7 +59,7 @@ where
   }
 }
 
-impl<Item> ObservableExt<Item, Infallible> for EmptyObservable {}
+impl<Item> Observable<Item, Infallible> for EmptyObservable {}
 /// Creates an observable that never emits anything.
 ///
 /// Neither emits a value, nor completes, nor emits an error.
@@ -71,7 +71,7 @@ pub fn never() -> NeverObservable {
 #[derive(Clone)]
 pub struct NeverObservable;
 
-impl<O> Observable<(), Infallible, O> for NeverObservable
+impl<O> ObservableImpl<(), Infallible, O> for NeverObservable
 where
   O: Observer<(), Infallible>,
 {
@@ -82,7 +82,7 @@ where
   }
 }
 
-impl ObservableExt<(), Infallible> for NeverObservable {}
+impl Observable<(), Infallible> for NeverObservable {}
 #[cfg(test)]
 mod test {
   use crate::prelude::*;
@@ -108,7 +108,7 @@ mod test {
   fn empty() {
     let mut hits = 0;
     let mut completed = false;
-    ObservableExt::<(), _>::on_complete(observable::empty(), || {
+    Observable::<(), _>::on_complete(observable::empty(), || {
       completed = true
     })
     .subscribe(|()| hits += 1);

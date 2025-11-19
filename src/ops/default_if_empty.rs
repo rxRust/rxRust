@@ -13,9 +13,9 @@ impl<Item, S> DefaultIfEmptyOp<S, Item> {
   }
 }
 
-impl<Item, Err, O, S> Observable<Item, Err, O> for DefaultIfEmptyOp<S, Item>
+impl<Item, Err, O, S> ObservableImpl<Item, Err, O> for DefaultIfEmptyOp<S, Item>
 where
-  S: Observable<Item, Err, DefaultIfEmptyObserver<O, Item>>,
+  S: ObservableImpl<Item, Err, DefaultIfEmptyObserver<O, Item>>,
   O: Observer<Item, Err>,
   Item: Clone,
 {
@@ -30,8 +30,8 @@ where
   }
 }
 
-impl<Item, Err, S> ObservableExt<Item, Err> for DefaultIfEmptyOp<S, Item> where
-  S: ObservableExt<Item, Err>
+impl<Item, Err, S> Observable<Item, Err> for DefaultIfEmptyOp<S, Item> where
+  S: Observable<Item, Err>
 {
 }
 pub struct DefaultIfEmptyObserver<O, Item> {

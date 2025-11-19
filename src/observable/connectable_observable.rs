@@ -5,10 +5,10 @@ pub struct ConnectableObservable<S, Subject> {
   subject: Subject,
 }
 
-impl<S, Subject, Item, Err, O> Observable<Item, Err, O>
+impl<S, Subject, Item, Err, O> ObservableImpl<Item, Err, O>
   for ConnectableObservable<S, Subject>
 where
-  Subject: Observable<Item, Err, O>,
+  Subject: ObservableImpl<Item, Err, O>,
   O: Observer<Item, Err>,
 {
   type Unsub = Subject::Unsub;
@@ -39,7 +39,7 @@ impl<S, Subject> ConnectableObservable<S, Subject> {
   #[inline]
   pub fn connect<Item, Err>(self) -> S::Unsub
   where
-    S: Observable<Item, Err, Subject>,
+    S: ObservableImpl<Item, Err, Subject>,
     Subject: Observer<Item, Err>,
   {
     self.source.actual_subscribe(self.subject)

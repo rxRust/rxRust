@@ -30,7 +30,7 @@ pub struct IntervalObservable<S> {
   delay: Option<Duration>,
 }
 
-impl<S, O> Observable<usize, Infallible, O> for IntervalObservable<S>
+impl<S, O> ObservableImpl<usize, Infallible, O> for IntervalObservable<S>
 where
   O: Observer<usize, Infallible>,
   S: Scheduler<RepeatTask<O>>,
@@ -43,7 +43,7 @@ where
   }
 }
 
-impl<S> ObservableExt<usize, Infallible> for IntervalObservable<S> {}
+impl<S> Observable<usize, Infallible> for IntervalObservable<S> {}
 
 fn interval_task<O>(observer: &mut O, seq: usize) -> bool
 where

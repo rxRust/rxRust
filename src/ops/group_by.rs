@@ -8,10 +8,10 @@ pub struct KeyObservable<Key, Subject> {
   subject: Subject,
 }
 
-impl<Key, Item, Err, O, Subject> Observable<Item, Err, O>
+impl<Key, Item, Err, O, Subject> ObservableImpl<Item, Err, O>
   for KeyObservable<Key, Subject>
 where
-  Subject: Observable<Item, Err, O>,
+  Subject: ObservableImpl<Item, Err, O>,
   O: Observer<Item, Err>,
 {
   type Unsub = Subject::Unsub;
@@ -21,7 +21,7 @@ where
   }
 }
 
-impl<Item, Err, Key, Subject> ObservableExt<Item, Err>
+impl<Item, Err, Key, Subject> Observable<Item, Err>
   for KeyObservable<Key, Subject>
 where
   Subject: Observer<Item, Err>,
@@ -61,11 +61,11 @@ impl<Source, Discr, Subject> GroupByOp<Source, Discr, Subject> {
 macro_rules! impl_observable_for_group_by {
   ($ty: ty $(,$lf:lifetime)?) => {
     impl<$($lf,)? Source, Discr, Key, Item, Err, O>
-      Observable<KeyObservable<Key, $ty>, Err, O>
+      ObservableImpl<KeyObservable<Key, $ty>, Err, O>
       for GroupByOp<Source, Discr, $ty>
     where
       O: Observer<KeyObservable<Key, $ty>, Err>,
-      Source: Observable<Item, Err, GroupByObserver<O, Discr, Key, $ty>>,
+      Source: ObservableImpl<Item, Err, GroupByObserver<O, Discr, Key, $ty>>,
       Discr: FnMut(&Item) -> Key,
       Key: Hash + Eq + Clone,
       Item: Clone,
@@ -83,10 +83,10 @@ macro_rules! impl_observable_for_group_by {
     }
 
     impl<$($lf,)? Source, Discr, Key, Item, Err>
-      ObservableExt<KeyObservable<Key, $ty>, Err>
+      Observable<KeyObservable<Key, $ty>, Err>
       for GroupByOp<Source, Discr, $ty>
     where
-      Source: ObservableExt<Item, Err>
+      Source: Observable<Item, Err>
     {
     }
   };

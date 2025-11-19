@@ -10,7 +10,7 @@ use crate::{
   scheduler::{NormalReturn, Scheduler, TaskHandle},
 };
 
-use super::{Observable, ObservableExt};
+use super::{ObservableImpl, Observable};
 
 /// Returns an `Observable` that emits all the items returned from the source `Stream<Result<Item, Err>`
 /// until it completes or returns an error.
@@ -32,7 +32,7 @@ pub struct TryStreamObservable<S, SD> {
   scheduler: SD,
 }
 
-impl<Item, Err, O, S, SD> Observable<Item, Err, O>
+impl<Item, Err, O, S, SD> ObservableImpl<Item, Err, O>
   for TryStreamObservable<S, SD>
 where
   S: Stream<Item = Result<Item, Err>>,
@@ -48,7 +48,7 @@ where
   }
 }
 
-impl<Item, Err, S, SD> ObservableExt<Item, Err> for TryStreamObservable<S, SD> where
+impl<Item, Err, S, SD> Observable<Item, Err> for TryStreamObservable<S, SD> where
   S: Stream<Item = Result<Item, Err>>
 {
 }

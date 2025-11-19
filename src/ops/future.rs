@@ -9,7 +9,7 @@ use futures::{
   ready, Future, FutureExt, StreamExt,
 };
 
-use crate::{observable::Observable, observer::Observer};
+use crate::{observable::ObservableImpl, observer::Observer};
 
 /// Errors that can prevent an observable future from resolving correctly.
 #[derive(Debug, Clone)]
@@ -46,7 +46,7 @@ impl<T, E> ObservableFuture<T, E> {
   /// Constructs a new `ObservableFuture<T, E>` that awaits the value emitted by a shared observable.
   pub fn new<S>(observable: S) -> Self
   where
-    S: Observable<T, E, ObservableFutureObserver<T, E>>,
+    S: ObservableImpl<T, E, ObservableFutureObserver<T, E>>,
   {
     let (sender, receiver) = unbounded::<Message<T, E>>();
     observable
@@ -128,7 +128,7 @@ fn send_observable_value<T, E>(
 mod tests {
   use futures::executor::block_on;
 
-  use crate::{observable::ObservableExt, ops::future::ObservableError};
+  use crate::{observable::Observable, ops::future::ObservableError};
 
   #[tokio::test]
   async fn to_future_observable_resolve_value_test() {
@@ -142,7 +142,7 @@ mod tests {
 
   #[test]
   fn to_future_error_empty_observable_test() {
-    let fut = ObservableExt::<i32, _>::to_future(crate::observable::empty());
+    let fut = Observable::<i32, _>::to_future(crate::observable::empty());
     let value = block_on(fut);
     // let value = fut.await;
     // println!("{value:?}");

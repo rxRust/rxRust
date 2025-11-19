@@ -39,12 +39,12 @@ macro_rules! impl_skip_until_op {
       }
     }
 
-    impl<S, N, Item, Err, O, NotifyItem, NotifyErr> Observable<Item, Err, O>
+    impl<S, N, Item, Err, O, NotifyItem, NotifyErr> ObservableImpl<Item, Err, O>
       for $name<S, N, NotifyItem, NotifyErr>
     where
       O: Observer<Item, Err>,
-      S: Observable<Item, Err, $observer<O>>,
-      N: Observable<
+      S: ObservableImpl<Item, Err, $observer<O>>,
+      N: ObservableImpl<
         NotifyItem,
         NotifyErr,
         SkipUntilNotifierObserver<$observer<O>>,
@@ -63,11 +63,11 @@ macro_rules! impl_skip_until_op {
       }
     }
 
-    impl<S, N, Item, Err, NotifyItem, NotifyErr> ObservableExt<Item, Err>
+    impl<S, N, Item, Err, NotifyItem, NotifyErr> Observable<Item, Err>
       for $name<S, N, NotifyItem, NotifyErr>
     where
-      S: ObservableExt<Item, Err>,
-      N: ObservableExt<NotifyItem, NotifyErr>,
+      S: Observable<Item, Err>,
+      N: Observable<NotifyItem, NotifyErr>,
     {
     }
   };

@@ -20,7 +20,7 @@ pub struct ObservableFn<F, P> {
 
 macro_rules! impl_observable {
   ($subscriber:ident $($bounds: tt)*) => {
-    impl<F, Item, Err, O> Observable<Item, Err, O>
+    impl<F, Item, Err, O> ObservableImpl<Item, Err, O>
       for ObservableFn<F, $subscriber<O>>
     where
       F: FnOnce($subscriber<O>),
@@ -35,7 +35,7 @@ macro_rules! impl_observable {
       }
     }
 
-    impl<F, Item, Err, O> ObservableExt<Item, Err>
+    impl<F, Item, Err, O> Observable<Item, Err>
       for ObservableFn<F, $subscriber<O>>
     where
       F: FnOnce($subscriber<O>),

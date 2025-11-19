@@ -5,9 +5,9 @@ pub struct PairwiseOp<S> {
   pub(crate) source: S,
 }
 
-impl<Item, Err, O, S> Observable<(Item, Item), Err, O> for PairwiseOp<S>
+impl<Item, Err, O, S> ObservableImpl<(Item, Item), Err, O> for PairwiseOp<S>
 where
-  S: Observable<Item, Err, PairwiseObserver<O, Item>>,
+  S: ObservableImpl<Item, Err, PairwiseObserver<O, Item>>,
   O: Observer<(Item, Item), Err>,
   Item: Clone,
 {
@@ -20,8 +20,8 @@ where
   }
 }
 
-impl<Item, Err, S> ObservableExt<(Item, Item), Err> for PairwiseOp<S> where
-  S: ObservableExt<Item, Err>
+impl<Item, Err, S> Observable<(Item, Item), Err> for PairwiseOp<S> where
+  S: Observable<Item, Err>
 {
 }
 

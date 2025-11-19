@@ -6,9 +6,9 @@ pub struct StartWithOp<S, B> {
   pub(crate) values: Vec<B>,
 }
 
-impl<Item, Err, O, S> Observable<Item, Err, O> for StartWithOp<S, Item>
+impl<Item, Err, O, S> ObservableImpl<Item, Err, O> for StartWithOp<S, Item>
 where
-  S: Observable<Item, Err, O>,
+  S: ObservableImpl<Item, Err, O>,
   O: Observer<Item, Err>,
 {
   type Unsub = S::Unsub;
@@ -22,8 +22,8 @@ where
   }
 }
 
-impl<Item, Err, S> ObservableExt<Item, Err> for StartWithOp<S, Item> where
-  S: ObservableExt<Item, Err>
+impl<Item, Err, S> Observable<Item, Err> for StartWithOp<S, Item> where
+  S: Observable<Item, Err>
 {
 }
 

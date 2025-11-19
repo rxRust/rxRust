@@ -13,9 +13,9 @@ impl<S, B, Item> MapToOp<S, B, Item> {
     Self { source, value, _m: TypeHint::default() }
   }
 }
-impl<Item, Err, O, S, B> Observable<B, Err, O> for MapToOp<S, B, Item>
+impl<Item, Err, O, S, B> ObservableImpl<B, Err, O> for MapToOp<S, B, Item>
 where
-  S: Observable<Item, Err, MapToObserver<O, B>>,
+  S: ObservableImpl<Item, Err, MapToObserver<O, B>>,
   O: Observer<B, Err>,
   B: Clone,
 {
@@ -28,8 +28,8 @@ where
   }
 }
 
-impl<Item, Err, S, B> ObservableExt<B, Err> for MapToOp<S, B, Item> where
-  S: ObservableExt<Item, Err>
+impl<Item, Err, S, B> Observable<B, Err> for MapToOp<S, B, Item> where
+  S: Observable<Item, Err>
 {
 }
 

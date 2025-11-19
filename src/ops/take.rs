@@ -12,10 +12,10 @@ impl<S> TakeOp<S> {
   }
 }
 
-impl<Item, Err, O, S> Observable<Item, Err, O> for TakeOp<S>
+impl<Item, Err, O, S> ObservableImpl<Item, Err, O> for TakeOp<S>
 where
   O: Observer<Item, Err>,
-  S: Observable<Item, Err, TakeObserver<O>>,
+  S: ObservableImpl<Item, Err, TakeObserver<O>>,
 {
   type Unsub = S::Unsub;
 
@@ -29,8 +29,8 @@ where
   }
 }
 
-impl<Item, Err, S> ObservableExt<Item, Err> for TakeOp<S> where
-  S: ObservableExt<Item, Err>
+impl<Item, Err, S> Observable<Item, Err> for TakeOp<S> where
+  S: Observable<Item, Err>
 {
 }
 

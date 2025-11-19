@@ -29,13 +29,13 @@ macro_rules! impl_with_last_from_op {
       }
     }
 
-    impl<Source, From, O, ItemA, ItemB, Err> Observable<(ItemA, ItemB), Err, O>
+    impl<Source, From, O, ItemA, ItemB, Err> ObservableImpl<(ItemA, ItemB), Err, O>
       for $name<Source, From>
     where
       O: Observer<(ItemA, ItemB), Err>,
       Source:
-        Observable<ItemA, Err, AObserver<$rc<Option<O>>, $rc<Option<ItemB>>>>,
-      From: Observable<
+        ObservableImpl<ItemA, Err, AObserver<$rc<Option<O>>, $rc<Option<ItemB>>>>,
+      From: ObservableImpl<
         ItemB,
         Err,
         BObserver<$rc<Option<O>>, $rc<Option<ItemB>>, ItemA>,
@@ -61,11 +61,11 @@ macro_rules! impl_with_last_from_op {
       }
     }
 
-    impl<Source, From, ItemA, ItemB, Err> ObservableExt<(ItemA, ItemB), Err>
+    impl<Source, From, ItemA, ItemB, Err> Observable<(ItemA, ItemB), Err>
       for $name<Source, From>
     where
-      Source: ObservableExt<ItemA, Err>,
-      From: ObservableExt<ItemB, Err>,
+      Source: Observable<ItemA, Err>,
+      From: Observable<ItemB, Err>,
     {
     }
   };

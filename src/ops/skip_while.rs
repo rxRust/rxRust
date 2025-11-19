@@ -6,9 +6,9 @@ pub struct SkipWhileOp<S, F> {
   pub(crate) predicate: F,
 }
 
-impl<Item, Err, O, S, F> Observable<Item, Err, O> for SkipWhileOp<S, F>
+impl<Item, Err, O, S, F> ObservableImpl<Item, Err, O> for SkipWhileOp<S, F>
 where
-  S: Observable<Item, Err, SkipWhileObserver<O, F>>,
+  S: ObservableImpl<Item, Err, SkipWhileObserver<O, F>>,
   O: Observer<Item, Err>,
   F: FnMut(&Item) -> bool,
 {
@@ -23,8 +23,8 @@ where
   }
 }
 
-impl<Item, Err, S, F> ObservableExt<Item, Err> for SkipWhileOp<S, F> where
-  S: ObservableExt<Item, Err>
+impl<Item, Err, S, F> Observable<Item, Err> for SkipWhileOp<S, F> where
+  S: Observable<Item, Err>
 {
 }
 pub struct SkipWhileObserver<O, F> {

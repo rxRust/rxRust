@@ -14,10 +14,10 @@ impl<S, M, Err> OnErrorMapOp<S, M, Err> {
   }
 }
 
-impl<Item, Err, OutputErr, O, S, M> Observable<Item, OutputErr, O>
+impl<Item, Err, OutputErr, O, S, M> ObservableImpl<Item, OutputErr, O>
   for OnErrorMapOp<S, M, Err>
 where
-  S: Observable<Item, Err, OnErrorMapObserver<O, M>>,
+  S: ObservableImpl<Item, Err, OnErrorMapObserver<O, M>>,
   O: Observer<Item, OutputErr>,
   M: FnMut(Err) -> OutputErr,
 {
@@ -30,10 +30,10 @@ where
   }
 }
 
-impl<Item, Err, OutputErr, S, M> ObservableExt<Item, OutputErr>
+impl<Item, Err, OutputErr, S, M> Observable<Item, OutputErr>
   for OnErrorMapOp<S, M, Err>
 where
-  S: ObservableExt<Item, Err>,
+  S: Observable<Item, Err>,
   M: FnMut(Err) -> OutputErr,
 {
 }

@@ -6,9 +6,9 @@ pub struct FilterOp<S, F> {
   pub(crate) filter: F,
 }
 
-impl<Item, Err, O, S, F> Observable<Item, Err, O> for FilterOp<S, F>
+impl<Item, Err, O, S, F> ObservableImpl<Item, Err, O> for FilterOp<S, F>
 where
-  S: Observable<Item, Err, FilterObserver<O, F>>,
+  S: ObservableImpl<Item, Err, FilterObserver<O, F>>,
   O: Observer<Item, Err>,
   F: FnMut(&Item) -> bool,
 {
@@ -21,8 +21,8 @@ where
   }
 }
 
-impl<Item, Err, S, F> ObservableExt<Item, Err> for FilterOp<S, F> where
-  S: ObservableExt<Item, Err>
+impl<Item, Err, S, F> Observable<Item, Err> for FilterOp<S, F> where
+  S: Observable<Item, Err>
 {
 }
 

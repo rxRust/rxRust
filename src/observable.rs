@@ -113,7 +113,7 @@ type ALLOp<S, F, Item> = DefaultIfEmptyOp<
   bool,
 >;
 
-pub trait Observable<Item, Err, O>
+pub trait ObservableImpl<Item, Err, O>
 where
   O: Observer<Item, Err>,
 {
@@ -122,7 +122,8 @@ where
   fn actual_subscribe(self, observer: O) -> Self::Unsub;
 }
 
-pub trait ObservableExt<Item, Err>: Sized {
+
+pub trait Observable<Item, Err>: Sized {
   /// emit only the first item emitted by an Observable
   #[inline]
   fn first(self) -> TakeOp<Self> {
@@ -265,7 +266,7 @@ pub trait ObservableExt<Item, Err>: Sized {
   #[inline]
   fn flatten<'a, Item2, Err2>(self) -> MergeAllOp<'a, Self, Item>
   where
-    Item: ObservableExt<Item2, Err2>,
+    Item: Observable<Item2, Err2>,
   {
     MergeAllOp::new(self, usize::MAX)
   }
@@ -274,7 +275,7 @@ pub trait ObservableExt<Item, Err>: Sized {
   #[inline]
   fn flatten_threads<Item2, Err2>(self) -> MergeAllOpThreads<Self, Item>
   where
-    Item: ObservableExt<Item2, Err2>,
+    Item: Observable<Item2, Err2>,
   {
     MergeAllOpThreads::new(self, usize::MAX)
   }
@@ -287,8 +288,8 @@ pub trait ObservableExt<Item, Err>: Sized {
   fn flat_map<'a, V, Item2, F>(self, f: F) -> FlatMapOp<'a, Self, V, F, Item>
   where
     F: FnMut(Item) -> V,
-    MapOp<Self, F, Item>: ObservableExt<V, Err>,
-    V: ObservableExt<Item2, Err>,
+    MapOp<Self, F, Item>: Observable<V, Err>,
+    V: Observable<Item2, Err>,
   {
     self.map(f).merge_all(usize::MAX)
   }
@@ -297,8 +298,8 @@ pub trait ObservableExt<Item, Err>: Sized {
   fn concat_map<'a, V, Item2, F>(self, f: F) -> FlatMapOp<'a, Self, V, F, Item>
   where
     F: FnMut(Item) -> V,
-    MapOp<Self, F, Item>: ObservableExt<V, Err>,
-    V: ObservableExt<Item2, Err>,
+    MapOp<Self, F, Item>: Observable<V, Err>,
+    V: Observable<Item2, Err>,
   {
     self.map(f).concat_all()
   }
@@ -310,8 +311,8 @@ pub trait ObservableExt<Item, Err>: Sized {
   ) -> FlatMapOpThreads<Self, V, F, Item>
   where
     F: FnMut(Item) -> V,
-    MapOp<Self, F, Item>: ObservableExt<V, Err>,
-    V: ObservableExt<Item2, Err>,
+    MapOp<Self, F, Item>: Observable<V, Err>,
+    V: Observable<Item2, Err>,
   {
     self.map(f).merge_all_threads(usize::MAX)
   }
@@ -323,8 +324,8 @@ pub trait ObservableExt<Item, Err>: Sized {
   ) -> FlatMapOpThreads<Self, V, F, Item>
   where
     F: FnMut(Item) -> V,
-    MapOp<Self, F, Item>: ObservableExt<V, Err>,
-    V: ObservableExt<Item2, Err>,
+    MapOp<Self, F, Item>: Observable<V, Err>,
+    V: Observable<Item2, Err>,
   {
     self.map(f).concat_all_threads()
   }
@@ -426,7 +427,7 @@ pub trait ObservableExt<Item, Err>: Sized {
   #[inline]
   fn merge<S>(self, other: S) -> MergeOp<Self, S>
   where
-    S: ObservableExt<Item, Err>,
+    S: Observable<Item, Err>,
   {
     MergeOp::new(self, other)
   }
@@ -435,7 +436,7 @@ pub trait ObservableExt<Item, Err>: Sized {
   #[inline]
   fn merge_threads<S>(self, other: S) -> MergeOpThreads<Self, S>
   where
-    S: ObservableExt<Item, Err>,
+    S: Observable<Item, Err>,
   {
     MergeOpThreads::new(self, other)
   }
@@ -462,7 +463,7 @@ pub trait ObservableExt<Item, Err>: Sized {
   #[inline]
   fn merge_all<'a, Item2>(self, concurrent: usize) -> MergeAllOp<'a, Self, Item>
   where
-    Item: ObservableExt<Item2, Err>,
+    Item: Observable<Item2, Err>,
   {
     MergeAllOp::new(self, concurrent)
   }
@@ -470,7 +471,7 @@ pub trait ObservableExt<Item, Err>: Sized {
   #[inline]
   fn concat_all<'a, Item2>(self) -> MergeAllOp<'a, Self, Item>
   where
-    Item: ObservableExt<Item2, Err>,
+    Item: Observable<Item2, Err>,
   {
     MergeAllOp::new(self, 1)
   }
@@ -482,7 +483,7 @@ pub trait ObservableExt<Item, Err>: Sized {
     concurrent: usize,
   ) -> MergeAllOpThreads<Self, Item>
   where
-    Item: ObservableExt<Item2, Err>,
+    Item: Observable<Item2, Err>,
   {
     MergeAllOpThreads::new(self, concurrent)
   }
@@ -490,7 +491,7 @@ pub trait ObservableExt<Item, Err>: Sized {
   #[inline]
   fn concat_all_threads<Item2>(self) -> MergeAllOpThreads<Self, Item>
   where
-    Item: ObservableExt<Item2, Err>,
+    Item: Observable<Item2, Err>,
   {
     MergeAllOpThreads::new(self, 1)
   }
@@ -607,7 +608,7 @@ pub trait ObservableExt<Item, Err>: Sized {
     notifier: Other,
   ) -> SkipUntilOp<Self, Other, NotifyItem, NotifyErr>
   where
-    Other: ObservableExt<NotifyItem, NotifyErr>,
+    Other: Observable<NotifyItem, NotifyErr>,
   {
     SkipUntilOp::new(self, notifier)
   }
@@ -619,7 +620,7 @@ pub trait ObservableExt<Item, Err>: Sized {
     notifier: Other,
   ) -> SkipUntilOpThreads<Self, Other, NotifyItem, NotifyErr>
   where
-    Other: ObservableExt<NotifyItem, NotifyErr>,
+    Other: Observable<NotifyItem, NotifyErr>,
   {
     SkipUntilOpThreads::new(self, notifier)
   }
@@ -853,7 +854,7 @@ pub trait ObservableExt<Item, Err>: Sized {
     sampling: Sample,
   ) -> SampleOp<Self, Sample, SampleItem>
   where
-    Sample: ObservableExt<SampleItem, SampleErr>,
+    Sample: Observable<SampleItem, SampleErr>,
   {
     SampleOp::new(self, sampling)
   }
@@ -865,7 +866,7 @@ pub trait ObservableExt<Item, Err>: Sized {
     sampling: Sample,
   ) -> SampleOpThreads<Self, Sample, SampleItem>
   where
-    Sample: ObservableExt<SampleItem, SampleErr>,
+    Sample: Observable<SampleItem, SampleErr>,
   {
     SampleOpThreads::new(self, sampling)
   }
@@ -1140,11 +1141,11 @@ pub trait ObservableExt<Item, Err>: Sized {
   where
     Item: Clone + Default + Add<Item, Output = Item> + Mul<f64, Output = Item>,
     ScanOp<Self, fn(Accum<Item>, Item) -> Accum<Item>, Accum<Item>, Item>:
-      ObservableExt<Accum<Item>, Err>,
+      Observable<Accum<Item>, Err>,
     LastOp<
       ScanOp<Self, fn(Accum<Item>, Item) -> Accum<Item>, Accum<Item>, Item>,
       Accum<Item>,
-    >: ObservableExt<Accum<Item>, Err>,
+    >: Observable<Accum<Item>, Err>,
   {
     /// Computing an average by multiplying accumulated nominator by a
     /// reciprocal of accumulated denominator. In this way some generic
@@ -1463,7 +1464,7 @@ pub trait ObservableExt<Item, Err>: Sized {
   #[inline]
   fn zip<Other, Item2>(self, other: Other) -> ZipOp<Self, Other>
   where
-    Other: ObservableExt<Item2, Err>,
+    Other: Observable<Item2, Err>,
   {
     ZipOp::new(self, other)
   }
@@ -1472,7 +1473,7 @@ pub trait ObservableExt<Item, Err>: Sized {
   #[inline]
   fn zip_threads<Other, Item2>(self, other: Other) -> ZipOpThreads<Self, Other>
   where
-    Other: ObservableExt<Item2, Err>,
+    Other: Observable<Item2, Err>,
   {
     ZipOpThreads::new(self, other)
   }
@@ -1490,7 +1491,7 @@ pub trait ObservableExt<Item, Err>: Sized {
     from: From,
   ) -> WithLatestFromOp<Self, From>
   where
-    From: ObservableExt<OtherItem, Err>,
+    From: Observable<OtherItem, Err>,
     OtherItem: Clone,
   {
     WithLatestFromOp::new(self, from)
@@ -1502,7 +1503,7 @@ pub trait ObservableExt<Item, Err>: Sized {
     from: From,
   ) -> WithLatestFromOpThreads<Self, From>
   where
-    From: ObservableExt<OtherItem, Err>,
+    From: Observable<OtherItem, Err>,
     OtherItem: Clone,
   {
     WithLatestFromOpThreads::new(self, from)
@@ -1532,7 +1533,7 @@ pub trait ObservableExt<Item, Err>: Sized {
   #[inline]
   fn buffer<N>(self, closing_notifier: N) -> BufferOp<Self, N>
   where
-    N: ObservableExt<(), Err>,
+    N: Observable<(), Err>,
   {
     BufferOp { source: self, closing_notifier }
   }
@@ -1678,7 +1679,7 @@ pub trait ObservableExt<Item, Err>: Sized {
     binary_op: BinaryOp,
   ) -> CombineLatestOp<Self, Other, Item, OtherItem, OutputItem, BinaryOp>
   where
-    Other: ObservableExt<OtherItem, Err>,
+    Other: Observable<OtherItem, Err>,
     BinaryOp: FnMut(Item, OtherItem) -> OutputItem,
   {
     CombineLatestOp::new(self, other, binary_op)
@@ -1690,7 +1691,7 @@ pub trait ObservableExt<Item, Err>: Sized {
     binary_op: BinaryOp,
   ) -> CombineLatestOpThread<Self, Other, Item, OtherItem, OutputItem, BinaryOp>
   where
-    Other: ObservableExt<OtherItem, Err>,
+    Other: Observable<OtherItem, Err>,
     BinaryOp: FnMut(Item, OtherItem) -> OutputItem,
   {
     CombineLatestOpThread::new(self, other, binary_op)
@@ -1820,7 +1821,7 @@ pub trait ObservableExt<Item, Err>: Sized {
   #[inline]
   fn to_future(self) -> ObservableFuture<Item, Err>
   where
-    Self: Observable<Item, Err, ObservableFutureObserver<Item, Err>>,
+    Self: ObservableImpl<Item, Err, ObservableFutureObserver<Item, Err>>,
   {
     ObservableFuture::new(self)
   }
@@ -1848,7 +1849,7 @@ pub trait ObservableExt<Item, Err>: Sized {
   #[inline]
   fn to_stream(self) -> ObservableStream<Item, Err>
   where
-    Self: Observable<Item, Err, ObservableStreamObserver<Item, Err>>,
+    Self: ObservableImpl<Item, Err, ObservableStreamObserver<Item, Err>>,
   {
     ObservableStream::new(self)
   }

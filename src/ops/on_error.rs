@@ -1,7 +1,7 @@
 use std::{convert::Infallible, marker::PhantomData};
 
 use crate::{
-  observable::{Observable, ObservableExt},
+  observable::{ObservableImpl, Observable},
   observer::Observer,
 };
 
@@ -17,11 +17,11 @@ impl<S, F, Err> OnErrorOp<S, F, Err> {
   }
 }
 
-impl<S, F, Item, Err, O> Observable<Item, Infallible, O>
+impl<S, F, Item, Err, O> ObservableImpl<Item, Infallible, O>
   for OnErrorOp<S, F, Err>
 where
   O: Observer<Item, Infallible>,
-  S: Observable<Item, Err, OnErrorObserver<O, F>>,
+  S: ObservableImpl<Item, Err, OnErrorObserver<O, F>>,
   F: FnOnce(Err),
 {
   type Unsub = S::Unsub;
@@ -33,8 +33,8 @@ where
   }
 }
 
-impl<S, F, Item, Err> ObservableExt<Item, Infallible> for OnErrorOp<S, F, Err> where
-  S: ObservableExt<Item, Err>
+impl<S, F, Item, Err> Observable<Item, Infallible> for OnErrorOp<S, F, Err> where
+  S: Observable<Item, Err>
 {
 }
 

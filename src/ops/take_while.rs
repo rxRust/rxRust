@@ -6,11 +6,11 @@ pub struct TakeWhileOp<S, F> {
   pub(crate) inclusive: bool,
 }
 
-impl<S, F, Item, Err, O> Observable<Item, Err, O> for TakeWhileOp<S, F>
+impl<S, F, Item, Err, O> ObservableImpl<Item, Err, O> for TakeWhileOp<S, F>
 where
   O: Observer<Item, Err>,
   TakeWhileObserver<O, F>: Observer<Item, Err>,
-  S: Observable<Item, Err, TakeWhileObserver<O, F>>,
+  S: ObservableImpl<Item, Err, TakeWhileObserver<O, F>>,
   F: FnMut(&Item) -> bool,
 {
   type Unsub = S::Unsub;
@@ -25,8 +25,8 @@ where
   }
 }
 
-impl<S, F, Item, Err> ObservableExt<Item, Err> for TakeWhileOp<S, F> where
-  S: ObservableExt<Item, Err>
+impl<S, F, Item, Err> Observable<Item, Err> for TakeWhileOp<S, F> where
+  S: Observable<Item, Err>
 {
 }
 

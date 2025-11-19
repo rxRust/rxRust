@@ -1,5 +1,5 @@
 use crate::{
-  observable::{Observable, ObservableExt},
+  observable::{ObservableImpl, Observable},
   observer::Observer,
 };
 
@@ -15,11 +15,11 @@ impl<S, C> CollectOp<S, C> {
   }
 }
 
-impl<Err, O, S, C> Observable<C, Err, O> for CollectOp<S, C>
+impl<Err, O, S, C> ObservableImpl<C, Err, O> for CollectOp<S, C>
 where
   C: IntoIterator + Extend<C::Item>,
   O: Observer<C, Err>,
-  S: Observable<C::Item, Err, CollectObserver<O, C>>,
+  S: ObservableImpl<C::Item, Err, CollectObserver<O, C>>,
 {
   type Unsub = S::Unsub;
 
@@ -31,10 +31,10 @@ where
   }
 }
 
-impl<Err, S, C> ObservableExt<C, Err> for CollectOp<S, C>
+impl<Err, S, C> Observable<C, Err> for CollectOp<S, C>
 where
   C: IntoIterator + Extend<C::Item>,
-  S: ObservableExt<C::Item, Err>,
+  S: Observable<C::Item, Err>,
 {
 }
 

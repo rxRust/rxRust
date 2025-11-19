@@ -57,7 +57,7 @@ pub fn of<Item>(v: Item) -> OfObservable<Item> {
 #[derive(Clone)]
 pub struct OfObservable<Item>(pub(crate) Item);
 
-impl<Item, O> Observable<Item, Infallible, O> for OfObservable<Item>
+impl<Item, O> ObservableImpl<Item, Infallible, O> for OfObservable<Item>
 where
   O: Observer<Item, Infallible>,
 {
@@ -69,7 +69,7 @@ where
   }
 }
 
-impl<Item> ObservableExt<Item, Infallible> for OfObservable<Item> {}
+impl<Item> Observable<Item, Infallible> for OfObservable<Item> {}
 /// Creates an observable that emits value or the error from a [`Result`] given.
 ///
 /// Completes immediately after.
@@ -103,7 +103,7 @@ pub fn of_result<Item, Err>(
 #[derive(Clone)]
 pub struct ResultObservable<Item, Err>(pub(crate) Result<Item, Err>);
 
-impl<Item, Err, O> Observable<Item, Err, O> for ResultObservable<Item, Err>
+impl<Item, Err, O> ObservableImpl<Item, Err, O> for ResultObservable<Item, Err>
 where
   O: Observer<Item, Err>,
 {
@@ -120,7 +120,7 @@ where
   }
 }
 
-impl<Item, Err> ObservableExt<Item, Err> for ResultObservable<Item, Err> {}
+impl<Item, Err> Observable<Item, Err> for ResultObservable<Item, Err> {}
 
 /// Creates an observable that potentially emits a single value from [`Option`].
 ///
@@ -146,7 +146,7 @@ pub fn of_option<Item>(o: Option<Item>) -> OptionObservable<Item> {
 #[derive(Clone)]
 pub struct OptionObservable<Item>(pub(crate) Option<Item>);
 
-impl<Item, O> Observable<Item, Infallible, O> for OptionObservable<Item>
+impl<Item, O> ObservableImpl<Item, Infallible, O> for OptionObservable<Item>
 where
   O: Observer<Item, Infallible>,
 {
@@ -160,7 +160,7 @@ where
   }
 }
 
-impl<Item> ObservableExt<Item, Infallible> for OptionObservable<Item> {}
+impl<Item> Observable<Item, Infallible> for OptionObservable<Item> {}
 
 /// Creates an observable that emits the return value of a callable.
 ///
@@ -188,7 +188,7 @@ where
 #[derive(Clone)]
 pub struct CallableObservable<F>(pub(crate) F);
 
-impl<Item, F, O> Observable<Item, Infallible, O> for CallableObservable<F>
+impl<Item, F, O> ObservableImpl<Item, Infallible, O> for CallableObservable<F>
 where
   F: FnOnce() -> Item,
   O: Observer<Item, Infallible>,
@@ -201,7 +201,7 @@ where
   }
 }
 
-impl<Item, F> ObservableExt<Item, Infallible> for CallableObservable<F> where
+impl<Item, F> Observable<Item, Infallible> for CallableObservable<F> where
   F: FnOnce() -> Item
 {
 }

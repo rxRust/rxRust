@@ -6,9 +6,9 @@ pub struct DistinctOp<S> {
   pub(crate) source: S,
 }
 
-impl<Item, Err, O, S> Observable<Item, Err, O> for DistinctOp<S>
+impl<Item, Err, O, S> ObservableImpl<Item, Err, O> for DistinctOp<S>
 where
-  S: Observable<Item, Err, DistinctObserver<O, Item>>,
+  S: ObservableImpl<Item, Err, DistinctObserver<O, Item>>,
   O: Observer<Item, Err>,
   Item: Eq + Hash + Clone,
 {
@@ -20,8 +20,8 @@ where
   }
 }
 
-impl<Item, Err, S> ObservableExt<Item, Err> for DistinctOp<S> where
-  S: ObservableExt<Item, Err>
+impl<Item, Err, S> Observable<Item, Err> for DistinctOp<S> where
+  S: Observable<Item, Err>
 {
 }
 
@@ -64,9 +64,9 @@ pub struct DistinctKeyOp<S, F> {
   pub(crate) key: F,
 }
 
-impl<Item, Err, O, S, F, K> Observable<Item, Err, O> for DistinctKeyOp<S, F>
+impl<Item, Err, O, S, F, K> ObservableImpl<Item, Err, O> for DistinctKeyOp<S, F>
 where
-  S: Observable<Item, Err, DistinctKeyObserver<O, F, K>>,
+  S: ObservableImpl<Item, Err, DistinctKeyObserver<O, F, K>>,
   O: Observer<Item, Err>,
   F: Fn(&Item) -> K,
   K: Eq + Hash + Clone,
@@ -82,8 +82,8 @@ where
   }
 }
 
-impl<Item, Err, S, F> ObservableExt<Item, Err> for DistinctKeyOp<S, F> where
-  S: ObservableExt<Item, Err>
+impl<Item, Err, S, F> Observable<Item, Err> for DistinctKeyOp<S, F> where
+  S: Observable<Item, Err>
 {
 }
 pub struct DistinctKeyObserver<O, F, K> {
@@ -127,9 +127,9 @@ pub struct DistinctUntilChangedOp<S> {
   pub(crate) source: S,
 }
 
-impl<Item, Err, O, S> Observable<Item, Err, O> for DistinctUntilChangedOp<S>
+impl<Item, Err, O, S> ObservableImpl<Item, Err, O> for DistinctUntilChangedOp<S>
 where
-  S: Observable<Item, Err, DistinctUntilChangedObserver<O, Item>>,
+  S: ObservableImpl<Item, Err, DistinctUntilChangedObserver<O, Item>>,
   O: Observer<Item, Err>,
   Item: PartialEq + Clone,
 {
@@ -142,8 +142,8 @@ where
   }
 }
 
-impl<Item, Err, S> ObservableExt<Item, Err> for DistinctUntilChangedOp<S> where
-  S: ObservableExt<Item, Err>
+impl<Item, Err, S> Observable<Item, Err> for DistinctUntilChangedOp<S> where
+  S: Observable<Item, Err>
 {
 }
 
@@ -186,10 +186,10 @@ pub struct DistinctUntilKeyChangedOp<S, F> {
   pub(crate) key: F,
 }
 
-impl<Item, Err, O, S, F, K> Observable<Item, Err, O>
+impl<Item, Err, O, S, F, K> ObservableImpl<Item, Err, O>
   for DistinctUntilKeyChangedOp<S, F>
 where
-  S: Observable<Item, Err, DistinctUntilKeyChangedObserver<O, F, Item>>,
+  S: ObservableImpl<Item, Err, DistinctUntilKeyChangedObserver<O, F, Item>>,
   O: Observer<Item, Err>,
   K: PartialEq,
   Item: Clone,
@@ -208,10 +208,10 @@ where
   }
 }
 
-impl<Item, Err, S, F> ObservableExt<Item, Err>
+impl<Item, Err, S, F> Observable<Item, Err>
   for DistinctUntilKeyChangedOp<S, F>
 where
-  S: ObservableExt<Item, Err>,
+  S: Observable<Item, Err>,
 {
 }
 pub struct DistinctUntilKeyChangedObserver<O, F, Item> {

@@ -11,9 +11,9 @@ pub struct DebounceOp<S, SD> {
 }
 
 type RcHandler = MutArc<Option<TaskHandle<NormalReturn<()>>>>;
-impl<Item, Err, O, S, SD> Observable<Item, Err, O> for DebounceOp<S, SD>
+impl<Item, Err, O, S, SD> ObservableImpl<Item, Err, O> for DebounceOp<S, SD>
 where
-  S: Observable<Item, Err, DebounceObserver<O, SD, Item>>,
+  S: ObservableImpl<Item, Err, DebounceObserver<O, SD, Item>>,
   SD: Scheduler<
     OnceTask<(MutArc<Option<O>>, MutArc<Option<Item>>), NormalReturn<()>>,
   >,
@@ -36,8 +36,8 @@ where
   }
 }
 
-impl<Item, Err, S, SD> ObservableExt<Item, Err> for DebounceOp<S, SD> where
-  S: ObservableExt<Item, Err>
+impl<Item, Err, S, SD> Observable<Item, Err> for DebounceOp<S, SD> where
+  S: Observable<Item, Err>
 {
 }
 

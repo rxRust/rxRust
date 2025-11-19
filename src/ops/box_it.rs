@@ -57,7 +57,7 @@ trait CloneableBoxThreads<Item, Err>: BoxObservableThreads<Item, Err> {
 
 impl<'a, Item, Err, T> BoxObservable<'a, Item, Err> for T
 where
-  T: Observable<Item, Err, BoxObserver<'a, Item, Err>>,
+  T: ObservableImpl<Item, Err, BoxObserver<'a, Item, Err>>,
   T::Unsub: 'a,
 {
   fn box_subscribe(
@@ -71,7 +71,7 @@ where
 
 impl<Item, Err, T> BoxObservableThreads<Item, Err> for T
 where
-  T: Observable<Item, Err, BoxObserverThreads<Item, Err>>,
+  T: ObservableImpl<Item, Err, BoxObserverThreads<Item, Err>>,
   T::Unsub: Send + 'static,
 {
   fn box_subscribe(
@@ -91,7 +91,7 @@ macro_rules! impl_observable_for_box {
     $(,$lf:lifetime)?
     $(,$send:ident)?
   ) => {
-    impl<$($lf,)? Item, Err, O> Observable<Item, Err, O>
+    impl<$($lf,)? Item, Err, O> ObservableImpl<Item, Err, O>
       for $ty
     where
       O: Observer<Item, Err> $(+$lf)? $(+ $send +'static)?,
@@ -104,7 +104,7 @@ macro_rules! impl_observable_for_box {
       }
     }
 
-    impl<$($lf,)? Item, Err> ObservableExt<Item, Err> for $ty {
+    impl<$($lf,)? Item, Err> Observable<Item, Err> for $ty {
     }
   };
 }

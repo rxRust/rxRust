@@ -9,10 +9,10 @@ pub struct SubscribeOnOP<S, SD> {
   pub(crate) scheduler: SD,
 }
 
-impl<S, Item, Err, O, SD> Observable<Item, Err, O> for SubscribeOnOP<S, SD>
+impl<S, Item, Err, O, SD> ObservableImpl<Item, Err, O> for SubscribeOnOP<S, SD>
 where
   O: Observer<Item, Err>,
-  S: Observable<Item, Err, O>,
+  S: ObservableImpl<Item, Err, O>,
   SD: Scheduler<OnceTask<(S, O), SubscribeReturn<S::Unsub>>>,
   S::Unsub: 'static,
 {
@@ -28,14 +28,14 @@ fn subscribe_task<S, O, Item, Err>(
   (source, observer): (S, O),
 ) -> SubscribeReturn<S::Unsub>
 where
-  S: Observable<Item, Err, O>,
+  S: ObservableImpl<Item, Err, O>,
   O: Observer<Item, Err>,
 {
   SubscribeReturn::new(source.actual_subscribe(observer))
 }
 
-impl<S, Item, Err, SD> ObservableExt<Item, Err> for SubscribeOnOP<S, SD> where
-  S: ObservableExt<Item, Err>
+impl<S, Item, Err, SD> Observable<Item, Err> for SubscribeOnOP<S, SD> where
+  S: Observable<Item, Err>
 {
 }
 

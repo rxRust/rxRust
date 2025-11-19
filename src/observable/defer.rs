@@ -26,10 +26,10 @@ where
 #[derive(Clone)]
 pub struct ObservableDeref<F>(F);
 
-impl<Item, Err, O, F, U> Observable<Item, Err, O> for ObservableDeref<F>
+impl<Item, Err, O, F, U> ObservableImpl<Item, Err, O> for ObservableDeref<F>
 where
   F: FnOnce() -> U,
-  U: Observable<Item, Err, O>,
+  U: ObservableImpl<Item, Err, O>,
   O: Observer<Item, Err>,
 {
   type Unsub = U::Unsub;
@@ -39,10 +39,10 @@ where
   }
 }
 
-impl<Item, Err, F, U> ObservableExt<Item, Err> for ObservableDeref<F>
+impl<Item, Err, F, U> Observable<Item, Err> for ObservableDeref<F>
 where
   F: FnOnce() -> U,
-  U: ObservableExt<Item, Err>,
+  U: Observable<Item, Err>,
 {
 }
 #[cfg(not(target_arch = "wasm32"))]

@@ -127,7 +127,7 @@ pub struct DelayObservable {
   timer: FakeClock,
 }
 
-impl<O> Observable<usize, Infallible, O> for IntervalObservable
+impl<O> ObservableImpl<usize, Infallible, O> for IntervalObservable
 where
   O: Observer<usize, Infallible> + 'static,
 {
@@ -146,9 +146,9 @@ where
   }
 }
 
-impl ObservableExt<usize, Infallible> for IntervalObservable {}
+impl Observable<usize, Infallible> for IntervalObservable {}
 
-impl<O> Observable<Instant, Infallible, O> for DelayObservable
+impl<O> ObservableImpl<Instant, Infallible, O> for DelayObservable
 where
   O: Observer<Instant, Infallible> + 'static,
 {
@@ -165,4 +165,4 @@ where
   }
 }
 
-impl ObservableExt<Instant, Infallible> for DelayObservable {}
+impl Observable<Instant, Infallible> for DelayObservable {}

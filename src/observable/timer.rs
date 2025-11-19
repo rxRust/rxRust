@@ -54,7 +54,7 @@ where
   NormalReturn::new(())
 }
 
-impl<Item, O, S> Observable<Item, Infallible, O> for TimerObservable<Item, S>
+impl<Item, O, S> ObservableImpl<Item, Infallible, O> for TimerObservable<Item, S>
 where
   O: Observer<Item, Infallible>,
   S: Scheduler<OnceTask<(O, Item), NormalReturn<()>>>,
@@ -68,7 +68,7 @@ where
   }
 }
 
-impl<Item, S> ObservableExt<Item, Infallible> for TimerObservable<Item, S> {}
+impl<Item, S> Observable<Item, Infallible> for TimerObservable<Item, S> {}
 
 #[cfg(test)]
 mod tests {

@@ -13,10 +13,10 @@ impl<S> SkipOp<S> {
   }
 }
 
-impl<S, Item, Err, O> Observable<Item, Err, O> for SkipOp<S>
+impl<S, Item, Err, O> ObservableImpl<Item, Err, O> for SkipOp<S>
 where
   O: Observer<Item, Err>,
-  S: Observable<Item, Err, SkipObserver<O>>,
+  S: ObservableImpl<Item, Err, SkipObserver<O>>,
 {
   type Unsub = S::Unsub;
 
@@ -29,8 +29,8 @@ where
   }
 }
 
-impl<S, Item, Err> ObservableExt<Item, Err> for SkipOp<S> where
-  S: ObservableExt<Item, Err>
+impl<S, Item, Err> Observable<Item, Err> for SkipOp<S> where
+  S: Observable<Item, Err>
 {
 }
 pub struct SkipObserver<O> {

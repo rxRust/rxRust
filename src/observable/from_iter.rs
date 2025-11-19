@@ -38,7 +38,7 @@ where
 #[derive(Clone)]
 pub struct ObservableIter<Iter>(Iter);
 
-impl<O, Iter> Observable<Iter::Item, Infallible, O> for ObservableIter<Iter>
+impl<O, Iter> ObservableImpl<Iter::Item, Infallible, O> for ObservableIter<Iter>
 where
   Iter: IntoIterator,
   O: Observer<Iter::Item, Infallible>,
@@ -51,7 +51,7 @@ where
   }
 }
 
-impl<Iter> ObservableExt<Iter::Item, Infallible> for ObservableIter<Iter> where
+impl<Iter> Observable<Iter::Item, Infallible> for ObservableIter<Iter> where
   Iter: IntoIterator
 {
 }

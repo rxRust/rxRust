@@ -6,9 +6,9 @@ pub struct ContainsOp<S, Item> {
   pub(crate) target: Item,
 }
 
-impl<Item, Err, O, S> Observable<bool, Err, O> for ContainsOp<S, Item>
+impl<Item, Err, O, S> ObservableImpl<bool, Err, O> for ContainsOp<S, Item>
 where
-  S: Observable<Item, Err, ContainsObserver<O, Item>>,
+  S: ObservableImpl<Item, Err, ContainsObserver<O, Item>>,
   O: Observer<bool, Err>,
   Item: PartialEq,
 {
@@ -22,8 +22,8 @@ where
   }
 }
 
-impl<Item, Err, S> ObservableExt<bool, Err> for ContainsOp<S, Item> where
-  S: ObservableExt<Item, Err>
+impl<Item, Err, S> Observable<bool, Err> for ContainsOp<S, Item> where
+  S: Observable<Item, Err>
 {
 }
 

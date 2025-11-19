@@ -38,11 +38,11 @@ pub struct DelayObserverThreads<O, SD> {
   subscription: MultiSubscriptionThreads,
 }
 
-impl<Item, Err, O, S, SD> Observable<Item, Err, O>
+impl<Item, Err, O, S, SD> ObservableImpl<Item, Err, O>
   for DelaySubscriptionOp<S, SD>
 where
   O: Observer<Item, Err>,
-  S: Observable<Item, Err, O>,
+  S: ObservableImpl<Item, Err, O>,
   S::Unsub: 'static,
   SD: Scheduler<OnceTask<(S, O), SubscribeReturn<S::Unsub>>>,
 {
@@ -56,10 +56,10 @@ where
 
 macro_rules! impl_delay_op {
   ($op: ty, $rc: ident, $observer: ident, $multi_unsub: ty, $box_unsub: ident) => {
-    impl<Item, Err, O, S, SD> Observable<Item, Err, O> for $op
+    impl<Item, Err, O, S, SD> ObservableImpl<Item, Err, O> for $op
     where
       O: Observer<Item, Err>,
-      S: Observable<Item, Err, $observer<O, SD>>,
+      S: ObservableImpl<Item, Err, $observer<O, SD>>,
       SD: Scheduler<OnceTask<($rc<Option<O>>, Item), NormalReturn<()>>>,
       SD: Scheduler<OnceTask<$rc<Option<O>>, NormalReturn<()>>>,
     {
@@ -129,8 +129,8 @@ macro_rules! impl_delay_op {
       }
     }
 
-    impl<Item, Err, S, SD> ObservableExt<Item, Err> for $op where
-      S: ObservableExt<Item, Err>
+    impl<Item, Err, S, SD> Observable<Item, Err> for $op where
+      S: Observable<Item, Err>
     {
     }
   };
@@ -139,8 +139,8 @@ macro_rules! impl_delay_op {
 impl_delay_op!(DelayOp<S,SD>, MutRc, DelayObserver, MultiSubscription<'static>, BoxSubscription);
 impl_delay_op!(DelayOpThreads<S,SD>, MutArc, DelayObserverThreads, MultiSubscriptionThreads, BoxSubscriptionThreads);
 
-impl<Item, Err, S, SD> ObservableExt<Item, Err> for DelaySubscriptionOp<S, SD> where
-  S: ObservableExt<Item, Err>
+impl<Item, Err, S, SD> Observable<Item, Err> for DelaySubscriptionOp<S, SD> where
+  S: Observable<Item, Err>
 {
 }
 
@@ -148,7 +148,7 @@ fn subscribe_task<S, O, Item, Err>(
   (source, observer): (S, O),
 ) -> SubscribeReturn<S::Unsub>
 where
-  S: Observable<Item, Err, O>,
+  S: ObservableImpl<Item, Err, O>,
   O: Observer<Item, Err>,
 {
   SubscribeReturn::new(source.actual_subscribe(observer))

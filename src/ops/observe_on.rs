@@ -29,10 +29,10 @@ pub struct ObserveOnObserverThreads<O, SD> {
 
 macro_rules! impl_observer_on_op {
   ($op: ty, $rc: ident, $observer: ident, $multi_unsub: ty, $box_unsub: ident) => {
-    impl<Item, Err, O, S, SD> Observable<Item, Err, O> for $op
+    impl<Item, Err, O, S, SD> ObservableImpl<Item, Err, O> for $op
     where
       O: Observer<Item, Err>,
-      S: Observable<Item, Err, $observer<O, SD>>,
+      S: ObservableImpl<Item, Err, $observer<O, SD>>,
       SD: Scheduler<OnceTask<($rc<Option<O>>, Item), NormalReturn<()>>>,
       SD: Scheduler<OnceTask<($rc<Option<O>>, Err), NormalReturn<()>>>,
       SD: Scheduler<OnceTask<$rc<Option<O>>, NormalReturn<()>>>,
@@ -114,8 +114,8 @@ macro_rules! impl_observer_on_op {
       }
     }
 
-    impl<Item, Err, S, SD> ObservableExt<Item, Err> for $op where
-      S: ObservableExt<Item, Err>
+    impl<Item, Err, S, SD> Observable<Item, Err> for $op where
+      S: Observable<Item, Err>
     {
     }
   };

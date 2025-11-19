@@ -10,11 +10,11 @@ pub struct BufferOp<S, N> {
   pub(crate) closing_notifier: N,
 }
 
-impl<Item, Err, O, S, N> Observable<Vec<Item>, Err, O> for BufferOp<S, N>
+impl<Item, Err, O, S, N> ObservableImpl<Vec<Item>, Err, O> for BufferOp<S, N>
 where
-  S: Observable<Item, Err, RcBufferObserver<O, Item>>,
+  S: ObservableImpl<Item, Err, RcBufferObserver<O, Item>>,
   O: Observer<Vec<Item>, Err>,
-  N: Observable<(), Err, NotifierObserver<O, Item>>,
+  N: ObservableImpl<(), Err, NotifierObserver<O, Item>>,
 {
   type Unsub = ZipSubscription<S::Unsub, N::Unsub>;
   fn actual_subscribe(self, observer: O) -> Self::Unsub {
@@ -28,10 +28,10 @@ where
   }
 }
 
-impl<Item, Err, S, N> ObservableExt<Vec<Item>, Err> for BufferOp<S, N>
+impl<Item, Err, S, N> Observable<Vec<Item>, Err> for BufferOp<S, N>
 where
-  S: ObservableExt<Item, Err>,
-  N: ObservableExt<(), Err>,
+  S: Observable<Item, Err>,
+  N: Observable<(), Err>,
 {
 }
 
@@ -41,9 +41,9 @@ pub struct BufferWithCountOp<S> {
   pub(crate) count: usize,
 }
 
-impl<Item, Err, O, S> Observable<Vec<Item>, Err, O> for BufferWithCountOp<S>
+impl<Item, Err, O, S> ObservableImpl<Vec<Item>, Err, O> for BufferWithCountOp<S>
 where
-  S: Observable<Item, Err, BufferWithCountObserver<O, Item>>,
+  S: ObservableImpl<Item, Err, BufferWithCountObserver<O, Item>>,
   O: Observer<Vec<Item>, Err>,
 {
   type Unsub = S::Unsub;
@@ -56,8 +56,8 @@ where
   }
 }
 
-impl<Item, Err, S> ObservableExt<Vec<Item>, Err> for BufferWithCountOp<S> where
-  S: ObservableExt<Item, Err>
+impl<Item, Err, S> Observable<Vec<Item>, Err> for BufferWithCountOp<S> where
+  S: Observable<Item, Err>
 {
 }
 
@@ -192,11 +192,11 @@ where
   }
 }
 
-impl<S, Item, Err, O, SD> Observable<Vec<Item>, Err, O>
+impl<S, Item, Err, O, SD> ObservableImpl<Vec<Item>, Err, O>
   for BufferWithTimeOp<S, SD>
 where
   O: Observer<Vec<Item>, Err>,
-  S: Observable<Item, Err, RcBufferObserver<O, Item>>,
+  S: ObservableImpl<Item, Err, RcBufferObserver<O, Item>>,
   SD: Scheduler<RepeatTask<RcBufferObserver<O, Item>>>,
 {
   type Unsub = ZipSubscription<TaskHandle<NormalReturn<()>>, S::Unsub>;
@@ -214,8 +214,8 @@ where
   }
 }
 
-impl<Item, Err, S, SD> ObservableExt<Vec<Item>, Err> for BufferWithTimeOp<S, SD> where
-  S: ObservableExt<Item, Err>
+impl<Item, Err, S, SD> Observable<Vec<Item>, Err> for BufferWithTimeOp<S, SD> where
+  S: Observable<Item, Err>
 {
 }
 
@@ -247,11 +247,11 @@ where
   }
 }
 
-impl<S, SD, Item, Err, O> Observable<Vec<Item>, Err, O>
+impl<S, SD, Item, Err, O> ObservableImpl<Vec<Item>, Err, O>
   for BufferWithCountOrTimerOp<S, SD>
 where
   O: Observer<Vec<Item>, Err>,
-  S: Observable<Item, Err, RcBufferWitchCountObserver<O, Item>>,
+  S: ObservableImpl<Item, Err, RcBufferWitchCountObserver<O, Item>>,
   SD: Scheduler<RepeatTask<RcBufferWitchCountObserver<O, Item>>>,
 {
   type Unsub = ZipSubscription<TaskHandle<NormalReturn<()>>, S::Unsub>;
@@ -275,10 +275,10 @@ where
   }
 }
 
-impl<Item, Err, S, SD> ObservableExt<Vec<Item>, Err>
+impl<Item, Err, S, SD> Observable<Vec<Item>, Err>
   for BufferWithCountOrTimerOp<S, SD>
 where
-  S: ObservableExt<Item, Err>,
+  S: Observable<Item, Err>,
 {
 }
 

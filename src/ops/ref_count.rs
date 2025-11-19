@@ -54,7 +54,7 @@ macro_rules! impl_observable_methods {
   ($subject: ty) => {
     type Unsub = RefCountSubscription<
       $subject,
-      <$subject as Observable<Item, Err, O>>::Unsub,
+      <$subject as ObservableImpl<Item, Err, O>>::Unsub,
     >;
 
     fn actual_subscribe(self, observer: O) -> Self::Unsub {
@@ -83,33 +83,33 @@ macro_rules! impl_observable_methods {
   };
 }
 
-impl<'a, S, Item, Err, O> Observable<Item, Err, O> for ShareOp<'a, Item, Err, S>
+impl<'a, S, Item, Err, O> ObservableImpl<Item, Err, O> for ShareOp<'a, Item, Err, S>
 where
   Item: Clone,
   Err: Clone,
   O: Observer<Item, Err> + 'a,
-  S: Observable<Item, Err, Subject<'a, Item, Err>>,
+  S: ObservableImpl<Item, Err, Subject<'a, Item, Err>>,
 {
   impl_observable_methods!(Subject<'a, Item, Err>);
 }
 
-impl<'a, S, Item, Err> ObservableExt<Item, Err> for ShareOp<'a, Item, Err, S> where
-  S: ObservableExt<Item, Err>
+impl<'a, S, Item, Err> Observable<Item, Err> for ShareOp<'a, Item, Err, S> where
+  S: Observable<Item, Err>
 {
 }
 
-impl<S, Item, Err, O> Observable<Item, Err, O> for ShareOpThreads<Item, Err, S>
+impl<S, Item, Err, O> ObservableImpl<Item, Err, O> for ShareOpThreads<Item, Err, S>
 where
   Item: Clone,
   Err: Clone,
   O: Observer<Item, Err> + Send + 'static,
-  S: Observable<Item, Err, SubjectThreads<Item, Err>>,
+  S: ObservableImpl<Item, Err, SubjectThreads<Item, Err>>,
 {
   impl_observable_methods!(SubjectThreads< Item, Err>);
 }
 
-impl<S, Item, Err> ObservableExt<Item, Err> for ShareOpThreads<Item, Err, S> where
-  S: ObservableExt<Item, Err>
+impl<S, Item, Err> Observable<Item, Err> for ShareOpThreads<Item, Err, S> where
+  S: Observable<Item, Err>
 {
 }
 pub struct RefCountSubscription<Subject, U> {

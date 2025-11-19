@@ -13,9 +13,9 @@ impl<S, Item> LastOp<S, Item> {
   }
 }
 
-impl<Item, S, Err, O> Observable<Item, Err, O> for LastOp<S, Item>
+impl<Item, S, Err, O> ObservableImpl<Item, Err, O> for LastOp<S, Item>
 where
-  S: Observable<Item, Err, LastObserver<O, Item>>,
+  S: ObservableImpl<Item, Err, LastObserver<O, Item>>,
   O: Observer<Item, Err>,
 {
   type Unsub = S::Unsub;
@@ -26,8 +26,8 @@ where
   }
 }
 
-impl<Item, S, Err> ObservableExt<Item, Err> for LastOp<S, Item> where
-  S: ObservableExt<Item, Err>
+impl<Item, S, Err> Observable<Item, Err> for LastOp<S, Item> where
+  S: Observable<Item, Err>
 {
 }
 pub struct LastObserver<S, T> {

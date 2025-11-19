@@ -6,9 +6,9 @@ pub struct TapOp<S, M> {
   pub(crate) func: M,
 }
 
-impl<Item, Err, S, M, O> Observable<Item, Err, O> for TapOp<S, M>
+impl<Item, Err, S, M, O> ObservableImpl<Item, Err, O> for TapOp<S, M>
 where
-  S: Observable<Item, Err, TapObserver<O, M>>,
+  S: ObservableImpl<Item, Err, TapObserver<O, M>>,
   M: FnMut(&Item),
   O: Observer<Item, Err>,
 {
@@ -19,8 +19,8 @@ where
   }
 }
 
-impl<Item, Err, S, M> ObservableExt<Item, Err> for TapOp<S, M> where
-  S: ObservableExt<Item, Err>
+impl<Item, Err, S, M> Observable<Item, Err> for TapOp<S, M> where
+  S: Observable<Item, Err>
 {
 }
 #[derive(Clone)]

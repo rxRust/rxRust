@@ -7,9 +7,9 @@ pub struct TakeLastOp<S> {
   pub(crate) count: usize,
 }
 
-impl<Item, Err, O, S> Observable<Item, Err, O> for TakeLastOp<S>
+impl<Item, Err, O, S> ObservableImpl<Item, Err, O> for TakeLastOp<S>
 where
-  S: Observable<Item, Err, TakeLastObserver<O, Item>>,
+  S: ObservableImpl<Item, Err, TakeLastObserver<O, Item>>,
   O: Observer<Item, Err>,
 {
   type Unsub = S::Unsub;
@@ -23,8 +23,8 @@ where
   }
 }
 
-impl<Item, Err, S> ObservableExt<Item, Err> for TakeLastOp<S> where
-  S: ObservableExt<Item, Err>
+impl<Item, Err, S> Observable<Item, Err> for TakeLastOp<S> where
+  S: Observable<Item, Err>
 {
 }
 

@@ -35,16 +35,16 @@ macro_rules! impl_combine_latest_op {
     }
 
     impl<A, B, ItemA, ItemB, OutputItem, Err, O, BinaryOp>
-      Observable<OutputItem, Err, O>
+      ObservableImpl<OutputItem, Err, O>
       for $name<A, B, ItemA, ItemB, OutputItem, BinaryOp>
     where
       O: Observer<OutputItem, Err>,
-      A: Observable<
+      A: ObservableImpl<
         ItemA,
         Err,
         AObserver<$rc<CombineLatestObserver<O, ItemA, ItemB, BinaryOp>>, ItemB>,
       >,
-      B: Observable<
+      B: ObservableImpl<
         ItemB,
         Err,
         BObserver<$rc<CombineLatestObserver<O, ItemA, ItemB, BinaryOp>>, ItemA>,
@@ -70,11 +70,11 @@ macro_rules! impl_combine_latest_op {
     }
 
     impl<A, B, ItemA, ItemB, OutputItem, Err, BinaryOp>
-      ObservableExt<OutputItem, Err>
+      Observable<OutputItem, Err>
       for $name<A, B, ItemA, ItemB, OutputItem, BinaryOp>
     where
-      A: ObservableExt<ItemA, Err>,
-      B: ObservableExt<ItemB, Err>,
+      A: Observable<ItemA, Err>,
+      B: Observable<ItemB, Err>,
     {
     }
   };

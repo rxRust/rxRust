@@ -31,10 +31,10 @@ pub struct ScanObserver<Observer, BinaryOp, OutputItem> {
   acc: OutputItem,
 }
 
-impl<InputItem, OutputItem, Err, O, S, BinaryOp> Observable<OutputItem, Err, O>
+impl<InputItem, OutputItem, Err, O, S, BinaryOp> ObservableImpl<OutputItem, Err, O>
   for ScanOp<S, BinaryOp, OutputItem, InputItem>
 where
-  S: Observable<InputItem, Err, ScanObserver<O, BinaryOp, OutputItem>>,
+  S: ObservableImpl<InputItem, Err, ScanObserver<O, BinaryOp, OutputItem>>,
   O: Observer<OutputItem, Err>,
   BinaryOp: FnMut(OutputItem, InputItem) -> OutputItem,
   OutputItem: Clone,
@@ -49,10 +49,10 @@ where
   }
 }
 
-impl<InputItem, OutputItem, Err, S, BinaryOp> ObservableExt<OutputItem, Err>
+impl<InputItem, OutputItem, Err, S, BinaryOp> Observable<OutputItem, Err>
   for ScanOp<S, BinaryOp, OutputItem, InputItem>
 where
-  S: ObservableExt<InputItem, Err>,
+  S: Observable<InputItem, Err>,
 {
 }
 

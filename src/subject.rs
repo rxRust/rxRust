@@ -140,19 +140,19 @@ impl_subject_trivial!(MutRefItemSubject<'a, Item,Err>, MutRc, 'a);
 impl_subject_trivial!(MutRefErrSubject<'a, Item,Err>, MutRc, 'a);
 impl_subject_trivial!(MutRefItemErrSubject<'a, Item,Err>, MutRc, 'a);
 
-impl<'a, Item, Err> ObservableExt<Item, Err> for Subject<'a, Item, Err> {}
-impl<Item, Err> ObservableExt<Item, Err> for SubjectThreads<Item, Err> {}
-impl<'a, Item, Err> ObservableExt<&mut Item, Err>
+impl<'a, Item, Err> Observable<Item, Err> for Subject<'a, Item, Err> {}
+impl<Item, Err> Observable<Item, Err> for SubjectThreads<Item, Err> {}
+impl<'a, Item, Err> Observable<&mut Item, Err>
   for MutRefItemSubject<'a, Item, Err>
 {
 }
 
-impl<'a, Item, Err> ObservableExt<Item, &mut Err>
+impl<'a, Item, Err> Observable<Item, &mut Err>
   for MutRefErrSubject<'a, Item, Err>
 {
 }
 
-impl<'a, Item, Err> ObservableExt<&mut Item, &mut Err>
+impl<'a, Item, Err> Observable<&mut Item, &mut Err>
   for MutRefItemErrSubject<'a, Item, Err>
 {
 }
@@ -241,21 +241,21 @@ macro_rules! impl_observable_for_subject {
   };
 }
 
-impl<'a, Item, Err, O> Observable<Item, Err, O> for Subject<'a, Item, Err>
+impl<'a, Item, Err, O> ObservableImpl<Item, Err, O> for Subject<'a, Item, Err>
 where
   O: Observer<Item, Err> + 'a,
 {
   impl_observable_for_subject!(Subscriber);
 }
 
-impl<Item, Err, O> Observable<Item, Err, O> for SubjectThreads<Item, Err>
+impl<Item, Err, O> ObservableImpl<Item, Err, O> for SubjectThreads<Item, Err>
 where
   O: Observer<Item, Err> + Send + 'static,
 {
   impl_observable_for_subject!(SubscriberThreads);
 }
 
-impl<'a, Item, Err, O> Observable<&mut Item, Err, O>
+impl<'a, Item, Err, O> ObservableImpl<&mut Item, Err, O>
   for MutRefItemSubject<'a, Item, Err>
 where
   O: for<'r> Observer<&'r mut Item, Err> + 'a,
@@ -263,7 +263,7 @@ where
   impl_observable_for_subject!(Subscriber);
 }
 
-impl<'a, Item, Err, O> Observable<Item, &mut Err, O>
+impl<'a, Item, Err, O> ObservableImpl<Item, &mut Err, O>
   for MutRefErrSubject<'a, Item, Err>
 where
   O: for<'r> Observer<Item, &'r mut Err> + 'a,
@@ -271,7 +271,7 @@ where
   impl_observable_for_subject!(Subscriber);
 }
 
-impl<'a, Item, Err, O> Observable<&mut Item, &mut Err, O>
+impl<'a, Item, Err, O> ObservableImpl<&mut Item, &mut Err, O>
   for MutRefItemErrSubject<'a, Item, Err>
 where
   O: for<'i, 'e> Observer<&'i mut Item, &'e mut Err> + 'a,

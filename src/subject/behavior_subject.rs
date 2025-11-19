@@ -76,10 +76,10 @@ where
   }
 }
 
-impl<Item, Err, O, Subject: AssociatedRefPtr> Observable<Item, Err, O>
+impl<Item, Err, O, Subject: AssociatedRefPtr> ObservableImpl<Item, Err, O>
   for BehaviorSubject<Item, Subject>
 where
-  Subject: Observable<Item, Err, O>,
+  Subject: ObservableImpl<Item, Err, O>,
   O: Observer<Item, Err>,
   Item: Clone,
 {
@@ -91,10 +91,10 @@ where
   }
 }
 
-impl<Item, Err, Subject: AssociatedRefPtr> ObservableExt<Item, Err>
+impl<Item, Err, Subject: AssociatedRefPtr> Observable<Item, Err>
   for BehaviorSubject<Item, Subject>
 where
-  Subject: ObservableExt<Item, Err>,
+  Subject: Observable<Item, Err>,
 {
 }
 

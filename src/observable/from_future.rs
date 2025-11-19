@@ -35,7 +35,7 @@ pub struct FutureObservable<F, S> {
   scheduler: S,
 }
 
-impl<O, F, S> Observable<F::Output, Infallible, O> for FutureObservable<F, S>
+impl<O, F, S> ObservableImpl<F::Output, Infallible, O> for FutureObservable<F, S>
 where
   F: Future,
   S: Scheduler<FutureTask<F, O, NormalReturn<()>>>,
@@ -50,7 +50,7 @@ where
   }
 }
 
-impl<F: Future, S> ObservableExt<F::Output, Infallible>
+impl<F: Future, S> Observable<F::Output, Infallible>
   for FutureObservable<F, S>
 {
 }
@@ -84,7 +84,7 @@ pub struct FutureResultObservable<F, S> {
   scheduler: S,
 }
 
-impl<Item, S, Err, O, F> Observable<Item, Err, O>
+impl<Item, S, Err, O, F> ObservableImpl<Item, Err, O>
   for FutureResultObservable<F, S>
 where
   O: Observer<Item, Err>,
@@ -118,7 +118,7 @@ where
   NormalReturn::new(())
 }
 
-impl<Item, S, Err, F> ObservableExt<Item, Err> for FutureResultObservable<F, S> where
+impl<Item, S, Err, F> Observable<Item, Err> for FutureResultObservable<F, S> where
   F: Future<Output = Result<Item, Err>>
 {
 }

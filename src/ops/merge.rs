@@ -23,11 +23,11 @@ macro_rules! impl_merge_op {
       }
     }
 
-    impl<S1, S2, Item, Err, O> Observable<Item, Err, O> for $name<S1, S2>
+    impl<S1, S2, Item, Err, O> ObservableImpl<Item, Err, O> for $name<S1, S2>
     where
       O: Observer<Item, Err>,
-      S1: Observable<Item, Err, $rc<MergeObserver<O>>>,
-      S2: Observable<Item, Err, $rc<MergeObserver<O>>>,
+      S1: ObservableImpl<Item, Err, $rc<MergeObserver<O>>>,
+      S2: ObservableImpl<Item, Err, $rc<MergeObserver<O>>>,
     {
       type Unsub = ZipSubscription<S1::Unsub, S2::Unsub>;
 
@@ -43,10 +43,10 @@ macro_rules! impl_merge_op {
       }
     }
 
-    impl<S1, S2, Item, Err> ObservableExt<Item, Err> for $name<S1, S2>
+    impl<S1, S2, Item, Err> Observable<Item, Err> for $name<S1, S2>
     where
-      S1: ObservableExt<Item, Err>,
-      S2: ObservableExt<Item, Err>,
+      S1: Observable<Item, Err>,
+      S2: Observable<Item, Err>,
     {
     }
 

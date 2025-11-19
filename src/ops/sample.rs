@@ -30,16 +30,16 @@ macro_rules! impl_sample_op {
       }
     }
 
-    impl<Item1, Item2, Err, Source, Sample, O> Observable<Item1, Err, O>
+    impl<Item1, Item2, Err, Source, Sample, O> ObservableImpl<Item1, Err, O>
       for $name<Source, Sample, Item2>
     where
       O: Observer<Item1, Err>,
-      Source: Observable<
+      Source: ObservableImpl<
         Item1,
         Err,
         SourceObserver<$rc<Option<O>>, $rc<Option<Item1>>>,
       >,
-      Sample: Observable<
+      Sample: ObservableImpl<
         Item2,
         Err,
         SampleObserver<$rc<Option<O>>, $rc<Option<Item1>>>,
@@ -61,11 +61,11 @@ macro_rules! impl_sample_op {
       }
     }
 
-    impl<Item1, Item2, Err, Source, Sample> ObservableExt<Item1, Err>
+    impl<Item1, Item2, Err, Source, Sample> Observable<Item1, Err>
       for $name<Source, Sample, Item2>
     where
-      Source: ObservableExt<Item1, Err>,
-      Sample: ObservableExt<Item2, Err>,
+      Source: Observable<Item1, Err>,
+      Sample: Observable<Item2, Err>,
     {
     }
   };

@@ -1,7 +1,7 @@
 use futures::{executor::block_on, Future};
 
 use crate::{
-  observable::{Observable, ObservableExt},
+  observable::{ObservableImpl, Observable},
   observer::Observer,
   scheduler::NormalReturn,
 };
@@ -23,17 +23,17 @@ pub struct StatusOp<S> {
   status: Arc<CompleteStatus>,
 }
 
-pub fn complete_status<Item, Err, S: ObservableExt<Item, Err>>(
+pub fn complete_status<Item, Err, S: Observable<Item, Err>>(
   source: S,
 ) -> (StatusOp<S>, Arc<CompleteStatus>) {
   let status = Arc::new(CompleteStatus::default());
   (StatusOp { source, status: status.clone() }, status)
 }
 
-impl<S, Item, Err, O> Observable<Item, Err, O> for StatusOp<S>
+impl<S, Item, Err, O> ObservableImpl<Item, Err, O> for StatusOp<S>
 where
   O: Observer<Item, Err>,
-  S: Observable<Item, Err, StatusObserver<O>>,
+  S: ObservableImpl<Item, Err, StatusObserver<O>>,
 {
   type Unsub = S::Unsub;
 
@@ -43,8 +43,8 @@ where
   }
 }
 
-impl<S, Item, Err> ObservableExt<Item, Err> for StatusOp<S> where
-  S: ObservableExt<Item, Err>
+impl<S, Item, Err> Observable<Item, Err> for StatusOp<S> where
+  S: Observable<Item, Err>
 {
 }
 

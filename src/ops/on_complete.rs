@@ -1,5 +1,5 @@
 use crate::{
-  observable::{Observable, ObservableExt},
+  observable::{ObservableImpl, Observable},
   observer::Observer,
 };
 
@@ -8,10 +8,10 @@ pub struct OnCompleteOp<S, F> {
   pub(crate) func: F,
 }
 
-impl<S, F, Item, Err, O> Observable<Item, Err, O> for OnCompleteOp<S, F>
+impl<S, F, Item, Err, O> ObservableImpl<Item, Err, O> for OnCompleteOp<S, F>
 where
   O: Observer<Item, Err>,
-  S: Observable<Item, Err, OnCompleteObserver<O, F>>,
+  S: ObservableImpl<Item, Err, OnCompleteObserver<O, F>>,
   F: FnOnce(),
 {
   type Unsub = S::Unsub;
@@ -23,8 +23,8 @@ where
   }
 }
 
-impl<S, F, Item, Err> ObservableExt<Item, Err> for OnCompleteOp<S, F> where
-  S: ObservableExt<Item, Err>
+impl<S, F, Item, Err> Observable<Item, Err> for OnCompleteOp<S, F> where
+  S: Observable<Item, Err>
 {
 }
 

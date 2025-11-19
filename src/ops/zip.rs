@@ -28,16 +28,16 @@ macro_rules! impl_zip_op {
       }
     }
 
-    impl<A, B, ItemA, ItemB, Err, O> Observable<(ItemA, ItemB), Err, O>
+    impl<A, B, ItemA, ItemB, Err, O> ObservableImpl<(ItemA, ItemB), Err, O>
       for $name<A, B>
     where
       O: Observer<(ItemA, ItemB), Err>,
-      A: Observable<
+      A: ObservableImpl<
         ItemA,
         Err,
         AObserver<$rc<ZipObserver<O, ItemA, ItemB>>, ItemB>,
       >,
-      B: Observable<
+      B: ObservableImpl<
         ItemB,
         Err,
         BObserver<$rc<ZipObserver<O, ItemA, ItemB>>, ItemA>,
@@ -57,11 +57,11 @@ macro_rules! impl_zip_op {
       }
     }
 
-    impl<A, B, ItemA, ItemB, Err> ObservableExt<(ItemA, ItemB), Err>
+    impl<A, B, ItemA, ItemB, Err> Observable<(ItemA, ItemB), Err>
       for $name<A, B>
     where
-      A: ObservableExt<ItemA, Err>,
-      B: ObservableExt<ItemB, Err>,
+      A: Observable<ItemA, Err>,
+      B: Observable<ItemB, Err>,
     {
     }
 

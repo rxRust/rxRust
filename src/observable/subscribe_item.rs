@@ -38,7 +38,7 @@ pub trait ObservableItem<Item, F> {
 
 impl<S, Item, F> ObservableItem<Item, F> for S
 where
-  S: Observable<Item, Infallible, ObserverItem<F>>,
+  S: ObservableImpl<Item, Infallible, ObserverItem<F>>,
   F: FnMut(Item),
 {
   type Unsub = S::Unsub;

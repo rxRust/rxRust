@@ -61,12 +61,12 @@ macro_rules! impl_observable_method {
   };
 }
 
-impl<'a, ObservableItem, Item, Err, O, S> Observable<Item, Err, O>
+impl<'a, ObservableItem, Item, Err, O, S> ObservableImpl<Item, Err, O>
   for MergeAllOp<'a, S, ObservableItem>
 where
   O: Observer<Item, Err> + 'a,
-  S: Observable<ObservableItem, Err, OutsideObserver<'a, O, Item>>,
-  ObservableItem: Observable<Item, Err, InnerObserver<'a, O>> + 'a,
+  S: ObservableImpl<ObservableItem, Err, OutsideObserver<'a, O, Item>>,
+  ObservableItem: ObservableImpl<Item, Err, InnerObserver<'a, O>> + 'a,
   S::Unsub: 'a,
   ObservableItem::Unsub: 'a,
 {
@@ -78,21 +78,21 @@ where
   );
 }
 
-impl<'a, ObservableItem, Item, Err, S> ObservableExt<Item, Err>
+impl<'a, ObservableItem, Item, Err, S> Observable<Item, Err>
   for MergeAllOp<'a, S, ObservableItem>
 where
-  S: ObservableExt<ObservableItem, Err>,
-  ObservableItem: ObservableExt<Item, Err>,
+  S: Observable<ObservableItem, Err>,
+  ObservableItem: Observable<Item, Err>,
 {
 }
 
-impl<ObservableItem, Item, Err, O, S> Observable<Item, Err, O>
+impl<ObservableItem, Item, Err, O, S> ObservableImpl<Item, Err, O>
   for MergeAllOpThreads<S, ObservableItem>
 where
   O: Observer<Item, Err> + Send + 'static,
-  S: Observable<ObservableItem, Err, OutsideObserverThreads<O, Item>>,
+  S: ObservableImpl<ObservableItem, Err, OutsideObserverThreads<O, Item>>,
   ObservableItem:
-    Observable<Item, Err, InnerObserverThreads<O>> + Send + 'static,
+    ObservableImpl<Item, Err, InnerObserverThreads<O>> + Send + 'static,
   S::Unsub: Send + 'static,
   ObservableItem::Unsub: Send + 'static,
 {
@@ -104,11 +104,11 @@ where
   );
 }
 
-impl<ObservableItem, Item, Err, S> ObservableExt<Item, Err>
+impl<ObservableItem, Item, Err, S> Observable<Item, Err>
   for MergeAllOpThreads<S, ObservableItem>
 where
-  S: ObservableExt<ObservableItem, Err>,
-  ObservableItem: ObservableExt<Item, Err>,
+  S: Observable<ObservableItem, Err>,
+  ObservableItem: Observable<Item, Err>,
 {
 }
 
@@ -188,7 +188,7 @@ macro_rules! impl_outside_observer {
       for $outside_ty
     where
       O: Observer<Item, Err> $(+ $lf)? $(+ $send + 'static)?,
-      ObservableItem: Observable<Item, Err, $inner_ty> $(+ $lf)? $(+ $send + 'static)?,
+      ObservableItem: ObservableImpl<Item, Err, $inner_ty> $(+ $lf)? $(+ $send + 'static)?,
       ObservableItem::Unsub: $($lf)? $($send + 'static)?,
     {
       fn next(&mut self, value: ObservableItem) {

@@ -14,10 +14,10 @@ impl<S, F, Item> FilterMapOp<S, F, Item> {
   }
 }
 
-impl<OutputItem, Item, Err, O, S, F> Observable<OutputItem, Err, O>
+impl<OutputItem, Item, Err, O, S, F> ObservableImpl<OutputItem, Err, O>
   for FilterMapOp<S, F, Item>
 where
-  S: Observable<Item, Err, FilterMapObserver<O, F>>,
+  S: ObservableImpl<Item, Err, FilterMapObserver<O, F>>,
   O: Observer<OutputItem, Err>,
   F: FnMut(Item) -> Option<OutputItem>,
 {
@@ -31,10 +31,10 @@ where
   }
 }
 
-impl<OutputItem, Item, Err, S, F> ObservableExt<OutputItem, Err>
+impl<OutputItem, Item, Err, S, F> Observable<OutputItem, Err>
   for FilterMapOp<S, F, Item>
 where
-  S: ObservableExt<Item, Err>,
+  S: Observable<Item, Err>,
   F: FnMut(Item) -> Option<OutputItem>,
 {
 }
