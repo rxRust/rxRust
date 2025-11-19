@@ -1,6 +1,7 @@
 #![macro_use]
 
 mod trivial;
+use std::convert::Infallible;
 use std::hash::*;
 use std::sync::Arc;
 pub use trivial::*;
@@ -35,8 +36,6 @@ pub use start::start;
 
 use crate::prelude::*;
 
-mod subscribe_item;
-pub use subscribe_item::*;
 mod defer;
 pub use defer::*;
 
@@ -113,17 +112,17 @@ type ALLOp<S, F, Item> = DefaultIfEmptyOp<
   bool,
 >;
 
-pub trait ObservableImpl<Item, Err, O>
-where
-  O: Observer<Item, Err>,
-{
-  type Unsub: Subscription;
-
-  fn actual_subscribe(self, observer: O) -> Self::Unsub;
-}
-
-
 pub trait Observable<Item, Err>: Sized {
+  /// Subscribe with just a next function.
+  /// This method works only for observables that have Infallible error type.
+  fn subscribe<F>(self, next: F) -> Self::Unsub
+  where
+    Self: ObservableImpl<Item, Infallible, F>,
+    F: FnMut(Item),
+  {
+    self.actual_subscribe(next)
+  }
+
   /// emit only the first item emitted by an Observable
   #[inline]
   fn first(self) -> TakeOp<Self> {
@@ -1855,9 +1854,57 @@ pub trait Observable<Item, Err>: Sized {
   }
 }
 
+impl<Item, N> Observer<Item, Infallible> for N
+where
+  N: FnMut(Item),
+{
+  fn next(&mut self, value: Item) {
+    (self)(value);
+  }
+
+  #[inline]
+  fn error(self, _err: Infallible) {}
+
+  #[inline]
+  fn complete(self) {}
+
+  #[inline]
+  fn is_finished(&self) -> bool {
+    false
+  }
+}
+
+/// The trait used to implement the `Observable` trait.
+pub trait ObservableImpl<Item, Err, O>
+where
+  O: Observer<Item, Err>,
+{
+  type Unsub: Subscription;
+
+  fn actual_subscribe(self, observer: O) -> Self::Unsub;
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn raii() {
+    let mut times = 0;
+    {
+      let mut subject = Subject::default();
+      {
+        let _ = subject
+          .clone()
+          .subscribe(|_| {
+            times += 1;
+          })
+          .unsubscribe_when_dropped();
+      } // <-- guard is dropped here!
+      subject.next(());
+    }
+    assert_eq!(times, 0);
+  }
 
   #[test]
   fn smoke_element_at() {
