@@ -68,7 +68,7 @@ mod tests {
   #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn shared() {
-    use crate::ops::complete_status::CompleteStatus;
+    use futures::executor::block_on;
 
     let millis = Arc::new(Mutex::new(0));
     let c_millis = millis.clone();
@@ -81,7 +81,7 @@ mod tests {
     o.subscribe(move |_| {
       *millis.lock().unwrap() += 1;
     });
-    CompleteStatus::wait_for_end(status);
+    block_on(status.wait_completed());
 
     assert_eq!(*c_millis.lock().unwrap(), 5);
     assert!(stamp.elapsed() > Duration::from_millis(5));

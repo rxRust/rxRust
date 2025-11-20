@@ -1,4 +1,4 @@
-use futures::{executor::block_on, Future};
+use futures::Future;
 
 use crate::{
   observable::{ObservableImpl, Observable},
@@ -96,25 +96,33 @@ impl CompleteStatus {
     self.flag.load(Ordering::Relaxed) < 0
   }
 
-  /// Wait until the observable complete or an error occur.
-  pub fn wait_for_end(this: Arc<Self>) {
-    block_on(StatusFuture(this));
-  }
-}
+  /// Wait until the observable completes or an error occurs.
+  pub async fn wait_completed(&self) -> NormalReturn<()> {
+    let flag = &self.flag;
+    let waker = &self.waker;
 
-struct StatusFuture(Arc<CompleteStatus>);
-impl Future for StatusFuture {
-  type Output = NormalReturn<()>;
-
-  fn poll(
-    self: std::pin::Pin<&mut Self>,
-    cx: &mut std::task::Context<'_>,
-  ) -> Poll<Self::Output> {
-    if self.0.is_closed() {
-      Poll::Ready(NormalReturn::new(()))
-    } else {
-      self.0.waker.register(cx.waker());
-      Poll::Pending
+    struct StatusFuture<'a> {
+      flag: &'a AtomicI8,
+      waker: &'a futures::task::AtomicWaker,
     }
+
+    impl<'a> Future for StatusFuture<'a> {
+      type Output = NormalReturn<()>;
+
+      fn poll(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+      ) -> Poll<Self::Output> {
+        if self.flag.load(Ordering::Relaxed) != 0 {
+          Poll::Ready(NormalReturn::new(()))
+        } else {
+          self.waker.register(cx.waker());
+          Poll::Pending
+        }
+      }
+    }
+
+    StatusFuture { flag, waker }.await
   }
 }
+

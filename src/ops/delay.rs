@@ -165,10 +165,8 @@ mod tests {
   #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn shared_smoke() {
-    use futures::executor::ThreadPool;
+    use futures::executor::{block_on, ThreadPool};
     use std::sync::{Arc, Mutex};
-
-    use crate::ops::complete_status::CompleteStatus;
 
     let value = Arc::new(Mutex::new(0));
     let c_value = value.clone();
@@ -181,7 +179,7 @@ mod tests {
     o.subscribe(move |v| {
       *value.lock().unwrap() = v;
     });
-    CompleteStatus::wait_for_end(status);
+    block_on(status.wait_completed());
 
     assert!(stamp.elapsed() >= Duration::from_millis(10));
     assert_eq!(*c_value.lock().unwrap(), 1);

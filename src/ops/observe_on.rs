@@ -160,7 +160,7 @@ mod test {
   #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn switch_thread() {
-    use crate::ops::complete_status::CompleteStatus;
+    use futures::executor::block_on;
 
     let id = thread::spawn(move || {}).thread().id();
     let changed_thread = Arc::new(AtomicBool::default());
@@ -187,7 +187,7 @@ mod test {
       c_changed_thread.store(thread.len() > 1, Ordering::Relaxed);
     });
 
-    CompleteStatus::wait_for_end(status);
+    block_on(status.wait_completed());
 
     let current_id = thread::current().id();
     assert_eq!(*emit_thread.lock().unwrap(), current_id);

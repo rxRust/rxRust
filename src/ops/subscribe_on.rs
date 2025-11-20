@@ -42,7 +42,6 @@ impl<S, Item, Err, SD> Observable<Item, Err> for SubscribeOnOP<S, SD> where
 #[cfg(not(target_arch = "wasm32"))]
 #[cfg(test)]
 mod test {
-  use crate::ops::complete_status::CompleteStatus;
   use crate::prelude::*;
   use crate::rc::{MutArc, RcDerefMut};
   use futures::executor::ThreadPool;
@@ -89,6 +88,8 @@ mod test {
 
   #[test]
   fn parallel_subscribe_on() {
+    use futures::executor::block_on;
+
     let pool_scheduler = FuturesThreadPoolScheduler::new().unwrap();
     let (o, status) = from_iter(0..2)
       .flat_map_threads(move |v| {
@@ -103,7 +104,7 @@ mod test {
     let now = Instant::now();
     o.subscribe(move |_| c_hit_times.rc_deref_mut().push(Instant::now()));
 
-    CompleteStatus::wait_for_end(status);
+    block_on(status.wait_completed());
 
     let finished_in_same_second = hit_times
       .rc_deref_mut()

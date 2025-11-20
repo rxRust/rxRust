@@ -100,7 +100,7 @@ mod tests {
   #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn timer_shall_emit_value_shared() {
-    use crate::ops::complete_status::CompleteStatus;
+    use futures::executor::block_on;
 
     let pool = ThreadPool::new().unwrap();
 
@@ -115,7 +115,7 @@ mod tests {
       i_emitted_c.store(n, Ordering::Relaxed);
     });
 
-    CompleteStatus::wait_for_end(status);
+    block_on(status.wait_completed());
 
     assert_eq!(val, i_emitted.load(Ordering::Relaxed));
   }
@@ -141,7 +141,7 @@ mod tests {
   #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn timer_shall_call_next_once_shared() {
-    use crate::ops::complete_status::CompleteStatus;
+    use futures::executor::block_on;
 
     let pool = ThreadPool::new().unwrap();
 
@@ -156,7 +156,7 @@ mod tests {
       next_count_c.store(count + 1, Ordering::Relaxed);
     });
 
-    CompleteStatus::wait_for_end(status);
+    block_on(status.wait_completed());
 
     assert_eq!(next_count.load(Ordering::Relaxed), 1);
   }
@@ -182,7 +182,7 @@ mod tests {
   #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn timer_shall_be_completed_shared() {
-    use crate::ops::complete_status::CompleteStatus;
+    use futures::executor::block_on;
 
     let pool = ThreadPool::new().unwrap();
 
@@ -196,7 +196,7 @@ mod tests {
         })
         .complete_status();
     let _ = o.subscribe(|_| {});
-    CompleteStatus::wait_for_end(status);
+    block_on(status.wait_completed());
 
     assert!(is_completed.load(Ordering::Relaxed));
   }
@@ -218,7 +218,7 @@ mod tests {
   #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn timer_shall_elapse_duration_shared() {
-    use crate::ops::complete_status::CompleteStatus;
+    use futures::executor::block_on;
 
     let pool = ThreadPool::new().unwrap();
 
@@ -228,7 +228,7 @@ mod tests {
     let (o, status) =
       observable::timer("aString", duration, pool).complete_status();
     o.subscribe(|_| {});
-    CompleteStatus::wait_for_end(status);
+    block_on(status.wait_completed());
 
     assert!(stamp.elapsed() >= duration);
   }
@@ -258,7 +258,7 @@ mod tests {
   #[cfg(not(target_arch = "wasm32"))]
   #[test]
   fn timer_at_shall_emit_value_shared() {
-    use crate::ops::complete_status::CompleteStatus;
+    use futures::executor::block_on;
 
     let pool = ThreadPool::new().unwrap();
 
@@ -275,7 +275,7 @@ mod tests {
     o.subscribe(move |n| {
       i_emitted_c.store(n, Ordering::Relaxed);
     });
-    CompleteStatus::wait_for_end(status);
+    block_on(status.wait_completed());
 
     assert_eq!(val, i_emitted.load(Ordering::Relaxed));
   }

@@ -467,6 +467,8 @@ mod test {
   benchmark_group!(do_bench_pool, pool);
 
   fn pool(b: &mut Bencher) {
+    use futures::executor::block_on;
+
     let last = Arc::new(Mutex::new(0));
     b.iter(|| {
       let c_last = last.clone();
@@ -475,7 +477,7 @@ mod test {
         .observe_on_threads(pool)
         .complete_status();
       o.subscribe(move |v| *c_last.lock().unwrap() = v);
-      CompleteStatus::wait_for_end(status);
+      block_on(status.wait_completed());
 
       *last.lock().unwrap()
     })
@@ -509,6 +511,7 @@ mod test {
   benchmark_group!(do_bench_tokio_basic, tokio_basic);
 
   fn tokio_basic(b: &mut Bencher) {
+    use futures::executor::block_on;
     use tokio::runtime;
     let last = Arc::new(Mutex::new(0));
     b.iter(|| {
@@ -520,7 +523,7 @@ mod test {
         .observe_on_threads(scheduler)
         .complete_status();
       o.subscribe(move |v| *c_last.lock().unwrap() = v);
-      CompleteStatus::wait_for_end(status);
+      block_on(status.wait_completed());
 
       *last.lock().unwrap()
     })
@@ -534,6 +537,7 @@ mod test {
   benchmark_group!(do_bench_tokio_thread, tokio_thread);
 
   fn tokio_thread(b: &mut Bencher) {
+    use futures::executor::block_on;
     use tokio::runtime;
     let last = Arc::new(Mutex::new(0));
     b.iter(|| {
@@ -543,7 +547,7 @@ mod test {
         .observe_on_threads(pool)
         .complete_status();
       o.subscribe(move |v| *c_last.lock().unwrap() = v);
-      CompleteStatus::wait_for_end(status);
+      block_on(status.wait_completed());
       *last.lock().unwrap()
     })
   }
