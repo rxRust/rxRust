@@ -55,22 +55,71 @@ If you want to share the same observable, you can use `Subject`.
 
 ## Scheduler
 
-`rxrust` use the runtime of the `Future` as the scheduler, `LocalPool` and `ThreadPool` in `futures::executor` can be used as schedulers directly, and `tokio::runtime::Runtime` is also supported, but need to enable the feature `futures-scheduler`. Across `Scheduler` to implement custom `Scheduler`.
-Some Observable Ops (such as `delay`, and `debounce`) need the ability to delay, futures-time supports this ability when set with the `timer` feature, but you can also customize it by setting the new_timer function to NEW_TIMER_FN variant and removing the `timer` feature.
-```rust 
+`rxrust` provides a unified scheduler system that works across all platforms (including WebAssembly) using tokio as the foundation. The scheduler system is enabled by the `scheduler` feature. On WebAssembly platforms, `tokio_with_wasm` is used as an adapter to provide tokio-compatible functionality.
+
+Two scheduler types are available:
+
+- `LocalScheduler`: For single-threaded local execution contexts
+- `SharedScheduler`: For multi-threaded shared execution contexts
+
+```rust
 use rxrust::prelude::*;
+use rxrust::scheduler::{LocalScheduler, SharedScheduler};
 
-// `FuturesThreadPoolScheduler` is the alias of `futures::executor::ThreadPool`.
-let threads_scheduler = FuturesThreadPoolScheduler::new().unwrap();
+#[tokio::main(flavor = "multi_thread")]
+async fn main() {
+  let shared_scheduler = SharedScheduler;
 
-observable::from_iter(0..10)
-  .subscribe_on(threads_scheduler.clone())
-  .map(|v| v*2)
-  .observe_on_threads(threads_scheduler)
-  .subscribe(|v| println!("{},", v));
+  observable::from_iter(0..10)
+    .subscribe_on(shared_scheduler)
+    .map(|v| v*2)
+    .observe_on_threads(shared_scheduler)
+    .subscribe(|v| println!("{},", v));
+}
+
+// For local execution, use LocalScheduler with LocalSet
+async fn local_example() {
+  let local_set = tokio::task::LocalSet::new();
+  let _guard = local_set.enter();
+
+  observable::from_iter(0..10)
+    .observe_on(LocalScheduler)
+    .subscribe(|v| println!("{},", v));
+
+  local_set.await;
+}
 ```
 
-Also, `rxrust` supports WebAssembly by enabling the feature `wasm-scheduler` and using the crate `wasm-bindgen`. A simple example is [here](https://github.com/utilForever/rxrust-with-wasm). 
+The scheduler system automatically works across all platforms including WebAssembly without requiring additional configuration. For timer-based operations (such as `delay`, `debounce`, `timer`, `interval`), the `timer` feature provides default timing functionality using tokio's timer.
+
+### Custom Scheduler Implementation
+
+You can also implement your own custom scheduler by disabling the `scheduler` feature and implementing the `Scheduler` trait:
+
+```rust
+use rxrust::prelude::*;
+use rxrust::scheduler::{Scheduler, TaskHandle};
+use std::time::Duration;
+
+// Disable default scheduler in Cargo.toml:
+// [dependencies]
+// rxrust = { version = "1.0.0-beta.0", default-features = false }
+
+// Implement your own scheduler
+struct MyCustomScheduler;
+
+impl<T> Scheduler<T> for MyCustomScheduler
+where
+    T: std::future::Future + Send + 'static,
+    T::Output: Send,
+{
+    fn schedule(&self, task: T, delay: Option<Duration>) -> TaskHandle<T::Output> {
+        // Your custom scheduling logic here
+        // This could integrate with other async runtimes, thread pools, etc.
+        todo!("Implement your scheduling logic")
+    }
+}
+``` 
 
 ## Converts from a Future
 
@@ -78,13 +127,19 @@ Just use `observable::from_future` to convert a `Future` to an observable sequen
 
 ```rust
 use rxrust::prelude::*;
+use rxrust::scheduler::LocalScheduler;
 
-let mut scheduler_pool = FuturesLocalSchedulerPool::new();
-observable::from_future(std::future::ready(1), scheduler_pool.spawner())
-  .subscribe(move |v| println!("subscribed with {}", v));
+#[tokio::main]
+async fn main() {
+  let local_set = tokio::task::LocalSet::new();
+  let _guard = local_set.enter();
 
-// Wait `task` finish.
-scheduler_pool.run();
+  observable::from_future(std::future::ready(1), LocalScheduler)
+    .subscribe(move |v| println!("subscribed with {}", v));
+
+  // Wait for the future to complete.
+  local_set.await;
+}
 ```
 
 A `from_future_result` function is also provided to propagate errors from `Future``.
@@ -103,4 +158,4 @@ Help and contributions can be any of the following:
 - continuous improvement in a ci Pipeline
 - implement any unimplemented operator, remember to create a pull request before you start your code, so other people know you are working on it.
 
-you can enable the default timer by `timer` feature, or set a timer across function `new_timer_fn`
+You can enable the default timer by the `timer` feature, or provide a custom timer implementation by setting the `new_timer_fn` function and removing the `timer` feature.

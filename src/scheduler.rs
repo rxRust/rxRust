@@ -1,3 +1,99 @@
+//! # Scheduling System
+//!
+//! This module provides a unified scheduling system for rxRust that works across all platforms
+//! (including WebAssembly) using tokio as the foundation. The scheduling system is enabled by
+//! the `scheduler` feature.
+//! On WebAssembly platforms, `tokio_with_wasm` is used as an adapter to provide tokio-compatible
+//! functionality.
+//!
+//! ## Scheduler Types
+//!
+//! Two scheduler types are available:
+//!
+//! - [`LocalScheduler`]: For single-threaded local execution contexts
+//! - [`SharedScheduler`]: For multi-threaded shared execution contexts
+//!
+//! Both schedulers are zero-sized types that the compiler can optimize away completely.
+//!
+//! ## Usage Examples
+//!
+//! ### SharedScheduler
+//!
+//! For multi-threaded execution, use `SharedScheduler` with `#[tokio::main]`:
+//!
+//! ```rust
+//! use rxrust::prelude::*;
+//! use rxrust::scheduler::SharedScheduler;
+//!
+//! #[tokio::main(flavor = "multi_thread")]
+//! async fn main() {
+//!     let scheduler = SharedScheduler;
+//!
+//!     observable::from_iter(0..10)
+//!         .subscribe_on(scheduler)
+//!         .map(|v| v * 2)
+//!         .observe_on_threads(scheduler)
+//!         .subscribe(|v| println!("{}", v));
+//! }
+//! ```
+//!
+//! ### LocalScheduler
+//!
+//! For single-threaded local execution, you must first enter a `LocalSet` context:
+//!
+//! ```rust
+//! use rxrust::prelude::*;
+//! use rxrust::scheduler::LocalScheduler;
+//! use LocalSet;
+//!
+//! #[tokio::main]
+//! async fn main() {
+//!     let local_set = LocalSet::new();
+//!     let _guard = local_set.enter();
+//!
+//!     // Now you can use LocalScheduler
+//!     observable::from_iter(0..10)
+//!         .observe_on(LocalScheduler)
+//!         .subscribe(|v| println!("{}", v));
+//!
+//!     // Wait for all local tasks to complete
+//!     local_set.await;
+//! }
+//! ```
+//!
+//! #### Using LocalRuntime (unstable feature)
+//!
+//! For more convenient usage with LocalScheduler, you can use Tokio's unstable `LocalRuntime`:
+//!
+//! ```rust ignore
+//! #![cfg(tokio_unstable)]
+//!
+//! use rxrust::prelude::*;
+//! use rxrust::scheduler::LocalScheduler;
+//!
+//! #[tokio::main(flavor = "local")]
+//! async fn main() {
+//!   // No need for LocalSet when using LocalRuntime
+//!   observable::from_iter(0..10)
+//!       .observe_on(LocalScheduler)
+//!       .subscribe(|v| println!("{}", v));
+//!   tokio::time::sleep(Duration::from_millis(100)).await;
+//! }
+//! ```
+//!
+//! ## Thread Safety Considerations
+//!
+//! When using `SharedScheduler` with operations that require `Send` (like `delay_threads`,
+//! `observe_on_threads`), ensure your observers and data are thread-safe. Use `MutArc`
+//! instead of `MutRc` for shared state in multi-threaded contexts.
+//!
+//! For `LocalScheduler`, you can use `MutRc` since execution stays on a single thread.
+//!
+//! ## Custom Scheduler Implementation
+//!
+//! You can implement your own scheduler by disabling the `scheduler` feature and implementing
+//! the [`Scheduler`] trait:
+
 use crate::{
   prelude::*,
   rc::{MutArc, RcDeref, RcDerefMut},
@@ -12,34 +108,23 @@ use std::{
   panic::{self, AssertUnwindSafe},
   pin::Pin,
   task::{Context, Poll},
+  time::Instant,
 };
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(
+  target_arch = "wasm32",
+  target_vendor = "unknown",
+  target_os = "unknown"
+))]
+pub type BoxFuture<'a, T> =
+  std::pin::Pin<Box<dyn futures::Future<Output = T> + 'a>>;
+
+#[cfg(not(all(
+  target_arch = "wasm32",
+  target_vendor = "unknown",
+  target_os = "unknown"
+)))]
 pub type BoxFuture<'a, T> = futures::future::BoxFuture<'a, T>;
-#[cfg(target_arch = "wasm32")]
-pub type BoxFuture<'a, T> = futures::future::LocalBoxFuture<'a, T>;
-
-#[cfg(feature = "timer")]
-fn new_timer(dur: Duration) -> BoxFuture<'static, ()> {
-  #[cfg(not(target_arch = "wasm32"))]
-  use futures_time::task::sleep;
-  #[cfg(target_arch = "wasm32")]
-  use gloo_timers::future::sleep;
-
-  Box::pin(sleep(dur.into()).map(|_| ()))
-}
-
-#[cfg(not(feature = "timer"))]
-pub static NEW_TIMER_FN: once_cell::sync::OnceCell<
-  fn(Duration) -> BoxFuture<'static, ()>,
-> = once_cell::sync::OnceCell::new();
-
-#[cfg(not(feature = "timer"))]
-fn new_timer(dur: Duration) -> BoxFuture<'static, ()> {
-  NEW_TIMER_FN
-    .get()
-    .expect("you can enable the default timer by `timer` feature, or set yourself timer across function `new_timer_fn`")(dur)
-}
 
 pub struct TaskHandle<T>(MutArc<HandleInfo<T>>);
 struct HandleInfo<T> {
@@ -47,45 +132,181 @@ struct HandleInfo<T> {
   value: Option<Result<T, Box<dyn Any + Send>>>,
 }
 
-pub trait Scheduler<T>: Clone
+/// Trait for implementing custom schedulers.
+///
+/// This trait allows you to implement your own scheduling logic for executing
+/// asynchronous tasks. When the `scheduler` feature is disabled, you can implement
+/// this trait to provide custom scheduling behavior.
+///
+/// # Type Parameters
+///
+/// - `T`: The future type to be scheduled
+///
+/// # Example
+///
+/// ```rust
+/// use rxrust::scheduler::{Scheduler, TaskHandle};
+/// use std::time::Duration;
+/// use std::future::Future;
+///
+/// struct MyCustomScheduler;
+///
+/// impl<T> Scheduler<T> for MyCustomScheduler
+/// where
+///     T: Future + Send + 'static,
+///     T::Output: Send,
+/// {
+///     fn schedule(&self, task: T, delay: Option<Duration>) -> TaskHandle<T::Output> {
+///         // Your custom scheduling logic here
+///         // This could integrate with other async runtimes, thread pools, etc.
+///         todo!("Implement your scheduling logic")
+///     }
+/// }
+/// ```
+pub trait Scheduler<T>
 where
   T: Future,
 {
+  /// Schedule a task to be executed, optionally with a delay.
+  ///
+  /// # Parameters
+  ///
+  /// - `task`: The future to be executed
+  /// - `delay`: Optional duration to wait before executing the task
+  ///
+  /// # Returns
+  ///
+  /// A [`TaskHandle`] that can be used to cancel or monitor the scheduled task
   fn schedule(&self, task: T, delay: Option<Duration>)
     -> TaskHandle<T::Output>;
 }
 
-pub trait AsyncExecutor<T>: Clone
-where
-  T: Future,
-{
-  fn spawn(&self, task: T);
-}
+#[cfg(feature = "scheduler")]
+mod scheduler_impl {
+  use super::*;
+  #[cfg(all(
+    target_arch = "wasm32",
+    target_vendor = "unknown",
+    target_os = "unknown"
+  ))]
+  pub use gloo_timers::future::sleep;
+  #[cfg(all(
+    target_arch = "wasm32",
+    target_vendor = "unknown",
+    target_os = "unknown"
+  ))]
+  pub use wasm_bindgen_futures::{spawn_local as spawn, spawn_local};
 
-impl<S, T> Scheduler<T> for S
-where
-  S: AsyncExecutor<Remote<ChainFut<BoxFuture<'static, ()>, T>>>
-    + AsyncExecutor<Remote<T>>,
-  T: Future,
-{
-  fn schedule(
-    &self,
-    task: T,
-    delay: Option<Duration>,
-  ) -> TaskHandle<T::Output> {
-    if let Some(dur) = delay {
-      let delay = new_timer(dur);
-      let fut = ChainFut { fut1: delay, fut2: task };
-      let (fut, handle) = remote_handle(fut);
-      self.spawn(fut);
+  #[cfg(not(all(
+    target_arch = "wasm32",
+    target_vendor = "unknown",
+    target_os = "unknown"
+  )))]
+  pub use tokio::{
+    spawn,
+    task::{spawn_local, LocalSet},
+    time::{self, sleep},
+  };
+
+  /// A scheduler for local execution contexts.
+  ///
+  /// This scheduler uses `spawn_local` for single-threaded execution
+  /// across all platforms. On WebAssembly platforms, `tokio_with_wasm` provides the
+  /// compatibility layer that enables tokio functionality.
+  ///
+  /// **Important**: Before using `LocalScheduler`, you must enter a `LocalSet` context
+  /// using `LocalSet::enter()` to create a guard, or use the unstable `LocalRuntime`.
+  ///
+  /// This is a zero-sized type that the compiler can optimize away completely.
+  ///
+  /// # Examples
+  ///
+  /// ```rust
+  /// use rxrust::prelude::*;
+  /// use rxrust::scheduler::{LocalScheduler, LocalSet};
+  ///
+  /// #[tokio::main]
+  /// async fn main() {
+  ///     let local_set = LocalSet::new();
+  ///     let _guard = local_set.enter();
+  ///
+  ///     // Now you can use LocalScheduler
+  ///     observable::from_iter(0..10)
+  ///         .observe_on(LocalScheduler)
+  ///         .subscribe(|v| println!("{}", v));
+  ///
+  ///     local_set.await;
+  /// }
+  /// ```
+  #[derive(Debug, Clone, Copy)]
+  pub struct LocalScheduler;
+
+  /// A scheduler for shared/multi-threaded execution contexts.
+  ///
+  /// This scheduler uses `tokio::spawn` for multi-threaded execution across all platforms.
+  /// On WebAssembly platforms, `tokio_with_wasm` provides the compatibility layer that
+  /// enables tokio functionality. Since true multi-threading is not available in WebAssembly,
+  /// this behaves identically to `LocalScheduler` on WASM platforms.
+  ///
+  /// This is a zero-sized type that the compiler can optimize away completely.
+  ///
+  /// # Examples
+  ///
+  /// ```rust
+  /// use rxrust::prelude::*;
+  /// use rxrust::scheduler::SharedScheduler;
+  ///
+  /// #[tokio::main(flavor = "multi_thread")]
+  /// async fn main() {
+  ///     let scheduler = SharedScheduler;
+  ///
+  ///     observable::from_iter(0..10)
+  ///         .subscribe_on(scheduler)
+  ///         .observe_on_threads(scheduler)
+  ///         .subscribe(|v| println!("{}", v));
+  /// }
+  /// ```
+  #[derive(Debug, Clone, Copy)]
+  pub struct SharedScheduler;
+
+  // Unified scheduler implementation using tokio interface
+  #[cfg(feature = "scheduler")]
+  impl<T> Scheduler<T> for LocalScheduler
+  where
+    T: Future + 'static,
+    T::Output: TaskReturn,
+  {
+    fn schedule(
+      &self,
+      task: T,
+      delay: Option<Duration>,
+    ) -> TaskHandle<T::Output> {
+      let (fut, handle) = schedule_task_with_delay(task, delay);
+      spawn_local(fut);
       handle
-    } else {
-      let (fut, handle) = remote_handle(task);
-      self.spawn(fut);
+    }
+  }
+
+  #[cfg(feature = "scheduler")]
+  impl<T> Scheduler<T> for SharedScheduler
+  where
+    T: Future + Send + 'static,
+    T::Output: TaskReturn + Send,
+  {
+    fn schedule(
+      &self,
+      task: T,
+      delay: Option<Duration>,
+    ) -> TaskHandle<T::Output> {
+      let (fut, handle) = schedule_task_with_delay(task, delay);
+      spawn(fut);
       handle
     }
   }
 }
+
+#[cfg(feature = "scheduler")]
+pub use scheduler_impl::*;
 
 pin_project! {
   pub struct OnceTask<Args, R> {
@@ -111,6 +332,7 @@ pin_project! {
     task: fn(&mut Args, usize)-> bool,
     args: Args,
     seq: usize,
+    next_execution_time: Option<Instant>,
   }
 }
 
@@ -146,6 +368,13 @@ impl<Args> Future for RepeatTask<Args> {
   ) -> Poll<Self::Output> {
     loop {
       ready!(self.fur.poll_unpin(cx));
+
+      let next = match self.next_execution_time {
+        Some(time) => time + self.interval,
+        None => Instant::now() + self.interval,
+      };
+
+      // Execute the user's task
       {
         let this = self.as_mut().project();
         if (*this.task)(this.args, *this.seq) {
@@ -154,7 +383,13 @@ impl<Args> Future for RepeatTask<Args> {
           return Poll::Ready(NormalReturn::new(()));
         }
       }
-      let mut fur = new_timer(self.interval);
+
+      // Calculate the next execution time
+      self.next_execution_time = Some(next);
+
+      // Create new sleep future with the calculated duration
+      let mut fur: BoxFuture<'static, ()> =
+        Box::pin(sleep(next - Instant::now()));
       swap(&mut self.fur, &mut fur);
     }
   }
@@ -184,12 +419,14 @@ impl<Args> RepeatTask<Args> {
     task: fn(&mut Args, usize) -> bool,
     args: Args,
   ) -> Self {
+    let now = Instant::now();
     Self {
-      fur: new_timer(dur),
+      fur: Box::pin(sleep(dur).map(|_| ())) as BoxFuture<'static, ()>,
       interval: dur,
       task,
       args,
       seq: 0,
+      next_execution_time: Some(now + dur),
     }
   }
 }
@@ -272,28 +509,6 @@ pin_project! {
   }
 }
 
-pin_project! {
-  struct ChainFut<Fut1: Future, Fut2: Future> {
-      #[pin]
-      fut1: Fut1,
-      #[pin]
-      fut2: Fut2,
-  }
-}
-
-impl<Fut1: Future, Fut2: Future> Future for ChainFut<Fut1, Fut2> {
-  type Output = Fut2::Output;
-  fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-    let this = self.project();
-
-    if this.fut1.poll(cx).is_ready() {
-      return this.fut2.poll(cx);
-    };
-
-    Poll::Pending
-  }
-}
-
 impl<Fut: Future + fmt::Debug> fmt::Debug for Remote<Fut> {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     f.debug_tuple("Remote").field(&self.future).finish()
@@ -332,236 +547,182 @@ fn remote_handle<Fut: Future>(
   (wrapped, handle)
 }
 
-#[cfg(target_arch = "wasm32")]
-#[derive(Debug, Clone)]
-pub struct WasmLocalScheduler;
-#[cfg(feature = "futures-scheduler")]
-pub use futures::executor::LocalPool as FuturesLocalSchedulerPool;
-#[cfg(feature = "futures-scheduler")]
-pub use futures::executor::LocalSpawner as FuturesLocalScheduler;
-#[cfg(all(feature = "futures-scheduler", not(target_arch = "wasm32")))]
-pub use futures::executor::ThreadPool as FuturesThreadPoolScheduler;
-#[cfg(all(feature = "tokio-scheduler", not(target_arch = "wasm32")))]
-pub use tokio::runtime::Handle as TokioScheduler;
-
-macro_rules! impl_scheduler_method {
-  ($spawn_macro: ident) => {
-    fn schedule(
-      &self,
-      task: T,
-      delay: Option<Duration>,
-    ) -> TaskHandle<T::Output> {
-      let fut = async move {
-        if let Some(dur) = delay {
-          new_timer(dur).await;
-        }
-        task.await
-      };
-      let (fut, handle) = remote_handle(fut);
-      $spawn_macro!(self, fut);
-      handle
+/// Helper function to create a delayed task with remote handle
+fn schedule_task_with_delay<T>(
+  task: T,
+  delay: Option<Duration>,
+) -> (
+  Remote<impl Future<Output = T::Output>>,
+  TaskHandle<T::Output>,
+)
+where
+  T: Future,
+{
+  let fut = async move {
+    if let Some(dur) = delay {
+      sleep(dur).await;
     }
+    task.await
   };
+  remote_handle(fut)
 }
 
-#[cfg(feature = "futures-scheduler")]
-macro_rules! futures_local_spawn {
-  ($pool: ident, $future: ident) => {
-    $pool.spawn_local($future).unwrap()
-  };
-}
-
-#[cfg(target_arch = "wasm32")]
-mod wasm_scheduler {
-  use super::*;
-  use futures::task::LocalSpawnExt;
-
-  macro_rules! wasm_bindgen_spawn {
-    ($pool: ident, $future: ident) => {
-      wasm_bindgen_futures::spawn_local($future);
-    };
-  }
-
-  impl<T> Scheduler<T> for WasmLocalScheduler
-  where
-    T: Future + 'static,
-    T::Output: TaskReturn,
-  {
-    impl_scheduler_method!(wasm_bindgen_spawn);
-  }
-
-  #[cfg(feature = "futures-scheduler")]
-  impl<T> Scheduler<T> for FuturesLocalScheduler
-  where
-    T: Future + 'static,
-    T::Output: TaskReturn,
-  {
-    impl_scheduler_method!(futures_local_spawn);
-  }
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-mod not_wasm_scheduler {
-  use super::*;
-
-  #[cfg(feature = "futures-scheduler")]
-  mod futures_scheduler {
-    use super::*;
-    use futures::task::{LocalSpawnExt, SpawnExt};
-
-    macro_rules! futures_pool_spawn {
-      ($pool: ident, $future: ident) => {
-        $pool.spawn($future).unwrap()
-      };
-    }
-
-    impl<T> Scheduler<T> for FuturesThreadPoolScheduler
-    where
-      T: Future + Send + 'static,
-      T::Output: TaskReturn + Send + 'static,
-    {
-      impl_scheduler_method!(futures_pool_spawn);
-    }
-
-    impl<T> Scheduler<T> for FuturesLocalScheduler
-    where
-      T: Future + 'static,
-      T::Output: TaskReturn,
-    {
-      impl_scheduler_method!(futures_local_spawn);
-    }
-  }
-
-  #[cfg(feature = "tokio-scheduler")]
-  mod tokio_scheduler {
-    use super::*;
-
-    macro_rules! tokio_runtime_spawn {
-      ($pool: ident, $future: ident) => {
-        $pool.spawn($future)
-      };
-    }
-
-    impl<T> Scheduler<T> for TokioScheduler
-    where
-      T: Future + Send + 'static,
-      T::Output: TaskReturn + Send + 'static,
-    {
-      impl_scheduler_method!(tokio_runtime_spawn);
-    }
-  }
-}
-
-#[cfg(all(test, not(target_arch = "wasm32"), feature = "tokio-scheduler"))]
-mod test {
-  use crate::{ops::complete_status::CompleteStatus, prelude::*};
-  use bencher::Bencher;
-  use futures::executor::{LocalPool, ThreadPool};
+/// Test utilities for the scheduler module
+#[cfg(test)]
+mod tests {
+  use crate::prelude::*;
   use std::sync::{Arc, Mutex};
 
-  #[test]
-  fn bench_pool() {
-    do_bench_pool();
-  }
+  #[cfg(feature = "scheduler")]
+  mod unified_schedulers {
+    use super::*;
 
-  benchmark_group!(do_bench_pool, pool);
+    #[tokio::test]
+    async fn test_local_scheduler_basic_functionality() {
+      use std::sync::{Arc, Mutex};
 
-  fn pool(b: &mut Bencher) {
-    use futures::executor::block_on;
+      let results = Arc::new(Mutex::new(Vec::new()));
+      let results_clone = results.clone();
 
-    let last = Arc::new(Mutex::new(0));
-    b.iter(|| {
-      let c_last = last.clone();
-      let pool = ThreadPool::new().unwrap();
-      let (o, status) = observable::from_iter(0..1000)
-        .observe_on_threads(pool)
-        .complete_status();
-      o.subscribe(move |v| *c_last.lock().unwrap() = v);
-      block_on(status.wait_completed());
+      let local_set = LocalSet::new();
+      let _guard = local_set.enter();
+      observable::from_iter(0..5)
+        .observe_on(LocalScheduler)
+        .subscribe(move |item| {
+          results_clone.lock().unwrap().push(item);
+        });
 
-      *last.lock().unwrap()
-    })
-  }
+      local_set.await;
+      assert_eq!(*results.lock().unwrap(), vec![0, 1, 2, 3, 4]);
+    }
 
-  #[test]
-  fn bench_local_thread() {
-    do_bench_local_thread();
-  }
+    #[tokio::test]
+    async fn test_shared_scheduler_basic_functionality() {
+      use std::sync::{Arc, Mutex};
 
-  benchmark_group!(do_bench_local_thread, local_thread);
+      let scheduler = crate::scheduler::SharedScheduler;
+      let results = Arc::new(Mutex::new(Vec::new()));
+      let results_clone = results.clone();
 
-  fn local_thread(b: &mut Bencher) {
-    let last = Arc::new(Mutex::new(0));
-    b.iter(|| {
-      let c_last = last.clone();
-      let mut local = LocalPool::new();
-      observable::from_iter(0..1000)
-        .observe_on(local.spawner())
-        .subscribe(move |v| *c_last.lock().unwrap() = v);
-      local.run();
-      *last.lock().unwrap()
-    })
-  }
-
-  #[test]
-  fn bench_tokio_basic() {
-    do_bench_tokio_basic();
-  }
-
-  benchmark_group!(do_bench_tokio_basic, tokio_basic);
-
-  fn tokio_basic(b: &mut Bencher) {
-    use futures::executor::block_on;
-    use tokio::runtime;
-    let last = Arc::new(Mutex::new(0));
-    b.iter(|| {
-      let c_last = last.clone();
-      let local = runtime::Builder::new_current_thread().build().unwrap();
-      let scheduler = local.handle().clone();
-
-      let (o, status) = observable::from_iter(0..1000)
+      let (o, status) = observable::from_iter(0..5)
         .observe_on_threads(scheduler)
         .complete_status();
-      o.subscribe(move |v| *c_last.lock().unwrap() = v);
-      block_on(status.wait_completed());
 
-      *last.lock().unwrap()
-    })
-  }
+      o.subscribe(move |item| {
+        results_clone.lock().unwrap().push(item);
+      });
 
-  #[test]
-  fn bench_tokio_thread() {
-    do_bench_tokio_thread();
-  }
+      status.wait_completed().await;
+      assert_eq!(*results.lock().unwrap(), vec![0, 1, 2, 3, 4]);
+    }
 
-  benchmark_group!(do_bench_tokio_thread, tokio_thread);
+    #[tokio::test]
+    async fn test_scheduler_without_observe_on() {
+      use std::sync::{Arc, Mutex};
 
-  fn tokio_thread(b: &mut Bencher) {
-    use futures::executor::block_on;
-    use tokio::runtime;
-    let last = Arc::new(Mutex::new(0));
-    b.iter(|| {
-      let c_last = last.clone();
-      let pool = runtime::Runtime::new().unwrap().handle().clone();
-      let (o, status) = observable::from_iter(0..1000)
-        .observe_on_threads(pool)
+      // Test that our schedulers work even without observe_on
+      let results = Arc::new(Mutex::new(Vec::new()));
+      let results_clone = results.clone();
+
+      let (o, status) = observable::from_iter(1..=3).complete_status();
+
+      o.subscribe(move |item| {
+        results_clone.lock().unwrap().push(item);
+      });
+
+      status.wait_completed().await;
+      assert_eq!(*results.lock().unwrap(), vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn test_scheduler_zero_size_types() {
+      use std::mem;
+
+      // Verify that our schedulers are truly zero-sized types
+      assert_eq!(mem::size_of::<crate::scheduler::LocalScheduler>(), 0);
+      assert_eq!(mem::size_of::<crate::scheduler::SharedScheduler>(), 0);
+
+      // Verify they are Copy
+      let scheduler1 = crate::scheduler::LocalScheduler;
+      let scheduler2 = scheduler1; // Should work due to Copy trait
+      let _ = (scheduler1, scheduler2);
+
+      let scheduler3 = crate::scheduler::SharedScheduler;
+      let scheduler4 = scheduler3;
+      let _ = (scheduler3, scheduler4);
+    }
+
+    #[tokio::test]
+    async fn test_scheduler_clone_behavior() {
+      // Test that schedulers can be cloned/copied
+      let scheduler = crate::scheduler::SharedScheduler;
+      let scheduler_clone = scheduler;
+
+      let results = Arc::new(Mutex::new(Vec::new()));
+      let results_clone = results.clone();
+
+      let (o, status) = observable::from_iter(10..15)
+        .observe_on_threads(scheduler_clone)
         .complete_status();
-      o.subscribe(move |v| *c_last.lock().unwrap() = v);
-      block_on(status.wait_completed());
-      *last.lock().unwrap()
-    })
-  }
-}
 
-#[cfg(all(test, target_arch = "wasm32"))]
-mod test {
-  use crate::prelude::*;
-  use wasm_bindgen_test::*;
+      o.subscribe(move |item| {
+        results_clone.lock().unwrap().push(item);
+      });
 
-  #[wasm_bindgen_test]
-  fn test_local() {
-    let mut container = Vec::new();
-    observable::from_iter(1..=5).subscribe(|val| container.push(val));
-    assert_eq!(container, vec![1, 2, 3, 4, 5]);
+      status.wait_completed().await;
+
+      assert_eq!(*results.lock().unwrap(), vec![10, 11, 12, 13, 14]);
+    }
+
+    #[tokio::test]
+    async fn test_scheduler_demonstrates_user_control() {
+      // Test to show that user is responsible for runtime management
+      // With tokio_with_wasm, both WASM and non-WASM use the same tokio interface
+      let scheduler = crate::scheduler::LocalScheduler;
+
+      let results = Arc::new(Mutex::new(Vec::new()));
+      let results_clone = results.clone();
+
+      let local_set = LocalSet::new();
+      let _guard = local_set.enter();
+
+      observable::from_iter(100..105)
+        .observe_on(scheduler)
+        .subscribe(move |item| {
+          results_clone.lock().unwrap().push(item);
+        });
+
+      local_set.await;
+      assert_eq!(*results.lock().unwrap(), vec![100, 101, 102, 103, 104]);
+    }
+
+    #[tokio::test]
+    async fn test_repeat_task_fixed_interval_with_work() {
+      use std::time::{Duration, Instant};
+
+      let start_time = Instant::now();
+      let local_set = LocalSet::new();
+      let _guard = local_set.enter();
+
+      observable::interval(Duration::from_millis(10), LocalScheduler)
+        .take(5)
+        .subscribe(move |_| {
+          let work_start = Instant::now();
+          while work_start.elapsed() < Duration::from_millis(12) {
+            // Simulate work by busy-waiting
+          }
+        });
+
+      local_set.await;
+
+      let elapsed = start_time.elapsed();
+      println!("Total elapsed time: {:?}", elapsed);
+      assert!(
+        // before fix use:  (10 + 12) * 5 = 110ms
+        // after fix: 10 + 12 * 5 = 70ms, give some buffer
+        elapsed < Duration::from_millis(85),
+        "Expected < 75ms, got {elapsed:?}",
+      );
+    }
   }
 }

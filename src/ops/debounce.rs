@@ -102,46 +102,51 @@ where
 mod tests {
   use super::*;
   use crate::rc::{MutRc, RcDeref};
-  use futures::executor::LocalPool;
-  #[test]
-  fn smoke_last() {
+  #[tokio::test]
+  async fn smoke_last() {
     let x = MutRc::own(vec![]);
-    let mut pool = LocalPool::new();
-    let interval =
-      observable::interval(Duration::from_millis(20), pool.spawner());
-    let spawner = pool.spawner();
-    let debounce_subscribe = || {
-      let x = x.clone();
-      interval
-        .clone()
-        .take(10)
-        .debounce(Duration::from_millis(30), spawner.clone())
-        .subscribe(move |v| x.rc_deref_mut().push(v))
-    };
-    let sub = debounce_subscribe();
-    pool.run();
-    sub.unsubscribe();
+    let scheduler = LocalScheduler;
+
+    {
+      let local = tokio::task::LocalSet::new();
+      let _guard = local.enter();
+      let interval = observable::interval(Duration::from_millis(20), scheduler);
+
+      let debounce_subscribe = || {
+        let x = x.clone();
+        interval
+          .clone()
+          .take(10)
+          .debounce(Duration::from_millis(30), scheduler)
+          .subscribe(move |v| x.rc_deref_mut().push(v))
+      };
+      debounce_subscribe();
+      local.await;
+    }
     assert_eq!(&*x.rc_deref(), &[9]);
   }
 
-  #[test]
-  fn smoke_every() {
+  #[tokio::test]
+  async fn smoke_every() {
     let x = MutRc::own(vec![]);
-    let mut pool = LocalPool::new();
-    let interval =
-      observable::interval(Duration::from_millis(30), pool.spawner());
-    let spawner = pool.spawner();
-    let debounce_subscribe = || {
-      let x = x.clone();
-      interval
-        .clone()
-        .take(10)
-        .debounce(Duration::from_millis(20), spawner.clone())
-        .subscribe(move |v| x.rc_deref_mut().push(v))
-    };
-    let sub = debounce_subscribe();
-    pool.run();
-    sub.unsubscribe();
+    let scheduler = LocalScheduler;
+
+    {
+      let local = tokio::task::LocalSet::new();
+      let _guard = local.enter();
+      let interval = observable::interval(Duration::from_millis(30), scheduler);
+
+      let debounce_subscribe = || {
+        let x = x.clone();
+        interval
+          .clone()
+          .take(10)
+          .debounce(Duration::from_millis(20), scheduler)
+          .subscribe(move |v| x.rc_deref_mut().push(v))
+      };
+      debounce_subscribe();
+      local.await;
+    }
     assert_eq!(&*x.rc_deref(), &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
   }
 }

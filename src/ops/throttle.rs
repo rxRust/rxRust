@@ -36,7 +36,8 @@ impl ThrottleEdge {
   }
 }
 
-impl<Item, Err, O, S, SD, F> ObservableImpl<Item, Err, O> for ThrottleOp<S, SD, F>
+impl<Item, Err, O, S, SD, F> ObservableImpl<Item, Err, O>
+  for ThrottleOp<S, SD, F>
 where
   Item: Clone,
   O: Observer<Item, Err>,
@@ -144,15 +145,13 @@ mod tests {
   use super::*;
   use crate::rc::{MutRc, RcDeref};
 
-  #[test]
-  fn smoke() {
+  #[tokio::test]
+  async fn smoke() {
     let x = MutRc::own(vec![]);
-    let mut pool = FuturesLocalSchedulerPool::new();
-    let scheduler = pool.spawner();
+    let scheduler = LocalScheduler;
 
     let throttle_subscribe = |edge| {
-      let x = x.clone();
-      observable::interval(Duration::from_millis(5), scheduler.clone())
+      observable::interval(Duration::from_millis(5), scheduler)
         .take(5)
         .throttle(
           |val| -> Duration {
@@ -163,49 +162,64 @@ mod tests {
             }
           },
           edge,
-          scheduler.clone(),
+          scheduler,
         )
-        .subscribe(move |v| x.rc_deref_mut().push(v))
+        .subscribe({
+          let x = x.clone();
+          move |v| x.rc_deref_mut().push(v)
+        })
     };
 
     // tailing throttle
-    let sub = throttle_subscribe(ThrottleEdge::tailing());
-    pool.run();
-    sub.unsubscribe();
+    {
+      let local = tokio::task::LocalSet::new();
+      let _guard = local.enter();
+      throttle_subscribe(ThrottleEdge::tailing());
+      local.await;
+    }
     assert_eq!(&*x.rc_deref(), &[1, 3, 4]);
 
     // leading throttle
     x.rc_deref_mut().clear();
-    throttle_subscribe(ThrottleEdge::leading());
-    pool.run();
+    {
+      let local = tokio::task::LocalSet::new();
+      let _guard = local.enter();
+      throttle_subscribe(ThrottleEdge::leading());
+      local.await;
+    }
     assert_eq!(&*x.rc_deref(), &[0, 2, 4]);
   }
 
-  #[test]
-  fn smoke_for_throttle_time() {
+  #[tokio::test]
+  async fn smoke_for_throttle_time() {
     let x = MutRc::own(vec![]);
-    let mut pool = FuturesLocalSchedulerPool::new();
-    let scheduler = pool.spawner();
+    let scheduler = LocalScheduler;
 
     let throttle_time_subscribe = |edge| {
       let x = x.clone();
-      observable::interval(Duration::from_millis(50), scheduler.clone())
+      observable::interval(Duration::from_millis(50), scheduler)
         .take(5)
         .throttle_time(Duration::from_millis(115), edge, scheduler)
-        .subscribe(move |v| x.rc_deref_mut().push(v));
+        .subscribe(move |v| x.rc_deref_mut().push(v))
     };
 
     // tailing throttle
-    (throttle_time_subscribe.clone())(ThrottleEdge::tailing());
-    pool.run();
-
+    {
+      let local = tokio::task::LocalSet::new();
+      let _guard = local.enter();
+      throttle_time_subscribe(ThrottleEdge::tailing());
+      local.await;
+    }
     assert_eq!(&*x.rc_deref(), &[2, 4]);
 
     // leading throttle
     x.rc_deref_mut().clear();
-    throttle_time_subscribe(ThrottleEdge::leading());
-    pool.run();
-
+    {
+      let local = tokio::task::LocalSet::new();
+      let _guard = local.enter();
+      throttle_time_subscribe(ThrottleEdge::leading());
+      local.await;
+    }
     assert_eq!(&*x.rc_deref(), &[0, 3]);
   }
 }

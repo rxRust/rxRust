@@ -38,9 +38,8 @@ pub mod prelude {
   pub use crate::type_hint::TypeHint;
   pub use observer::Observer;
 
-  #[cfg(not(target_arch = "wasm32"))]
+  // Export the unified schedulers only when the feature is enabled
+  #[cfg(feature = "scheduler")]
+  pub use crate::scheduler::{LocalScheduler, SharedScheduler};
   pub use std::time::{Duration, Instant};
-
-  #[cfg(target_arch = "wasm32")]
-  pub use web_time::{Duration, Instant};
 }

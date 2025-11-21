@@ -285,7 +285,6 @@ where
 #[cfg(test)]
 mod tests {
   use crate::prelude::*;
-  use futures::executor::LocalPool;
   use std::cell::RefCell;
   use std::convert::Infallible;
   use std::rc::Rc;
@@ -369,89 +368,90 @@ mod tests {
     assert!(err_called);
   }
 
-  #[test]
-  fn it_shall_buffer_with_time_local() {
-    let mut local = LocalPool::new();
-
+  #[tokio::test]
+  async fn it_shall_buffer_with_time_local() {
     let expected = vec![vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9]];
     let actual = Rc::new(RefCell::new(vec![]));
     let actual_c = actual.clone();
 
-    observable::from_iter(0..10)
-      .buffer_with_time(Duration::from_millis(500), local.spawner())
-      .subscribe(move |vec| actual_c.borrow_mut().push(vec));
-
-    local.run();
+    {
+      let local = tokio::task::LocalSet::new();
+      let _guard = local.enter();
+      observable::from_iter(0..10)
+        .buffer_with_time(Duration::from_millis(500), LocalScheduler)
+        .subscribe(move |vec| actual_c.borrow_mut().push(vec));
+      local.await;
+    }
 
     // this can't be really tested as local scheduler runs on a single thread
     assert_eq!(expected, *actual.borrow());
   }
 
-  #[test]
-  fn it_shall_not_block_with_error_on_time_local() {
-    let mut local = LocalPool::new();
-
+  #[tokio::test]
+  async fn it_shall_not_block_with_error_on_time_local() {
+    let local = tokio::task::LocalSet::new();
+    let _guard = local.enter();
     observable::create(|mut subscriber: Subscriber<_>| {
       subscriber.next(0);
       subscriber.next(1);
       subscriber.next(2);
       subscriber.error(());
     })
-    .buffer_with_time(Duration::from_millis(500), local.spawner())
+    .buffer_with_time(Duration::from_millis(500), LocalScheduler)
     .on_error(|_| {})
     .subscribe(|_| {});
 
     // if this call blocks execution, the observer's handle has not been
     // unsubscribed
-    local.run();
+    local.await;
   }
 
-  #[test]
-  fn it_shall_buffer_with_time_with_observable_ext() {
-    let mut local = LocalPool::new();
-
+  #[tokio::test]
+  async fn it_shall_buffer_with_time_with_observable_ext() {
     let expected = vec![vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9]];
     let actual = Rc::new(RefCell::new(vec![]));
     let actual_c = actual.clone();
 
-    observable::from_iter(0..10)
-      .buffer_with_time(Duration::from_millis(500), local.spawner())
-      .filter(move |_vec: &Vec<i32>| true)
-      .subscribe(move |vec| actual_c.borrow_mut().push(vec));
-
-    local.run();
+    {
+      let local = tokio::task::LocalSet::new();
+      let _guard = local.enter();
+      observable::from_iter(0..10)
+        .buffer_with_time(Duration::from_millis(500), LocalScheduler)
+        .filter(move |_vec: &Vec<i32>| true)
+        .subscribe(move |vec| actual_c.borrow_mut().push(vec));
+      local.await;
+    }
 
     // this can't be really tested as local scheduler runs on a single thread
     assert_eq!(expected, *actual.borrow());
   }
 
-  #[test]
-  fn it_shall_buffer_with_count_and_time() {
-    let mut local = LocalPool::new();
-
+  #[tokio::test]
+  async fn it_shall_buffer_with_count_and_time() {
     let expected =
       vec![vec![0, 1], vec![2, 3], vec![4, 5], vec![6, 7], vec![8, 9]];
     let actual = Rc::new(RefCell::new(vec![]));
     let actual_c = actual.clone();
 
-    observable::from_iter(0..10)
-      .buffer_with_count_and_time(
-        2,
-        Duration::from_millis(500),
-        local.spawner(),
-      )
-      .subscribe(move |vec| actual_c.borrow_mut().push(vec));
-
-    local.run();
+    {
+      let local = tokio::task::LocalSet::new();
+      let _guard = local.enter();
+      observable::from_iter(0..10)
+        .buffer_with_count_and_time(
+          2,
+          Duration::from_millis(500),
+          LocalScheduler,
+        )
+        .subscribe(move |vec| actual_c.borrow_mut().push(vec));
+      local.await;
+    }
 
     // this can't be really tested as local scheduler runs on a single thread
     assert_eq!(expected, *actual.borrow());
   }
 
-  #[test]
-  fn it_shall_buffer_with_count_and_time_on_error() {
-    let mut local = LocalPool::new();
-
+  #[tokio::test]
+  async fn it_shall_buffer_with_count_and_time_on_error() {
     let expected = vec![vec![0, 1]];
     let actual = Rc::new(RefCell::new(vec![]));
     let actual_c = actual.clone();
@@ -459,17 +459,20 @@ mod tests {
     let error_called = Rc::new(AtomicBool::new(false));
     let error_called_c = error_called.clone();
 
-    observable::create(|mut subscriber: Subscriber<_>| {
-      subscriber.next(0);
-      subscriber.next(1);
-      subscriber.next(2);
-      subscriber.error(());
-    })
-    .buffer_with_count_and_time(2, Duration::from_millis(500), local.spawner())
-    .on_error(move |_| error_called_c.store(true, Ordering::Relaxed))
-    .subscribe(move |vec| actual_c.borrow_mut().push(vec));
-
-    local.run();
+    {
+      let local = tokio::task::LocalSet::new();
+      let _guard = local.enter();
+      observable::create(|mut subscriber: Subscriber<_>| {
+        subscriber.next(0);
+        subscriber.next(1);
+        subscriber.next(2);
+        subscriber.error(());
+      })
+      .buffer_with_count_and_time(2, Duration::from_millis(500), LocalScheduler)
+      .on_error(move |_| error_called_c.store(true, Ordering::Relaxed))
+      .subscribe(move |vec| actual_c.borrow_mut().push(vec));
+      local.await;
+    }
 
     assert_eq!(expected, *actual.borrow());
     assert!(error_called.load(Ordering::Relaxed));

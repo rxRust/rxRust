@@ -1,7 +1,7 @@
 use std::{convert::Infallible, marker::PhantomData};
 
 use crate::{
-  observable::{ObservableImpl, Observable},
+  observable::{Observable, ObservableImpl},
   observer::Observer,
 };
 

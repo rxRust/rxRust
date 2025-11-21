@@ -448,16 +448,23 @@ pub trait Observable<Item, Err>: Sized {
   ///
   /// ```
   /// # use rxrust::prelude::*;
-  /// # use futures::executor::LocalPool;
   /// # use std::time::Duration;
-  /// let mut local = LocalPool::new();
-  /// observable::from_iter(
-  ///   (0..3)
-  ///     .map(|_| interval(Duration::from_millis(1), local.spawner()).take(5)),
-  /// )
-  /// .merge_all(2)
-  /// .subscribe(move |i| println!("{}", i));
-  /// local.run();
+  /// use rxrust::scheduler::LocalScheduler;
+  ///
+  /// #[tokio::main]
+  /// async fn main() {
+  ///   let local_set = tokio::task::LocalSet::new();
+  ///   let _guard = local_set.enter();
+  ///
+  ///   observable::from_iter(
+  ///     (0..3)
+  ///       .map(|_| interval(Duration::from_millis(1), LocalScheduler).take(5)),
+  ///   )
+  ///   .merge_all(2)
+  ///   .subscribe(move |i| println!("{}", i));
+  ///
+  ///   local_set.await;
+  /// }
   /// ```
   #[inline]
   fn merge_all<'a, Item2>(self, concurrent: usize) -> MergeAllOp<'a, Self, Item>
@@ -830,22 +837,20 @@ pub trait Observable<Item, Err>: Sized {
   /// ```
   /// use rxrust::prelude::*;
   /// use std::time::Duration;
-  /// use futures::executor::LocalPool;
+  /// use rxrust::scheduler::LocalScheduler;
   ///
-  /// let mut local_scheduler = LocalPool::new();
-  /// let spawner = local_scheduler.spawner();
-  /// observable::interval(Duration::from_millis(2), spawner.clone())
-  ///   .sample(observable::interval(Duration::from_millis(5), spawner))
-  ///   .take(5)
-  ///   .subscribe(move |v| println!("{}", v));
+  /// #[tokio::main]
+  /// async fn main() {
+  ///   let local_set = tokio::task::LocalSet::new();
+  ///   let _guard = local_set.enter();
   ///
-  /// local_scheduler.run();
-  /// // print logs:
-  /// // 1
-  /// // 4
-  /// // 6
-  /// // 9
-  /// // ...
+  ///   observable::interval(Duration::from_millis(2), LocalScheduler)
+  ///     .sample(observable::interval(Duration::from_millis(5), LocalScheduler))
+  ///     .take(5)
+  ///     .subscribe(move |v| println!("{}", v));
+  ///
+  ///   local_set.await;
+  /// }
   /// ```
   #[inline]
   fn sample<Sample, SampleItem, SampleErr>(
@@ -1292,14 +1297,18 @@ pub trait Observable<Item, Err>: Sized {
   /// ```rust
   /// use rxrust::prelude::*;
   /// use std::thread;
+  /// use rxrust::scheduler::SharedScheduler;
   ///
-  /// let pool = FuturesThreadPoolScheduler::new().unwrap();
-  /// let a = observable::from_iter(1..5).subscribe_on(pool);
-  /// let b = observable::from_iter(5..10);
-  /// a.merge_threads(b).subscribe(|v|{
-  ///   let handle = thread::current();
-  ///   print!("{}({:?}) ", v, handle.id())
-  /// });
+  /// #[tokio::main]
+  /// async fn main() {
+  ///   let scheduler = SharedScheduler;
+  ///   let a = observable::from_iter(1..5).subscribe_on(scheduler);
+  ///   let b = observable::from_iter(5..10);
+  ///   a.merge_threads(b).subscribe(|v|{
+  ///     let handle = thread::current();
+  ///     print!("{}({:?}) ", v, handle.id())
+  ///   });
+  /// }
   /// ```
   ///
   /// The output will instead by `1(thread 1) 2(thread 1) 3(thread 1) 4(thread
@@ -1350,23 +1359,28 @@ pub trait Observable<Item, Err>: Sized {
   /// ```
   /// use rxrust::{ prelude::*, ops::throttle::ThrottleEdge };
   /// use std::time::Duration;
+  /// use rxrust::scheduler::LocalScheduler;
   ///
-  /// let mut local_pool = FuturesLocalSchedulerPool::new();
-  /// let scheduler = local_pool.spawner();
-  /// observable::interval(Duration::from_millis(1), scheduler.clone())
-  ///   .throttle(
-  ///     |val| -> Duration {
-  ///       if val % 2 == 0 {
-  ///         Duration::from_millis(7)
-  ///       } else {
-  ///         Duration::from_millis(5)
-  ///       }
-  ///     },
-  ///     ThrottleEdge::leading(), scheduler)
-  ///   .take(5)
-  ///   .subscribe(move |v| println!("{}", v));
+  /// #[tokio::main]
+  /// async fn main() {
+  ///   let local = tokio::task::LocalSet::new();
+  ///   let _guard = local.enter();
   ///
-  /// local_pool.run();
+  ///   observable::interval(Duration::from_millis(1), LocalScheduler)
+  ///     .throttle(
+  ///       |val| -> Duration {
+  ///         if val % 2 == 0 {
+  ///           Duration::from_millis(7)
+  ///         } else {
+  ///           Duration::from_millis(5)
+  ///         }
+  ///       },
+  ///       ThrottleEdge::leading(), LocalScheduler)
+  ///     .take(5)
+  ///     .subscribe(move |v| println!("{}", v));
+  ///
+  ///   local.await;
+  /// }
   /// ```
   #[inline]
   fn throttle<SD, F>(
@@ -1393,17 +1407,21 @@ pub trait Observable<Item, Err>: Sized {
   /// ```
   /// use rxrust::{ prelude::*, ops::throttle::ThrottleEdge };
   /// use std::time::Duration;
+  /// use rxrust::scheduler::LocalScheduler;
   ///
-  /// let mut local_pool = FuturesLocalSchedulerPool::new();
-  /// let scheduler = local_pool.spawner();
-  /// observable::interval(Duration::from_millis(1), scheduler.clone())
-  ///   .throttle_time(
-  ///     Duration::from_millis(9), ThrottleEdge::leading(), scheduler)
-  ///   .take(5)
-  ///   .subscribe(move |v| println!("{}", v));
+  /// #[tokio::main]
+  /// async fn main() {
+  ///   let local = tokio::task::LocalSet::new();
+  ///   let _guard = local.enter();
   ///
-  /// // wait task finish.
-  /// local_pool.run();
+  ///   observable::interval(Duration::from_millis(1), LocalScheduler)
+  ///     .throttle_time(
+  ///       Duration::from_millis(9), ThrottleEdge::leading(), LocalScheduler)
+  ///     .take(5)
+  ///     .subscribe(move |v| println!("{}", v));
+  ///
+  ///   local.await;
+  /// }
   /// ```
   #[inline]
   #[allow(clippy::type_complexity)]
@@ -1571,23 +1589,23 @@ pub trait Observable<Item, Err>: Sized {
   /// ```
   /// use rxrust::prelude::*;
   /// use std::time::Duration;
+  /// use rxrust::scheduler::SharedScheduler;
   ///
-  /// let pool = FuturesThreadPoolScheduler::new().unwrap();
+  /// #[tokio::main(flavor = "multi_thread")]
+  /// async fn main() {
+  ///   let scheduler = SharedScheduler;
   ///
-  /// observable::create(|mut subscriber: SubscriberThreads<_>| {
-  ///   subscriber.next(0);
-  ///   subscriber.next(1);
-  ///   std::thread::sleep(Duration::from_millis(100));
-  ///   subscriber.next(2);
-  ///   subscriber.next(3);
-  ///   subscriber.complete();
-  /// })
-  ///   .buffer_with_time(Duration::from_millis(50), pool)
-  ///   .subscribe(|vec| println!("{:?}", vec));
-  ///
-  /// // Prints:
-  /// // [0, 1]
-  /// // [2, 3]
+  ///   observable::create(|mut subscriber: SubscriberThreads<_>| {
+  ///     subscriber.next(0);
+  ///     subscriber.next(1);
+  ///     std::thread::sleep(Duration::from_millis(100));
+  ///     subscriber.next(2);
+  ///     subscriber.next(3);
+  ///     subscriber.complete();
+  ///   })
+  ///     .buffer_with_time(Duration::from_millis(50), scheduler)
+  ///     .subscribe(|vec| println!("{:?}", vec));
+  /// }
   /// ```
   #[inline]
   fn buffer_with_time<S>(
@@ -1607,25 +1625,24 @@ pub trait Observable<Item, Err>: Sized {
   /// ```
   /// use rxrust::prelude::*;
   /// use std::time::Duration;
+  /// use rxrust::scheduler::SharedScheduler;
   ///
-  /// let pool = FuturesThreadPoolScheduler::new().unwrap();
+  /// #[tokio::main(flavor = "multi_thread")]
+  /// async fn main() {
+  ///   let scheduler = SharedScheduler;
   ///
-  /// observable::create(|mut subscriber: SubscriberThreads<_>| {
-  ///   subscriber.next(0);
-  ///   subscriber.next(1);
-  ///   subscriber.next(2);
-  ///   std::thread::sleep(Duration::from_millis(100));
-  ///   subscriber.next(3);
-  ///   subscriber.next(4);
-  ///   subscriber.complete();
-  /// })
-  ///   .buffer_with_count_and_time(2, Duration::from_millis(50), pool)
-  ///   .subscribe(|vec| println!("{:?}", vec));
-  ///
-  /// // Prints:
-  /// // [0, 1]
-  /// // [2]
-  /// // [3, 4]
+  ///   observable::create(|mut subscriber: SubscriberThreads<_>| {
+  ///     subscriber.next(0);
+  ///     subscriber.next(1);
+  ///     subscriber.next(2);
+  ///     std::thread::sleep(Duration::from_millis(100));
+  ///     subscriber.next(3);
+  ///     subscriber.next(4);
+  ///     subscriber.complete();
+  ///   })
+  ///     .buffer_with_count_and_time(2, Duration::from_millis(50), scheduler)
+  ///     .subscribe(|vec| println!("{:?}", vec));
+  /// }
   /// ```
   #[inline]
   fn buffer_with_count_and_time<S>(
@@ -1647,25 +1664,23 @@ pub trait Observable<Item, Err>: Sized {
   /// ```
   /// use rxrust::prelude::*;
   /// use std::time::Duration;
-  /// use futures::executor::LocalPool;
+  /// use rxrust::scheduler::LocalScheduler;
   ///
-  /// let mut local_scheduler = LocalPool::new();
-  /// let spawner = local_scheduler.spawner();
-  /// observable::interval(Duration::from_millis(2), spawner.clone())
-  ///   .combine_latest(
-  ///     observable::interval(Duration::from_millis(3), spawner),
-  ///     |a, b| (a, b),
-  ///   )
-  ///   .take(5)
-  ///   .subscribe(move |v| println!("{}, {}", v.0, v.1));
+  /// #[tokio::main]
+  /// async fn main() {
+  ///   let local = tokio::task::LocalSet::new();
+  ///   let _guard = local.enter();
   ///
-  /// local_scheduler.run();
-  /// // print logs:
-  /// // 0, 0
-  /// // 1, 0
-  /// // 2, 0
-  /// // 2, 1
-  /// // 3, 1
+  ///   observable::interval(Duration::from_millis(2), LocalScheduler)
+  ///     .combine_latest(
+  ///       observable::interval(Duration::from_millis(3), LocalScheduler),
+  ///       |a, b| (a, b),
+  ///     )
+  ///     .take(5)
+  ///     .subscribe(move |v| println!("{}, {}", v.0, v.1));
+  ///
+  ///   local.await;
+  /// }
   /// ```
   fn combine_latest<Other, OtherItem, BinaryOp, OutputItem>(
     self,

@@ -10,7 +10,7 @@ use crate::{
   scheduler::{NormalReturn, Scheduler, TaskHandle},
 };
 
-use super::{ObservableImpl, Observable};
+use super::{Observable, ObservableImpl};
 
 /// Returns an `Observable` that emits all the items returned from the source `Stream<Result<Item, Err>`
 /// until it completes or returns an error.
@@ -113,35 +113,33 @@ mod tests {
     prelude::*,
     rc::{MutRc, RcDeref, RcDerefMut},
   };
-  use futures::executor::LocalPool;
 
-  #[test]
-  fn from_error_stream() {
+  #[tokio::test]
+  async fn from_error_stream() {
     let error_stream = futures::stream::once(async {
       Err::<(), String>("uh oh stinky".to_owned())
     });
 
-    let mut scheduler = LocalPool::new();
     let error_count = MutRc::own(0);
 
     {
+      let local = tokio::task::LocalSet::new();
+      let _guard = local.enter();
       let error_count = error_count.clone();
 
-      let observable = from_stream_result(error_stream, scheduler.spawner());
-      let _s = observable
+      from_stream_result(error_stream, LocalScheduler)
         .on_error(move |_| {
           *error_count.rc_deref_mut() += 1;
         })
         .subscribe(|_| {});
-
-      scheduler.run();
+      local.await;
     }
 
     assert_eq!(*error_count.rc_deref(), 1);
   }
 
-  #[test]
-  fn from_stream_result_test() {
+  #[tokio::test]
+  async fn from_stream_result_test() {
     let stream = futures::stream::try_unfold(1, |state| async move {
       if state == 4 {
         Err("invalid value".to_owned())
@@ -150,24 +148,23 @@ mod tests {
       }
     });
 
-    let mut scheduler = LocalPool::new();
-    let observable = from_stream_result(stream, scheduler.spawner());
-
     let values = MutRc::own(vec![]);
     let error_count = MutRc::own(0);
     {
+      let local = tokio::task::LocalSet::new();
+      let _guard = local.enter();
       let values = values.clone();
       let error_count = error_count.clone();
-      let _s = observable
+      from_stream_result(stream, LocalScheduler)
         .on_error(move |_| {
           *error_count.rc_deref_mut() += 1;
         })
         .subscribe(move |x| {
           values.rc_deref_mut().push(x);
         });
-    }
 
-    scheduler.run();
+      local.await;
+    }
 
     let cur = values.rc_deref().clone();
     assert_eq!(cur, vec![1, 2, 3]);
@@ -175,7 +172,7 @@ mod tests {
   }
 
   #[tokio::test]
-  #[cfg(all(test, not(target_arch = "wasm32"), feature = "tokio-scheduler"))]
+  #[cfg(all(test, feature = "scheduler"))]
   async fn stream_channel_test() {
     use crate::rc::MutArc;
     use futures::{channel::mpsc::channel, SinkExt};
@@ -186,8 +183,7 @@ mod tests {
     let values = MutArc::own(vec![]);
     let error_count = MutArc::own(0);
 
-    let scheduler = FuturesThreadPoolScheduler::new().unwrap();
-    let observable = from_stream_result(receiver, scheduler.clone());
+    let observable = from_stream_result(receiver, SharedScheduler);
 
     {
       let values = values.clone();

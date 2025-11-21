@@ -10,15 +10,21 @@ use std::{convert::Infallible, future::Future};
 ///
 /// ```rust
 /// # use rxrust::prelude::*;
-/// use futures::{future, executor::LocalPool};
-/// let mut local_scheduler = LocalPool::new();
+/// use futures::future;
+/// use rxrust::scheduler::LocalScheduler;
 ///
-/// observable::from_future(future::ready(1), local_scheduler.spawner())
-///   .subscribe(move |v| {
-///     println!("subscribed {}", v);
-///   });
+/// #[tokio::main]
+/// async fn main() {
+///   let local_set = tokio::task::LocalSet::new();
+///   let _guard = local_set.enter();
 ///
-/// local_scheduler.run();
+///   observable::from_future(future::ready(1), LocalScheduler)
+///     .subscribe(move |v| {
+///       println!("subscribed {}", v);
+///     });
+///
+///   local_set.await;
+/// }
 /// ```
 /// If your `Future` poll an `Result` type value, and you want dispatch the
 /// error by rxrust, you can use [`from_future_result`]
@@ -35,7 +41,8 @@ pub struct FutureObservable<F, S> {
   scheduler: S,
 }
 
-impl<O, F, S> ObservableImpl<F::Output, Infallible, O> for FutureObservable<F, S>
+impl<O, F, S> ObservableImpl<F::Output, Infallible, O>
+  for FutureObservable<F, S>
 where
   F: Future,
   S: Scheduler<FutureTask<F, O, NormalReturn<()>>>,
@@ -127,26 +134,33 @@ impl<Item, S, Err, F> Observable<Item, Err> for FutureResultObservable<F, S> whe
 mod tests {
   use super::*;
   use bencher::Bencher;
-  use futures::{executor::LocalPool, future};
+  use futures::future;
   use std::{cell::RefCell, rc::Rc};
 
-  #[test]
-  fn local() {
-    let mut local = LocalPool::new();
+  #[tokio::test]
+  async fn local() {
     let value = Rc::new(RefCell::new(0));
     let v_c = value.clone();
-    from_future_result(future::ok(1), local.spawner()).subscribe(move |v| {
-      *v_c.borrow_mut() = v;
-    });
-    local.run();
+
+    {
+      let local = tokio::task::LocalSet::new();
+      let _guard = local.enter();
+      from_future_result(future::ok(1), LocalScheduler).subscribe(move |v| {
+        *v_c.borrow_mut() = v;
+      });
+      local.await;
+    }
     assert_eq!(*value.borrow(), 1);
 
     let v_c = value.clone();
-    from_future(future::ready(2), local.spawner()).subscribe(move |v| {
-      *v_c.borrow_mut() = v;
-    });
-
-    local.run();
+    {
+      let local = tokio::task::LocalSet::new();
+      let _guard = local.enter();
+      from_future(future::ready(2), LocalScheduler).subscribe(move |v| {
+        *v_c.borrow_mut() = v;
+      });
+      local.await;
+    }
     assert_eq!(*value.borrow(), 2);
   }
 

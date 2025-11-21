@@ -54,7 +54,8 @@ where
   NormalReturn::new(())
 }
 
-impl<Item, O, S> ObservableImpl<Item, Infallible, O> for TimerObservable<Item, S>
+impl<Item, O, S> ObservableImpl<Item, Infallible, O>
+  for TimerObservable<Item, S>
 where
   O: Observer<Item, Infallible>,
   S: Scheduler<OnceTask<(O, Item), NormalReturn<()>>>,
@@ -73,194 +74,187 @@ impl<Item, S> Observable<Item, Infallible> for TimerObservable<Item, S> {}
 #[cfg(test)]
 mod tests {
   use crate::prelude::*;
-  use futures::executor::LocalPool;
-  #[cfg(not(target_arch = "wasm32"))]
-  use futures::executor::ThreadPool;
   use std::sync::atomic::{AtomicBool, AtomicI32, AtomicUsize, Ordering};
   use std::sync::Arc;
 
-  #[test]
-  fn timer_shall_emit_value() {
-    let mut local = LocalPool::new();
-
+  #[tokio::test]
+  async fn timer_shall_emit_value() {
     let val = 1234;
     let i_emitted = Arc::new(AtomicI32::new(0));
     let i_emitted_c = i_emitted.clone();
 
-    observable::timer(val, Duration::from_millis(5), local.spawner())
-      .subscribe(move |n| {
-        i_emitted_c.store(n, Ordering::Relaxed);
-      });
-
-    local.run();
+    {
+      let local = tokio::task::LocalSet::new();
+      let _guard = local.enter();
+      observable::timer(val, Duration::from_millis(5), LocalScheduler)
+        .subscribe(move |n| {
+          i_emitted_c.store(n, Ordering::Relaxed);
+        });
+      local.await;
+    }
 
     assert_eq!(val, i_emitted.load(Ordering::Relaxed));
   }
 
   #[cfg(not(target_arch = "wasm32"))]
-  #[test]
-  fn timer_shall_emit_value_shared() {
-    use futures::executor::block_on;
-
-    let pool = ThreadPool::new().unwrap();
+  #[tokio::test]
+  async fn timer_shall_emit_value_shared() {
+    let scheduler = SharedScheduler;
 
     let val = 1234;
     let i_emitted = Arc::new(AtomicI32::new(0));
     let i_emitted_c = i_emitted.clone();
 
     let (o, status) =
-      observable::timer(val, Duration::from_millis(5), pool).complete_status();
+      observable::timer(val, Duration::from_millis(5), scheduler)
+        .complete_status();
 
     o.subscribe(move |n| {
       i_emitted_c.store(n, Ordering::Relaxed);
     });
 
-    block_on(status.wait_completed());
+    status.wait_completed().await;
 
     assert_eq!(val, i_emitted.load(Ordering::Relaxed));
   }
 
-  #[test]
-  fn timer_shall_call_next_once() {
-    let mut local = LocalPool::new();
-
+  #[tokio::test]
+  async fn timer_shall_call_next_once() {
     let next_count = Arc::new(AtomicUsize::new(0));
     let next_count_c = next_count.clone();
 
-    observable::timer("aString", Duration::from_millis(5), local.spawner())
-      .subscribe(move |_| {
-        let count = next_count_c.load(Ordering::Relaxed);
-        next_count_c.store(count + 1, Ordering::Relaxed);
-      });
-
-    local.run();
+    {
+      let local = tokio::task::LocalSet::new();
+      let _guard = local.enter();
+      observable::timer("aString", Duration::from_millis(5), LocalScheduler)
+        .subscribe(move |_| {
+          let count = next_count_c.load(Ordering::Relaxed);
+          next_count_c.store(count + 1, Ordering::Relaxed);
+        });
+      local.await;
+    }
 
     assert_eq!(next_count.load(Ordering::Relaxed), 1);
   }
 
   #[cfg(not(target_arch = "wasm32"))]
-  #[test]
-  fn timer_shall_call_next_once_shared() {
-    use futures::executor::block_on;
-
-    let pool = ThreadPool::new().unwrap();
+  #[tokio::test]
+  async fn timer_shall_call_next_once_shared() {
+    let scheduler = SharedScheduler;
 
     let next_count = Arc::new(AtomicUsize::new(0));
     let next_count_c = next_count.clone();
 
     let (o, status) =
-      observable::timer("aString", Duration::from_millis(5), pool)
+      observable::timer("aString", Duration::from_millis(5), scheduler)
         .complete_status();
     o.subscribe(move |_| {
       let count = next_count_c.load(Ordering::Relaxed);
       next_count_c.store(count + 1, Ordering::Relaxed);
     });
 
-    block_on(status.wait_completed());
+    status.wait_completed().await;
 
     assert_eq!(next_count.load(Ordering::Relaxed), 1);
   }
 
-  #[test]
-  fn timer_shall_be_completed() {
-    let mut local = LocalPool::new();
-
+  #[tokio::test]
+  async fn timer_shall_be_completed() {
     let is_completed = Arc::new(AtomicBool::new(false));
     let is_completed_c = is_completed.clone();
 
-    observable::timer("aString", Duration::from_millis(5), local.spawner())
-      .on_complete(move || {
-        is_completed_c.store(true, Ordering::Relaxed);
-      })
-      .subscribe(|_| {});
-
-    local.run();
+    {
+      let local = tokio::task::LocalSet::new();
+      let _guard = local.enter();
+      observable::timer("aString", Duration::from_millis(5), LocalScheduler)
+        .on_complete(move || {
+          is_completed_c.store(true, Ordering::Relaxed);
+        })
+        .subscribe(|_| {});
+      local.await;
+    }
 
     assert!(is_completed.load(Ordering::Relaxed));
   }
 
   #[cfg(not(target_arch = "wasm32"))]
-  #[test]
-  fn timer_shall_be_completed_shared() {
-    use futures::executor::block_on;
-
-    let pool = ThreadPool::new().unwrap();
+  #[tokio::test]
+  async fn timer_shall_be_completed_shared() {
+    let scheduler = SharedScheduler;
 
     let is_completed = Arc::new(AtomicBool::new(false));
     let is_completed_c = is_completed.clone();
 
     let (o, status) =
-      observable::timer("aString", Duration::from_millis(5), pool)
+      observable::timer("aString", Duration::from_millis(5), scheduler)
         .on_complete(move || {
           is_completed_c.store(true, Ordering::Relaxed);
         })
         .complete_status();
     let _ = o.subscribe(|_| {});
-    block_on(status.wait_completed());
+    status.wait_completed().await;
 
     assert!(is_completed.load(Ordering::Relaxed));
   }
 
-  #[test]
-  fn timer_shall_elapse_duration() {
-    let mut local = LocalPool::new();
-
+  #[tokio::test]
+  async fn timer_shall_elapse_duration() {
     let duration = Duration::from_millis(50);
     let stamp = Instant::now();
 
-    observable::timer("aString", duration, local.spawner()).subscribe(|_| {});
-
-    local.run();
+    {
+      let local = tokio::task::LocalSet::new();
+      let _guard = local.enter();
+      observable::timer("aString", duration, LocalScheduler).subscribe(|_| {});
+      local.await;
+    }
 
     assert!(stamp.elapsed() >= duration);
   }
 
   #[cfg(not(target_arch = "wasm32"))]
-  #[test]
-  fn timer_shall_elapse_duration_shared() {
-    use futures::executor::block_on;
-
-    let pool = ThreadPool::new().unwrap();
+  #[tokio::test]
+  async fn timer_shall_elapse_duration_shared() {
+    let scheduler = SharedScheduler;
 
     let duration = Duration::from_millis(50);
     let stamp = Instant::now();
 
     let (o, status) =
-      observable::timer("aString", duration, pool).complete_status();
+      observable::timer("aString", duration, scheduler).complete_status();
     o.subscribe(|_| {});
-    block_on(status.wait_completed());
+    status.wait_completed().await;
 
     assert!(stamp.elapsed() >= duration);
   }
 
-  #[test]
-  fn timer_at_shall_emit_value() {
-    let mut local = LocalPool::new();
-
+  #[tokio::test]
+  async fn timer_at_shall_emit_value() {
     let val = 1234;
     let i_emitted = Arc::new(AtomicI32::new(0));
     let i_emitted_c = i_emitted.clone();
 
-    observable::timer_at(
-      val,
-      Instant::now() + Duration::from_millis(10),
-      local.spawner(),
-    )
-    .subscribe(move |n| {
-      i_emitted_c.store(n, Ordering::Relaxed);
-    });
-
-    local.run();
+    {
+      let local = tokio::task::LocalSet::new();
+      let _guard = local.enter();
+      observable::timer_at(
+        val,
+        Instant::now() + Duration::from_millis(10),
+        LocalScheduler,
+      )
+      .subscribe(move |n| {
+        i_emitted_c.store(n, Ordering::Relaxed);
+      });
+      local.await;
+    }
 
     assert_eq!(val, i_emitted.load(Ordering::Relaxed));
   }
 
   #[cfg(not(target_arch = "wasm32"))]
-  #[test]
-  fn timer_at_shall_emit_value_shared() {
-    use futures::executor::block_on;
-
-    let pool = ThreadPool::new().unwrap();
+  #[tokio::test]
+  async fn timer_at_shall_emit_value_shared() {
+    let scheduler = SharedScheduler;
 
     let val = 1234;
     let i_emitted = Arc::new(AtomicI32::new(0));
@@ -269,81 +263,82 @@ mod tests {
     let (o, status) = observable::timer_at(
       val,
       Instant::now() + Duration::from_millis(10),
-      pool,
+      scheduler,
     )
     .complete_status();
     o.subscribe(move |n| {
       i_emitted_c.store(n, Ordering::Relaxed);
     });
-    block_on(status.wait_completed());
+    status.wait_completed().await;
 
     assert_eq!(val, i_emitted.load(Ordering::Relaxed));
   }
 
-  #[test]
-  fn timer_at_shall_call_next_once() {
-    let mut local = LocalPool::new();
-
+  #[tokio::test]
+  async fn timer_at_shall_call_next_once() {
     let next_count = Arc::new(AtomicUsize::new(0));
     let next_count_c = next_count.clone();
 
-    observable::timer_at(
-      "aString",
-      Instant::now() + Duration::from_millis(10),
-      local.spawner(),
-    )
-    .subscribe(move |_| {
-      let count = next_count_c.load(Ordering::Relaxed);
-      next_count_c.store(count + 1, Ordering::Relaxed);
-    });
-
-    local.run();
+    {
+      let local = tokio::task::LocalSet::new();
+      let _guard = local.enter();
+      observable::timer_at(
+        "aString",
+        Instant::now() + Duration::from_millis(10),
+        LocalScheduler,
+      )
+      .subscribe(move |_| {
+        let count = next_count_c.load(Ordering::Relaxed);
+        next_count_c.store(count + 1, Ordering::Relaxed);
+      });
+      local.await;
+    }
 
     assert_eq!(next_count.load(Ordering::Relaxed), 1);
   }
 
-  #[test]
-  fn timer_at_shall_be_completed() {
-    let mut local = LocalPool::new();
-
+  #[tokio::test]
+  async fn timer_at_shall_be_completed() {
     let is_completed = Arc::new(AtomicBool::new(false));
     let is_completed_c = is_completed.clone();
 
-    observable::timer_at(
-      "aString",
-      Instant::now() + Duration::from_millis(10),
-      local.spawner(),
-    )
-    .on_complete(move || {
-      is_completed_c.store(true, Ordering::Relaxed);
-    })
-    .subscribe(|_| {});
-
-    local.run();
+    {
+      let local = tokio::task::LocalSet::new();
+      let _guard = local.enter();
+      observable::timer_at(
+        "aString",
+        Instant::now() + Duration::from_millis(10),
+        LocalScheduler,
+      )
+      .on_complete(move || {
+        is_completed_c.store(true, Ordering::Relaxed);
+      })
+      .subscribe(|_| {});
+      local.await;
+    }
 
     assert!(is_completed.load(Ordering::Relaxed));
   }
 
-  #[test]
-  fn timer_at_shall_elapse_duration_with_valid_timestamp() {
-    let mut local = LocalPool::new();
-
+  #[tokio::test]
+  async fn timer_at_shall_elapse_duration_with_valid_timestamp() {
     let duration = Duration::from_millis(50);
     let stamp = Instant::now();
     let execute_at = stamp + duration;
 
-    observable::timer_at("aString", execute_at, local.spawner())
-      .subscribe(|_| {});
-
-    local.run();
+    {
+      let local = tokio::task::LocalSet::new();
+      let _guard = local.enter();
+      observable::timer_at("aString", execute_at, LocalScheduler)
+        .subscribe(|_| {});
+      local.await;
+    }
 
     assert!(stamp.elapsed() >= duration);
   }
 
-  #[test]
-  fn timer_at_shall_complete_with_invalid_timestamp_with_no_delay() {
-    let mut local = LocalPool::new();
-
+  #[tokio::test]
+  async fn timer_at_shall_complete_with_invalid_timestamp_with_no_delay() {
     let is_completed = Arc::new(AtomicBool::new(false));
     let is_completed_c = is_completed.clone();
 
@@ -351,13 +346,16 @@ mod tests {
     let now = Instant::now();
     let execute_at = now.checked_sub(duration).unwrap(); // execute 1 sec in past
 
-    observable::timer_at("aString", execute_at, local.spawner())
-      .on_complete(move || {
-        is_completed_c.store(true, Ordering::Relaxed);
-      })
-      .subscribe(|_| {});
-
-    local.run();
+    {
+      let local = tokio::task::LocalSet::new();
+      let _guard = local.enter();
+      observable::timer_at("aString", execute_at, LocalScheduler)
+        .on_complete(move || {
+          is_completed_c.store(true, Ordering::Relaxed);
+        })
+        .subscribe(|_| {});
+      local.await;
+    }
 
     assert!(now.elapsed() < duration);
     assert!(is_completed.load(Ordering::Relaxed));

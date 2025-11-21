@@ -108,10 +108,8 @@ mod test {
   fn empty() {
     let mut hits = 0;
     let mut completed = false;
-    Observable::<(), _>::on_complete(observable::empty(), || {
-      completed = true
-    })
-    .subscribe(|()| hits += 1);
+    Observable::<(), _>::on_complete(observable::empty(), || completed = true)
+      .subscribe(|()| hits += 1);
 
     assert_eq!(hits, 0);
     assert!(completed);

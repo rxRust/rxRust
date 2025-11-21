@@ -60,44 +60,45 @@ where
 #[cfg(test)]
 mod tests {
   use super::*;
-  use futures::executor::LocalPool;
-  #[cfg(not(target_arch = "wasm32"))]
-  use futures::executor::ThreadPool;
   use std::sync::{Arc, Mutex};
 
   #[cfg(not(target_arch = "wasm32"))]
-  #[test]
-  fn shared() {
-    use futures::executor::block_on;
-
+  #[tokio::test]
+  async fn shared() {
     let millis = Arc::new(Mutex::new(0));
     let c_millis = millis.clone();
     let stamp = Instant::now();
-    let pool = ThreadPool::new().unwrap();
+    let scheduler = SharedScheduler;
 
-    let (o, status) = interval(Duration::from_millis(1), pool)
+    let (o, status) = interval(Duration::from_millis(1), scheduler)
       .take(5) // Will block forever if we don't limit emissions
       .complete_status();
     o.subscribe(move |_| {
       *millis.lock().unwrap() += 1;
     });
-    block_on(status.wait_completed());
+    status.wait_completed().await;
 
     assert_eq!(*c_millis.lock().unwrap(), 5);
     assert!(stamp.elapsed() > Duration::from_millis(5));
   }
 
-  #[test]
-  fn local() {
-    let mut local = LocalPool::new();
-    let stamp = Instant::now();
-    let ticks = Arc::new(Mutex::new(0));
-    let ticks_c = Arc::clone(&ticks);
-    interval(Duration::from_millis(1), local.spawner())
-      .take(5)
-      .subscribe(move |_| (*ticks_c.lock().unwrap()) += 1);
-    local.run();
-    assert_eq!(*ticks.lock().unwrap(), 5);
-    assert!(stamp.elapsed() > Duration::from_millis(5));
+  #[tokio::test]
+  async fn local() {
+    use tokio::task::LocalSet;
+
+    LocalSet::new()
+      .run_until(async {
+        let stamp = Instant::now();
+        let ticks = Arc::new(Mutex::new(0));
+        let ticks_c = Arc::clone(&ticks);
+        let (o, status) = interval(Duration::from_millis(1), LocalScheduler)
+          .take(5)
+          .complete_status();
+        o.subscribe(move |_| (*ticks_c.lock().unwrap()) += 1);
+        status.wait_completed().await;
+        assert_eq!(*ticks.lock().unwrap(), 5);
+        assert!(stamp.elapsed() > Duration::from_millis(5));
+      })
+      .await;
   }
 }

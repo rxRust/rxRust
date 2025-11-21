@@ -255,7 +255,6 @@ impl<O> InnerObserverThreads<O> {
 #[cfg(test)]
 mod test {
   use crate::observable::fake_timer::FakeClock;
-  use futures::executor::LocalPool;
 
   use super::*;
   use std::{cell::RefCell, rc::Rc, time::Duration};
@@ -295,43 +294,46 @@ mod test {
     assert_eq!(&c_values, &[]);
   }
 
-  #[test]
-  fn it_shall_concat_all() {
-    let local = Rc::new(RefCell::new(LocalPool::new()));
-    let scheduler = local.borrow().spawner();
+  #[tokio::test]
+  async fn it_shall_concat_all() {
+    let scheduler = LocalScheduler;
     let ticks = Rc::new(RefCell::new(Vec::<usize>::new()));
 
-    interval(Duration::from_millis(100), scheduler.clone())
-      .take(2)
-      .map(move |_| {
-        interval(Duration::from_millis(30), scheduler.clone()).take(5)
-      })
-      .concat_all()
-      .subscribe({
-        let ticks = Rc::clone(&ticks);
-        move |v| (*ticks.borrow_mut()).push(v)
-      });
-    local.borrow_mut().run();
+    {
+      let local = tokio::task::LocalSet::new();
+      let _guard = local.enter();
+      interval(Duration::from_millis(100), scheduler)
+        .take(2)
+        .map(move |_| interval(Duration::from_millis(30), scheduler).take(5))
+        .concat_all()
+        .subscribe({
+          let ticks = Rc::clone(&ticks);
+          move |v| (*ticks.borrow_mut()).push(v)
+        });
+      local.await;
+    }
     assert_eq!(*ticks.borrow(), vec![0, 1, 2, 3, 4, 0, 1, 2, 3, 4]);
   }
 
-  #[test]
-  fn it_shall_merge_all() {
-    let local = Rc::new(RefCell::new(LocalPool::new()));
-    let scheduler = local.borrow().spawner();
+  #[tokio::test]
+  async fn it_shall_merge_all() {
     let ticks = Rc::new(RefCell::new(Vec::<usize>::new()));
 
-    interval(Duration::from_millis(100), scheduler.clone())
-      .take(2)
-      .map(move |_| {
-        interval(Duration::from_millis(30), scheduler.clone()).take(5)
-      })
-      .merge_all(usize::MAX)
-      .subscribe({
-        let ticks = Rc::clone(&ticks);
-        move |v| (*ticks.borrow_mut()).push(v)
-      });
-    local.borrow_mut().run();
+    {
+      let local = tokio::task::LocalSet::new();
+      let _guard = local.enter();
+      interval(Duration::from_millis(100), LocalScheduler)
+        .take(2)
+        .map(move |_| {
+          interval(Duration::from_millis(30), LocalScheduler).take(5)
+        })
+        .merge_all(usize::MAX)
+        .subscribe({
+          let ticks = Rc::clone(&ticks);
+          move |v| (*ticks.borrow_mut()).push(v)
+        });
+      local.await;
+    }
     assert_eq!(*ticks.borrow(), vec![0, 1, 2, 3, 0, 4, 1, 2, 3, 4]);
   }
 }

@@ -11,34 +11,35 @@ use crate::{
   scheduler::{NormalReturn, Scheduler, TaskHandle},
 };
 
-use super::{ObservableImpl, Observable};
+use super::{Observable, ObservableImpl};
 
 /// Returns an `Observable` that emits all the items returned from the source `Stream`.
 ///
 /// ```rust
 /// use rxrust::prelude::*;
-/// use futures::{executor::LocalPool};
+/// use futures::stream;
+/// use rxrust::scheduler::LocalScheduler;
 ///
-/// let stream = futures::stream::unfold(1, |state| async move {
-///     if state < 4 {
-///         Some((state, state + 1))
-///     } else {
-///         None
-///     }
-/// });
+/// #[tokio::main]
+/// async fn main() {
+///   let local_set = tokio::task::LocalSet::new();
+///   let _guard = local_set.enter();
 ///
-/// let mut local_scheduler = LocalPool::new();
-/// let observable = from_stream(stream, local_scheduler.spawner());
-/// observable.subscribe(|x| {
-///     println!("{x}");
-/// });
+///   let stream = stream::unfold(1, |state| async move {
+///       if state < 4 {
+///           Some((state, state + 1))
+///       } else {
+///           None
+///       }
+///   });
 ///
-/// local_scheduler.run();
+///   let observable = from_stream(stream, LocalScheduler);
+///   observable.subscribe(|x| {
+///       println!("{x}");
+///   });
 ///
-/// // prints:
-/// // 1
-/// // 2
-/// // 3
+///   local_set.await;
+/// }
 /// ```
 ///
 /// # Remarks
@@ -56,7 +57,8 @@ pub struct StreamObservable<S, SD> {
   scheduler: SD,
 }
 
-impl<O, S, SD> ObservableImpl<S::Item, Infallible, O> for StreamObservable<S, SD>
+impl<O, S, SD> ObservableImpl<S::Item, Infallible, O>
+  for StreamObservable<S, SD>
 where
   S: Stream,
   O: Observer<S::Item, Infallible>,
@@ -126,27 +128,28 @@ mod tests {
     prelude::*,
     rc::{MutRc, RcDeref, RcDerefMut},
   };
-  use futures::executor::LocalPool;
 
-  #[test]
-  fn from_empty_stream() {
+  #[tokio::test]
+  async fn from_empty_stream() {
     let empty = futures::stream::empty::<String>();
-    let mut scheduler = LocalPool::new();
 
     let count = MutRc::own(0);
     {
+      let local = tokio::task::LocalSet::new();
+      let _guard = local.enter();
       let count = count.clone();
-      from_stream(empty, scheduler.spawner()).subscribe(move |_| {
+      from_stream(empty, LocalScheduler).subscribe(move |_| {
         *count.rc_deref_mut() += 1;
       });
+
+      local.await;
     }
 
-    scheduler.run();
     assert_eq!(*count.rc_deref(), 0);
   }
 
-  #[test]
-  fn from_stream_test() {
+  #[tokio::test]
+  async fn from_stream_test() {
     let stream = futures::stream::unfold(1, |state| async move {
       if state < 4 {
         Some((state, state + 1))
@@ -155,25 +158,24 @@ mod tests {
       }
     });
 
-    let mut scheduler = LocalPool::new();
-    let observable = from_stream(stream, scheduler.spawner());
-
     let values = MutRc::own(vec![]);
     {
+      let local = tokio::task::LocalSet::new();
+      let _guard = local.enter();
       let values = values.clone();
-      observable.subscribe(move |x| {
+      from_stream(stream, LocalScheduler).subscribe(move |x| {
         values.rc_deref_mut().push(x);
       });
-    }
 
-    scheduler.run();
+      local.await;
+    }
 
     let cur = values.rc_deref().clone();
     assert_eq!(cur, vec![1, 2, 3])
   }
 
   #[tokio::test]
-  #[cfg(all(test, not(target_arch = "wasm32"), feature = "tokio-scheduler"))]
+  #[cfg(all(test, feature = "scheduler"))]
   async fn stream_channel_test() {
     use crate::rc::MutArc;
     use futures::{channel::mpsc::channel, SinkExt};
@@ -181,8 +183,7 @@ mod tests {
 
     let (mut sender, receiver) = channel(3);
 
-    let scheduler = FuturesThreadPoolScheduler::new().unwrap();
-    let observable = from_stream(receiver, scheduler.clone());
+    let observable = from_stream(receiver, SharedScheduler);
 
     let values = MutArc::own(vec![]);
     {

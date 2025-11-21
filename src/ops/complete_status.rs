@@ -1,7 +1,7 @@
 use futures::Future;
 
 use crate::{
-  observable::{ObservableImpl, Observable},
+  observable::{Observable, ObservableImpl},
   observer::Observer,
   scheduler::NormalReturn,
 };
@@ -125,4 +125,3 @@ impl CompleteStatus {
     StatusFuture { flag, waker }.await
   }
 }
-

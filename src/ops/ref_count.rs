@@ -83,7 +83,8 @@ macro_rules! impl_observable_methods {
   };
 }
 
-impl<'a, S, Item, Err, O> ObservableImpl<Item, Err, O> for ShareOp<'a, Item, Err, S>
+impl<'a, S, Item, Err, O> ObservableImpl<Item, Err, O>
+  for ShareOp<'a, Item, Err, S>
 where
   Item: Clone,
   Err: Clone,
@@ -98,7 +99,8 @@ impl<'a, S, Item, Err> Observable<Item, Err> for ShareOp<'a, Item, Err, S> where
 {
 }
 
-impl<S, Item, Err, O> ObservableImpl<Item, Err, O> for ShareOpThreads<Item, Err, S>
+impl<S, Item, Err, O> ObservableImpl<Item, Err, O>
+  for ShareOpThreads<Item, Err, S>
 where
   Item: Clone,
   Err: Clone,

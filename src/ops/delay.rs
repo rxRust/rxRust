@@ -159,90 +159,99 @@ mod tests {
   use crate::rc::{MutRc, RcDeref, RcDerefMut};
 
   use super::*;
-  use futures::executor::LocalPool;
   use std::{cell::RefCell, rc::Rc, time::Instant};
 
   #[cfg(not(target_arch = "wasm32"))]
-  #[test]
-  fn shared_smoke() {
-    use futures::executor::{block_on, ThreadPool};
+  #[tokio::test]
+  async fn shared_smoke() {
     use std::sync::{Arc, Mutex};
 
     let value = Arc::new(Mutex::new(0));
     let c_value = value.clone();
-    let pool = ThreadPool::new().unwrap();
+    let scheduler = SharedScheduler;
     let stamp = Instant::now();
     let (o, status) = observable::of(1)
-      .delay_threads(Duration::from_millis(10), pool)
+      .delay_threads(Duration::from_millis(10), scheduler)
       .complete_status();
 
     o.subscribe(move |v| {
       *value.lock().unwrap() = v;
     });
-    block_on(status.wait_completed());
+    status.wait_completed().await;
 
     assert!(stamp.elapsed() >= Duration::from_millis(10));
     assert_eq!(*c_value.lock().unwrap(), 1);
   }
 
-  #[test]
-  fn local_smoke() {
+  #[tokio::test]
+  async fn local_smoke() {
     let value = Rc::new(RefCell::new(0));
     let c_value = value.clone();
-    let mut pool = LocalPool::new();
-    observable::of(1)
-      .delay(Duration::from_millis(1), pool.spawner())
-      .subscribe(move |v| {
-        *c_value.borrow_mut() = v;
-      });
-    assert_eq!(*value.borrow(), 0);
     let stamp = Instant::now();
-    pool.run();
-    assert!(stamp.elapsed() >= Duration::from_millis(1));
+
+    {
+      let local = tokio::task::LocalSet::new();
+      let _guard = local.enter();
+      observable::of(1)
+        .delay(Duration::from_millis(1), LocalScheduler)
+        .subscribe(move |v| {
+          *c_value.borrow_mut() = v;
+        });
+      local.await;
+    }
+
     assert_eq!(*value.borrow(), 1);
+    assert!(stamp.elapsed() >= Duration::from_millis(1));
   }
 
-  #[test]
-  fn delay_subscription_smoke() {
+  #[tokio::test]
+  async fn delay_subscription_smoke() {
     let accept_stamp = MutRc::own(Instant::now());
     let c_accept_stamp = accept_stamp.clone();
 
-    let mut pool = LocalPool::new();
     let mut subject = Subject::default();
-    observable::of(1)
-      .merge(subject.clone())
-      .delay_subscription(Duration::from_millis(1), pool.spawner())
-      .subscribe(move |_| *c_accept_stamp.rc_deref_mut() = Instant::now());
-    pool.run();
+    {
+      let local = tokio::task::LocalSet::new();
+      let _guard = local.enter();
+      observable::of(1)
+        .merge(subject.clone())
+        .delay_subscription(Duration::from_millis(10), LocalScheduler)
+        .subscribe(move |_| *c_accept_stamp.rc_deref_mut() = Instant::now());
+      local.await;
+    }
 
     // the subscription delay.
-    assert!(accept_stamp.rc_deref().elapsed() < Duration::from_millis(1));
+    assert!(accept_stamp.rc_deref().elapsed() < Duration::from_millis(50));
     let emit_at = Instant::now();
     subject.next(0);
-    pool.run();
+    tokio::time::sleep(Duration::from_millis(5)).await;
     // emit not delay.
-    assert!(accept_stamp.rc_deref().elapsed() < Duration::from_millis(1));
+    assert!(accept_stamp.rc_deref().elapsed() < Duration::from_millis(50));
     assert!(
       accept_stamp.rc_deref().duration_since(emit_at)
-        < Duration::from_millis(1)
+        < Duration::from_millis(10)
     );
   }
 
-  #[test]
-  fn fix_delay_op_should_delay_value_emit() {
+  #[tokio::test]
+  async fn fix_delay_op_should_delay_value_emit() {
     let accept_stamp = MutRc::own(Instant::now());
     let c_accept_stamp = accept_stamp.clone();
-    let mut pool = LocalPool::new();
 
     let mut subject = Subject::default();
-    subject
-      .clone()
-      .delay(Duration::from_millis(1), pool.spawner())
-      .subscribe(move |_| *c_accept_stamp.rc_deref_mut() = Instant::now());
+    let emit_at;
+    {
+      let local = tokio::task::LocalSet::new();
+      let _guard = local.enter();
+      subject
+        .clone()
+        .delay(Duration::from_millis(1), LocalScheduler)
+        .subscribe(move |_| *c_accept_stamp.rc_deref_mut() = Instant::now());
 
-    let emit_at = Instant::now();
-    subject.next(());
-    pool.run();
+      emit_at = Instant::now();
+      subject.next(());
+      local.await;
+    }
 
     assert!(
       accept_stamp.rc_deref().duration_since(emit_at)

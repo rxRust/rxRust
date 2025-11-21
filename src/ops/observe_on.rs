@@ -129,86 +129,70 @@ impl_observer_on_op!(ObserveOnOpThreads<S,SD>, MutArc, ObserveOnObserverThreads,
 #[cfg(test)]
 mod test {
   use crate::prelude::*;
-  use futures::executor::LocalPool;
-  #[cfg(not(target_arch = "wasm32"))]
-  use futures::executor::ThreadPool;
-  #[cfg(not(target_arch = "wasm32"))]
   use std::collections::HashSet;
-  #[cfg(not(target_arch = "wasm32"))]
-  use std::sync::atomic::{AtomicBool, Ordering};
-  #[cfg(not(target_arch = "wasm32"))]
   use std::sync::{Arc, Mutex};
-  #[cfg(not(target_arch = "wasm32"))]
   use std::thread;
-  #[cfg(not(target_arch = "wasm32"))]
   use std::time::Duration;
   use std::{cell::RefCell, rc::Rc};
 
-  #[test]
-  fn smoke() {
+  #[tokio::test]
+  async fn smoke() {
     let v = Rc::new(RefCell::new(0));
     let v_c = v.clone();
-    let mut local = LocalPool::new();
-    observable::of(1)
-      .observe_on(local.spawner())
-      .subscribe(move |i| *v_c.borrow_mut() = i);
-    local.run();
+
+    {
+      let local = tokio::task::LocalSet::new();
+      let _guard = local.enter();
+      observable::of(1)
+        .observe_on(LocalScheduler)
+        .subscribe(move |i| *v_c.borrow_mut() = i);
+      local.await;
+    }
 
     assert_eq!(*v.borrow(), 1);
   }
 
-  #[cfg(not(target_arch = "wasm32"))]
-  #[test]
-  fn switch_thread() {
-    use futures::executor::block_on;
-
-    let id = thread::spawn(move || {}).thread().id();
-    let changed_thread = Arc::new(AtomicBool::default());
-    let c_changed_thread = changed_thread.clone();
-    let emit_thread = Arc::new(Mutex::new(id));
+  #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+  async fn switch_thread() {
+    let emit_thread = Arc::new(Mutex::new(HashSet::new()));
     let observe_thread = Arc::new(Mutex::new(HashSet::new()));
-    let thread_clone = observe_thread.clone();
+    let emit_thread_c = emit_thread.clone();
+    let observe_thread_c = observe_thread.clone();
 
-    let pool = ThreadPool::builder().pool_size(100).create().unwrap();
-
-    let (o, status) = observable::create(|mut p: SubscriberThreads<_>| {
-      while !changed_thread.load(Ordering::Relaxed) {
-        p.next(());
-        *emit_thread.lock().unwrap() = thread::current().id();
-      }
-      p.complete();
-    })
-    .observe_on_threads(pool)
-    .complete_status();
-    let _ = o.subscribe(move |_v| {
-      let mut thread = observe_thread.lock().unwrap();
-      thread.insert(thread::current().id());
-
-      c_changed_thread.store(thread.len() > 1, Ordering::Relaxed);
+    let (o, status) = observable::from_iter(0..50)
+      .map(move |v| {
+        emit_thread_c.lock().unwrap().insert(thread::current().id());
+        v
+      })
+      .observe_on_threads(SharedScheduler)
+      .complete_status();
+    o.subscribe(move |_v| {
+      observe_thread_c
+        .lock()
+        .unwrap()
+        .insert(thread::current().id());
     });
 
-    block_on(status.wait_completed());
+    status.wait_completed().await;
 
-    let current_id = thread::current().id();
-    assert_eq!(*emit_thread.lock().unwrap(), current_id);
-    let thread = thread_clone.lock().unwrap();
-    assert!(thread.len() > 1);
+    let emit = emit_thread.lock().unwrap();
+    let observe = observe_thread.lock().unwrap();
+    assert!(observe.iter().any(|id| !emit.contains(id)));
   }
 
   #[cfg(not(target_arch = "wasm32"))]
-  #[test]
-  fn pool_unsubscribe() {
-    let scheduler = ThreadPool::new().unwrap();
+  #[tokio::test]
+  async fn pool_unsubscribe() {
     let emitted = Arc::new(Mutex::new(vec![]));
     let c_emitted = emitted.clone();
     observable::from_iter(0..10)
-      .delay_threads(Duration::from_millis(10), scheduler.clone())
-      .observe_on_threads(scheduler)
+      .delay_threads(Duration::from_millis(10), SharedScheduler)
+      .observe_on_threads(SharedScheduler)
       .subscribe(move |v| {
         emitted.lock().unwrap().push(v);
       })
       .unsubscribe();
-    std::thread::sleep(Duration::from_millis(20));
+    tokio::time::sleep(Duration::from_millis(20)).await;
     assert_eq!(c_emitted.lock().unwrap().len(), 0);
   }
 

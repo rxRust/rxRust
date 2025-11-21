@@ -31,7 +31,8 @@ pub struct ScanObserver<Observer, BinaryOp, OutputItem> {
   acc: OutputItem,
 }
 
-impl<InputItem, OutputItem, Err, O, S, BinaryOp> ObservableImpl<OutputItem, Err, O>
+impl<InputItem, OutputItem, Err, O, S, BinaryOp>
+  ObservableImpl<OutputItem, Err, O>
   for ScanOp<S, BinaryOp, OutputItem, InputItem>
 where
   S: ObservableImpl<InputItem, Err, ScanObserver<O, BinaryOp, OutputItem>>,

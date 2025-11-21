@@ -208,10 +208,8 @@ where
   }
 }
 
-impl<Item, Err, S, F> Observable<Item, Err>
-  for DistinctUntilKeyChangedOp<S, F>
-where
-  S: Observable<Item, Err>,
+impl<Item, Err, S, F> Observable<Item, Err> for DistinctUntilKeyChangedOp<S, F> where
+  S: Observable<Item, Err>
 {
 }
 pub struct DistinctUntilKeyChangedObserver<O, F, Item> {

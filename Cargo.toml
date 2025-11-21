@@ -20,43 +20,24 @@ smallvec = "1.4.2"
 [dependencies.futures]
 version = "0.3.25"
 
-[dependencies.tokio]
-features = ["rt-multi-thread", "rt"]
-optional = true
-version = "1.0"
-
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-futures-time = {version="3.0.0", optional=true}
-
+tokio = { version = "1.48", features = ["rt-multi-thread", "rt", "time"], optional = true }
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-wasm-bindgen-futures = "0.4.29"
-web-time = "1.1.0"
-
-[target.'cfg(target_arch = "wasm32")'.dependencies.gloo-timers]
-features = ["futures"]
-version = "0.2.5"
+wasm-bindgen-futures ={ version = "0.4.55", optional = true}
+gloo-timers = { version = "0.3.0", features = ["futures"],optional = true }
 
 [features]
-default = ["futures-scheduler", "timer"]
-futures-scheduler = ["futures/thread-pool"]
-tokio-scheduler = ["tokio"]
-timer = ["futures-time"]
+default = ["scheduler"]
+scheduler = ["dep:tokio", "dep:wasm-bindgen-futures", "dep:gloo-timers"]
 
 [dev-dependencies]
 bencher = "0.1.5"
-float-cmp = "0.9.0"
-wasm-bindgen-test = "0.3.29"
+float-cmp = "0.10.0"
+wasm-bindgen-test = "0.3.55"
 
-[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
-tokio = {version = "1.0", features = ["rt", "macros"]}
-
+# Common dev dependencies for tokio (enabled for testing)
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
-tokio = {version = "1.0", features = [
-  "rt",
-  "macros",
-  "time",
-  "rt-multi-thread",
-]}
+tokio = { version = "1.48", features = ["rt", "macros", "time", "rt-multi-thread"] }
 
 [package.metadata.release]
 pre-release-replacements = [
