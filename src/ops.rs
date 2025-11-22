@@ -24,6 +24,7 @@ pub mod on_error;
 pub mod on_error_map;
 pub mod pairwise;
 pub mod ref_count;
+pub mod retry;
 pub mod sample;
 pub mod scan;
 pub mod skip;

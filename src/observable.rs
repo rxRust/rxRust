@@ -52,6 +52,7 @@ use crate::ops::observe_on::ObserveOnOpThreads;
 use crate::ops::on_complete::OnCompleteOp;
 use crate::ops::on_error::OnErrorOp;
 use crate::ops::ref_count::{ShareOp, ShareOpThreads};
+use crate::ops::retry::{RetryOp, RetryThreadsOp, SimpleRetryConfig};
 use crate::ops::sample::SampleOpThreads;
 use crate::ops::skip_until::SkipUntilOpThreads;
 use crate::ops::stream::{ObservableStream, ObservableStreamObserver};
@@ -1716,6 +1717,41 @@ pub trait ObservableExt<Item, Err>: Sized {
     F: FnMut(&Item),
   {
     TapOp { source: self, func: f }
+  }
+
+  /// Retry the observable when error occurs.
+  #[inline]
+  fn retry<SD>(self, scheduler: SD) -> RetryOp<Self, SimpleRetryConfig, SD> {
+    RetryOp::new(self, SimpleRetryConfig::new(), scheduler)
+  }
+
+  /// Retry the observable when error occurs with a custom config.
+  #[inline]
+  fn retry_with_config<Config, SD>(
+    self,
+    config: Config,
+    scheduler: SD,
+  ) -> RetryOp<Self, Config, SD> {
+    RetryOp::new(self, config, scheduler)
+  }
+
+  /// Retry the observable when error occurs.
+  #[inline]
+  fn retry_threads<SD>(
+    self,
+    scheduler: SD,
+  ) -> RetryThreadsOp<Self, SimpleRetryConfig, SD> {
+    RetryThreadsOp::new(self, SimpleRetryConfig::new(), scheduler)
+  }
+
+  /// Retry the observable when error occurs with a custom config.
+  #[inline]
+  fn retry_with_config_threads<Config, SD>(
+    self,
+    config: Config,
+    scheduler: SD,
+  ) -> RetryThreadsOp<Self, Config, SD> {
+    RetryThreadsOp::new(self, config, scheduler)
   }
 
   /// Process the error of the observable and the return observable can't catch the error any more.
