@@ -46,7 +46,14 @@ where
   type Unsub = ();
 
   fn actual_subscribe(self, mut observer: O) -> Self::Unsub {
-    self.0.into_iter().for_each(|v| observer.next(v));
+    for v in self.0.into_iter() {
+      if observer.is_finished() {
+        break;
+      }
+
+      observer.next(v);
+    }
+
     observer.complete();
   }
 }
@@ -99,6 +106,19 @@ mod test {
       .subscribe(|_| hit_count += 1);
 
     assert_eq!(hit_count, 100);
+    assert!(completed);
+  }
+
+  #[test]
+  fn from_range_with_take() {
+    let mut hit_count = 0;
+    let mut completed = false;
+    observable::from_iter(0..)
+      .take(5)
+      .on_complete(|| completed = true)
+      .subscribe(|_| hit_count += 1);
+
+    assert_eq!(hit_count, 5);
     assert!(completed);
   }
 
