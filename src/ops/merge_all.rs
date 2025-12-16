@@ -1,337 +1,459 @@
-use crate::{
-  prelude::*,
-  rc::{MutArc, MutRc, RcDeref, RcDerefMut},
-};
+//! Flattens Higher-Order Observables by merging inner observable emissions.
+
 use std::collections::VecDeque;
 
-pub struct MergeAllOp<'a, S, ObservableItem> {
-  pub concurrent: usize,
+use crate::{
+  context::{Context, RcDerefMut},
+  observable::{CoreObservable, ObservableType},
+  observer::Observer,
+  subscription::{DynamicSubscriptions, IntoBoxedSubscription},
+};
+/// Flattens a Higher-Order Observable (an observable that emits observables).
+///
+/// Subscribes to inner observables as they arrive, up to `concurrent` limit.
+/// Excess observables are queued and subscribed when slots become available.
+///
+/// # Examples
+///
+/// ```
+/// use rxrust::prelude::*;
+///
+/// // Basic usage - flatten nested observables
+/// let mut result = Vec::new();
+/// Local::from_iter([Local::from_iter([1, 2]), Local::from_iter([3, 4])])
+///   .merge_all(usize::MAX)
+///   .subscribe(|v| result.push(v));
+/// assert_eq!(result, vec![1, 2, 3, 4]);
+/// ```
+///
+/// # Concurrency Control
+///
+/// Use `concurrent` to limit simultaneous inner subscriptions:
+/// - `usize::MAX`: Unlimited concurrency (subscribe to all immediately)
+/// - `1`: Sequential processing (`concat_all` behavior)
+/// - `n`: At most `n` concurrent inner subscriptions
+#[derive(Clone)]
+pub struct MergeAll<S> {
   pub source: S,
-  _marker: TypeHint<&'a ObservableItem>,
-}
-
-pub struct MergeAllOpThreads<S, ObservableItem> {
-  pub source: S,
   pub concurrent: usize,
-  _marker: TypeHint<ObservableItem>,
 }
 
-macro_rules! impl_new_method {
-  ($name: ident $(,$lf:lifetime)?) => {
-    impl<$($lf,)? S, ObservableItem> $name<$($lf,)? S, ObservableItem> {
-      #[inline]
-      pub(crate) fn new(source: S, concurrent: usize) -> Self {
-        Self {
-          concurrent,
-          source,
-          _marker: TypeHint::default(),
-        }
-      }
-    }
-  };
+/// Shared state for MergeAll observers
+#[doc(hidden)]
+pub struct MergeAllState<O, InnerObs> {
+  observer: Option<O>,
+  /// Queue of pending inner observables when at concurrent limit
+  pending_observables: VecDeque<InnerObs>,
+  /// Number of currently active inner subscriptions
+  subscribed: usize,
+  /// Maximum concurrent inner subscriptions
+  concurrent: usize,
+  /// Whether the outer observable has completed
+  outer_completed: bool,
 }
 
-impl_new_method!(MergeAllOp, 'a);
-impl_new_method!(MergeAllOpThreads);
+impl<O, InnerObs> MergeAllState<O, InnerObs> {
+  /// Checks if the observer is closed.
+  /// Used by both inner and outer observers' `is_closed` implementation.
+  fn observer_is_closed<Item, Err>(&self) -> bool
+  where
+    O: Observer<Item, Err>,
+  {
+    self.observer.as_ref().is_none_or(O::is_closed)
+  }
+}
 
-macro_rules! impl_observable_method {
-  ($subscription: ty, $box_unsub: ty, $outside_observer: ident, $rc: ident) => {
-    type Unsub = $subscription;
+#[doc(hidden)]
+#[derive(Clone)]
+pub struct MergeAllOuterObserver<P, SubState> {
+  state: P,
+  sub_state: SubState,
+}
 
-    fn actual_subscribe(self, observer: O) -> Self::Unsub {
-      let mut subscription = Self::Unsub::default();
+#[doc(hidden)]
+#[derive(Clone)]
+pub struct MergeAllInnerObserver<P, SubState> {
+  state: P,
+  sub_state: SubState,
+  /// ID of this observer's subscription in DynamicSubscriptions
+  subscription_id: usize,
+  /// Function pointer to subscribe to queued inner observables
+  subscribe_fn: fn(P, SubState),
+}
 
-      let observer_data = ObserverData {
-        observer,
-        subscribe_tasks: <_>::default(),
-        outside_completed: false,
+/// Subscription handle returned by `merge_all`.
+///
+/// Unsubscribing cancels both the outer subscription and all active inner
+/// subscriptions.
+pub type MergeAllSubscription<SrcUnsub, SubState> =
+  crate::subscription::SourceWithDynamicSubs<SrcUnsub, SubState>;
+
+impl<S> ObservableType for MergeAll<S>
+where
+  S: ObservableType,
+  for<'a> S::Item<'a>: Context<Inner: ObservableType>,
+{
+  type Item<'a>
+    = <<S::Item<'a> as Context>::Inner as ObservableType>::Item<'a>
+  where
+    Self: 'a;
+  type Err = S::Err;
+}
+
+/// Type alias for subscription state (using DynamicSubscriptions)
+type RcSubscriptions<C> =
+  <C as Context>::RcMut<DynamicSubscriptions<<C as Context>::BoxedSubscription>>;
+
+/// CoreObservable implementation for MergeAll
+///
+/// Inner observables must be Context-wrapped (like `Local<FromIter<...>>`).
+/// The Context is stripped via `into_inner()` when subscribing to ensure
+/// all inner subscriptions use the outer Context's execution environment.
+impl<S, C, InnerObs> CoreObservable<C> for MergeAll<S>
+where
+  C: Context,
+  S: for<'a> CoreObservable<
+      C::With<
+        MergeAllOuterObserver<
+          C::RcMut<MergeAllState<C::Inner, InnerObs>>,
+          C::RcMut<DynamicSubscriptions<C::BoxedSubscription>>,
+        >,
+      >,
+      Item<'a>: Context<Inner = InnerObs>,
+    >,
+  InnerObs: ObservableType,
+{
+  type Unsub = MergeAllSubscription<S::Unsub, RcSubscriptions<C>>;
+
+  fn subscribe(self, context: C) -> Self::Unsub {
+    let rc_sub_state: RcSubscriptions<C> = C::RcMut::from(DynamicSubscriptions::default());
+
+    let ctx = context.transform(|observer| {
+      let state = C::RcMut::from(MergeAllState {
+        observer: Some(observer),
+        pending_observables: VecDeque::new(),
         subscribed: 0,
         concurrent: self.concurrent,
-      };
-      let observer_data = $rc::own(Some(observer_data));
-      let merge_all_observer = $outside_observer {
-        observer_data,
-        subscription: subscription.clone(),
-        _hint: TypeHint::new(),
-      };
-      let unsub = self.source.actual_subscribe(merge_all_observer);
-      subscription.append(<$box_unsub>::new(unsub));
-      subscription
-    }
-  };
-}
+        outer_completed: false,
+      });
+      MergeAllOuterObserver { state, sub_state: rc_sub_state.clone() }
+    });
 
-impl<'a, ObservableItem, Item, Err, O, S> Observable<Item, Err, O>
-  for MergeAllOp<'a, S, ObservableItem>
-where
-  O: Observer<Item, Err> + 'a,
-  S: Observable<ObservableItem, Err, OutsideObserver<'a, O, Item>>,
-  ObservableItem: Observable<Item, Err, InnerObserver<'a, O>> + 'a,
-  S::Unsub: 'a,
-  ObservableItem::Unsub: 'a,
-{
-  impl_observable_method!(
-    MultiSubscription<'a>,
-    BoxSubscription<'a>,
-    OutsideObserver,
-    MutRc
-  );
-}
-
-impl<'a, ObservableItem, Item, Err, S> ObservableExt<Item, Err>
-  for MergeAllOp<'a, S, ObservableItem>
-where
-  S: ObservableExt<ObservableItem, Err>,
-  ObservableItem: ObservableExt<Item, Err>,
-{
-}
-
-impl<ObservableItem, Item, Err, O, S> Observable<Item, Err, O>
-  for MergeAllOpThreads<S, ObservableItem>
-where
-  O: Observer<Item, Err> + Send + 'static,
-  S: Observable<ObservableItem, Err, OutsideObserverThreads<O, Item>>,
-  ObservableItem:
-    Observable<Item, Err, InnerObserverThreads<O>> + Send + 'static,
-  S::Unsub: Send + 'static,
-  ObservableItem::Unsub: Send + 'static,
-{
-  impl_observable_method!(
-    MultiSubscriptionThreads,
-    BoxSubscriptionThreads,
-    OutsideObserverThreads,
-    MutArc
-  );
-}
-
-impl<ObservableItem, Item, Err, S> ObservableExt<Item, Err>
-  for MergeAllOpThreads<S, ObservableItem>
-where
-  S: ObservableExt<ObservableItem, Err>,
-  ObservableItem: ObservableExt<Item, Err>,
-{
-}
-
-pub struct OutsideObserver<'a, O, Item> {
-  observer_data: MutRc<Option<ObserverDataLocal<'a, O>>>,
-  subscription: MultiSubscription<'a>,
-  _hint: TypeHint<Item>,
-}
-
-pub struct OutsideObserverThreads<O, Item> {
-  observer_data: MutArc<Option<ObserverDataThreads<O>>>,
-  subscription: MultiSubscriptionThreads,
-  _hint: TypeHint<Item>,
-}
-
-struct ObserverData<O, Lazy> {
-  observer: O,
-  subscribe_tasks: VecDeque<Lazy>,
-  outside_completed: bool,
-  subscribed: usize,
-  concurrent: usize,
-}
-
-type ObserverDataLocal<'a, O> = ObserverData<O, Box<dyn FnOnce() + 'a>>;
-struct InnerObserver<'a, O>(MutRc<Option<ObserverDataLocal<'a, O>>>);
-
-type ObserverDataThreads<O> = ObserverData<O, Box<dyn FnOnce() + Send>>;
-struct InnerObserverThreads<O>(MutArc<Option<ObserverDataThreads<O>>>);
-
-macro_rules! impl_inner_observer {
-  ($ty:ty $(, $lf:lifetime)?) => {
-    impl<$($lf,)? Item, Err, O> Observer<Item, Err> for $ty
-    where
-      O: Observer<Item, Err>,
-    {
-      fn next(&mut self, value: Item) {
-        if let Some(data) = self.0.rc_deref_mut().as_mut() {
-          data.observer.next(value)
-        }
-      }
-
-      fn error(self, err: Err) {
-        if let Some(data) = self.0.rc_deref_mut().take() {
-          data.observer.error(err)
-        }
-      }
-
-      fn complete(self) {
-        let mut inner = self.0.rc_deref_mut();
-        if let Some(data) = inner.as_mut() {
-          if let Some(task) = data.subscribe_tasks.pop_front() {
-            task();
-          } else {
-            data.subscribed -= 1;
-            if data.subscribed == 0 && data.outside_completed {
-              inner.take().unwrap().observer.complete();
-            }
-          }
-        }
-      }
-
-      fn is_finished(&self) -> bool {
-        self.0.rc_deref().as_ref().map_or(true, |data| {
-          data.observer.is_finished()
-        })
-      }
-    }
-  };
-}
-
-impl_inner_observer!(InnerObserver<'a, O>, 'a);
-impl_inner_observer!(InnerObserverThreads<O>);
-
-macro_rules! impl_outside_observer {
-  ($outside_ty: ty, $inner_ty: ty, $box_unsub: ty, $($lf:lifetime)? $($send:ident)?) => {
-    impl<$($lf,)? Item, Err, O, ObservableItem> Observer<ObservableItem, Err>
-      for $outside_ty
-    where
-      O: Observer<Item, Err> $(+ $lf)? $(+ $send + 'static)?,
-      ObservableItem: Observable<Item, Err, $inner_ty> $(+ $lf)? $(+ $send + 'static)?,
-      ObservableItem::Unsub: $($lf)? $($send + 'static)?,
-    {
-      fn next(&mut self, value: ObservableItem) {
-        let mut observer_data = self.observer_data.rc_deref_mut();
-        if let Some(data) = observer_data.as_mut() {
-          if data.subscribed < data.concurrent {
-            data.subscribed += 1;
-            drop(observer_data);
-            let unsub = value
-              .actual_subscribe(<$inner_ty>::new(self.observer_data.clone()));
-            let box_unsub = <$box_unsub>::new(unsub);
-            self.subscription.append(box_unsub);
-          } else {
-            let observer_data = self.observer_data.clone();
-            let mut subscription = self.subscription.clone();
-            data.subscribe_tasks.push_back(Box::new(move || {
-              let unsub = value.actual_subscribe(<$inner_ty>::new(observer_data));
-              let box_unsub = <$box_unsub>::new(unsub);
-              subscription.append(box_unsub);
-            }));
-          }
-        }
-      }
-
-      fn error(self, err: Err) {
-        if let Some(data) = self.observer_data.rc_deref_mut().take() {
-          data.observer.error(err);
-        }
-      }
-
-      fn complete(self) {
-        let mut data = self.observer_data.rc_deref_mut();
-        if let Some(inner) = data.as_mut() {
-          inner.outside_completed = true;
-          if inner.subscribed == 0 && inner.subscribe_tasks.is_empty() {
-            data.take().unwrap().observer.complete();
-          }
-        }
-      }
-
-      fn is_finished(&self) -> bool {
-        self.observer_data.rc_deref().as_ref().map_or(true, |data| {
-          data.observer.is_finished()
-        })
-      }
-    }
-  };
-}
-
-impl_outside_observer!(OutsideObserver<'a, O, Item>, InnerObserver<'a, O>, BoxSubscription<'a>, 'a);
-impl_outside_observer!(OutsideObserverThreads<O, Item>, InnerObserverThreads<O>, BoxSubscriptionThreads, Send);
-
-impl<'a, O> InnerObserver<'a, O> {
-  fn new(data: MutRc<Option<ObserverDataLocal<'a, O>>>) -> Self {
-    InnerObserver(data)
+    let src_unsub = self.source.subscribe(ctx);
+    crate::subscription::SourceWithDynamicSubs::new(src_unsub, rc_sub_state)
   }
 }
 
-impl<O> InnerObserverThreads<O> {
-  fn new(data: MutArc<Option<ObserverDataThreads<O>>>) -> Self {
-    InnerObserverThreads(data)
+impl<Item, Err, O, InnerObs, RcState, RcUnsubs, DynUnsub> Observer<Item, Err>
+  for MergeAllInnerObserver<RcState, RcUnsubs>
+where
+  O: Observer<Item, Err>,
+  RcState: RcDerefMut<Target = MergeAllState<O, InnerObs>> + Clone,
+  RcUnsubs: RcDerefMut<Target = DynamicSubscriptions<DynUnsub>> + Clone,
+{
+  fn next(&mut self, value: Item) {
+    let mut state = self.state.rc_deref_mut();
+    if let Some(ref mut observer) = state.observer {
+      observer.next(value);
+    }
+  }
+
+  fn error(self, err: Err) {
+    let mut state = self.state.rc_deref_mut();
+    if let Some(observer) = state.observer.take() {
+      observer.error(err);
+    }
+  }
+
+  fn complete(self) {
+    // Remove this subscription from the collection
+    self
+      .sub_state
+      .rc_deref_mut()
+      .remove(self.subscription_id);
+
+    let mut state = self.state.rc_deref_mut();
+    // Subscribe to next queued observable if available
+    if !state.pending_observables.is_empty() {
+      drop(state);
+      (self.subscribe_fn)(self.state.clone(), self.sub_state.clone());
+    } else {
+      state.subscribed = state.subscribed.saturating_sub(1);
+      // Complete downstream if outer completed and no more active subscriptions
+      if state.subscribed == 0
+        && state.outer_completed
+        && let Some(observer) = state.observer.take()
+      {
+        observer.complete();
+      }
+    }
+  }
+
+  fn is_closed(&self) -> bool {
+    self
+      .state
+      .rc_deref()
+      .observer_is_closed::<Item, Err>()
   }
 }
+
+/// Observer implementation for outer observable
+///
+/// Receives Context-wrapped inner observables and strips the Context via
+/// `into_inner()` before storing them. This ensures all inner subscriptions
+/// use the outer Context's execution environment.
+impl<Ctx, Err, O, RcState, RcUnsubs> Observer<Ctx, Err> for MergeAllOuterObserver<RcState, RcUnsubs>
+where
+  Ctx: Context<
+    Inner: CoreObservable<
+      Ctx::With<MergeAllInnerObserver<RcState, RcUnsubs>>,
+      Unsub: IntoBoxedSubscription<Ctx::BoxedSubscription>,
+    >,
+  >,
+  O: for<'a> Observer<<Ctx::Inner as ObservableType>::Item<'a>, Err>,
+  RcState: RcDerefMut<Target = MergeAllState<O, Ctx::Inner>> + Clone,
+  RcUnsubs: RcDerefMut<Target = DynamicSubscriptions<Ctx::BoxedSubscription>> + Clone,
+{
+  fn next(&mut self, inner_ctx_obs: Ctx) {
+    // Strip the Context to get the raw CoreObservable
+    let inner_obs = inner_ctx_obs.into_inner();
+    let mut state = self.state.rc_deref_mut();
+    state.pending_observables.push_back(inner_obs);
+    if state.subscribed < state.concurrent {
+      state.subscribed += 1;
+      drop(state);
+      Self::do_next_subscribe::<Ctx, _, _>(self.state.clone(), self.sub_state.clone());
+    }
+  }
+
+  fn error(self, err: Err) {
+    let mut state = self.state.rc_deref_mut();
+    if let Some(observer) = state.observer.take() {
+      observer.error(err);
+    }
+  }
+
+  fn complete(self) {
+    let mut state = self.state.rc_deref_mut();
+    state.outer_completed = true;
+    // Complete downstream if no active subscriptions and no pending observables
+    if state.subscribed == 0
+      && state.pending_observables.is_empty()
+      && let Some(observer) = state.observer.take()
+    {
+      observer.complete();
+    }
+  }
+
+  fn is_closed(&self) -> bool { self.state.rc_deref().observer_is_closed() }
+}
+
+impl<RcState, RcUnsubs> MergeAllOuterObserver<RcState, RcUnsubs> {
+  fn do_next_subscribe<Ctx, O, InnerObs>(state: RcState, sub_state: RcUnsubs)
+  where
+    Ctx: Context,
+    RcState: RcDerefMut<Target = MergeAllState<O, InnerObs>> + Clone,
+    RcUnsubs: RcDerefMut<Target = DynamicSubscriptions<Ctx::BoxedSubscription>> + Clone,
+    InnerObs: CoreObservable<
+        Ctx::With<MergeAllInnerObserver<RcState, RcUnsubs>>,
+        Unsub: IntoBoxedSubscription<Ctx::BoxedSubscription>,
+      >,
+  {
+    let inner_obs = state
+      .rc_deref_mut()
+      .pending_observables
+      .pop_front();
+    if let Some(inner_obs) = inner_obs {
+      // Pre-allocate ID before creating observer
+      let subscription_id = sub_state.rc_deref_mut().reserve_id();
+
+      let inner_observer = MergeAllInnerObserver {
+        state: state.clone(),
+        sub_state: sub_state.clone(),
+        subscription_id,
+        subscribe_fn: Self::do_next_subscribe::<Ctx, _, _>,
+      };
+
+      let unsub = inner_obs.subscribe(Ctx::lift(inner_observer));
+      let boxed_unsub = unsub.into_boxed();
+
+      // Insert subscription with pre-allocated ID
+      sub_state
+        .rc_deref_mut()
+        .insert(subscription_id, boxed_unsub);
+    }
+  }
+}
+
 #[cfg(test)]
-mod test {
-  use crate::observable::fake_timer::FakeClock;
-  use futures::executor::LocalPool;
+mod tests {
+  use std::{cell::RefCell, rc::Rc};
 
-  use super::*;
-  use std::{cell::RefCell, rc::Rc, time::Duration};
+  use crate::prelude::*;
 
-  #[test]
-  fn smoke() {
-    let values = Rc::new(RefCell::new(vec![]));
-    let c_values = values.clone();
-    let clock = FakeClock::default();
+  #[rxrust_macro::test]
+  fn test_merge_all_basic() {
+    let result = Rc::new(RefCell::new(Vec::new()));
+    let result_clone = result.clone();
 
-    observable::from_iter(
-      (0..3).map(|_| clock.interval(Duration::from_millis(1)).take(5)),
-    )
-    .merge_all(2)
-    .subscribe(move |i| values.borrow_mut().push(i));
-    clock.advance(Duration::from_millis(11));
+    // Create observable of observables - no .into_inner() needed!
+    Local::from_iter([Local::from_iter([1, 2]), Local::from_iter([3, 4])])
+      .merge_all(usize::MAX)
+      .subscribe(move |v| {
+        result_clone.borrow_mut().push(v);
+      });
 
-    assert_eq!(
-      &*c_values.borrow(),
-      &[0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 0, 1, 2, 3, 4]
-    );
+    assert_eq!(*result.borrow(), vec![1, 2, 3, 4]);
   }
 
-  #[test]
-  fn fix_inner_unsubscribe() {
-    let mut values = vec![];
-    let c_values = values.clone();
-    let mut subject = Subject::default();
+  #[rxrust_macro::test]
+  fn test_concat_all() {
+    let result = Rc::new(RefCell::new(Vec::new()));
+    let result_clone = result.clone();
 
-    let subscription = observable::of(subject.clone())
-      .merge_all(1)
-      .subscribe(move |v| values.push(v));
+    // concat_all is merge_all(1) - sequential subscription
+    Local::from_iter([Local::from_iter([1, 2]), Local::from_iter([3, 4])])
+      .concat_all()
+      .subscribe(move |v| {
+        result_clone.borrow_mut().push(v);
+      });
+
+    assert_eq!(*result.borrow(), vec![1, 2, 3, 4]);
+  }
+
+  #[rxrust_macro::test]
+  fn test_merge_all_empty() {
+    let result = Rc::new(RefCell::new(Vec::<i32>::new()));
+    let result_clone = result.clone();
+    let completed = Rc::new(RefCell::new(false));
+    let completed_clone = completed.clone();
+
+    Local::from_iter(Vec::<Local<FromIter<std::vec::IntoIter<i32>>>>::new())
+      .merge_all(usize::MAX)
+      .on_complete(move || {
+        *completed_clone.borrow_mut() = true;
+      })
+      .subscribe(move |v| {
+        result_clone.borrow_mut().push(v);
+      });
+
+    assert!(result.borrow().is_empty());
+    assert!(*completed.borrow());
+  }
+
+  #[rxrust_macro::test]
+  fn test_merge_all_concurrency() {
+    let result = Rc::new(RefCell::new(Vec::new()));
+    let result_clone = result.clone();
+
+    let mut s1 = Local::subject();
+    let mut s2 = Local::subject();
+    let mut s3 = Local::subject();
+
+    let mut outer = Local::subject();
+
+    let _subscription = outer.clone().merge_all(2).subscribe(move |v| {
+      result_clone.borrow_mut().push(v);
+    });
+
+    // Pass Context-wrapped subjects (Local<Subject>)
+    outer.next(s1.clone());
+    outer.next(s2.clone());
+    outer.next(s3.clone()); // queued
+
+    s1.next(1);
+    s2.next(2);
+    s3.next(3); // Should be lost since s3 is queued
+
+    assert_eq!(*result.borrow(), vec![1, 2]);
+
+    s1.complete(); // s3 should be subscribed now
+
+    s3.next(4);
+    assert_eq!(*result.borrow(), vec![1, 2, 4]);
+  }
+
+  #[rxrust_macro::test]
+  fn test_merge_all_inner_error() {
+    let error_called = Rc::new(RefCell::new(false));
+    let error_called_clone = error_called.clone();
+
+    let s1 = Local::subject();
+    let mut outer = Local::subject();
+
+    outer
+      .clone()
+      .merge_all(usize::MAX)
+      .on_error(move |_| {
+        *error_called_clone.borrow_mut() = true;
+      })
+      .subscribe(|_: i32| {});
+
+    // Pass Context-wrapped subject
+    outer.next(s1.clone());
+    s1.error(());
+
+    assert!(*error_called.borrow());
+  }
+
+  #[rxrust_macro::test]
+  fn test_merge_all_outer_error() {
+    let error_called = Rc::new(RefCell::new(false));
+    let error_called_clone = error_called.clone();
+
+    let outer = Local::subject();
+    let inner_dummy = Local::subject::<i32, ()>();
+
+    let mut outer_clone = outer.clone();
+
+    outer
+      .clone()
+      .merge_all(usize::MAX)
+      .on_error(move |_| {
+        *error_called_clone.borrow_mut() = true;
+      })
+      .subscribe(|_| {});
+
+    // Force type inference with Context-wrapped subject
+    if false {
+      outer_clone.next(inner_dummy.clone());
+    }
+
+    outer.error(());
+
+    assert!(*error_called.borrow());
+  }
+
+  #[rxrust_macro::test]
+  fn test_merge_all_unsubscribe() {
+    let result = Rc::new(RefCell::new(Vec::new()));
+    let result_clone = result.clone();
+
+    let mut s1 = Local::subject();
+    let mut s2 = Local::subject();
+    let mut outer = Local::subject();
+
+    let subscription = outer
+      .clone()
+      .merge_all(usize::MAX)
+      .subscribe(move |v| {
+        result_clone.borrow_mut().push(v);
+      });
+
+    // Pass Context-wrapped subjects
+    outer.next(s1.clone());
+    outer.next(s2.clone());
+
+    s1.next(1);
+    s2.next(2);
+
+    assert_eq!(*result.borrow(), vec![1, 2]);
+
     subscription.unsubscribe();
 
-    subject.next(1);
+    s1.next(3);
+    s2.next(4);
 
-    assert_eq!(&c_values, &[]);
-  }
-
-  #[test]
-  fn it_shall_concat_all() {
-    let local = Rc::new(RefCell::new(LocalPool::new()));
-    let scheduler = local.borrow().spawner();
-    let ticks = Rc::new(RefCell::new(Vec::<usize>::new()));
-
-    interval(Duration::from_millis(100), scheduler.clone())
-      .take(2)
-      .map(move |_| {
-        interval(Duration::from_millis(30), scheduler.clone()).take(5)
-      })
-      .concat_all()
-      .subscribe({
-        let ticks = Rc::clone(&ticks);
-        move |v| (*ticks.borrow_mut()).push(v)
-      });
-    local.borrow_mut().run();
-    assert_eq!(*ticks.borrow(), vec![0, 1, 2, 3, 4, 0, 1, 2, 3, 4]);
-  }
-
-  #[test]
-  fn it_shall_merge_all() {
-    let local = Rc::new(RefCell::new(LocalPool::new()));
-    let scheduler = local.borrow().spawner();
-    let ticks = Rc::new(RefCell::new(Vec::<usize>::new()));
-
-    interval(Duration::from_millis(100), scheduler.clone())
-      .take(2)
-      .map(move |_| {
-        interval(Duration::from_millis(30), scheduler.clone()).take(5)
-      })
-      .merge_all(usize::MAX)
-      .subscribe({
-        let ticks = Rc::clone(&ticks);
-        move |v| (*ticks.borrow_mut()).push(v)
-      });
-    local.borrow_mut().run();
-    assert_eq!(*ticks.borrow(), vec![0, 1, 2, 3, 0, 4, 1, 2, 3, 4]);
+    assert_eq!(*result.borrow(), vec![1, 2]);
   }
 }

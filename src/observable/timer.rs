@@ -1,365 +1,232 @@
-use crate::prelude::*;
+//! Timer Observable Implementation
+//!
+//! This module provides the `Timer` observable which emits a single value after
+//! a specified delay. It's useful for introducing time-based delays, creating
+//! timeout mechanisms, or scheduling work to be executed after a specific
+//! duration.
+//!
+//! The `Timer` observable emits a single value after the specified delay
+//! and then completes. It never emits an error.
+//!
+//! ## Examples
+//!
+//! ```rust,no_run
+//! use rxrust::prelude::*;
+//!
+//! // Create a timer that emits after 100ms
+//! Local::timer(Duration::from_millis(100)).subscribe(|_| println!("Timer fired!"));
+//! ```
+// Standard library imports
 use std::convert::Infallible;
 
-// Returns an observable which will emit a single `item`
-// once after a given `dur` using a given `scheduler`
-pub fn timer<Item, S>(
-  item: Item,
-  dur: Duration,
-  scheduler: S,
-) -> TimerObservable<Item, S> {
-  TimerObservable { item, dur, scheduler }
+// Internal module imports
+use crate::context::Context;
+use crate::{
+  observable::{CoreObservable, ObservableType},
+  observer::Observer,
+  scheduler::{Duration, Scheduler, Task, TaskState},
+};
+
+/// An observable that emits `()` after a specified delay.
+///
+/// `Timer` creates an observable sequence that emits a single `()` after the
+/// specified `delay`, then completes. The emission is scheduled using the
+/// provided `scheduler`.
+///
+/// # Type Parameters
+///
+/// * `S` - The scheduler type used to schedule the delayed emission
+///
+/// # Fields
+///
+/// * `delay` - The duration to wait before emitting
+/// * `scheduler` - The scheduler used to schedule the emission
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use rxrust::prelude::*;
+///
+/// // Basic timer usage
+/// Local::timer(Duration::from_millis(50)).subscribe(|_| println!("50ms have passed"));
+///
+/// // Timer with SharedScheduler in Local context
+/// Local::timer_with(Duration::from_secs(1), SharedScheduler)
+///   .subscribe(|_| println!("Timer fired with SharedScheduler"));
+/// ```
+pub struct Timer<S> {
+  /// The duration to wait before emitting the value
+  pub delay: Duration,
+  /// The scheduler used to schedule the delayed emission
+  pub scheduler: S,
 }
 
-// Returns an observable which will emit a single `item`
-// once at a given timestamp `at` using a given `scheduler`.
-// If timestamp `at` < `Instant::now()`, the observable will emit the item
-// immediately
-pub fn timer_at<Item, S>(
-  item: Item,
-  at: Instant,
-  scheduler: S,
-) -> TimerObservable<Item, S> {
-  let duration = get_duration_from_instant(at);
-  TimerObservable { item, dur: duration, scheduler }
+fn timer_task<O, Err>((observer, _): &mut (Option<O>, ())) -> TaskState
+where
+  O: Observer<(), Err>,
+{
+  if let Some(mut observer) = observer.take() {
+    observer.next(());
+    observer.complete();
+  }
+  TaskState::Finished
 }
 
-// Calculates the duration between `Instant::now()` and a given `instant`.
-// Returns `Duration::default()` when `instant` is a timestamp in the past
-fn get_duration_from_instant(instant: Instant) -> Duration {
-  let now = Instant::now();
-  match instant > now {
-    true => instant - now,
-    false => Duration::default(),
+impl<S> ObservableType for Timer<S> {
+  type Item<'a>
+    = ()
+  where
+    Self: 'a;
+  type Err = Infallible;
+}
+
+impl<S, C> CoreObservable<C> for Timer<S>
+where
+  C: Context,
+  C::Inner: Observer<(), Infallible>,
+  S: Scheduler<Task<(Option<C::Inner>, ())>> + Clone,
+{
+  type Unsub = crate::scheduler::TaskHandle;
+
+  fn subscribe(self, context: C) -> Self::Unsub {
+    let observer = context.into_inner();
+    let task = Task::new((Some(observer), ()), timer_task);
+    self.scheduler.schedule(task, Some(self.delay))
   }
 }
-
-// Emitter for `observable::timer` and `observable::timer_at` holding the
-// `item` that will be emitted, a `dur` when this will happen and the used
-// `scheduler`
-pub struct TimerObservable<Item, S> {
-  item: Item,
-  dur: Duration,
-  scheduler: S,
-}
-
-fn timer_task<Item, Err, O>(
-  (mut observer, value): (O, Item),
-) -> NormalReturn<()>
-where
-  O: Observer<Item, Err>,
-{
-  observer.next(value);
-  observer.complete();
-  NormalReturn::new(())
-}
-
-impl<Item, O, S> Observable<Item, Infallible, O> for TimerObservable<Item, S>
-where
-  O: Observer<Item, Infallible>,
-  S: Scheduler<OnceTask<(O, Item), NormalReturn<()>>>,
-{
-  type Unsub = TaskHandle<NormalReturn<()>>;
-
-  fn actual_subscribe(self, observer: O) -> Self::Unsub {
-    let Self { item, dur, scheduler } = self;
-
-    scheduler.schedule(OnceTask::new(timer_task, (observer, item)), Some(dur))
-  }
-}
-
-impl<Item, S> ObservableExt<Item, Infallible> for TimerObservable<Item, S> {}
 
 #[cfg(test)]
 mod tests {
+  use std::sync::{Arc, Mutex};
+
   use crate::prelude::*;
-  use futures::executor::LocalPool;
-  #[cfg(not(target_arch = "wasm32"))]
-  use futures::executor::ThreadPool;
-  use std::sync::atomic::{AtomicBool, AtomicI32, AtomicUsize, Ordering};
-  use std::sync::Arc;
 
-  #[test]
-  fn timer_shall_emit_value() {
-    let mut local = LocalPool::new();
+  #[rxrust_macro::test(local)]
+  async fn test_timer_basic() {
+    let value = Arc::new(Mutex::new(None));
+    let value_c = value.clone();
+    let completed = Arc::new(Mutex::new(false));
+    let completed_c = completed.clone();
 
-    let val = 1234;
-    let i_emitted = Arc::new(AtomicI32::new(0));
-    let i_emitted_c = i_emitted.clone();
+    Local::timer(Duration::from_millis(10))
+      .on_complete(move || *completed_c.lock().unwrap() = true)
+      .subscribe(move |v| *value_c.lock().unwrap() = Some(v));
 
-    observable::timer(val, Duration::from_millis(5), local.spawner())
-      .subscribe(move |n| {
-        i_emitted_c.store(n, Ordering::Relaxed);
-      });
+    // Wait for timer
+    LocalScheduler
+      .sleep(Duration::from_millis(20))
+      .await;
 
-    local.run();
-
-    assert_eq!(val, i_emitted.load(Ordering::Relaxed));
+    assert_eq!(*value.lock().unwrap(), Some(()));
+    assert!(*completed.lock().unwrap());
   }
 
-  #[cfg(not(target_arch = "wasm32"))]
-  #[test]
-  fn timer_shall_emit_value_shared() {
-    use crate::ops::complete_status::CompleteStatus;
+  #[rxrust_macro::test]
+  async fn test_timer_shared() {
+    let value = Arc::new(Mutex::new(None));
+    let value_c = value.clone();
+    let completed = Arc::new(Mutex::new(false));
+    let completed_c = completed.clone();
 
-    let pool = ThreadPool::new().unwrap();
+    let handle = Shared::timer(Duration::from_millis(10))
+      .on_complete(move || *completed_c.lock().unwrap() = true)
+      .subscribe(move |v| *value_c.lock().unwrap() = Some(v));
 
-    let val = 1234;
-    let i_emitted = Arc::new(AtomicI32::new(0));
-    let i_emitted_c = i_emitted.clone();
+    // Wait for timer
+    handle.await;
 
-    let (o, status) =
-      observable::timer(val, Duration::from_millis(5), pool).complete_status();
-
-    o.subscribe(move |n| {
-      i_emitted_c.store(n, Ordering::Relaxed);
-    });
-
-    CompleteStatus::wait_for_end(status);
-
-    assert_eq!(val, i_emitted.load(Ordering::Relaxed));
+    assert_eq!(*value.lock().unwrap(), Some(()));
+    assert!(*completed.lock().unwrap());
   }
 
-  #[test]
-  fn timer_shall_call_next_once() {
-    let mut local = LocalPool::new();
+  #[rxrust_macro::test(local)]
+  async fn test_timer_duration() {
+    let start = Instant::now();
+    let value = Arc::new(Mutex::new(None));
+    let value_c = value.clone();
 
-    let next_count = Arc::new(AtomicUsize::new(0));
-    let next_count_c = next_count.clone();
+    Local::timer(Duration::from_millis(50)).subscribe(move |v| *value_c.lock().unwrap() = Some(v));
 
-    observable::timer("aString", Duration::from_millis(5), local.spawner())
-      .subscribe(move |_| {
-        let count = next_count_c.load(Ordering::Relaxed);
-        next_count_c.store(count + 1, Ordering::Relaxed);
-      });
+    LocalScheduler
+      .sleep(Duration::from_millis(60))
+      .await;
 
-    local.run();
-
-    assert_eq!(next_count.load(Ordering::Relaxed), 1);
+    assert!(start.elapsed() >= Duration::from_millis(50));
+    assert_eq!(*value.lock().unwrap(), Some(()));
   }
 
-  #[cfg(not(target_arch = "wasm32"))]
-  #[test]
-  fn timer_shall_call_next_once_shared() {
-    use crate::ops::complete_status::CompleteStatus;
+  #[rxrust_macro::test(local)]
+  async fn test_timer_emit_value() {
+    let value = Arc::new(Mutex::new(None));
+    let value_c = value.clone();
 
-    let pool = ThreadPool::new().unwrap();
+    // Use map instead of timer_emit
+    Local::timer(Duration::from_millis(10))
+      .map(|_| 123)
+      .subscribe(move |v| *value_c.lock().unwrap() = Some(v));
 
-    let next_count = Arc::new(AtomicUsize::new(0));
-    let next_count_c = next_count.clone();
+    LocalScheduler
+      .sleep(Duration::from_millis(20))
+      .await;
 
-    let (o, status) =
-      observable::timer("aString", Duration::from_millis(5), pool)
-        .complete_status();
-    o.subscribe(move |_| {
-      let count = next_count_c.load(Ordering::Relaxed);
-      next_count_c.store(count + 1, Ordering::Relaxed);
-    });
-
-    CompleteStatus::wait_for_end(status);
-
-    assert_eq!(next_count.load(Ordering::Relaxed), 1);
+    assert_eq!(*value.lock().unwrap(), Some(123));
   }
 
-  #[test]
-  fn timer_shall_be_completed() {
-    let mut local = LocalPool::new();
-
-    let is_completed = Arc::new(AtomicBool::new(false));
-    let is_completed_c = is_completed.clone();
-
-    observable::timer("aString", Duration::from_millis(5), local.spawner())
-      .on_complete(move || {
-        is_completed_c.store(true, Ordering::Relaxed);
-      })
-      .subscribe(|_| {});
-
-    local.run();
-
-    assert!(is_completed.load(Ordering::Relaxed));
-  }
-
-  #[cfg(not(target_arch = "wasm32"))]
-  #[test]
-  fn timer_shall_be_completed_shared() {
-    use crate::ops::complete_status::CompleteStatus;
-
-    let pool = ThreadPool::new().unwrap();
-
-    let is_completed = Arc::new(AtomicBool::new(false));
-    let is_completed_c = is_completed.clone();
-
-    let (o, status) =
-      observable::timer("aString", Duration::from_millis(5), pool)
-        .on_complete(move || {
-          is_completed_c.store(true, Ordering::Relaxed);
-        })
-        .complete_status();
-    let _ = o.subscribe(|_| {});
-    CompleteStatus::wait_for_end(status);
-
-    assert!(is_completed.load(Ordering::Relaxed));
-  }
-
-  #[test]
-  fn timer_shall_elapse_duration() {
-    let mut local = LocalPool::new();
-
-    let duration = Duration::from_millis(50);
-    let stamp = Instant::now();
-
-    observable::timer("aString", duration, local.spawner()).subscribe(|_| {});
-
-    local.run();
-
-    assert!(stamp.elapsed() >= duration);
-  }
-
-  #[cfg(not(target_arch = "wasm32"))]
-  #[test]
-  fn timer_shall_elapse_duration_shared() {
-    use crate::ops::complete_status::CompleteStatus;
-
-    let pool = ThreadPool::new().unwrap();
-
-    let duration = Duration::from_millis(50);
-    let stamp = Instant::now();
-
-    let (o, status) =
-      observable::timer("aString", duration, pool).complete_status();
-    o.subscribe(|_| {});
-    CompleteStatus::wait_for_end(status);
-
-    assert!(stamp.elapsed() >= duration);
-  }
-
-  #[test]
-  fn timer_at_shall_emit_value() {
-    let mut local = LocalPool::new();
-
-    let val = 1234;
-    let i_emitted = Arc::new(AtomicI32::new(0));
-    let i_emitted_c = i_emitted.clone();
-
-    observable::timer_at(
-      val,
-      Instant::now() + Duration::from_millis(10),
-      local.spawner(),
-    )
-    .subscribe(move |n| {
-      i_emitted_c.store(n, Ordering::Relaxed);
-    });
-
-    local.run();
-
-    assert_eq!(val, i_emitted.load(Ordering::Relaxed));
-  }
-
-  #[cfg(not(target_arch = "wasm32"))]
-  #[test]
-  fn timer_at_shall_emit_value_shared() {
-    use crate::ops::complete_status::CompleteStatus;
-
-    let pool = ThreadPool::new().unwrap();
-
-    let val = 1234;
-    let i_emitted = Arc::new(AtomicI32::new(0));
-    let i_emitted_c = i_emitted.clone();
-
-    let (o, status) = observable::timer_at(
-      val,
-      Instant::now() + Duration::from_millis(10),
-      pool,
-    )
-    .complete_status();
-    o.subscribe(move |n| {
-      i_emitted_c.store(n, Ordering::Relaxed);
-    });
-    CompleteStatus::wait_for_end(status);
-
-    assert_eq!(val, i_emitted.load(Ordering::Relaxed));
-  }
-
-  #[test]
-  fn timer_at_shall_call_next_once() {
-    let mut local = LocalPool::new();
-
-    let next_count = Arc::new(AtomicUsize::new(0));
-    let next_count_c = next_count.clone();
-
-    observable::timer_at(
-      "aString",
-      Instant::now() + Duration::from_millis(10),
-      local.spawner(),
-    )
-    .subscribe(move |_| {
-      let count = next_count_c.load(Ordering::Relaxed);
-      next_count_c.store(count + 1, Ordering::Relaxed);
-    });
-
-    local.run();
-
-    assert_eq!(next_count.load(Ordering::Relaxed), 1);
-  }
-
-  #[test]
-  fn timer_at_shall_be_completed() {
-    let mut local = LocalPool::new();
-
-    let is_completed = Arc::new(AtomicBool::new(false));
-    let is_completed_c = is_completed.clone();
-
-    observable::timer_at(
-      "aString",
-      Instant::now() + Duration::from_millis(10),
-      local.spawner(),
-    )
-    .on_complete(move || {
-      is_completed_c.store(true, Ordering::Relaxed);
-    })
-    .subscribe(|_| {});
-
-    local.run();
-
-    assert!(is_completed.load(Ordering::Relaxed));
-  }
-
-  #[test]
-  fn timer_at_shall_elapse_duration_with_valid_timestamp() {
-    let mut local = LocalPool::new();
-
-    let duration = Duration::from_millis(50);
-    let stamp = Instant::now();
-    let execute_at = stamp + duration;
-
-    observable::timer_at("aString", execute_at, local.spawner())
-      .subscribe(|_| {});
-
-    local.run();
-
-    assert!(stamp.elapsed() >= duration);
-  }
-
-  #[test]
-  fn timer_at_shall_complete_with_invalid_timestamp_with_no_delay() {
-    let mut local = LocalPool::new();
-
-    let is_completed = Arc::new(AtomicBool::new(false));
-    let is_completed_c = is_completed.clone();
-
-    let duration = Duration::from_secs(1);
+  #[rxrust_macro::test(local)]
+  async fn test_timer_at_basic() {
+    let value = Arc::new(Mutex::new(None));
+    let value_c = value.clone();
     let now = Instant::now();
-    let execute_at = now.checked_sub(duration).unwrap(); // execute 1 sec in past
+    let target = now + Duration::from_millis(10);
 
-    observable::timer_at("aString", execute_at, local.spawner())
-      .on_complete(move || {
-        is_completed_c.store(true, Ordering::Relaxed);
-      })
-      .subscribe(|_| {});
+    Local::timer_at(target).subscribe(move |v| *value_c.lock().unwrap() = Some(v));
 
-    local.run();
+    LocalScheduler
+      .sleep(Duration::from_millis(20))
+      .await;
 
-    assert!(now.elapsed() < duration);
-    assert!(is_completed.load(Ordering::Relaxed));
+    assert_eq!(*value.lock().unwrap(), Some(()));
+    assert!(Instant::now() >= target);
+  }
+
+  #[rxrust_macro::test(local)]
+  async fn test_timer_at_emit_value() {
+    let value = Arc::new(Mutex::new(None));
+    let value_c = value.clone();
+    let target = Instant::now() + Duration::from_millis(10);
+
+    // Use map instead of timer_at_emit
+    Local::timer_at(target)
+      .map(|_| "hello")
+      .subscribe(move |v| *value_c.lock().unwrap() = Some(v));
+
+    LocalScheduler
+      .sleep(Duration::from_millis(20))
+      .await;
+
+    assert_eq!(*value.lock().unwrap(), Some("hello"));
+  }
+
+  #[rxrust_macro::test(local)]
+  async fn test_timer_at_past_time() {
+    let value = Arc::new(Mutex::new(None));
+    let value_c = value.clone();
+    let completed = Arc::new(Mutex::new(false));
+    let completed_c = completed.clone();
+
+    // Time in the past (or present which is treated same)
+    let target = Instant::now();
+
+    Local::timer_at(target)
+      .on_complete(move || *completed_c.lock().unwrap() = true)
+      .subscribe(move |v| *value_c.lock().unwrap() = Some(v));
+
+    // Should fire immediately (on next tick)
+    LocalScheduler
+      .sleep(Duration::from_millis(5))
+      .await;
+
+    assert_eq!(*value.lock().unwrap(), Some(()));
+    assert!(*completed.lock().unwrap());
   }
 }

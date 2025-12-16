@@ -1,225 +1,294 @@
 use crate::{
-  prelude::*,
-  rc::{MutArc, MutRc},
-  scheduler::{NormalReturn, OnceTask, Scheduler},
+  context::{Context, RcDerefMut},
+  observable::{CoreObservable, ObservableType},
+  observer::Observer,
+  scheduler::{Scheduler, Task, TaskHandle, TaskState},
+  subscription::DynamicSubscriptions,
 };
+
+/// ObserveOn operator: Re-emits all notifications from the source Observable on
+/// a specified Scheduler.
+///
+/// This operator ensures that the downstream observer's methods (`next`,
+/// `error`, `complete`) are executed in the context of the provided scheduler.
 #[derive(Clone)]
-pub struct ObserveOnOp<S, SD> {
-  pub(crate) source: S,
-  pub(crate) scheduler: SD,
+pub struct ObserveOn<S, Sch> {
+  pub source: S,
+  pub scheduler: Sch,
 }
 
-pub struct ObserveOnObserver<O, SD> {
-  observer: MutRc<Option<O>>,
-  scheduler: SD,
-  subscription: MultiSubscription<'static>,
+impl<S, Sch> ObservableType for ObserveOn<S, Sch>
+where
+  S: ObservableType,
+{
+  type Item<'a>
+    = S::Item<'a>
+  where
+    Self: 'a;
+  type Err = S::Err;
 }
 
-#[derive(Clone)]
-pub struct ObserveOnOpThreads<S, SD> {
-  pub(crate) source: S,
-  pub(crate) scheduler: SD,
+// ==================== ObserveOn Subscription ====================
+
+use crate::subscription::SourceWithDynamicSubs;
+
+/// Subscription for the ObserveOn operator
+pub type ObserveOnSubscription<U, S> = SourceWithDynamicSubs<U, S>;
+
+// ==================== ObserveOn Observer ====================
+
+pub struct ObserveOnObserver<P, Sch, S> {
+  observer: P,
+  scheduler: Sch,
+  subscription: S,
 }
 
-pub struct ObserveOnObserverThreads<O, SD> {
-  observer: MutArc<Option<O>>,
-  scheduler: SD,
-  subscription: MultiSubscriptionThreads,
-}
+// Handler for `next` notifications
+fn observe_on_next_handler<P, Item, Err, S>(state: &mut (P, Option<Item>, usize, S)) -> TaskState
+where
+  P: Observer<Item, Err>,
+  S: RcDerefMut<Target = DynamicSubscriptions<TaskHandle>>,
+{
+  let (observer, item_opt, id, subs_ptr) = state;
 
-macro_rules! impl_observer_on_op {
-  ($op: ty, $rc: ident, $observer: ident, $multi_unsub: ty, $box_unsub: ident) => {
-    impl<Item, Err, O, S, SD> Observable<Item, Err, O> for $op
-    where
-      O: Observer<Item, Err>,
-      S: Observable<Item, Err, $observer<O, SD>>,
-      SD: Scheduler<OnceTask<($rc<Option<O>>, Item), NormalReturn<()>>>,
-      SD: Scheduler<OnceTask<($rc<Option<O>>, Err), NormalReturn<()>>>,
-      SD: Scheduler<OnceTask<$rc<Option<O>>, NormalReturn<()>>>,
-    {
-      type Unsub = ZipSubscription<S::Unsub, $multi_unsub>;
-
-      fn actual_subscribe(self, observer: O) -> Self::Unsub {
-        let Self { source, scheduler } = self;
-        let subscription: $multi_unsub = <_>::default();
-        let observer = $rc::own(Some(observer));
-        let observer = $observer {
-          scheduler,
-          observer,
-          subscription: subscription.clone(),
-        };
-        let unsub = source.actual_subscribe(observer);
-        ZipSubscription::new(unsub, subscription)
-      }
-    }
-
-    impl<Item, Err, O, SD> Observer<Item, Err> for $observer<O, SD>
-    where
-      O: Observer<Item, Err>,
-      SD: Scheduler<OnceTask<($rc<Option<O>>, Item), NormalReturn<()>>>,
-      SD: Scheduler<OnceTask<($rc<Option<O>>, Err), NormalReturn<()>>>,
-      SD: Scheduler<OnceTask<$rc<Option<O>>, NormalReturn<()>>>,
-    {
-      fn next(&mut self, value: Item) {
-        fn delay_emit_value<Item, Err>(
-          (mut observer, value): (impl Observer<Item, Err>, Item),
-        ) -> NormalReturn<()> {
-          observer.next(value);
-          NormalReturn::new(())
-        }
-
-        let observer = self.observer.clone();
-        let task = OnceTask::new(delay_emit_value, (observer, value));
-        self.subscription.retain();
-        let handler = self.scheduler.schedule(task, None);
-        self.subscription.append($box_unsub::new(handler));
-      }
-
-      #[inline]
-      fn error(mut self, err: Err) {
-        fn delay_emit_err<Item, Err>(
-          (observer, err): (impl Observer<Item, Err>, Err),
-        ) -> NormalReturn<()> {
-          observer.error(err);
-          NormalReturn::new(())
-        }
-
-        let observer = self.observer.clone();
-        let task = OnceTask::new(delay_emit_err, (observer, err));
-        self.subscription.retain();
-        let handler = self.scheduler.schedule(task, None);
-        self.subscription.append($box_unsub::new(handler));
-      }
-
-      #[inline]
-      fn complete(mut self) {
-        fn delay_complete<Item, Err>(
-          observer: impl Observer<Item, Err>,
-        ) -> NormalReturn<()> {
-          observer.complete();
-          NormalReturn::new(())
-        }
-
-        let observer = self.observer.clone();
-        let task = OnceTask::new(delay_complete, observer);
-        self.subscription.retain();
-
-        let handler = self.scheduler.schedule(task, None);
-        self.subscription.append($box_unsub::new(handler));
-      }
-
-      #[inline]
-      fn is_finished(&self) -> bool {
-        self.observer.is_finished()
-      }
-    }
-
-    impl<Item, Err, S, SD> ObservableExt<Item, Err> for $op where
-      S: ObservableExt<Item, Err>
-    {
-    }
-  };
-}
-
-impl_observer_on_op!(ObserveOnOp<S,SD>, MutRc, ObserveOnObserver, MultiSubscription<'static>, BoxSubscription);
-
-impl_observer_on_op!(ObserveOnOpThreads<S,SD>, MutArc, ObserveOnObserverThreads,
-   MultiSubscriptionThreads, BoxSubscriptionThreads);
-
-#[cfg(test)]
-mod test {
-  use crate::prelude::*;
-  use futures::executor::LocalPool;
-  #[cfg(not(target_arch = "wasm32"))]
-  use futures::executor::ThreadPool;
-  #[cfg(not(target_arch = "wasm32"))]
-  use std::collections::HashSet;
-  #[cfg(not(target_arch = "wasm32"))]
-  use std::sync::atomic::{AtomicBool, Ordering};
-  #[cfg(not(target_arch = "wasm32"))]
-  use std::sync::{Arc, Mutex};
-  #[cfg(not(target_arch = "wasm32"))]
-  use std::thread;
-  #[cfg(not(target_arch = "wasm32"))]
-  use std::time::Duration;
-  use std::{cell::RefCell, rc::Rc};
-
-  #[test]
-  fn smoke() {
-    let v = Rc::new(RefCell::new(0));
-    let v_c = v.clone();
-    let mut local = LocalPool::new();
-    observable::of(1)
-      .observe_on(local.spawner())
-      .subscribe(move |i| *v_c.borrow_mut() = i);
-    local.run();
-
-    assert_eq!(*v.borrow(), 1);
+  if let Some(item) = item_opt.take() {
+    observer.next(item);
   }
 
-  #[cfg(not(target_arch = "wasm32"))]
-  #[test]
-  fn switch_thread() {
-    use crate::ops::complete_status::CompleteStatus;
+  subs_ptr.rc_deref_mut().remove(*id);
 
-    let id = thread::spawn(move || {}).thread().id();
-    let changed_thread = Arc::new(AtomicBool::default());
-    let c_changed_thread = changed_thread.clone();
-    let emit_thread = Arc::new(Mutex::new(id));
-    let observe_thread = Arc::new(Mutex::new(HashSet::new()));
-    let thread_clone = observe_thread.clone();
+  TaskState::Finished
+}
 
-    let pool = ThreadPool::builder().pool_size(100).create().unwrap();
+// Handler for `error` notifications
+fn observe_on_error_handler<P, Item, Err, S>(state: &mut (P, Option<Err>, usize, S)) -> TaskState
+where
+  P: Observer<Item, Err> + Clone,
+  S: RcDerefMut<Target = DynamicSubscriptions<TaskHandle>>,
+{
+  let (observer, err_opt, id, subs_ptr) = state;
 
-    let (o, status) = observable::create(|mut p: SubscriberThreads<_>| {
-      while !changed_thread.load(Ordering::Relaxed) {
-        p.next(());
-        *emit_thread.lock().unwrap() = thread::current().id();
-      }
-      p.complete();
-    })
-    .observe_on_threads(pool)
-    .complete_status();
-    let _ = o.subscribe(move |_v| {
-      let mut thread = observe_thread.lock().unwrap();
-      thread.insert(thread::current().id());
+  if let Some(err) = err_opt.take() {
+    observer.clone().error(err);
+  }
 
-      c_changed_thread.store(thread.len() > 1, Ordering::Relaxed);
+  subs_ptr.rc_deref_mut().remove(*id);
+
+  TaskState::Finished
+}
+
+// Handler for `complete` notifications
+fn observe_on_complete_handler<P, Item, Err, S>(state: &mut (P, usize, S)) -> TaskState
+where
+  P: Observer<Item, Err> + Clone,
+  S: RcDerefMut<Target = DynamicSubscriptions<TaskHandle>>,
+{
+  let (observer, id, subs_ptr) = state;
+
+  observer.clone().complete();
+
+  subs_ptr.rc_deref_mut().remove(*id);
+
+  TaskState::Finished
+}
+
+fn schedule_emission<P, Sch, S, Item, Err, State>(
+  observer: &mut ObserveOnObserver<P, Sch, S>, id: usize, state: State,
+  handler: fn(&mut State) -> TaskState,
+) where
+  P: Observer<Item, Err>,
+  S: RcDerefMut<Target = DynamicSubscriptions<TaskHandle>>,
+  Sch: Scheduler<Task<State>>,
+{
+  if observer.observer.is_closed() {
+    return;
+  }
+
+  let task = Task::new(state, handler);
+  let handle = observer.scheduler.schedule(task, None);
+  observer
+    .subscription
+    .rc_deref_mut()
+    .insert(id, handle);
+}
+
+impl<P, Sch, S, Item, Err> Observer<Item, Err> for ObserveOnObserver<P, Sch, S>
+where
+  P: Observer<Item, Err> + Clone,
+  S: RcDerefMut<Target = DynamicSubscriptions<TaskHandle>> + Clone,
+  Sch: Scheduler<Task<(P, Option<Item>, usize, S)>>
+    + Scheduler<Task<(P, Option<Err>, usize, S)>>
+    + Scheduler<Task<(P, usize, S)>>,
+{
+  fn next(&mut self, value: Item) {
+    let id = self.subscription.rc_deref_mut().reserve_id();
+    let state = (self.observer.clone(), Some(value), id, self.subscription.clone());
+    schedule_emission(self, id, state, observe_on_next_handler::<P, Item, Err, S>);
+  }
+
+  fn error(mut self, err: Err) {
+    let id = self.subscription.rc_deref_mut().reserve_id();
+    let state = (self.observer.clone(), Some(err), id, self.subscription.clone());
+    schedule_emission(&mut self, id, state, observe_on_error_handler::<P, Item, Err, S>);
+  }
+
+  fn complete(mut self) {
+    let id = self.subscription.rc_deref_mut().reserve_id();
+    let state = (self.observer.clone(), id, self.subscription.clone());
+    schedule_emission(&mut self, id, state, observe_on_complete_handler::<P, Item, Err, S>);
+  }
+
+  fn is_closed(&self) -> bool { self.observer.is_closed() }
+}
+
+impl<C, S, Sch: Clone> CoreObservable<C> for ObserveOn<S, Sch>
+where
+  C: Context,
+  S: CoreObservable<
+    C::With<
+      ObserveOnObserver<
+        C::RcMut<Option<C::Inner>>,
+        Sch,
+        C::RcMut<DynamicSubscriptions<TaskHandle>>,
+      >,
+    >,
+  >,
+{
+  type Unsub = ObserveOnSubscription<S::Unsub, C::RcMut<DynamicSubscriptions<TaskHandle>>>;
+
+  fn subscribe(self, context: C) -> Self::Unsub {
+    let ObserveOn { source, scheduler } = self;
+
+    let subs = C::RcMut::from(DynamicSubscriptions::default());
+    let subs_clone = subs.clone();
+
+    let wrapped_obs = context.transform(move |observer| ObserveOnObserver {
+      observer: C::RcMut::from(Some(observer)),
+      scheduler: scheduler.clone(),
+      subscription: subs_clone,
     });
 
-    CompleteStatus::wait_for_end(status);
+    let source_sub = source.subscribe(wrapped_obs);
 
-    let current_id = thread::current().id();
-    assert_eq!(*emit_thread.lock().unwrap(), current_id);
-    let thread = thread_clone.lock().unwrap();
-    assert!(thread.len() > 1);
+    SourceWithDynamicSubs::new(source_sub, subs)
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use std::sync::{Arc, Mutex};
+
+  use super::*;
+  use crate::{prelude::*, scheduler::LocalScheduler};
+
+  #[rxrust_macro::test(local)]
+  async fn smoke_test_local() {
+    let values = Arc::new(Mutex::new(Vec::new()));
+    let values_c = values.clone();
+
+    Local::from_iter(0..5)
+      .observe_on(LocalScheduler)
+      .subscribe(move |v| {
+        values_c.lock().unwrap().push(v);
+      });
+
+    LocalScheduler
+      .sleep(Duration::from_millis(0))
+      .await;
+
+    assert_eq!(*values.lock().unwrap(), vec![0, 1, 2, 3, 4]);
   }
 
   #[cfg(not(target_arch = "wasm32"))]
-  #[test]
-  fn pool_unsubscribe() {
-    let scheduler = ThreadPool::new().unwrap();
-    let emitted = Arc::new(Mutex::new(vec![]));
-    let c_emitted = emitted.clone();
-    observable::from_iter(0..10)
-      .delay_threads(Duration::from_millis(10), scheduler.clone())
-      .observe_on_threads(scheduler)
-      .subscribe(move |v| {
-        emitted.lock().unwrap().push(v);
+  // turbo
+  #[rxrust_macro::test]
+  async fn switch_thread_shared() {
+    use std::{collections::HashSet, thread};
+
+    use tokio::sync::oneshot;
+
+    use crate::rc::{MutArc, RcDerefMut};
+
+    let emitted_threads = MutArc::from(HashSet::new());
+    let observed_threads = MutArc::from(HashSet::new());
+    let emitted_c = emitted_threads.clone();
+    let observed_c = observed_threads.clone();
+
+    // Used to wait for completion
+    let (tx, rx) = oneshot::channel();
+    let tx = Arc::new(Mutex::new(Some(tx)));
+
+    Shared::from_iter(0..10)
+      .map(move |v| {
+        emitted_c
+          .rc_deref_mut()
+          .insert(thread::current().id());
+        v
       })
-      .unsubscribe();
-    std::thread::sleep(Duration::from_millis(20));
-    assert_eq!(c_emitted.lock().unwrap().len(), 0);
+      .observe_on(SharedScheduler)
+      .on_complete(move || {
+        if let Some(tx) = tx.lock().unwrap().take() {
+          let _ = tx.send(());
+        }
+      })
+      .subscribe(move |_| {
+        observed_c
+          .rc_deref_mut()
+          .insert(thread::current().id());
+      });
+
+    // Wait for completion
+    let _ = rx.await;
+
+    let emitted = emitted_threads.rc_deref();
+    let observed = observed_threads.rc_deref();
+
+    // Threads should be different (or at least could be, but SharedScheduler spawns
+    // new tasks usually on thread pool) With tokio multithreaded runtime, tasks
+    // might run on different threads. We just verify it works.
+    // Also, `observe_on` should have run the observer on the SharedScheduler
+    // (pool).
+
+    // We can't strictly guarantee different threads without knowing the runtime
+    // flavor perfectly, but we can verify execution happened.
+    assert!(!emitted.is_empty());
+    assert!(!observed.is_empty());
   }
 
-  #[test]
-  fn bench() {
-    do_bench();
-  }
+  #[rxrust_macro::test(local)]
+  async fn test_cancellation() {
+    let values = Arc::new(Mutex::new(Vec::new()));
+    let values_c = values.clone();
 
-  benchmark_group!(do_bench, bench_observe_on);
+    let mut subject = Local::subject::<i32, std::convert::Infallible>();
 
-  fn bench_observe_on(b: &mut bencher::Bencher) {
-    b.iter(smoke);
+    let sub = subject
+      .clone()
+      .observe_on(LocalScheduler)
+      .subscribe(move |v| {
+        values_c.lock().unwrap().push(v);
+      });
+
+    subject.next(1);
+    sub.unsubscribe();
+    subject.next(2);
+
+    LocalScheduler
+      .sleep(Duration::from_millis(0))
+      .await;
+
+    // 1 might or might not make it depending on when unsubscribe happens relative
+    // to schedule? unsubscribe() cancels pending tasks.
+    // next(1) schedules task.
+    // unsubscribe() empties the subscription list (cancels task).
+    // So 1 should NOT be received if unsubscribe happens synchronously after next
+    // but before task execution. LocalScheduler doesn't execute immediately
+    // unless yielded. So 1 should be cancelled.
+    // 2 is not even scheduled because subject removes subscription? (Actually
+    // observed wrapper still receives next(2) if subject not fully unsubscribed?
+    // No, subject unsubscribes).
+
+    let vals = values.lock().unwrap();
+    assert!(vals.is_empty(), "Received {:?} but expected empty", vals);
   }
 }

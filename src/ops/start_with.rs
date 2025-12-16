@@ -1,97 +1,145 @@
-use crate::prelude::*;
+//! StartWith operator implementation
+//!
+//! Emits specified items before beginning to emit items from the source
+//! Observable.
 
+use crate::{
+  context::Context,
+  observable::{CoreObservable, ObservableType},
+  observer::Observer,
+};
+
+/// StartWith operator: Emits specified values before the source values
+///
+/// This operator prepends provided items to the source observable,
+/// emitting them immediately before subscribing to the source.
+///
+/// # Examples
+///
+/// ```
+/// use rxrust::prelude::*;
+///
+/// let mut result = Vec::new();
+/// Local::from_iter([3, 4, 5])
+///   .start_with(vec![1, 2])
+///   .subscribe(|v| result.push(v));
+/// assert_eq!(result, vec![1, 2, 3, 4, 5]);
+/// ```
 #[derive(Clone)]
-pub struct StartWithOp<S, B> {
-  pub(crate) source: S,
-  pub(crate) values: Vec<B>,
+pub struct StartWith<S, Item> {
+  pub source: S,
+  pub values: Vec<Item>,
 }
 
-impl<Item, Err, O, S> Observable<Item, Err, O> for StartWithOp<S, Item>
+impl<S, Item> ObservableType for StartWith<S, Item>
 where
-  S: Observable<Item, Err, O>,
-  O: Observer<Item, Err>,
+  S: ObservableType,
+{
+  type Item<'a>
+    = Item
+  where
+    Self: 'a;
+  type Err = S::Err;
+}
+
+impl<S, C, Item> CoreObservable<C> for StartWith<S, Item>
+where
+  C: Context,
+  C::Inner: Observer<Item, S::Err>,
+  S: CoreObservable<C>,
 {
   type Unsub = S::Unsub;
 
-  fn actual_subscribe(self, mut observer: O) -> Self::Unsub {
-    for val in self.values {
-      observer.next(val);
+  fn subscribe(self, mut context: C) -> Self::Unsub {
+    let StartWith { source, values } = self;
+    let observer = context.inner_mut();
+
+    // Emit all initial values first
+    for value in values {
+      if observer.is_closed() {
+        break;
+      }
+      observer.next(value);
     }
 
-    self.source.actual_subscribe(observer)
+    source.subscribe(context)
   }
-}
-
-impl<Item, Err, S> ObservableExt<Item, Err> for StartWithOp<S, Item> where
-  S: ObservableExt<Item, Err>
-{
 }
 
 #[cfg(test)]
-mod test {
-  use crate::observable::fake_timer::FakeClock;
-  use crate::of_sequence;
+mod tests {
+  use std::{cell::RefCell, rc::Rc};
+
   use crate::prelude::*;
-  use std::cell::RefCell;
-  use std::rc::Rc;
-  use std::time::Duration;
 
-  #[test]
-  fn simple_integer() {
-    let mut ret = String::new();
+  #[rxrust_macro::test]
+  fn test_start_with_integers() {
+    let result = Rc::new(RefCell::new(Vec::new()));
+    let result_clone = result.clone();
 
-    {
-      let s = of_sequence!(1, 2, 3);
-
-      s.start_with(vec![-1, 0]).subscribe(|value| {
-        ret.push_str(&value.to_string());
+    Local::from_iter([1, 2, 3])
+      .start_with(vec![-1, 0])
+      .subscribe(move |v| {
+        result_clone.borrow_mut().push(v);
       });
-    }
 
-    assert_eq!(ret, "-10123");
+    assert_eq!(*result.borrow(), vec![-1, 0, 1, 2, 3]);
   }
 
-  #[test]
-  fn simple_string() {
-    let mut ret = String::new();
+  #[rxrust_macro::test]
+  fn test_start_with_strings() {
+    let result = Rc::new(RefCell::new(String::new()));
+    let result_clone = result.clone();
 
-    {
-      let s = of_sequence!(" World!", " Goodbye", " World!");
-
-      s.start_with(vec!["Hello"]).subscribe(|value| {
-        ret.push_str(value);
+    Local::from_iter([" World!", " Goodbye", " World!"])
+      .start_with(vec!["Hello"])
+      .subscribe(move |v| {
+        result_clone.borrow_mut().push_str(v);
       });
-    }
 
-    assert_eq!(ret, "Hello World! Goodbye World!");
+    assert_eq!(*result.borrow(), "Hello World! Goodbye World!");
   }
 
-  #[test]
-  fn should_start_on_subscription() {
-    let clock = FakeClock::default();
-    let values = Rc::new(RefCell::new(vec![]));
-    let interval = clock.interval(Duration::from_millis(100));
+  #[rxrust_macro::test]
+  fn test_start_with_empty_values() {
+    let result = Rc::new(RefCell::new(Vec::new()));
+    let result_clone = result.clone();
 
-    {
-      let values = values.clone();
-      interval
-        .start_with(vec![0])
-        .subscribe(move |v| values.borrow_mut().push(v));
-    }
+    Local::from_iter([1, 2, 3])
+      .start_with(vec![])
+      .subscribe(move |v| {
+        result_clone.borrow_mut().push(v);
+      });
 
-    clock.advance(Duration::from_millis(10));
-    assert_eq!(values.borrow().len(), 1);
-    assert_eq!(values.borrow().as_ref(), vec![0]);
+    assert_eq!(*result.borrow(), vec![1, 2, 3]);
   }
 
-  #[test]
-  fn bench() {
-    do_bench();
+  #[rxrust_macro::test]
+  fn test_start_with_single_value() {
+    let result = Rc::new(RefCell::new(Vec::new()));
+    let result_clone = result.clone();
+
+    Local::from_iter([2, 3])
+      .start_with(vec![1])
+      .subscribe(move |v| {
+        result_clone.borrow_mut().push(v);
+      });
+
+    assert_eq!(*result.borrow(), vec![1, 2, 3]);
   }
 
-  benchmark_group!(do_bench, bench_start_with);
+  #[rxrust_macro::test]
+  fn test_start_with_chained() {
+    let result = Rc::new(RefCell::new(Vec::new()));
+    let result_clone = result.clone();
 
-  fn bench_start_with(b: &mut bencher::Bencher) {
-    b.iter(simple_integer);
+    Local::from_iter([5])
+      .start_with(vec![3, 4])
+      .start_with(vec![1, 2])
+      .subscribe(move |v| {
+        result_clone.borrow_mut().push(v);
+      });
+
+    assert_eq!(*result.borrow(), vec![1, 2, 3, 4, 5]);
   }
 }

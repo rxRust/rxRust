@@ -1,174 +1,177 @@
-use crate::prelude::*;
-use std::{convert::Infallible, iter::RepeatN};
+//! FromIter operator implementation
+//!
+//! Creates an Observable from an Iterator that emits each item synchronously
+//! when subscribed.
 
-/// Creates an observable that produces values from an iterator.
+use std::convert::Infallible;
+
+use crate::{
+  context::Context,
+  observable::{CoreObservable, ObservableType},
+  observer::Observer,
+};
+
+/// Creates an Observable from an Iterator that emits each item synchronously
+/// when subscribed.
 ///
-/// Completes when all elements have been emitted. Never emits an error.
-///
-/// # Arguments
-///
-/// * `iter` - An iterator to get all the values from.
+/// This operator converts an iterator into an observable that emits all items
+/// from the iterator in order when subscribed.
 ///
 /// # Examples
 ///
-/// A simple example for a range:
-///
 /// ```
 /// use rxrust::prelude::*;
 ///
-/// observable::from_iter(0..10)
-///   .subscribe(|v| {println!("{},", v)});
+/// // Create an observable from a range
+/// let obs = Local::from_iter(0..5);
+/// obs.subscribe(|value| println!("Value: {}", value));
+/// // Output: Value: 0, Value: 1, Value: 2, Value: 3, Value: 4
 /// ```
-///
-/// Or with a vector:
-///
-/// ```
-/// use rxrust::prelude::*;
-///
-/// observable::from_iter(vec![0,1,2,3])
-///   .subscribe(|v| {println!("{},", v)});
-/// ```
-pub fn from_iter<Iter>(iter: Iter) -> ObservableIter<Iter>
+pub fn from_iter<Iter>(iter: Iter) -> FromIter<Iter>
 where
   Iter: IntoIterator,
 {
-  ObservableIter(iter)
+  FromIter { iter }
 }
 
+/// Observable that emits all items from an iterator when subscribed.
 #[derive(Clone)]
-pub struct ObservableIter<Iter>(Iter);
+pub struct FromIter<Iter> {
+  iter: Iter,
+}
 
-impl<O, Iter> Observable<Iter::Item, Infallible, O> for ObservableIter<Iter>
+impl<Iter> ObservableType for FromIter<Iter>
 where
   Iter: IntoIterator,
-  O: Observer<Iter::Item, Infallible>,
+{
+  type Item<'a>
+    = Iter::Item
+  where
+    Self: 'a;
+  type Err = Infallible;
+}
+
+impl<C, Iter> CoreObservable<C> for FromIter<Iter>
+where
+  C: Context,
+  C::Inner: Observer<Iter::Item, Infallible>,
+  Iter: IntoIterator,
 {
   type Unsub = ();
 
-  fn actual_subscribe(self, mut observer: O) -> Self::Unsub {
-    for v in self.0.into_iter() {
-      if observer.is_finished() {
+  fn subscribe(self, context: C) -> Self::Unsub {
+    let mut observer = context.into_inner();
+
+    for item in self.iter {
+      if observer.is_closed() {
         break;
       }
-
-      observer.next(v);
+      observer.next(item);
     }
 
-    observer.complete();
+    if !observer.is_closed() {
+      observer.complete();
+    }
   }
-}
-
-impl<Iter> ObservableExt<Iter::Item, Infallible> for ObservableIter<Iter> where
-  Iter: IntoIterator
-{
-}
-
-/// Creates an observable producing same value repeated N times.
-///
-/// Completes immediately after emitting N values. Never emits an error.
-///
-/// # Arguments
-///
-/// * `v` - A value to emits.
-/// * `n` - A number of time to repeat it.
-///
-/// # Examples
-///
-/// ```
-/// use rxrust::prelude::*;
-///
-/// observable::repeat(123, 3)
-///   .subscribe(|v| {println!("{},", v)});
-///
-/// // print log:
-/// // 123
-/// // 123
-/// // 123
-/// ```
-pub fn repeat<Item>(v: Item, n: usize) -> ObservableIter<RepeatN<Item>>
-where
-  Item: Clone,
-{
-  from_iter(std::iter::repeat_n(v, n))
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
+  use std::{cell::RefCell, rc::Rc};
+
   use crate::prelude::*;
-  use bencher::Bencher;
 
-  #[test]
-  fn from_range() {
-    let mut hit_count = 0;
-    let mut completed = false;
-    observable::from_iter(0..100)
-      .on_complete(|| completed = true)
-      .subscribe(|_| hit_count += 1);
+  #[rxrust_macro::test(local)]
+  async fn test_from_iter_basic() {
+    let result = Rc::new(RefCell::new(Vec::new()));
+    let result_clone = result.clone();
 
-    assert_eq!(hit_count, 100);
-    assert!(completed);
+    Local::from_iter([1, 2, 3]).subscribe(move |v| {
+      result_clone.borrow_mut().push(v);
+    });
+
+    assert_eq!(*result.borrow(), vec![1, 2, 3]);
   }
 
-  #[test]
-  fn from_range_with_take() {
-    let mut hit_count = 0;
-    let mut completed = false;
-    observable::from_iter(0..)
+  #[rxrust_macro::test(local)]
+  async fn test_from_iter_range() {
+    let result = Rc::new(RefCell::new(Vec::new()));
+    let result_clone = result.clone();
+
+    Local::from_iter(0..5).subscribe(move |v| {
+      result_clone.borrow_mut().push(v);
+    });
+
+    assert_eq!(*result.borrow(), vec![0, 1, 2, 3, 4]);
+  }
+
+  #[rxrust_macro::test(local)]
+  async fn test_from_iter_empty() {
+    let result = Rc::new(RefCell::new(Vec::new()));
+    let completed = Rc::new(RefCell::new(false));
+    let result_clone = result.clone();
+    let completed_clone = completed.clone();
+
+    Local::from_iter(std::iter::empty::<i32>())
+      .on_complete(move || *completed_clone.borrow_mut() = true)
+      .subscribe(move |v| {
+        result_clone.borrow_mut().push(v);
+      });
+
+    assert!(result.borrow().is_empty());
+    assert!(*completed.borrow());
+  }
+
+  #[rxrust_macro::test(local)]
+  async fn test_from_iter_vec() {
+    let result = Rc::new(RefCell::new(Vec::new()));
+    let completed = Rc::new(RefCell::new(false));
+    let result_clone = result.clone();
+    let completed_clone = completed.clone();
+
+    Local::from_iter(vec![0; 5])
+      .on_complete(move || *completed_clone.borrow_mut() = true)
+      .subscribe(move |v| {
+        result_clone.borrow_mut().push(v);
+      });
+
+    assert_eq!(result.borrow().len(), 5);
+    assert_eq!(*result.borrow(), vec![0, 0, 0, 0, 0]);
+    assert!(*completed.borrow());
+  }
+
+  #[rxrust_macro::test(local)]
+  async fn test_from_iter_with_take() {
+    let result = Rc::new(RefCell::new(Vec::new()));
+    let completed = Rc::new(RefCell::new(false));
+    let result_clone = result.clone();
+    let completed_clone = completed.clone();
+
+    Local::from_iter(0..)
       .take(5)
-      .on_complete(|| completed = true)
-      .subscribe(|_| hit_count += 1);
-
-    assert_eq!(hit_count, 5);
-    assert!(completed);
-  }
-
-  #[test]
-  fn from_vec() {
-    let mut hit_count = 0;
-    let mut completed = false;
-    observable::from_iter(vec![0; 100])
-      .on_complete(|| completed = true)
-      .subscribe(|_| hit_count += 1);
-
-    assert_eq!(hit_count, 100);
-    assert!(completed);
-  }
-
-  #[test]
-  fn repeat_three_times() {
-    let mut hit_count = 0;
-    let mut completed = false;
-    repeat(123, 5)
-      .on_complete(|| completed = true)
-      .subscribe(|v| {
-        hit_count += 1;
-        assert_eq!(123, v);
+      .on_complete(move || *completed_clone.borrow_mut() = true)
+      .subscribe(move |v| {
+        result_clone.borrow_mut().push(v);
       });
-    assert_eq!(5, hit_count);
-    assert!(completed);
+
+    assert_eq!(*result.borrow(), vec![0, 1, 2, 3, 4]);
+    assert!(*completed.borrow());
   }
 
-  #[test]
-  fn repeat_zero_times() {
-    let mut hit_count = 0;
-    let mut completed = false;
-    repeat(123, 0)
-      .on_complete(|| completed = true)
-      .subscribe(|v| {
-        hit_count += 1;
-        assert_eq!(123, v);
+  #[rxrust_macro::test(local)]
+  async fn test_from_iter_factory_method() {
+    let result = Rc::new(RefCell::new(Vec::new()));
+    let completed = Rc::new(RefCell::new(false));
+    let result_clone = result.clone();
+    let completed_clone = completed.clone();
+
+    Local::from_iter(0..3)
+      .on_complete(move || *completed_clone.borrow_mut() = true)
+      .subscribe(move |v| {
+        result_clone.borrow_mut().push(v);
       });
-    assert_eq!(0, hit_count);
-    assert!(completed);
-  }
-  #[test]
-  fn bench() {
-    do_bench();
-  }
 
-  benchmark_group!(do_bench, bench_from_iter);
-
-  fn bench_from_iter(b: &mut Bencher) {
-    b.iter(from_range);
+    assert_eq!(*result.borrow(), vec![0, 1, 2]);
+    assert!(*completed.borrow());
   }
 }

@@ -1,2093 +1,2453 @@
-#![macro_use]
+//! Observable traits and type inference
+//!
+//! This module contains CoreObservable, Observable traits.
+//!
+//! The architecture has two layers:
+//! 1. CoreObservable<O>: The pure logic kernel, generic over observer context
+//! 2. Observable: User-facing trait with inferred Item/Err types via
+//!    ObservableType
 
-mod trivial;
-use std::hash::*;
-use std::sync::Arc;
-pub use trivial::*;
-mod from_iter;
-pub use from_iter::{from_iter, repeat};
-
-pub mod of;
-pub use of::{of, of_fn, of_option, of_result};
-
-pub(crate) mod from_future;
-pub use from_future::{from_future, from_future_result};
-
-pub(crate) mod from_stream;
-pub(crate) mod from_stream_result;
-pub use from_stream::from_stream;
-pub use from_stream_result::from_stream_result;
-
-pub mod interval;
-pub use interval::{interval, interval_at};
-
-pub(crate) mod connectable_observable;
-pub use connectable_observable::ConnectableObservable;
-
+// Submodules
+pub mod boxed;
+pub mod connectable;
+pub mod create;
+pub mod defer;
 pub mod from_fn;
-pub use from_fn::*;
-
+pub mod from_future;
+pub mod from_iter;
+pub mod from_stream;
+pub mod interval;
+pub mod of;
 pub mod timer;
-pub use timer::{timer, timer_at};
+pub mod trivial;
 
-pub mod start;
-pub use start::start;
+// Re-exports
+// Standard library imports
 
-use crate::prelude::*;
-
-mod subscribe_item;
-pub use subscribe_item::*;
-mod defer;
+pub use boxed::*;
+pub use connectable::*;
+pub use create::*;
 pub use defer::*;
+pub use from_fn::*;
+pub use from_future::FromFuture;
+pub use from_iter::*;
+pub use from_stream::{FromStream, FromStreamResult};
+pub use interval::*;
+pub use of::*;
+pub use timer::*;
+pub use trivial::*;
 
-use crate::ops::collect::CollectOp;
-use crate::ops::combine_latest::CombineLatestOpThread;
-use crate::ops::complete_status::{CompleteStatus, StatusOp};
-use crate::ops::delay::{DelayOpThreads, DelaySubscriptionOp};
-use crate::ops::finalize::FinalizeOpThreads;
-use crate::ops::future::{ObservableFuture, ObservableFutureObserver};
-use crate::ops::merge::MergeOpThreads;
-use crate::ops::merge_all::MergeAllOpThreads;
-use crate::ops::observe_on::ObserveOnOpThreads;
-use crate::ops::on_complete::OnCompleteOp;
-use crate::ops::on_error::OnErrorOp;
-use crate::ops::ref_count::{ShareOp, ShareOpThreads};
-use crate::ops::retry::{RetryOp, RetryThreadsOp, SimpleRetryConfig};
-use crate::ops::sample::SampleOpThreads;
-use crate::ops::skip_until::SkipUntilOpThreads;
-use crate::ops::stream::{ObservableStream, ObservableStreamObserver};
-use crate::ops::take_until::TakeUntilOpThreads;
-use crate::ops::timestamp::TimestampOp;
-use crate::ops::with_latest_from::WithLatestFromOpThreads;
-use crate::ops::zip::ZipOpThreads;
-use crate::ops::FlatMapOpThreads;
-pub use ops::box_it::BoxIt;
-
-use crate::ops::default_if_empty::DefaultIfEmptyOp;
-use crate::ops::distinct::{DistinctKeyOp, DistinctUntilKeyChangedOp};
-use crate::ops::on_error_map::OnErrorMapOp;
-use crate::ops::pairwise::PairwiseOp;
-use crate::ops::tap::TapOp;
-use ops::{
-  buffer::{
-    BufferOp, BufferWithCountOp, BufferWithCountOrTimerOp, BufferWithTimeOp,
-  },
-  combine_latest::CombineLatestOp,
-  contains::ContainsOp,
-  debounce::DebounceOp,
-  delay::DelayOp,
-  distinct::DistinctOp,
-  distinct::DistinctUntilChangedOp,
-  filter::FilterOp,
-  filter_map::FilterMapOp,
-  finalize::FinalizeOp,
-  group_by::GroupByOp,
-  last::LastOp,
-  map::MapOp,
-  map_to::MapToOp,
-  merge::MergeOp,
-  merge_all::MergeAllOp,
-  observe_on::ObserveOnOp,
-  sample::SampleOp,
-  scan::ScanOp,
-  skip::SkipOp,
-  skip_last::SkipLastOp,
-  skip_until::SkipUntilOp,
-  skip_while::SkipWhileOp,
-  start_with::StartWithOp,
-  subscribe_on::SubscribeOnOP,
-  take::TakeOp,
-  take_last::TakeLastOp,
-  take_until::TakeUntilOp,
-  take_while::TakeWhileOp,
-  throttle::{ThrottleEdge, ThrottleOp},
-  with_latest_from::WithLatestFromOp,
-  zip::ZipOp,
-  Accum, AverageOp, CountOp, FlatMapOp, MinMaxOp, ReduceOp, SumOp,
+// Internal imports (avoid circular dependency with prelude)
+use crate::context::Context;
+use crate::ops::{
+  average::{Average, Averageable},
+  buffer::Buffer, // Restored
+  buffer_count::BufferCount,
+  buffer_time::BufferTime,
+  collect::Collect,
+  combine_latest::CombineLatest,
+  contains::Contains,
+  debounce::Debounce,
+  default_if_empty::DefaultIfEmpty,
+  delay::{Delay, DelaySubscriptionOp},
+  distinct::{Distinct, DistinctKey},
+  distinct_until_changed::{DistinctUntilChanged, DistinctUntilKeyChanged},
+  filter::Filter,
+  filter_map::FilterMap,
+  finalize::Finalize,
+  group_by::GroupBy,
+  into_future::{ObservableFuture, SupportsIntoFuture},
+  into_stream::SupportsIntoStream,
+  last::Last,
+  lifecycle::{OnComplete, OnError},
+  map::Map,
+  map_err::MapErr,
+  map_to::MapTo,
+  merge::Merge,
+  merge_all::MergeAll,
+  observe_on::ObserveOn,
+  pairwise::Pairwise,
+  reduce::{Reduce, ReduceFn, ReduceInitialFn},
+  retry::{Retry, RetryPolicy},
+  sample::Sample,
+  scan::Scan,
+  skip::Skip,
+  skip_last::SkipLast,
+  skip_until::SkipUntil,
+  skip_while::SkipWhile,
+  start_with::StartWith,
+  subscribe_on::SubscribeOn,
+  switch_map::SwitchMap,
+  take::Take,
+  take_last::TakeLast,
+  take_until::TakeUntil,
+  take_while::TakeWhile,
+  tap::Tap,
+  throttle::{Throttle, ThrottleEdge, ThrottleWhenParam},
+  with_latest_from::WithLatestFrom,
+  zip::Zip,
 };
-use std::ops::{Add, Mul};
-#[cfg(test)]
-pub mod fake_timer;
+use crate::{
+  observer::FnMutObserver,
+  scheduler::{Duration, Instant},
+  subject::{Subject, SubjectPtr, SubjectPtrMutRef},
+  subscription::Subscription,
+};
 
-type ALLOp<S, F, Item> = DefaultIfEmptyOp<
-  TakeOp<FilterOp<MapOp<S, F, Item>, fn(&bool) -> bool>>,
-  bool,
->;
-
-pub trait Observable<Item, Err, O>
-where
-  O: Observer<Item, Err>,
-{
-  type Unsub: Subscription;
-
-  fn actual_subscribe(self, observer: O) -> Self::Unsub;
+/// The Public Type Trait
+/// This trait purely exposes the types. It is what users see in error messages
+/// and documentation.
+pub trait ObservableType {
+  type Item<'a>
+  where
+    Self: 'a;
+  type Err;
 }
 
-pub trait ObservableExt<Item, Err>: Sized {
-  /// emit only the first item emitted by an Observable
-  #[inline]
-  fn first(self) -> TakeOp<Self> {
-    self.take(1)
-  }
+/// CoreObservable: The publisher kernel
+///
+/// This trait represents the pure logic of an observable sequence.
+/// It is generic over the observer context (O), which allows the same
+/// logic to work with both Local and Shared contexts.
+pub trait CoreObservable<O>: ObservableType {
+  /// The subscription handle returned when subscribing
+  type Unsub: Subscription;
 
-  /// emit only the first item emitted by an Observable
-  fn first_or(self, default: Item) -> DefaultIfEmptyOp<TakeOp<Self>, Item> {
-    DefaultIfEmptyOp::new(self.first(), default)
-  }
-
-  /// Emit only the last final item emitted by a source observable or a
-  /// default item given.
+  /// Subscribe an observer to this observable
   ///
-  /// Completes right after emitting the single item. Emits error when
-  /// source observable emits it.
+  /// The observer parameter is typically a Context wrapping the actual
+  /// observer.
+  fn subscribe(self, observer: O) -> Self::Unsub;
+}
+
+/// Observable: The user-facing API
+///
+/// This trait extends Context and provides a clean API where users can see
+/// the Item and Err types.
+pub trait Observable: Context {
+  /// The type of values emitted by this observable
+  type Item<'a>
+  where
+    Self: 'a;
+
+  /// The type of errors emitted by this observable
+  type Err;
+
+  /// Subscribe with a closure for the next values.
+  ///
+  /// This is the primary subscription method, optimized for ergonomics.
+  fn subscribe<F, U>(self, f: F) -> U
+  where
+    F: for<'a> FnMut(Self::Item<'a>),
+    Self::Inner: CoreObservable<Self::With<FnMutObserver<F>>, Unsub = U>,
+  {
+    let wrapped = Self::lift(FnMutObserver(f));
+    self.into_inner().subscribe(wrapped)
+  }
+
+  /// Subscribe with a full Observer implementation.
+  ///
+  /// Use this method when you need to handle `error` and `complete` explicitly,
+  /// or when subscribing a Subject/custom Observer struct.
+  fn subscribe_with<O>(self, observer: O) -> <Self::Inner as CoreObservable<Self::With<O>>>::Unsub
+  where
+    Self::Inner: CoreObservable<Self::With<O>>,
+  {
+    let (core, wrapped) = self.swap(observer);
+    core.subscribe(wrapped)
+  }
+
+  /// Apply a transformation to the values emitted by this observable
+  ///
+  /// This is a higher-order operator that returns a new observable
+  /// with the transformed values.
+  #[cfg(not(feature = "nightly"))]
+  fn map<F, Out>(self, f: F) -> Self::With<Map<Self::Inner, F>>
+  where
+    F: for<'a> FnMut(Self::Item<'a>) -> Out,
+  {
+    self.transform(|core| Map { source: core, func: f })
+  }
+
+  #[cfg(feature = "nightly")]
+  fn map<F>(self, f: F) -> Self::With<Map<Self::Inner, F>>
+  where
+    F: for<'a> FnMut<(Self::Item<'a>,)>,
+  {
+    self.transform(|core| Map { source: core, func: f })
+  }
+
+  /// Map every emission to a constant value
+  ///
+  /// This operator maps every emission from the source observable to a constant
+  /// value. It requires the constant value to be `Clone` since it is emitted
+  /// multiple times.
+  fn map_to<B>(self, value: B) -> Self::With<MapTo<Self::Inner, B>>
+  where
+    B: Clone,
+  {
+    self.transform(|core| MapTo { source: core, value })
+  }
+
+  /// Filter items emitted by the source observable
+  ///
+  /// This operator emits only those items from the source Observable that pass
+  /// a predicate test. Items that cause the predicate to return false are
+  /// simply not emitted and are discarded.
+  ///
+  /// # Arguments
+  ///
+  /// * `filter` - A predicate function that takes a reference to an item and
+  ///   returns true if it should be emitted
+  ///
+  /// # Type Parameters
+  ///
+  /// * `F` - The predicate function type
+  ///
+  /// # Examples
+  ///
+  /// ```rust
+  /// use rxrust::prelude::*;
+  ///
+  /// let observable = Local::from_iter([1, 2, 3, 4, 5]).filter(|v| v % 2 == 0);
+  /// // Emits: 2, 4
+  /// ```
+  fn filter<F>(self, filter: F) -> Self::With<Filter<Self::Inner, F>>
+  where
+    F: for<'a> FnMut(&Self::Item<'a>) -> bool,
+  {
+    self.transform(|source| Filter { source, filter })
+  }
+
+  /// Emit only items that have not been emitted before
+  ///
+  /// This operator filters out duplicate items, emitting only the first
+  /// occurrence of each identical item. It uses a `HashSet` to keep track of
+  /// seen items.
+  ///
+  /// # Requirements
+  ///
+  /// * `Item` must implement `Eq`, `Hash`, and `Clone`.
+  ///
+  /// # Examples
+  ///
+  /// ```rust
+  /// use rxrust::prelude::*;
+  ///
+  /// let observable = Local::from_iter([1, 2, 2, 3, 1, 3, 4]).distinct();
+  /// // Emits: 1, 2, 3, 4
+  /// ```
+  fn distinct(self) -> Self::With<Distinct<Self::Inner>>
+  where
+    for<'a> Self::Item<'a>: Eq + std::hash::Hash + Clone,
+  {
+    self.transform(Distinct)
+  }
+
+  /// Emit only items where the key has not been emitted before
+  ///
+  /// This operator filters out items based on a key derived from each item.
+  /// Only the first item with a specific key is emitted.
+  ///
+  /// # Arguments
+  ///
+  /// * `key_selector` - A function that extracts a key from each item used for
+  ///   uniqueness
+  ///
+  /// # Requirements
+  ///
+  /// * `Key` must implement `Eq`, `Hash`, and `Clone`.
+  ///
+  /// # Examples
+  ///
+  /// ```rust
+  /// use rxrust::prelude::*;
+  ///
+  /// let observable = Local::from_iter([(1, "a"), (1, "b"), (2, "a")]).distinct_key(|(id, _)| *id);
+  /// // Emits: (1, "a"), (2, "a")
+  /// ```
+  fn distinct_key<F, Key>(self, key_selector: F) -> Self::With<DistinctKey<Self::Inner, F>>
+  where
+    F: for<'a> Fn(&Self::Item<'a>) -> Key,
+    Key: Eq + std::hash::Hash + Clone,
+  {
+    self.transform(|source| DistinctKey { source, key_selector })
+  }
+
+  /// Emit only items that are different from the previous item
+  ///
+  /// This operator filters out consecutive duplicate items.
+  ///
+  /// # Requirements
+  ///
+  /// * `Item` must implement `PartialEq` and `Clone`.
+  ///
+  /// # Examples
+  ///
+  /// ```rust
+  /// use rxrust::prelude::*;
+  ///
+  /// let observable = Local::from_iter([1, 2, 2, 3]).distinct_until_changed();
+  /// // Emits: 1, 2, 3
+  /// ```
+  fn distinct_until_changed(self) -> Self::With<DistinctUntilChanged<Self::Inner>>
+  where
+    for<'a> Self::Item<'a>: PartialEq + Clone,
+  {
+    self.transform(DistinctUntilChanged)
+  }
+
+  /// Emit items which are different from the previous item based on a key
+  /// selector
+  ///
+  /// This operator filters out consecutive items that have the same key.
+  ///
+  /// # Arguments
+  ///
+  /// * `key_selector` - A function that extracts a key from each item
+  ///
+  /// # Requirements
+  ///
+  /// * `Key` must implement `PartialEq`.
+  ///
+  /// # Examples
+  ///
+  /// ```rust
+  /// use rxrust::prelude::*;
+  ///
+  /// let observable =
+  ///   Local::from_iter([(1, 1), (1, 2), (2, 1)]).distinct_until_key_changed(|(k, _)| *k);
+  /// // Emits: (1, 1), (2, 1)
+  /// // Note: (1, 2) is skipped because its key (1) is same as previous (1)
+  /// ```
+  fn distinct_until_key_changed<F, Key>(
+    self, key_selector: F,
+  ) -> Self::With<DistinctUntilKeyChanged<Self::Inner, F>>
+  where
+    F: for<'a> Fn(&Self::Item<'a>) -> Key,
+    Key: PartialEq,
+  {
+    self.transform(|source| DistinctUntilKeyChanged { source, key_selector })
+  }
+
+  /// Apply a function to each item and emit only the Some values
+  ///
+  /// This operator maps each item to an Option<T>, emitting only the Some(T)
+  /// values. It effectively combines filtering and mapping in a single
+  /// operation, allowing you to transform values while simultaneously
+  /// filtering out None results.
+  ///
+  /// # Arguments
+  ///
+  /// * `f` - A function that takes an item and returns Option<Out>
+  ///
+  /// # Type Parameters
+  ///
+  /// * `Out` - The output type contained in the Option
+  /// * `F` - The filter_map function type
+  ///
+  /// # Examples
+  ///
+  /// ```rust
+  /// use rxrust::prelude::*;
+  ///
+  /// let observable =
+  ///   Local::from_iter(["1", "2", "invalid", "3"]).filter_map(|s| s.parse::<i32>().ok());
+  /// // Emits: 1, 2, 3
+  /// ```
+  fn filter_map<F, Out>(self, f: F) -> Self::With<FilterMap<Self::Inner, F>>
+  where
+    F: for<'a> FnMut(Self::Item<'a>) -> Option<Out>,
+  {
+    self.transform(|source| FilterMap { source, func: f })
+  }
+
+  /// Apply an accumulator function and emit each intermediate result
+  ///
+  /// This operator applies an accumulator function over the source Observable
+  /// and returns each intermediate result. It's similar to `reduce` but emits
+  /// the intermediate accumulations.
+  ///
+  /// # Arguments
+  ///
+  /// * `initial` - The initial accumulator value
+  /// * `f` - A function that takes the current accumulator and a value, and
+  ///   returns the new accumulator
+  ///
+  /// # Type Parameters
+  ///
+  /// * `Output` - The type of the accumulator value (must be Clone)
+  /// * `F` - The accumulator function type
+  ///
+  /// # Examples
+  ///
+  /// ```rust
+  /// use rxrust::prelude::*;
+  ///
+  /// let observable = Local::from_iter([1, 2, 3, 4]).scan(0, |acc, v| acc + v);
+  /// // Emits: 1, 3, 6, 10
+  /// ```
+  fn scan<Output, F>(self, initial: Output, f: F) -> Self::With<Scan<Self::Inner, F, Output>>
+  where
+    Output: Clone,
+    F: for<'a> FnMut(Output, Self::Item<'a>) -> Output,
+  {
+    self.transform(|source| Scan { source, func: f, initial_value: initial })
+  }
+
+  /// Emit only the first `count` values from the source observable
+  ///
+  /// This operator emits only the first `count` values emitted by the source
+  /// observable, then completes. If the source completes before emitting
+  /// `count` values, `take` will also complete early.
+  ///
+  /// # Arguments
+  ///
+  /// * `count` - The maximum number of values to emit
+  ///
+  /// # Examples
+  ///
+  /// ```rust
+  /// use rxrust::prelude::*;
+  ///
+  /// let observable = Local::from_iter([1, 2, 3, 4, 5]).take(3);
+  /// // Emits: 1, 2, 3
+  /// ```
+  fn take(self, count: usize) -> Self::With<Take<Self::Inner>> {
+    self.transform(|source| Take { source, count })
+  }
+
+  /// Emit only the first value from the source observable
+  ///
+  /// This operator emits only the first value emitted by the source
+  /// observable, then completes. If the source completes without emitting
+  /// any values, this operator will complete without emitting anything.
+  ///
+  /// This is equivalent to `take(1)`.
+  ///
+  /// # Examples
+  ///
+  /// ```rust
+  /// use rxrust::prelude::*;
+  ///
+  /// let observable = Local::from_iter([1, 2, 3]).first();
+  /// // Emits: 1
+  /// ```
+  fn first(self) -> Self::With<Take<Self::Inner>> { self.take(1) }
+
+  /// Emit the first value from the source observable, or a default if empty
+  ///
+  /// This operator emits the first value that was emitted. If the source
+  /// emits no values, it emits the provided default value instead.
+  ///
+  /// This is equivalent to `take(1).default_if_empty(default_value)`.
+  ///
+  /// # Arguments
+  ///
+  /// * `default_value` - The default value to emit if the source emits no
+  ///   values
+  ///
+  /// # Examples
+  ///
+  /// ```rust
+  /// use rxrust::prelude::*;
+  ///
+  /// // With values - emits the first value
+  /// let observable = Local::from_iter([1, 2, 3]).first_or(0);
+  /// // Emits: 1
+  ///
+  /// // Without values - emits the default
+  /// let observable = Local::from_iter(std::iter::empty::<i32>()).first_or(0);
+  /// // Emits: 0
+  /// ```
+  fn first_or<'a>(
+    self, default_value: Self::Item<'a>,
+  ) -> Self::With<DefaultIfEmpty<Take<Self::Inner>, Self::Item<'a>>> {
+    self.transform(|source| DefaultIfEmpty { source: Take { source, count: 1 }, default_value })
+  }
+
+  /// Skip the first `count` values from the source observable
+  ///
+  /// This operator ignores the first `count` values emitted by the source
+  /// observable, then emits all subsequent values. If the source completes
+  /// before emitting `count` values, `skip` will complete without emitting
+  /// any values.
+  ///
+  /// # Arguments
+  ///
+  /// * `count` - The number of values to skip
+  ///
+  /// # Examples
+  ///
+  /// ```rust
+  /// use rxrust::prelude::*;
+  ///
+  /// let observable = Local::from_iter([1, 2, 3, 4, 5]).skip(2);
+  /// // Emits: 3, 4, 5
+  /// ```
+  fn skip(self, count: usize) -> Self::With<Skip<Self::Inner>> {
+    self.transform(|source| Skip { source, count })
+  }
+
+  /// Emit only the last `count` values from the source observable
+  ///
+  /// This operator buffers the last `count` values emitted by the source
+  /// observable. When the source completes, it emits all buffered values
+  /// in order and then completes. If the source emits fewer than `count`
+  /// values, all values are emitted.
+  ///
+  /// # Arguments
+  ///
+  /// * `count` - The maximum number of last values to emit
+  ///
+  /// # Examples
+  ///
+  /// ```rust
+  /// use rxrust::prelude::*;
+  ///
+  /// let observable = Local::from_iter([1, 2, 3, 4, 5]).take_last(3);
+  /// // Emits: 3, 4, 5
+  /// ```
+  fn take_last(self, count: usize) -> Self::With<TakeLast<Self::Inner>> {
+    self.transform(|source| TakeLast { source, count })
+  }
+
+  /// Emit only the last value from the source observable
+  ///
+  /// This operator waits for the source to complete, then emits only the
+  /// last value that was emitted. If the source emits no values, this operator
+  /// will complete without emitting anything.
+  ///
+  /// # Examples
+  ///
+  /// ```rust
+  /// use rxrust::prelude::*;
+  ///
+  /// let observable = Local::from_iter([1, 2, 3, 4, 5]).last();
+  /// // Emits: 5
+  /// ```
+  fn last(self) -> Self::With<Last<Self::Inner>> { self.transform(|source| Last { source }) }
+
+  /// Emit the last value from the source observable, or a default if empty
+  ///
+  /// This operator waits for the source to complete, then emits the last value
+  /// that was emitted. If the source emits no values, it emits the provided
+  /// default value instead.
+  ///
+  /// This is equivalent to `last().default_if_empty(default_value)` but
+  /// implemented as a single operator for better performance and convenience.
+  ///
+  /// # Arguments
+  ///
+  /// * `default_value` - The default value to emit if the source emits no
+  ///   values
   ///
   /// # Examples
   ///
   /// ```
   /// use rxrust::prelude::*;
   ///
-  /// observable::empty()
-  ///   .last_or(1234)
+  /// // With values - emits the last value
+  /// let observable = Local::from_iter([1, 2, 3]).last_or(0);
+  /// // Emits: 3
+  ///
+  /// // Without values - emits the default
+  /// let observable = Local::from_iter(std::iter::empty::<i32>()).last_or(0);
+  /// // Emits: 0
+  /// ```
+  fn last_or<'a>(
+    self, default_value: Self::Item<'a>,
+  ) -> Self::With<DefaultIfEmpty<Last<Self::Inner>, Self::Item<'a>>> {
+    self.transform(|source| DefaultIfEmpty { source: Last { source }, default_value })
+  }
+
+  /// Skip the last `count` values from the source observable
+  ///
+  /// This operator buffers up to `count` values. When a new value arrives
+  /// and the buffer is full, the oldest value is emitted. When the source
+  /// completes, the buffered values (the last `count` items) are discarded.
+  ///
+  /// # Arguments
+  ///
+  /// * `count` - The number of last values to skip
+  ///
+  /// # Examples
+  ///
+  /// ```rust
+  /// use rxrust::prelude::*;
+  ///
+  /// let observable = Local::from_iter([1, 2, 3, 4, 5]).skip_last(2);
+  /// // Emits: 1, 2, 3
+  /// ```
+  fn skip_last(self, count: usize) -> Self::With<SkipLast<Self::Inner>> {
+    self.transform(|source| SkipLast { source, count })
+  }
+
+  /// Skip values while a predicate returns true
+  ///
+  /// This operator skips values from the source observable as long as the
+  /// predicate function returns true. Once the predicate returns false,
+  /// it emits that value and all subsequent values.
+  ///
+  /// # Arguments
+  ///
+  /// * `predicate` - A function that takes a reference to an item and returns
+  ///   true to skip
+  ///
+  /// # Examples
+  ///
+  /// ```rust
+  /// use rxrust::prelude::*;
+  ///
+  /// let observable = Local::from_iter([1, 2, 3, 4, 5]).skip_while(|v| *v < 3);
+  /// // Emits: 3, 4, 5
+  /// ```
+  fn skip_while<P>(self, predicate: P) -> Self::With<SkipWhile<Self::Inner, P>>
+  where
+    P: for<'a> FnMut(&Self::Item<'a>) -> bool,
+  {
+    self.transform(|source| SkipWhile { source, predicate })
+  }
+
+  /// Check if the source observable emits a specific value
+  ///
+  /// This operator emits `true` if the specified value is emitted by the source
+  /// observable, otherwise it emits `false` when the source completes. The
+  /// operation short-circuits and completes as soon as the target value is
+  /// found.
+  ///
+  /// # Arguments
+  ///
+  /// * `target` - The value to search for (must implement PartialEq)
+  ///
+  /// # Requirements
+  ///
+  /// * `Item` must implement `PartialEq` and `Clone`.
+  ///
+  /// # Examples
+  ///
+  /// ```rust
+  /// use rxrust::prelude::*;
+  ///
+  /// // Check for existing value
+  /// let observable = Local::from_iter([1, 2, 3, 4, 5]).contains(3);
+  /// // Emits: true
+  ///
+  /// // Check for missing value
+  /// let observable = Local::from_iter([1, 2, 3, 4, 5]).contains(10);
+  /// // Emits: false
+  /// ```
+  fn contains<Item>(self, target: Item) -> Self::With<Contains<Self::Inner, Item>>
+  where
+    for<'a> Self::Item<'a>: PartialEq<Item>,
+    Item: Clone,
+  {
+    self.transform(|source| Contains { source, target })
+  }
+
+  /// Emit values while a predicate returns true
+  ///
+  /// This operator emits values from the source observable as long as the
+  /// predicate function returns true. When the predicate returns false,
+  /// it completes the stream and stops emitting values.
+  ///
+  /// # Arguments
+  ///
+  /// * `predicate` - A function that takes a reference to an item and returns
+  ///   true to continue emitting
+  ///
+  /// # Examples
+  ///
+  /// ```rust
+  /// use rxrust::prelude::*;
+  ///
+  /// let observable = Local::from_iter([1, 2, 3, 4, 5]).take_while(|v| *v < 4);
+  /// // Emits: 1, 2, 3
+  /// ```
+  fn take_while<P>(self, predicate: P) -> Self::With<TakeWhile<Self::Inner, P>>
+  where
+    P: for<'a> FnMut(&Self::Item<'a>) -> bool,
+  {
+    self.transform(|source| TakeWhile { source, predicate, inclusive: false })
+  }
+
+  /// Emit values while a predicate returns true, including the first failing
+  /// value
+  ///
+  /// This operator emits values from the source observable as long as the
+  /// predicate function returns true. When the predicate returns false,
+  /// it emits that value (inclusive), then completes the stream.
+  ///
+  /// # Arguments
+  ///
+  /// * `predicate` - A function that takes a reference to an item and returns
+  ///   true to continue emitting
+  ///
+  /// # Examples
+  ///
+  /// ```rust
+  /// use rxrust::prelude::*;
+  ///
+  /// let observable = Local::from_iter([1, 2, 3, 4, 5]).take_while_inclusive(|v| *v < 4);
+  /// // Emits: 1, 2, 3, 4
+  /// ```
+  fn take_while_inclusive<P>(self, predicate: P) -> Self::With<TakeWhile<Self::Inner, P>>
+  where
+    P: for<'a> FnMut(&Self::Item<'a>) -> bool,
+  {
+    self.transform(|source| TakeWhile { source, predicate, inclusive: true })
+  }
+
+  /// Emit values until a notifier observable emits
+  ///
+  /// This operator emits values from the source observable until the notifier
+  /// observable emits a value. When the notifier emits, the source
+  /// subscription is cancelled and the stream completes.
+  ///
+  /// # Arguments
+  ///
+  /// * `notifier` - The observable that triggers termination
+  ///
+  /// # Examples
+  ///
+  /// ```rust
+  /// use rxrust::prelude::*;
+  ///
+  /// let mut notifier = Local::subject();
+  /// let source = Local::from_iter(0..10);
+  /// source
+  ///   .take_until(notifier.clone())
   ///   .subscribe(|v| println!("{}", v));
-  ///
-  /// // print log:
-  /// // 1234
+  /// notifier.next(());
   /// ```
-  #[inline]
-  fn last_or(
-    self,
-    default: Item,
-  ) -> DefaultIfEmptyOp<LastOp<Self, Item>, Item> {
-    DefaultIfEmptyOp::new(self.last(), default)
-  }
-
-  /// Emit only item n (0-indexed) emitted by an Observable
-  #[inline]
-  fn element_at(self, nth: usize) -> TakeOp<SkipOp<Self>> {
-    TakeOp::new(self.skip(nth), 1)
-  }
-
-  /// Do not emit any items from an Observable but mirror its termination
-  /// notification
-  #[inline]
-  fn ignore_elements(self) -> FilterOp<Self, fn(&Item) -> bool> {
-    fn always_false<Item>(_: &Item) -> bool {
-      false
-    }
-    self.filter(always_false as fn(&Item) -> bool)
-  }
-
-  /// Determine whether all items emitted by an Observable meet some criteria
-  #[inline]
-  fn all<F>(self, pred: F) -> ALLOp<Self, F, Item>
+  fn take_until<N>(self, notifier: N) -> Self::With<TakeUntil<Self::Inner, N::Inner>>
   where
-    F: Fn(Item) -> bool,
+    N: Observable<Err = Self::Err, Inner: ObservableType>,
   {
-    fn not(b: &bool) -> bool {
-      !b
-    }
-    let map: MapOp<Self, F, Item> = MapOp::new(self, pred);
-    let filter_map = FilterOp {
-      source: map,
-      filter: not as fn(&bool) -> bool,
-    };
-    let take = TakeOp::new(filter_map, 1);
-    DefaultIfEmptyOp::new(take, true)
+    self.transform(|source| TakeUntil { source, notifier: notifier.into_inner() })
   }
 
-  /// Determine whether an Observable emits a particular item or not
-  fn contains(self, target: Item) -> ContainsOp<Self, Item> {
-    ContainsOp { source: self, target }
-  }
-
-  /// Emits only last final item emitted by a source observable.
+  /// Skip values until a notifier observable emits
   ///
-  /// Completes right after emitting the single last item, or when source
-  /// observable completed, being an empty one. Emits error when source
-  /// observable emits it.
+  /// This operator skips values from the source observable until the notifier
+  /// observable emits a value. Once the notifier emits, subsequent source
+  /// values are passed through.
+  ///
+  /// # Arguments
+  ///
+  /// * `notifier` - The observable that triggers the start of emissions
   ///
   /// # Examples
   ///
-  /// ```
+  /// ```rust
   /// use rxrust::prelude::*;
   ///
-  /// observable::from_iter(0..100)
-  ///   .last()
+  /// let mut notifier = Local::subject();
+  /// let source = Local::from_iter(0..10);
+  /// source
+  ///   .skip_until(notifier.clone())
   ///   .subscribe(|v| println!("{}", v));
-  ///
-  /// // print log:
-  /// // 99
+  /// notifier.next(());
   /// ```
-  #[inline]
-  fn last(self) -> LastOp<Self, Item> {
-    LastOp { source: self, last: None }
-  }
-
-  /// Call a function when observable completes, errors or is unsubscribed from.
-  #[inline]
-  fn finalize<F>(self, f: F) -> FinalizeOp<Self, F>
+  fn skip_until<N>(self, notifier: N) -> Self::With<SkipUntil<Self::Inner, N::Inner>>
   where
-    F: FnMut(),
+    N: Observable<Err = Self::Err, Inner: ObservableType>,
   {
-    FinalizeOp::new(self, f)
+    self.transform(|source| SkipUntil { source, notifier: notifier.into_inner() })
   }
 
-  /// A threads safe version of `finalize`
-  fn finalize_threads<F>(self, f: F) -> FinalizeOpThreads<Self, F>
-  where
-    F: FnMut(),
-  {
-    FinalizeOpThreads::new(self, f)
-  }
-
-  /// Creates an Observable that combines all the emissions from Observables
-  /// that get emitted from an Observable.
+  /// Group consecutive emissions into pairs
   ///
-  /// # Example
-  ///
-  /// ```
-  /// # use rxrust::prelude::*;
-  /// let mut source = Subject::default();
-  /// let numbers = Subject::default();
-  /// // create a even stream by filter
-  /// let even = numbers.clone().filter((|v| *v % 2 == 0) as fn(&i32) -> bool);
-  /// // create an odd stream by filter
-  /// let odd = numbers.clone().filter((|v| *v % 2 != 0) as fn(&i32) -> bool);
-  ///
-  /// // merge odd and even stream again
-  /// let out = source.clone().flatten();
-  ///
-  /// source.next(even);
-  /// source.next(odd);
-  ///
-  /// // attach observers
-  /// out.subscribe(|v: i32| println!("{} ", v));
-  /// ```
-  #[inline]
-  fn flatten<'a, Item2, Err2>(self) -> MergeAllOp<'a, Self, Item>
-  where
-    Item: ObservableExt<Item2, Err2>,
-  {
-    MergeAllOp::new(self, usize::MAX)
-  }
-
-  /// A threads safe version of `flatten`
-  #[inline]
-  fn flatten_threads<Item2, Err2>(self) -> MergeAllOpThreads<Self, Item>
-  where
-    Item: ObservableExt<Item2, Err2>,
-  {
-    MergeAllOpThreads::new(self, usize::MAX)
-  }
-
-  ///  Applies given function to each item emitted by this Observable, where
-  ///  that function returns an Observable that itself emits items. It then
-  ///  merges the emissions of these resulting Observables, emitting these
-  ///  merged results as its own sequence.
-  #[inline]
-  fn flat_map<'a, V, Item2, F>(self, f: F) -> FlatMapOp<'a, Self, V, F, Item>
-  where
-    F: FnMut(Item) -> V,
-    MapOp<Self, F, Item>: ObservableExt<V, Err>,
-    V: ObservableExt<Item2, Err>,
-  {
-    self.map(f).merge_all(usize::MAX)
-  }
-
-  #[inline]
-  fn concat_map<'a, V, Item2, F>(self, f: F) -> FlatMapOp<'a, Self, V, F, Item>
-  where
-    F: FnMut(Item) -> V,
-    MapOp<Self, F, Item>: ObservableExt<V, Err>,
-    V: ObservableExt<Item2, Err>,
-  {
-    self.map(f).concat_all()
-  }
-
-  #[inline]
-  fn flat_map_threads<V, Item2, F>(
-    self,
-    f: F,
-  ) -> FlatMapOpThreads<Self, V, F, Item>
-  where
-    F: FnMut(Item) -> V,
-    MapOp<Self, F, Item>: ObservableExt<V, Err>,
-    V: ObservableExt<Item2, Err>,
-  {
-    self.map(f).merge_all_threads(usize::MAX)
-  }
-
-  #[inline]
-  fn concat_map_threads<V, Item2, F>(
-    self,
-    f: F,
-  ) -> FlatMapOpThreads<Self, V, F, Item>
-  where
-    F: FnMut(Item) -> V,
-    MapOp<Self, F, Item>: ObservableExt<V, Err>,
-    V: ObservableExt<Item2, Err>,
-  {
-    self.map(f).concat_all_threads()
-  }
-
-  /// Groups items emitted by the source Observable into Observables.
-  /// Each emitted Observable emits items matching the key returned
-  /// by the discriminator function.
-  ///
-  /// # Example
-  ///
-  /// ```
-  /// use rxrust::prelude::*;
-  ///
-  /// #[derive(Clone)]
-  /// struct Person {
-  ///   name: String,
-  ///   age: u32,
-  /// }
-  ///
-  /// observable::from_iter([
-  ///   Person{ name: String::from("John"), age: 26 },
-  ///   Person{ name: String::from("Anne"), age: 28 },
-  ///   Person{ name: String::from("Gregory"), age: 24 },
-  ///   Person{ name: String::from("Alice"), age: 28 },
-  /// ])
-  /// .group_by::<_,_,Subject<_,_>>(|person: &Person| person.age)
-  /// .flat_map(|group| group.reduce(|acc, person: Person| format!("{} {}", acc, person.name)))
-  /// .subscribe(|result| println!("{}", result));
-  ///
-  /// // Prints:
-  /// //  John
-  /// //  Anne Alice
-  /// //  Gregory
-  /// ```
-  #[inline]
-  fn group_by<D, Key, Subject>(self, discr: D) -> GroupByOp<Self, D, Subject>
-  where
-    D: FnMut(&Item) -> Key,
-    Key: Hash + Eq + Clone,
-    Subject: Clone + Default + Observer<Item, Err>,
-  {
-    GroupByOp::new(self, discr)
-  }
-
-  /// Creates a new stream which calls a closure on each element and uses
-  /// its return as the value.
-  #[inline]
-  fn map<B, F>(self, f: F) -> MapOp<Self, F, Item>
-  where
-    F: FnMut(Item) -> B,
-  {
-    MapOp::new(self, f)
-  }
-
-  /// Creates a new stream which calls a closure on each error and uses
-  /// its return as emitted error.
-  #[inline]
-  fn on_error_map<B, F>(self, f: F) -> OnErrorMapOp<Self, F, Err>
-  where
-    F: FnMut(Err) -> B,
-  {
-    OnErrorMapOp::new(self, f)
-  }
-
-  /// Maps emissions to a constant value.
-  #[inline]
-  fn map_to<B>(self, value: B) -> MapToOp<Self, B, Item> {
-    MapToOp::new(self, value)
-  }
-
-  /// Creates a new stream which maps each element to a tuple of the element
-  /// and the time that it was observed.
-  #[inline]
-  fn timestamp(self) -> TimestampOp<Self, Item> {
-    fn timestamp<Item>(v: Item) -> (Item, Instant) {
-      (v, Instant::now())
-    }
-    self.map(timestamp)
-  }
-
-  /// combine two Observables into one by merging their emissions
-  ///
-  /// # Example
-  ///
-  /// ```
-  /// # use rxrust::prelude::*;
-  /// let numbers = Subject::default();
-  /// // create a even stream by filter
-  /// let even = numbers.clone().filter(|v| *v % 2 == 0);
-  /// // create an odd stream by filter
-  /// let odd = numbers.clone().filter(|v| *v % 2 != 0);
-  ///
-  /// // merge odd and even stream again
-  /// let merged = even.merge(odd);
-  ///
-  /// // attach observers
-  /// merged.subscribe(|v: &i32| println!("{} ", v));
-  /// ```
-  #[inline]
-  fn merge<S>(self, other: S) -> MergeOp<Self, S>
-  where
-    S: ObservableExt<Item, Err>,
-  {
-    MergeOp::new(self, other)
-  }
-
-  /// A threads safe version of `merge`
-  #[inline]
-  fn merge_threads<S>(self, other: S) -> MergeOpThreads<Self, S>
-  where
-    S: ObservableExt<Item, Err>,
-  {
-    MergeOpThreads::new(self, other)
-  }
-
-  /// Converts a higher-order Observable into a first-order Observable which
-  /// concurrently delivers all values that are emitted on the inner
-  /// Observables.
-  ///
-  /// # Example
-  ///
-  /// ```
-  /// # use rxrust::prelude::*;
-  /// # use futures::executor::LocalPool;
-  /// # use std::time::Duration;
-  /// let mut local = LocalPool::new();
-  /// observable::from_iter(
-  ///   (0..3)
-  ///     .map(|_| interval(Duration::from_millis(1), local.spawner()).take(5)),
-  /// )
-  /// .merge_all(2)
-  /// .subscribe(move |i| println!("{}", i));
-  /// local.run();
-  /// ```
-  #[inline]
-  fn merge_all<'a, Item2>(self, concurrent: usize) -> MergeAllOp<'a, Self, Item>
-  where
-    Item: ObservableExt<Item2, Err>,
-  {
-    MergeAllOp::new(self, concurrent)
-  }
-
-  #[inline]
-  fn concat_all<'a, Item2>(self) -> MergeAllOp<'a, Self, Item>
-  where
-    Item: ObservableExt<Item2, Err>,
-  {
-    MergeAllOp::new(self, 1)
-  }
-
-  /// A threads safe version of `merge_all`
-  #[inline]
-  fn merge_all_threads<Item2>(
-    self,
-    concurrent: usize,
-  ) -> MergeAllOpThreads<Self, Item>
-  where
-    Item: ObservableExt<Item2, Err>,
-  {
-    MergeAllOpThreads::new(self, concurrent)
-  }
-
-  #[inline]
-  fn concat_all_threads<Item2>(self) -> MergeAllOpThreads<Self, Item>
-  where
-    Item: ObservableExt<Item2, Err>,
-  {
-    MergeAllOpThreads::new(self, 1)
-  }
-
-  /// Emit only those items from an Observable that pass a predicate test
-  /// # Example
-  ///
-  /// ```
-  /// use rxrust:: prelude::*;
-  ///
-  /// let mut coll = vec![];
-  /// let coll_clone = coll.clone();
-  ///
-  /// observable::from_iter(0..10)
-  ///   .filter(|v| *v % 2 == 0)
-  ///   .subscribe(|v| { coll.push(v); });
-  ///
-  /// // only even numbers received.
-  /// assert_eq!(coll, vec![0, 2, 4, 6, 8]);
-  /// ```
-  #[inline]
-  fn filter<F>(self, filter: F) -> FilterOp<Self, F>
-  where
-    F: Fn(&Item) -> bool,
-  {
-    FilterOp { source: self, filter }
-  }
-
-  /// The closure must return an Option<T>. filter_map creates an iterator which
-  /// calls this closure on each element. If the closure returns Some(element),
-  /// then that element is returned. If the closure returns None, it will try
-  /// again, and call the closure on the next element, seeing if it will return
-  /// Some.
-  ///
-  /// Why filter_map and not just filter and map? The key is in this part:
-  ///
-  /// If the closure returns Some(element), then that element is returned.
-  ///
-  /// In other words, it removes the Option<T> layer automatically. If your
-  /// mapping is already returning an Option<T> and you want to skip over Nones,
-  /// then filter_map is much, much nicer to use.
+  /// This operator groups consecutive emissions from the source Observable into
+  /// tuples `(previous, current)`. On the first emission, it stores the value.
+  /// On subsequent emissions, it emits `(stored, current)` and updates the
+  /// stored value.
   ///
   /// # Examples
   ///
   /// ```
-  ///  # use rxrust::prelude::*;
-  ///  let mut res: Vec<i32> = vec![];
-  ///   observable::from_iter(["1", "lol", "3", "NaN", "5"].iter())
-  ///   .filter_map(|s: &&str| s.parse().ok())
-  ///   .subscribe(|v| res.push(v));
+  /// use rxrust::prelude::*;
   ///
-  /// assert_eq!(res, [1, 3, 5]);
+  /// let observable = Local::from_iter([1, 2, 3, 4]).pairwise();
+  /// let mut result = Vec::new();
+  /// observable.subscribe(|pair| result.push(pair));
+  /// assert_eq!(result, vec![(1, 2), (2, 3), (3, 4)]);
   /// ```
-  #[inline]
-  fn filter_map<F, OutputItem>(self, f: F) -> FilterMapOp<Self, F, Item>
+  fn pairwise(self) -> Self::With<Pairwise<Self::Inner>> {
+    self.transform(|source| Pairwise { source })
+  }
+
+  /// Merge this observable with another observable
+  ///
+  /// This operator combines two observables by subscribing to both and emitting
+  /// values from either source as they arrive. The merged stream only completes
+  /// when BOTH source streams complete.
+  fn merge<'a, S2>(self, other: S2) -> Self::With<Merge<Self::Inner, S2::Inner>>
   where
-    F: FnMut(Item) -> Option<OutputItem>,
+    Self: 'a,
+    S2: Observable<Inner: ObservableType<Item<'a> = Self::Item<'a>, Err = Self::Err>> + 'a,
   {
-    FilterMapOp::new(self, f)
+    self.transform(|core| Merge { source1: core, source2: other.into_inner() })
   }
 
-  /// Ignore the first `count` values emitted by the source Observable.
+  /// Combine the latest values from two observables
   ///
-  /// `skip` returns an Observable that ignore the first `count` values
-  /// emitted by the source Observable. If the source emits fewer than `count`
-  /// values then 0 of its values are emitted. After that, it completes,
-  /// regardless if the source completes.
+  /// This operator combines the latest values from two observables using a
+  /// binary function. It emits whenever either source emits, using the most
+  /// recent value from the other source.
   ///
-  /// # Example
-  /// Ignore the first 5 seconds of an infinite 1-second interval Observable
+  /// # Arguments
   ///
-  /// ```
-  /// # use rxrust::prelude::*;
-  ///
-  /// observable::from_iter(0..10).skip(5).subscribe(|v| println!("{}", v));
-  /// // print logs:
-  /// // 6
-  /// // 7
-  /// // 8
-  /// // 9
-  /// // 10
-  /// ```
-  #[inline]
-  fn skip(self, count: usize) -> SkipOp<Self> {
-    SkipOp::new(self, count)
+  /// * `other` - The second observable to combine with
+  /// * `binary_op` - A function that combines the latest values from both
+  ///   sources
+  fn combine_latest<S2, F, OutputItem>(
+    self, other: S2, binary_op: F,
+  ) -> Self::With<CombineLatest<Self::Inner, S2::Inner, F>>
+  where
+    S2: Observable<Inner: ObservableType<Err = Self::Err>>,
+    F: for<'a> FnMut(Self::Item<'a>, S2::Item<'a>) -> OutputItem,
+  {
+    self.transform(|core| CombineLatest { source_a: core, source_b: other.into_inner(), binary_op })
   }
 
-  /// Discard items emitted by an Observable until a second Observable emits an item
+  /// Combine each emission from this observable with the latest value from
+  /// another
   ///
-  /// # Example
-  /// Ignore the numbers in the 0-10 range until the Observer emits 5 and trigger
-  ///  the notify observable.
+  /// Unlike `combine_latest`, this operator only emits when the primary (self)
+  /// observable emits. The secondary observable just provides its latest
+  /// value. If the secondary hasn't emitted yet, primary emissions are
+  /// dropped.
   ///
+  /// # Arguments
+  ///
+  /// * `other` - The secondary observable providing the latest value
+  ///
+  /// # Examples
+  ///
+  /// ```rust
+  /// use std::convert::Infallible;
+  ///
+  /// use rxrust::prelude::*;
+  ///
+  /// let primary = Local::subject::<i32, Infallible>();
+  /// let secondary = Local::subject::<i32, Infallible>();
+  ///
+  /// primary
+  ///   .with_latest_from(secondary)
+  ///   .subscribe(|(a, b): (i32, i32)| println!("({}, {})", a, b));
   /// ```
-  /// # use rxrust::prelude::*;
+  fn with_latest_from<S2>(self, other: S2) -> Self::With<WithLatestFrom<Self::Inner, S2::Inner>>
+  where
+    S2: Observable<Inner: ObservableType<Err = Self::Err>>,
+  {
+    self.transform(|core| WithLatestFrom { source_a: core, source_b: other.into_inner() })
+  }
+
+  /// Flatten a Higher-Order Observable by merging inner observables
   ///
-  /// let mut items = vec![];
-  /// let notifier = Subject::<(), ()>::default();
-  /// let mut c_notifier = notifier.clone();
-  /// observable::from_iter(0..10)
-  ///   .tap(move |v| {
-  ///     if v == &5 {
-  ///       c_notifier.next(());
+  /// This operator subscribes to inner observables as they arrive, up to
+  /// the `concurrent` limit. When an inner observable completes, the next
+  /// queued one is subscribed to.
+  ///
+  /// The stream completes when the outer observable AND all inner observables
+  /// have completed.
+  ///
+  /// # Arguments
+  ///
+  /// * `concurrent` - Maximum number of inner observables to subscribe to
+  ///   concurrently. Use `usize::MAX` for unlimited concurrency.
+  fn merge_all(self, concurrent: usize) -> Self::With<MergeAll<Self::Inner>> {
+    self.transform(|source| MergeAll { source, concurrent })
+  }
+
+  /// Flatten a Higher-Order Observable by subscribing to inner observables
+  /// sequentially
+  ///
+  /// This is equivalent to `merge_all(1)` - waits for each inner observable to
+  /// complete before subscribing to the next one.
+  fn concat_all(self) -> Self::With<MergeAll<Self::Inner>> { self.merge_all(1) }
+
+  /// Split the source observable into multiple GroupedObservables
+  ///
+  /// Each unique key derived from source values creates a new
+  /// `GroupedObservable`. Values with the same key are forwarded to the
+  /// corresponding group's observer.
+  ///
+  /// # Arguments
+  ///
+  /// * `key_selector` - A function that extracts a key from each item
+  ///
+  /// # Examples
+  ///
+  /// ```rust
+  /// use rxrust::prelude::*;
+  ///
+  /// Local::from_iter(0..10)
+  ///   .group_by(|v| *v % 2 == 0)
+  ///   .subscribe(|group| {
+  ///     if group.inner.key {
+  ///       group.subscribe(|v| println!("Even: {}", v));
+  ///     } else {
+  ///       group.subscribe(|v| println!("Odd: {}", v));
   ///     }
-  ///   })
-  ///   .skip_until(notifier)
-  ///   .subscribe(|v| items.push(v));
-  ///
-  /// assert_eq!((5..10).collect::<Vec<i32>>(), items);
+  ///   });
   /// ```
-  #[inline]
-  fn skip_until<NotifyItem, NotifyErr, Other>(
-    self,
-    notifier: Other,
-  ) -> SkipUntilOp<Self, Other, NotifyItem, NotifyErr>
-  where
-    Other: ObservableExt<NotifyItem, NotifyErr>,
-  {
-    SkipUntilOp::new(self, notifier)
-  }
-
-  /// A threads safe version of `skip_until_threads`
-  #[inline]
-  fn skip_until_threads<NotifyItem, NotifyErr, Other>(
-    self,
-    notifier: Other,
-  ) -> SkipUntilOpThreads<Self, Other, NotifyItem, NotifyErr>
-  where
-    Other: ObservableExt<NotifyItem, NotifyErr>,
-  {
-    SkipUntilOpThreads::new(self, notifier)
-  }
-
-  /// Discard items emitted by an Observable until a specified condition becomes false
-  ///
-  ///
-  /// # Example
-  /// Suppress the first 5 items of an infinite 1-second interval Observable
-  ///
-  /// ```
-  /// # use rxrust::prelude::*;
-  ///
-  /// observable::from_iter(0..10)
-  ///   .skip_while(|v| v < &5)
-  ///   .subscribe(|v| println!("{}", v));
-  ///
-  /// // print logs:
-  /// // 5
-  /// // 6
-  /// // 7
-  /// // 8
-  /// // 9
-  /// ```
-  #[inline]
-  fn skip_while<F>(self, predicate: F) -> SkipWhileOp<Self, F>
-  where
-    F: FnMut(&Item) -> bool,
-  {
-    SkipWhileOp { source: self, predicate }
-  }
-
-  /// Ignore the last `count` values emitted by the source Observable.
-  ///
-  /// `skip_last` returns an Observable that ignore the last `count` values
-  /// emitted by the source Observable. If the source emits fewer than `count`
-  /// values then 0 of its values are emitted.
-  /// It will not emit values until source Observable complete.
-  ///
-  /// # Example
-  /// Skip the last 5 seconds of an infinite 1-second interval Observable
-  ///
-  /// ```
-  /// # use rxrust::prelude::*;
-  ///
-  /// observable::from_iter(0..10)
-  ///   .skip_last(5)
-  ///   .subscribe(|v| println!("{}", v));
-  ///
-  /// // print logs:
-  /// // 0
-  /// // 1
-  /// // 2
-  /// // 3
-  /// // 4
-  /// ```
-  #[inline]
-  fn skip_last(self, count: usize) -> SkipLastOp<Self> {
-    SkipLastOp { source: self, count }
-  }
-
-  /// Emits only the first `count` values emitted by the source Observable.
-  ///
-  /// `take` returns an Observable that emits only the first `count` values
-  /// emitted by the source Observable. If the source emits fewer than `count`
-  /// values then all of its values are emitted. After that, it completes,
-  /// regardless if the source completes.
-  ///
-  /// # Example
-  /// Take the first 5 seconds of an infinite 1-second interval Observable
-  ///
-  /// ```
-  /// # use rxrust::prelude::*;
-  ///
-  /// observable::from_iter(0..10).take(5).subscribe(|v| println!("{}", v));
-  /// // print logs:
-  /// // 0
-  /// // 1
-  /// // 2
-  /// // 3
-  /// // 4
-  /// ```
-  ///
-  #[inline]
-  fn take(self, count: usize) -> TakeOp<Self> {
-    TakeOp::new(self, count)
-  }
-
-  /// Emits the values emitted by the source Observable until a `notifier`
-  /// Observable emits a value.
-  ///
-  /// `take_until` subscribes and begins mirroring the source Observable. It
-  /// also monitors a second Observable, `notifier` that you provide. If the
-  /// `notifier` emits a value, the output Observable stops mirroring the source
-  /// Observable and completes. If the `notifier` doesn't emit any value and
-  /// completes then `take_until` will pass all values.
-  #[inline]
-  fn take_until<Notify, NotifyItem, NotifyErr>(
-    self,
-    notifier: Notify,
-  ) -> TakeUntilOp<Self, Notify, NotifyItem, NotifyErr> {
-    TakeUntilOp::new(self, notifier)
-  }
-
-  #[inline]
-  fn take_until_threads<Notify, NotifyItem, NotifyErr>(
-    self,
-    notifier: Notify,
-  ) -> TakeUntilOpThreads<Self, Notify, NotifyItem, NotifyErr> {
-    TakeUntilOpThreads::new(self, notifier)
-  }
-
-  /// Emits values while result of an callback is true.
-  ///
-  /// `take_while` returns an Observable that emits values while result of an
-  /// callback is true emitted by the source Observable.
-  /// It will not emit values until source Observable complete.
-  ///
-  /// # Example
-  /// Take the first 5 seconds of an infinite 1-second interval Observable
-  ///
-  /// ```
-  /// # use rxrust::prelude::*;
-  ///
-  /// observable::from_iter(0..10)
-  ///   .take_while(|v| v < &5)
-  /// .subscribe(|v| println!("{}", v));
-  /// // print logs:
-  /// // 0
-  /// // 1
-  /// // 2
-  /// // 3
-  /// // 4
-  /// ```
-  ///
-  #[inline]
-  fn take_while<F>(self, callback: F) -> TakeWhileOp<Self, F>
-  where
-    F: FnMut(&Item) -> bool,
-  {
-    TakeWhileOp { source: self, callback, inclusive: false }
-  }
-
-  /// Emits values while result of an callback is true and the last one that
-  /// causes the callback to return false.
-  ///
-  /// # Example
-  /// Take the first 5 seconds of an infinite 1-second interval Observable
-  ///
-  /// ```
-  /// # use rxrust::prelude::*;
-  ///
-  /// observable::from_iter(0..10)
-  ///   .take_while_inclusive(|v| v < &4)
-  /// .subscribe(|v| println!("{}", v));
-  /// // print logs:
-  /// // 0
-  /// // 1
-  /// // 2
-  /// // 3
-  /// // 4
-  /// ```
-  ///
-  #[inline]
-  fn take_while_inclusive<F>(self, callback: F) -> TakeWhileOp<Self, F>
-  where
-    F: FnMut(&Item) -> bool,
-  {
-    TakeWhileOp { source: self, callback, inclusive: true }
-  }
-
-  /// Emits only the last `count` values emitted by the source Observable.
-  ///
-  /// `take_last` returns an Observable that emits only the last `count` values
-  /// emitted by the source Observable. If the source emits fewer than `count`
-  /// values then all of its values are emitted.
-  /// It will not emit values until source Observable complete.
-  ///
-  /// # Example
-  /// Take the last 5 seconds of an infinite 1-second interval Observable
-  ///
-  /// ```
-  /// # use rxrust::prelude::*;
-  ///
-  /// observable::from_iter(0..10)
-  ///   .take_last(5)
-  /// .subscribe(|v| println!("{}", v));
-  /// // print logs:
-  /// // 5
-  /// // 6
-  /// // 7
-  /// // 8
-  /// // 9
-  /// ```
-  ///
-  #[inline]
-  fn take_last(self, count: usize) -> TakeLastOp<Self> {
-    TakeLastOp { source: self, count }
-  }
-
-  /// Emits item it has most recently emitted since the previous sampling
-  ///
-  ///
-  /// It will emit values when sampling observable complete.
-  ///
-  /// #Example
-  /// Sampling every  5ms of an infinite 1ms interval Observable
-  /// ```
-  /// use rxrust::prelude::*;
-  /// use std::time::Duration;
-  /// use futures::executor::LocalPool;
-  ///
-  /// let mut local_scheduler = LocalPool::new();
-  /// let spawner = local_scheduler.spawner();
-  /// observable::interval(Duration::from_millis(2), spawner.clone())
-  ///   .sample(observable::interval(Duration::from_millis(5), spawner))
-  ///   .take(5)
-  ///   .subscribe(move |v| println!("{}", v));
-  ///
-  /// local_scheduler.run();
-  /// // print logs:
-  /// // 1
-  /// // 4
-  /// // 6
-  /// // 9
-  /// // ...
-  /// ```
-  #[inline]
-  fn sample<Sample, SampleItem, SampleErr>(
-    self,
-    sampling: Sample,
-  ) -> SampleOp<Self, Sample, SampleItem>
-  where
-    Sample: ObservableExt<SampleItem, SampleErr>,
-  {
-    SampleOp::new(self, sampling)
-  }
-
-  /// A threads safe version of `sample`
-  #[inline]
-  fn sample_threads<Sample, SampleItem, SampleErr>(
-    self,
-    sampling: Sample,
-  ) -> SampleOpThreads<Self, Sample, SampleItem>
-  where
-    Sample: ObservableExt<SampleItem, SampleErr>,
-  {
-    SampleOpThreads::new(self, sampling)
-  }
-
-  /// The Scan operator applies a function to the first item emitted by the
-  /// source observable and then emits the result of that function as its
-  /// own first emission. It also feeds the result of the function back into
-  /// the function along with the second item emitted by the source observable
-  /// in order to generate its second emission. It continues to feed back its
-  /// own subsequent emissions along with the subsequent emissions from the
-  /// source Observable in order to create the rest of its sequence.
-  ///
-  /// Applies a binary operator closure to each item emitted from source
-  /// observable and emits successive values.
-  ///
-  /// Completes when source observable completes.
-  /// Emits error when source observable emits it.
-  ///
-  /// This version starts with an user-specified initial value for when the
-  /// binary operator is called with the first item processed.
-  ///
-  /// # Arguments
-  ///
-  /// * `initial_value` - An initial value to start the successive accumulations
-  ///   from.
-  /// * `binary_op` - A closure or function acting as a binary operator.
-  ///
-  /// # Examples
-  ///
-  /// ```
-  /// use rxrust::prelude::*;
-  ///
-  /// observable::from_iter(vec![1, 1, 1, 1, 1])
-  ///   .scan_initial(100, |acc, v| acc + v)
-  ///   .subscribe(|v| println!("{}", v));
-  ///
-  /// // print log:
-  /// // 101
-  /// // 102
-  /// // 103
-  /// // 104
-  /// // 105
-  /// ```
-  #[inline]
-  fn scan_initial<OutputItem, BinaryOp>(
-    self,
-    initial_value: OutputItem,
-    binary_op: BinaryOp,
-  ) -> ScanOp<Self, BinaryOp, OutputItem, Item>
-  where
-    BinaryOp: Fn(OutputItem, Item) -> OutputItem,
-    OutputItem: Clone,
-  {
-    ScanOp::new(self, binary_op, initial_value)
-  }
-
-  /// Works like [`scan_initial`](Observable::scan_initial) but starts with a
-  /// value defined by a [`Default`] trait for the first argument `binary_op`
-  /// operator operates on.
-  ///
-  /// # Arguments
-  ///
-  /// * `binary_op` - A closure or function acting as a binary operator.
-  #[inline]
-  fn scan<OutputItem, BinaryOp>(
-    self,
-    binary_op: BinaryOp,
-  ) -> ScanOp<Self, BinaryOp, OutputItem, Item>
-  where
-    BinaryOp: Fn(OutputItem, Item) -> OutputItem,
-    OutputItem: Default + Clone,
-  {
-    self.scan_initial(OutputItem::default(), binary_op)
-  }
-
-  /// Apply a function to each item emitted by an observable, sequentially,
-  /// and emit the final value, after source observable completes.
-  ///
-  /// Emits error when source observable emits it.
-  ///
-  /// # Arguments
-  ///
-  /// * `initial` - An initial value to start the successive reduction from.
-  /// * `binary_op` - A closure acting as a binary (folding) operator.
-  ///
-  /// # Examples
-  ///
-  /// ```
-  /// use rxrust::prelude::*;
-  ///
-  /// observable::from_iter(vec![1, 1, 1, 1, 1])
-  ///   .reduce_initial(100, |acc, v| acc + v)
-  ///   .subscribe(|v| println!("{}", v));
-  ///
-  /// // print log:
-  /// // 105
-  /// ```
-  #[inline]
-  fn reduce_initial<OutputItem, BinaryOp>(
-    self,
-    initial: OutputItem,
-    binary_op: BinaryOp,
-  ) -> ReduceOp<Self, BinaryOp, OutputItem, Item>
-  where
-    BinaryOp: Fn(OutputItem, Item) -> OutputItem,
-    OutputItem: Clone,
-  {
-    // realised as a composition of `scan`, and `last`
-    let scan = self.scan_initial(initial.clone(), binary_op);
-    let last = LastOp { source: scan, last: None };
-    DefaultIfEmptyOp::new(last, initial)
-  }
-
-  /// Works like [`reduce_initial`](Observable::reduce_initial) but starts with
-  /// a value defined by a [`Default`] trait for the first argument `f`
-  /// operator operates on.
-  ///
-  /// # Arguments
-  ///
-  /// * `binary_op` - A closure acting as a binary operator.
-  #[inline]
-  fn reduce<OutputItem, BinaryOp>(
-    self,
-    binary_op: BinaryOp,
-  ) -> ReduceOp<Self, BinaryOp, OutputItem, Item>
-  where
-    BinaryOp: Fn(OutputItem, Item) -> OutputItem,
-    OutputItem: Default + Clone,
-  {
-    self.reduce_initial(OutputItem::default(), binary_op)
-  }
-
-  /// Emits the item from the source observable that had the maximum value.
-  ///
-  /// Emits error when source observable emits it.
-  ///
-  /// # Examples
-  ///
-  /// ```
-  /// use rxrust::prelude::*;
-  ///
-  /// observable::from_iter(vec![3., 4., 7., 5., 6.])
-  ///   .max()
-  ///   .subscribe(|v| println!("{}", v));
-  ///
-  /// // print log:
-  /// // 7
-  /// ```
-  #[inline]
-  fn max(self) -> MinMaxOp<Self, Item>
-  where
-    Item: PartialOrd<Item> + Clone,
-  {
-    let max_fn = |max, v| match max {
-      Some(max) if max > v => Some(max),
-      _ => Some(v),
-    };
-    let scan =
-      self.scan_initial(None, max_fn as fn(Option<Item>, Item) -> Option<Item>);
-    let last = LastOp::new(scan);
-
-    // we can safely unwrap, because we will ever get this item
-    // once a max value exists and is there.
-    MapOp::new(last, |v| v.unwrap())
-  }
-
-  /// Emits the item from the source observable that had the minimum value.
-  ///
-  /// Emits error when source observable emits it.
-  ///
-  /// # Examples
-  ///
-  /// ```
-  /// use rxrust::prelude::*;
-  ///
-  /// observable::from_iter(vec![3., 4., 7., 5., 6.])
-  ///   .min()
-  ///   .subscribe(|v| println!("{}", v));
-  ///
-  /// // print log:
-  /// // 3
-  /// ```
-  #[inline]
-  fn min(self) -> MinMaxOp<Self, Item>
-  where
-    Item: Clone + PartialOrd<Item>,
-  {
-    let min_fn = |min, v| match min {
-      Some(min) if min < v => Some(min),
-      _ => Some(v),
-    };
-    let scan =
-      self.scan_initial(None, min_fn as fn(Option<Item>, Item) -> Option<Item>);
-    let last = LastOp::new(scan);
-
-    // we can safely unwrap, because we will ever get this item
-    // once a max value exists and is there.
-    MapOp::new(last, |v| v.unwrap())
-  }
-
-  /// Calculates the sum of numbers emitted by an source observable and emits
-  /// this sum when source completes.
-  ///
-  /// Emits zero when source completed as an and empty sequence.
-  /// Emits error when source observable emits it.
-  ///
-  /// # Examples
-  ///
-  /// ```
-  /// use rxrust::prelude::*;
-  ///
-  /// observable::from_iter(vec![1, 1, 1, 1, 1])
-  ///   .sum()
-  ///   .subscribe(|v| println!("{}", v));
-  ///
-  /// // p rint log:
-  /// // 5
-  /// ```
-  #[inline]
-  fn sum(self) -> SumOp<Self, Item>
-  where
-    Item: Clone + Default + Add<Item, Output = Item>,
-  {
-    self.reduce(|acc, v| acc + v)
-  }
-
-  /// Emits the number of items emitted by a source observable when this source
-  /// completes.
-  ///
-  /// The output type of this operator is fixed to [`usize`].
-  ///
-  /// Emits zero when source completed as an and empty sequence.
-  /// Emits error when source observable emits it.
-  ///
-  /// # Examples
-  ///
-  /// ```
-  /// use rxrust::prelude::*;
-  ///
-  /// observable::from_iter(vec!['1', '7', '3', '0', '4'])
-  ///   .count()
-  ///   .subscribe(|v| println!("{}", v));
-  ///
-  /// // print log:
-  /// // 5
-  /// ```
-  #[inline]
-  fn count(self) -> CountOp<Self, Item> {
-    self.reduce(|acc, _v| acc + 1)
-  }
-
-  /// Calculates the sum of numbers emitted by an source observable and emits
-  /// this sum when source completes.
-  ///
-  /// Emits zero when source completed as an and empty sequence.
-  /// Emits error when source observable emits it.
-  ///
-  /// # Examples
-  ///
-  /// ```
-  /// use rxrust::prelude::*;
-  ///
-  /// observable::from_iter(vec![3., 4., 5., 6., 7.])
-  ///   .average()
-  ///   .subscribe(|v| println!("{}", v));
-  ///
-  /// // print log:
-  /// // 5
-  /// ```
-  #[inline]
-  fn average(self) -> AverageOp<Self, Item>
-  where
-    Item: Clone + Default + Add<Item, Output = Item> + Mul<f64, Output = Item>,
-    ScanOp<Self, fn(Accum<Item>, Item) -> Accum<Item>, Accum<Item>, Item>:
-      ObservableExt<Accum<Item>, Err>,
-    LastOp<
-      ScanOp<Self, fn(Accum<Item>, Item) -> Accum<Item>, Accum<Item>, Item>,
-      Accum<Item>,
-    >: ObservableExt<Accum<Item>, Err>,
-  {
-    /// Computing an average by multiplying accumulated nominator by a
-    /// reciprocal of accumulated denominator. In this way some generic
-    /// types that support linear scaling over floats values could be
-    /// averaged (e.g. vectors)
-    fn average_floats<T>(acc: Accum<T>) -> T
-    where
-      T: Default + Clone + Mul<f64, Output = T>,
-    {
-      // Note: we will never be dividing by zero here, as
-      // the acc.1 will be always >= 1.
-      // It would have be zero if we've would have received an element
-      // when the source observable is empty but because of how
-      // `scan` works, we will transparently not receive anything in
-      // such case.
-      acc.0 * (1.0 / (acc.1 as f64))
-    }
-
-    fn accumulate_item<T>(acc: Accum<T>, v: T) -> Accum<T>
-    where
-      T: Clone + Add<T, Output = T>,
-    {
-      let newacc = acc.0 + v;
-      let newcount = acc.1 + 1;
-      (newacc, newcount)
-    }
-
-    // our starting point
-    let start = (Item::default(), 0);
-    let acc = accumulate_item as fn(Accum<Item>, Item) -> Accum<Item>;
-    let avg = average_floats as fn(Accum<Item>) -> Item;
-    self.scan_initial(start, acc).last().map(avg)
-  }
-
-  /// Returns a ConnectableObservable. A ConnectableObservable Observable
-  /// resembles an ordinary Observable, except that it does not begin emitting
-  /// items when it is subscribed to, but only when the Connect operator is
-  /// applied to it. In this way you can wait for all intended observers to
-  /// subscribe to the Observable before the Observable begins emitting items.
-  #[inline]
-  fn publish<Subject: Default>(self) -> ConnectableObservable<Self, Subject> {
-    ConnectableObservable::new(self)
-  }
-
-  /// Returns a new Observable that multicast (shares) the original
-  /// Observable. As long as there is at least one Subscriber this
-  /// Observable will be subscribed and emitting data. When all subscribers
-  /// have unsubscribed it will unsubscribe from the source Observable.
-  /// Because the Observable is multicasting it makes the stream `hot`.
-  /// This is an alias for `publish().ref_count()`
-  #[inline]
-  fn share<'a>(self) -> ShareOp<'a, Item, Err, Self> {
-    ShareOp::new(self)
-  }
-
-  #[inline]
-  fn share_threads(self) -> ShareOpThreads<Item, Err, Self> {
-    ShareOpThreads::new(self)
-  }
-
-  /// Delays the emission of items from the source Observable by a given timeout
-  /// or until a given `Instant`.
-  #[inline]
-  fn delay<SD>(self, dur: Duration, scheduler: SD) -> DelayOp<Self, SD> {
-    DelayOp { source: self, delay: dur, scheduler }
-  }
-
-  /// A threads safe version of `delay`
-  #[inline]
-  fn delay_threads<SD>(
-    self,
-    dur: Duration,
-    scheduler: SD,
-  ) -> DelayOpThreads<Self, SD> {
-    DelayOpThreads { source: self, delay: dur, scheduler }
-  }
-
-  #[inline]
-  fn delay_at<SD>(self, at: Instant, scheduler: SD) -> DelayOp<Self, SD> {
-    DelayOp {
-      source: self,
-      delay: at.elapsed(),
-      scheduler,
-    }
-  }
-
-  /// A threads safe version of `delay_at`
-  #[inline]
-  fn delay_at_threads<SD>(
-    self,
-    at: Instant,
-    scheduler: SD,
-  ) -> DelayOpThreads<Self, SD> {
-    DelayOpThreads {
-      source: self,
-      delay: at.elapsed(),
-      scheduler,
-    }
-  }
-
-  /// It's similar to delay but rather than timeshifting the emissions from
-  /// the source Observable, it timeshifts the moment of subscription to that
-  /// Observable.
-  #[inline]
-  fn delay_subscription<SD>(
-    self,
-    dur: Duration,
-    scheduler: SD,
-  ) -> DelaySubscriptionOp<Self, SD> {
-    DelaySubscriptionOp { source: self, delay: dur, scheduler }
-  }
-
-  #[inline]
-  fn delay_subscription_at<SD>(
-    self,
-    at: Instant,
-    scheduler: SD,
-  ) -> DelaySubscriptionOp<Self, SD> {
-    DelaySubscriptionOp {
-      source: self,
-      delay: at.elapsed(),
-      scheduler,
-    }
-  }
-
-  /// Specify the Scheduler on which an Observable will operate
-  ///
-  /// With `SubscribeON` you can decide what type of scheduler a specific
-  /// Observable will be using when it is subscribed to.
-  ///
-  /// Schedulers control the speed and order of emissions to observers from an
-  /// Observable stream.
-  ///
-  /// # Example
-  /// Given the following code:
-  /// ```rust
-  /// use rxrust::prelude::*;
-  ///
-  /// let a = observable::from_iter(1..5);
-  /// let b = observable::from_iter(5..10);
-  /// a.merge(b).subscribe(|v| print!("{} ", v));
-  /// ```
-  ///
-  /// Both Observable `a` and `b` will emit their values directly and
-  /// synchronously once they are subscribed to.
-  /// This will result in the output of `1 2 3 4 5 6 7 8 9`.
-  ///
-  /// But if we instead use the `subscribe_on` operator declaring that we want
-  /// to use the new thread scheduler for values emitted by Observable `a`:
-  /// ```rust
-  /// use rxrust::prelude::*;
-  /// use std::thread;
-  ///
-  /// let pool = FuturesThreadPoolScheduler::new().unwrap();
-  /// let a = observable::from_iter(1..5).subscribe_on(pool);
-  /// let b = observable::from_iter(5..10);
-  /// a.merge_threads(b).subscribe(|v|{
-  ///   let handle = thread::current();
-  ///   print!("{}({:?}) ", v, handle.id())
-  /// });
-  /// ```
-  ///
-  /// The output will instead by `1(thread 1) 2(thread 1) 3(thread 1) 4(thread
-  /// 1)  5(thread 2) 6(thread 2) 7(thread 2) 8(thread 2) 9(thread id2)`.
-  /// The reason for this is that Observable `b` emits its values directly like
-  /// before, but the emissions from `a` are scheduled on a new thread because
-  /// we are now using the `NewThread` Scheduler for that specific Observable.
-  #[inline]
-  fn subscribe_on<SD>(self, scheduler: SD) -> SubscribeOnOP<Self, SD> {
-    SubscribeOnOP { source: self, scheduler }
-  }
-
-  /// Re-emits all notifications from source Observable with specified
-  /// scheduler.
-  ///
-  /// `ObserveOn` is an operator that accepts a scheduler as the parameter,
-  /// which will be used to reschedule notifications emitted by the source
-  /// Observable.
-  #[inline]
-  fn observe_on<SD>(self, scheduler: SD) -> ObserveOnOp<Self, SD> {
-    ObserveOnOp { source: self, scheduler }
-  }
-
-  /// A thread safe version of `observe_on`
-  #[inline]
-  fn observe_on_threads<SD>(
-    self,
-    scheduler: SD,
-  ) -> ObserveOnOpThreads<Self, SD> {
-    ObserveOnOpThreads { source: self, scheduler }
-  }
-
-  /// Emits a value from the source Observable only after a particular time span
-  /// has passed without another source emission.
-  #[inline]
-  fn debounce<SD>(
-    self,
-    duration: Duration,
-    scheduler: SD,
-  ) -> DebounceOp<Self, SD> {
-    DebounceOp { source: self, duration, scheduler }
-  }
-
-  /// Emits a value from the source Observable, then ignores subsequent source
-  /// values for duration milliseconds, then repeats this process.
-  ///
-  /// #Example
-  /// ```
-  /// use rxrust::{ prelude::*, ops::throttle::ThrottleEdge };
-  /// use std::time::Duration;
-  ///
-  /// let mut local_pool = FuturesLocalSchedulerPool::new();
-  /// let scheduler = local_pool.spawner();
-  /// observable::interval(Duration::from_millis(1), scheduler.clone())
-  ///   .throttle(
-  ///     |val| -> Duration {
-  ///       if val % 2 == 0 {
-  ///         Duration::from_millis(7)
-  ///       } else {
-  ///         Duration::from_millis(5)
-  ///       }
-  ///     },
-  ///     ThrottleEdge::leading(), scheduler)
-  ///   .take(5)
-  ///   .subscribe(move |v| println!("{}", v));
-  ///
-  /// local_pool.run();
-  /// ```
-  #[inline]
-  fn throttle<SD, F>(
-    self,
-    duration_selector: F,
-    edge: ThrottleEdge,
-    scheduler: SD,
-  ) -> ThrottleOp<Self, SD, F>
-  where
-    F: Fn(&Item) -> Duration,
-  {
-    ThrottleOp {
-      source: self,
-      duration_selector,
-      edge,
-      scheduler,
-    }
-  }
-
-  /// Emits a value from the source Observable, then ignores subsequent source
-  /// values for duration milliseconds, then repeats this process.
-  ///
-  /// #Example
-  /// ```
-  /// use rxrust::{ prelude::*, ops::throttle::ThrottleEdge };
-  /// use std::time::Duration;
-  ///
-  /// let mut local_pool = FuturesLocalSchedulerPool::new();
-  /// let scheduler = local_pool.spawner();
-  /// observable::interval(Duration::from_millis(1), scheduler.clone())
-  ///   .throttle_time(
-  ///     Duration::from_millis(9), ThrottleEdge::leading(), scheduler)
-  ///   .take(5)
-  ///   .subscribe(move |v| println!("{}", v));
-  ///
-  /// // wait task finish.
-  /// local_pool.run();
-  /// ```
-  #[inline]
   #[allow(clippy::type_complexity)]
-  fn throttle_time<SD>(
-    self,
-    duration: Duration,
-    edge: ThrottleEdge,
-    scheduler: SD,
-  ) -> ThrottleOp<Self, SD, Box<dyn Fn(&Item) -> Duration + Send + Sync>>
+  fn group_by<'a, F, Key>(
+    self, key_selector: F,
+  ) -> Self::With<
+    GroupBy<Self::Inner, F, Self::With<Subject<SubjectPtr<'a, Self, Self::Item<'a>, Self::Err>>>>,
+  >
   where
-    Item: 'static,
+    F: FnMut(&Self::Item<'a>) -> Key,
+    Key: std::hash::Hash + Eq + Clone,
   {
-    self.throttle(Box::new(move |_| duration), edge, scheduler)
+    self.transform(|source| GroupBy::new(source, key_selector))
   }
 
-  /// Returns an Observable that emits all items emitted by the source
-  /// Observable that are distinct by comparison from previous items.
-  #[inline]
-  fn distinct(self) -> DistinctOp<Self> {
-    DistinctOp { source: self }
-  }
-
-  /// Variant of distinct that takes a key selector.
-  #[inline]
-  fn distinct_key<F>(self, key: F) -> DistinctKeyOp<Self, F> {
-    DistinctKeyOp { source: self, key }
-  }
-
-  /// Only emit when the current value is different than the last
-  #[inline]
-  fn distinct_until_changed(self) -> DistinctUntilChangedOp<Self> {
-    DistinctUntilChangedOp { source: self }
-  }
-
-  /// Variant of distinct_until_changed that takes a key selector.
-  #[inline]
-  fn distinct_until_key_changed<F>(
-    self,
-    key: F,
-  ) -> DistinctUntilKeyChangedOp<Self, F> {
-    DistinctUntilKeyChangedOp { source: self, key }
-  }
-
-  /// 'Zips up' two observable into a single observable of pairs.
+  /// Split the source observable into multiple GroupedObservables for mutable
+  /// references
   ///
-  /// zip() returns a new observable that will emit over two other
-  /// observables,  returning a tuple where the first element comes from the
-  /// first observable, and  the second element comes from the second
-  /// observable.
+  /// Each unique key derived from source values creates a new
+  /// `GroupedObservable`. Values with the same key are forwarded to the
+  /// corresponding group's observer. The values are mutable references,
+  /// allowing modification.
   ///
-  ///  In other words, it zips two observables together, into a single one.
-  #[inline]
-  fn zip<Other, Item2>(self, other: Other) -> ZipOp<Self, Other>
-  where
-    Other: ObservableExt<Item2, Err>,
-  {
-    ZipOp::new(self, other)
-  }
-
-  /// A threads safe version of `zip`
-  #[inline]
-  fn zip_threads<Other, Item2>(self, other: Other) -> ZipOpThreads<Self, Other>
-  where
-    Other: ObservableExt<Item2, Err>,
-  {
-    ZipOpThreads::new(self, other)
-  }
-
-  /// Combines the source Observable with other Observables to create an
-  /// Observable whose values are calculated from the latest values of each,
-  /// only when the source emits.
+  /// # Arguments
   ///
-  /// Whenever the source Observable emits a value, it computes a formula
-  /// using that value plus the latest values from other input Observables,
-  /// then emits the output of that formula.
-  #[inline]
-  fn with_latest_from<From, OtherItem>(
-    self,
-    from: From,
-  ) -> WithLatestFromOp<Self, From>
+  /// * `key_selector` - A function that extracts a key from each item
+  #[allow(clippy::type_complexity)]
+  fn group_by_mut_ref<'a, F, Key, Item: 'a>(
+    self, key_selector: F,
+  ) -> Self::With<
+    GroupBy<Self::Inner, F, Self::With<Subject<SubjectPtrMutRef<'a, Self, Item, Self::Err>>>>,
+  >
   where
-    From: ObservableExt<OtherItem, Err>,
-    OtherItem: Clone,
+    Self: Observable<Item<'a> = &'a mut Item> + 'a,
+    F: FnMut(&Self::Item<'a>) -> Key,
+    Key: std::hash::Hash + Eq + Clone,
   {
-    WithLatestFromOp::new(self, from)
+    self.transform(|source| GroupBy::new(source, key_selector))
   }
 
-  #[inline]
-  fn with_latest_from_threads<From, OtherItem>(
-    self,
-    from: From,
-  ) -> WithLatestFromOpThreads<Self, From>
-  where
-    From: ObservableExt<OtherItem, Err>,
-    OtherItem: Clone,
-  {
-    WithLatestFromOpThreads::new(self, from)
-  }
-
-  /// Emits default value if Observable completed with empty result
+  /// Execute a callback when an error occurs
   ///
-  /// #Example
-  /// ```
+  /// This operator allows intercepting errors for side effects while preserving
+  /// the original error flow downstream.
+  fn on_error<F>(self, f: F) -> Self::With<OnError<Self::Inner, F>>
+  where
+    F: FnOnce(Self::Err),
+  {
+    self.transform(|core| OnError::new(core, f))
+  }
+
+  /// Transform the error emitted by the source observable
+  ///
+  /// This operator intercepts an error emission from the source and maps it to
+  /// a new error value/type using the provided function.
+  ///
+  /// # Arguments
+  ///
+  /// * `f` - A function that takes the original error and returns the new error
+  ///
+  /// # Type Parameters
+  ///
+  /// * `OutErr` - The new error type
+  /// * `F` - The mapping function type
+  ///
+  /// # Examples
+  ///
+  /// ```rust
+  /// use std::{cell::RefCell, rc::Rc};
+  ///
   /// use rxrust::prelude::*;
   ///
-  /// observable::empty()
-  ///   .default_if_empty(5)
-  ///   .subscribe(|v| println!("{}", v));
+  /// let got = Rc::new(RefCell::new(None));
+  /// let got_clone = got.clone();
   ///
-  /// // Prints:
-  /// // 5
+  /// Local::throw_err("oops")
+  ///   .map_err(|e| format!("Error: {}", e))
+  ///   .on_error(move |e| *got_clone.borrow_mut() = Some(e))
+  ///   .subscribe(|_| {});
+  ///
+  /// assert_eq!(*got.borrow(), Some("Error: oops".to_string()));
   /// ```
-  #[inline]
-  fn default_if_empty(
-    self,
-    default_value: Item,
-  ) -> DefaultIfEmptyOp<Self, Item> {
-    DefaultIfEmptyOp::new(self, default_value)
-  }
-
-  #[inline]
-  fn buffer<N>(self, closing_notifier: N) -> BufferOp<Self, N>
+  fn map_err<F, OutErr>(self, f: F) -> Self::With<MapErr<Self::Inner, F>>
   where
-    N: ObservableExt<(), Err>,
+    F: FnOnce(Self::Err) -> OutErr,
   {
-    BufferOp { source: self, closing_notifier }
+    self.transform(|source| MapErr { source, func: f })
   }
 
-  /// Buffers emitted values of type T in a Vec<T> and
-  /// emits that Vec<T> as soon as the buffer's size equals
-  /// the given count.
-  /// On complete, if the buffer is not empty,
-  /// it will be emitted.
-  /// On error, the buffer will be discarded.
+  /// Execute a callback when the stream completes
   ///
-  /// The operator never returns an empty buffer.
-  ///
-  /// #Example
-  /// ```
-  /// use rxrust::prelude::*;
-  ///
-  /// observable::from_iter(0..6)
-  ///   .buffer_with_count(3)
-  ///   .subscribe(|vec| println!("{:?}", vec));
-  ///
-  /// // Prints:
-  /// // [0, 1, 2]
-  /// // [3, 4, 5]
-  /// ```
-  #[inline]
-  fn buffer_with_count(self, count: usize) -> BufferWithCountOp<Self> {
-    BufferWithCountOp { source: self, count }
-  }
-
-  /// Buffers emitted values of type T in a Vec<T> and
-  /// emits that Vec<T> periodically.
-  ///
-  /// On complete, if the buffer is not empty,
-  /// it will be emitted.
-  /// On error, the buffer will be discarded.
-  ///
-  /// The operator never returns an empty buffer.
-  ///
-  /// #Example
-  /// ```
-  /// use rxrust::prelude::*;
-  /// use std::time::Duration;
-  ///
-  /// let pool = FuturesThreadPoolScheduler::new().unwrap();
-  ///
-  /// observable::create(|mut subscriber: SubscriberThreads<_>| {
-  ///   subscriber.next(0);
-  ///   subscriber.next(1);
-  ///   std::thread::sleep(Duration::from_millis(100));
-  ///   subscriber.next(2);
-  ///   subscriber.next(3);
-  ///   subscriber.complete();
-  /// })
-  ///   .buffer_with_time(Duration::from_millis(50), pool)
-  ///   .subscribe(|vec| println!("{:?}", vec));
-  ///
-  /// // Prints:
-  /// // [0, 1]
-  /// // [2, 3]
-  /// ```
-  #[inline]
-  fn buffer_with_time<S>(
-    self,
-    time: Duration,
-    scheduler: S,
-  ) -> BufferWithTimeOp<Self, S> {
-    BufferWithTimeOp { source: self, time, scheduler }
-  }
-
-  /// Buffers emitted values of type T in a Vec<T> and
-  /// emits that Vec<T> either if the buffer's size equals count, or
-  /// periodically. This operator combines the functionality of
-  /// buffer_with_count and buffer_with_time.
-  ///
-  /// #Example
-  /// ```
-  /// use rxrust::prelude::*;
-  /// use std::time::Duration;
-  ///
-  /// let pool = FuturesThreadPoolScheduler::new().unwrap();
-  ///
-  /// observable::create(|mut subscriber: SubscriberThreads<_>| {
-  ///   subscriber.next(0);
-  ///   subscriber.next(1);
-  ///   subscriber.next(2);
-  ///   std::thread::sleep(Duration::from_millis(100));
-  ///   subscriber.next(3);
-  ///   subscriber.next(4);
-  ///   subscriber.complete();
-  /// })
-  ///   .buffer_with_count_and_time(2, Duration::from_millis(50), pool)
-  ///   .subscribe(|vec| println!("{:?}", vec));
-  ///
-  /// // Prints:
-  /// // [0, 1]
-  /// // [2]
-  /// // [3, 4]
-  /// ```
-  #[inline]
-  fn buffer_with_count_and_time<S>(
-    self,
-    count: usize,
-    time: Duration,
-    scheduler: S,
-  ) -> BufferWithCountOrTimerOp<Self, S> {
-    BufferWithCountOrTimerOp { source: self, count, time, scheduler }
-  }
-
-  /// Emits item which is combining latest items from two observables.
-  ///
-  /// combine_latest() merges two observables into one observable
-  /// by applying a binary operator on the latest item of two observable
-  /// whenever each of observables produces an element.
-  ///
-  /// #Example
-  /// ```
-  /// use rxrust::prelude::*;
-  /// use std::time::Duration;
-  /// use futures::executor::LocalPool;
-  ///
-  /// let mut local_scheduler = LocalPool::new();
-  /// let spawner = local_scheduler.spawner();
-  /// observable::interval(Duration::from_millis(2), spawner.clone())
-  ///   .combine_latest(
-  ///     observable::interval(Duration::from_millis(3), spawner),
-  ///     |a, b| (a, b),
-  ///   )
-  ///   .take(5)
-  ///   .subscribe(move |v| println!("{}, {}", v.0, v.1));
-  ///
-  /// local_scheduler.run();
-  /// // print logs:
-  /// // 0, 0
-  /// // 1, 0
-  /// // 2, 0
-  /// // 2, 1
-  /// // 3, 1
-  /// ```
-  fn combine_latest<Other, OtherItem, BinaryOp, OutputItem>(
-    self,
-    other: Other,
-    binary_op: BinaryOp,
-  ) -> CombineLatestOp<Self, Other, Item, OtherItem, OutputItem, BinaryOp>
-  where
-    Other: ObservableExt<OtherItem, Err>,
-    BinaryOp: FnMut(Item, OtherItem) -> OutputItem,
-  {
-    CombineLatestOp::new(self, other, binary_op)
-  }
-
-  fn combine_latest_threads<Other, OtherItem, BinaryOp, OutputItem>(
-    self,
-    other: Other,
-    binary_op: BinaryOp,
-  ) -> CombineLatestOpThread<Self, Other, Item, OtherItem, OutputItem, BinaryOp>
-  where
-    Other: ObservableExt<OtherItem, Err>,
-    BinaryOp: FnMut(Item, OtherItem) -> OutputItem,
-  {
-    CombineLatestOpThread::new(self, other, binary_op)
-  }
-
-  /// Returns an observable that, at the moment of subscription, will
-  /// synchronously emit all values provided to this operator, then subscribe
-  /// to the source and mirror all of its emissions to subscribers.
-  fn start_with<B>(self, values: Vec<B>) -> StartWithOp<Self, B> {
-    StartWithOp { source: self, values }
-  }
-
-  /// Groups pairs of consecutive emissions together and emits them as an pair
-  /// of two values.
-  fn pairwise(self) -> PairwiseOp<Self> {
-    PairwiseOp { source: self }
-  }
-
-  /// Used to perform side-effects for notifications from the source observable
-  #[inline]
-  fn tap<F>(self, f: F) -> TapOp<Self, F>
-  where
-    F: FnMut(&Item),
-  {
-    TapOp { source: self, func: f }
-  }
-
-  /// Retry the observable when error occurs.
-  #[inline]
-  fn retry<SD>(self, scheduler: SD) -> RetryOp<Self, SimpleRetryConfig, SD> {
-    RetryOp::new(self, SimpleRetryConfig::new(), scheduler)
-  }
-
-  /// Retry the observable when error occurs with a custom config.
-  #[inline]
-  fn retry_with_config<Config, SD>(
-    self,
-    config: Config,
-    scheduler: SD,
-  ) -> RetryOp<Self, Config, SD> {
-    RetryOp::new(self, config, scheduler)
-  }
-
-  /// Retry the observable when error occurs.
-  #[inline]
-  fn retry_threads<SD>(
-    self,
-    scheduler: SD,
-  ) -> RetryThreadsOp<Self, SimpleRetryConfig, SD> {
-    RetryThreadsOp::new(self, SimpleRetryConfig::new(), scheduler)
-  }
-
-  /// Retry the observable when error occurs with a custom config.
-  #[inline]
-  fn retry_with_config_threads<Config, SD>(
-    self,
-    config: Config,
-    scheduler: SD,
-  ) -> RetryThreadsOp<Self, Config, SD> {
-    RetryThreadsOp::new(self, config, scheduler)
-  }
-
-  /// Process the error of the observable and the return observable can't catch the error any more.
-  #[inline]
-  #[must_use]
-  fn on_error<F>(self, f: F) -> OnErrorOp<Self, F, Err>
-  where
-    F: FnOnce(Err),
-  {
-    OnErrorOp::new(self, f)
-  }
-
-  #[inline]
-  #[must_use]
-  fn on_complete<F>(self, f: F) -> OnCompleteOp<Self, F>
+  /// This operator allows reacting to completion events for side effects.
+  fn on_complete<F>(self, f: F) -> Self::With<OnComplete<Self::Inner, F>>
   where
     F: FnOnce(),
   {
-    OnCompleteOp { source: self, func: f }
+    self.transform(|core| OnComplete::new(core, f))
   }
 
-  /// Turn the observable to an new observable that will track its complete
-  /// status.
-  /// The second element of return tuple provide ability let you can query if it
-  /// completed  or error occur. You can also wait the observable finish.
-  #[inline]
-  fn complete_status(self) -> (StatusOp<Self>, Arc<CompleteStatus>) {
-    ops::complete_status::complete_status(self)
-  }
-
-  /// Collects all the items emitted by the observable into a collection.
+  /// Delay emissions by the specified duration
   ///
-  /// # Example
-  /// ```
+  /// This operator delays each emission by the specified duration using the
+  /// context's scheduler. Error and completion notifications are NOT delayed.
+  fn delay(self, delay: Duration) -> Self::With<Delay<Self::Inner, Self::Scheduler>> {
+    let scheduler = self.scheduler().clone();
+    self.transform(|core| Delay { source: core, delay, scheduler })
+  }
+
+  /// Delay emissions until the specified instant
+  ///
+  /// This operator delays each emission until the specified instant using the
+  /// context's scheduler. If the instant is in the past, emissions happen
+  /// immediately.
+  fn delay_at(self, instant: Instant) -> Self::With<Delay<Self::Inner, Self::Scheduler>> {
+    let now = Instant::now();
+    let delay = if instant <= now { Duration::ZERO } else { instant - now };
+    self.delay(delay)
+  }
+
+  /// Delay emissions by a specified duration using a custom scheduler
+  ///
+  /// This operator delays each emission by the specified duration using the
+  /// provided scheduler, overriding the context's default scheduler.
+  fn delay_with<Sch>(self, delay: Duration, scheduler: Sch) -> Self::With<Delay<Self::Inner, Sch>> {
+    self.transform(|core| Delay { source: core, delay, scheduler })
+  }
+
+  /// Delay the subscription to the source observable by the specified duration
+  ///
+  /// This operator timeshifts the moment of subscription to the source
+  /// Observable.
+  fn delay_subscription(
+    self, delay: Duration,
+  ) -> Self::With<DelaySubscriptionOp<Self::Inner, Self::Scheduler>> {
+    let scheduler = self.scheduler().clone();
+    self.transform(|core| DelaySubscriptionOp { source: core, delay, scheduler })
+  }
+
+  /// Delay the subscription to the source observable until the specified
+  /// instant
+  fn delay_subscription_at(
+    self, instant: Instant,
+  ) -> Self::With<DelaySubscriptionOp<Self::Inner, Self::Scheduler>> {
+    let now = Instant::now();
+    let delay = if instant <= now { Duration::ZERO } else { instant - now };
+    self.delay_subscription(delay)
+  }
+
+  /// Delay the subscription to the source observable by the specified duration
+  /// using a custom scheduler
+  fn delay_subscription_with<Sch>(
+    self, delay: Duration, scheduler: Sch,
+  ) -> Self::With<DelaySubscriptionOp<Self::Inner, Sch>> {
+    self.transform(|core| DelaySubscriptionOp { source: core, delay, scheduler })
+  }
+
+  /// Emit a value only after a quiet period has passed
+  ///
+  /// Emits an item from the source Observable only after a particular duration
+  /// has passed without another source emission. Each new emission resets the
+  /// timer.
+  ///
+  /// # Arguments
+  ///
+  /// * `duration` - The quiet period duration after which to emit the last
+  ///   value
+  ///
+  /// # Examples
+  ///
+  /// ```rust,no_run
   /// use rxrust::prelude::*;
   ///
-  /// let mut subject = Subject::default();
-  /// subject.clone()
-  ///   .collect::<Vec<_>>()
-  ///   .subscribe(|values| {
-  ///     println!("{values:?}");
-  /// });
-  ///
-  /// subject.next(2);
-  /// subject.next(4);
-  /// subject.next(6);
-  ///
-  /// // prints: [2,4,6]
+  /// // Only emit after 100ms of no emissions
+  /// let source = Local::from_iter([1, 2, 3, 4, 5]);
+  /// source
+  ///   .debounce(Duration::from_millis(100))
+  ///   .subscribe(|v| println!("Debounced: {}", v));
   /// ```
-  #[inline]
-  fn collect<C>(self) -> CollectOp<Self, C>
+  fn debounce(self, duration: Duration) -> Self::With<Debounce<Self::Inner, Self::Scheduler>> {
+    let scheduler = self.scheduler().clone();
+    self.transform(|core| Debounce { source: core, duration, scheduler })
+  }
+
+  /// Emit a value only after a quiet period has passed, using a custom
+  /// scheduler
+  ///
+  /// This variant allows specifying a custom scheduler for the debounce timer.
+  fn debounce_with<Sch>(
+    self, duration: Duration, scheduler: Sch,
+  ) -> Self::With<Debounce<Self::Inner, Sch>> {
+    self.transform(|core| Debounce { source: core, duration, scheduler })
+  }
+
+  /// Re-emits all notifications from this Observable on the specified
+  /// Scheduler.
+  ///
+  /// This operator ensures that the downstream observer's methods (`next`,
+  /// `error`, `complete`) are executed in the context of the provided
+  /// scheduler.
+  ///
+  /// # Arguments
+  ///
+  /// * `scheduler` - The scheduler to use for emitting notifications
+  fn observe_on<Sch>(self, scheduler: Sch) -> Self::With<ObserveOn<Self::Inner, Sch>> {
+    self.transform(|core| ObserveOn { source: core, scheduler })
+  }
+
+  /// Schedule the subscription (and work done during subscription) on a
+  /// specified Scheduler.
+  ///
+  /// Unlike `observe_on` which affects where notifications are delivered,
+  /// `subscribe_on` affects where the source observable's subscription logic
+  /// runs.
+  ///
+  /// # Arguments
+  ///
+  /// * `scheduler` - The scheduler on which to schedule the subscription
+  fn subscribe_on<Sch>(self, scheduler: Sch) -> Self::With<SubscribeOn<Self::Inner, Sch>> {
+    self.transform(|core| SubscribeOn { source: core, scheduler })
+  }
+
+  /// Resubscribe to the source observable when it errors
+  ///
+  /// This operator resubscribes to the source observable when it emits an
+  /// error. It can be used to retry failed operations.
+  ///
+  /// # Arguments
+  ///
+  /// * `policy` - The retry policy. This can be:
+  ///   - `usize`: A simple retry count (e.g., `.retry(3)`).
+  ///   - [`RetryConfig`]: A configuration object for advanced control (delay,
+  ///     reset on success).
+  ///   - A custom type implementing the [`RetryPolicy`] trait.
+  ///
+  /// # Examples
+  ///
+  /// Simple retry with count:
+  ///
+  /// ```rust,no_run
+  /// use rxrust::prelude::*;
+  ///
+  /// Local::throw_err("fail")
+  ///   .retry(3)
+  ///   .on_error(|_e| {})
+  ///   .subscribe(|_| {});
+  /// ```
+  ///
+  /// Advanced retry with configuration:
+  ///
+  /// ```rust,no_run
+  /// use rxrust::{ops::RetryConfig, prelude::*};
+  ///
+  /// Local::throw_err("fail")
+  ///   .retry(
+  ///     RetryConfig::new()
+  ///       .count(3)
+  ///       .delay(Duration::from_millis(100)),
+  ///   )
+  ///   .on_error(|_e| {})
+  ///   .subscribe(|_| {});
+  /// ```
+  ///
+  /// Custom retry policy (e.g., HTTP status code):
+  ///
+  /// ```rust,no_run
+  /// use rxrust::{ops::retry::RetryPolicy, prelude::*};
+  ///
+  /// #[derive(Clone)]
+  /// struct HttpRetry;
+  ///
+  /// impl RetryPolicy<u16> for HttpRetry {
+  ///   fn should_retry(&self, err: &u16, attempt: usize) -> Option<Duration> {
+  ///     match err {
+  ///       500 => Some(Duration::from_millis(100)), // Retry server errors
+  ///       404 => None,                             // Do not retry not found
+  ///       _ => None,
+  ///     }
+  ///   }
+  /// }
+  ///
+  /// Local::throw_err(500u16)
+  ///   .retry(HttpRetry)
+  ///   .on_error(|_e| {})
+  ///   .subscribe(|_| {});
+  /// ```
+  fn retry<P>(self, policy: P) -> Self::With<Retry<Self::Inner, P, Self::Scheduler>>
   where
-    C: IntoIterator + Extend<C::Item> + Default,
+    P: RetryPolicy<Self::Err>,
+  {
+    let scheduler = self.scheduler().clone();
+    self.transform(|source| Retry { source, policy, scheduler })
+  }
+
+  /// Throttle emissions by ignoring values during a window
+  ///
+  /// Each emitted value starts a throttle window. While the
+  /// window is active, additional source values are suppressed.
+  ///
+  /// The window is closed by a notifier Observable returned by `selector`.
+  /// The first `next` (or `complete`) from the notifier ends the window.
+  ///
+  /// If `edge.trailing` is enabled, the last suppressed value is emitted when
+  /// the window ends. If a trailing value is emitted, it starts a new window.
+  ///
+  /// Completion semantics: if the source completes while a window is active
+  /// and a trailing value is pending, completion is delayed until the window
+  /// ends and the trailing value is emitted.
+  ///
+  /// # Arguments
+  ///
+  /// * `selector` - A function that takes a reference to an item and returns a
+  ///   notifier Observable that closes the throttle window
+  /// * `edge` - Configuration for leading/trailing behavior
+  ///
+  /// # Examples
+  ///
+  /// ```rust,no_run
+  /// use rxrust::prelude::*;
+  ///
+  /// // Throttle with a dynamic notifier based on value
+  /// let source = Local::from_iter([1u64, 2, 3, 4, 5]);
+  /// source
+  ///   .throttle(|v| Local::timer(Duration::from_millis(*v * 10)), ThrottleEdge::leading())
+  ///   .subscribe(|v| println!("Throttled: {}", v));
+  /// ```
+  fn throttle<F, Out>(
+    self, selector: F, edge: ThrottleEdge,
+  ) -> Self::With<Throttle<Self::Inner, ThrottleWhenParam<F>>>
+  where
+    F: for<'a> FnMut(&Self::Item<'a>) -> Out,
+    Out: Observable<Err = Self::Err>,
+  {
+    self.transform(|core| Throttle { source: core, param: ThrottleWhenParam { selector }, edge })
+  }
+
+  /// Throttle emissions with a fixed duration
+  ///
+  /// Time-based convenience wrapper around notifier-based throttle.
+  ///
+  /// # Arguments
+  ///
+  /// * `duration` - The throttle window duration
+  /// * `edge` - Configuration for leading/trailing behavior
+  ///
+  /// # Examples
+  ///
+  /// ```rust,no_run
+  /// use rxrust::prelude::*;
+  ///
+  /// // Emit first value, then ignore for 100ms
+  /// let source = Local::from_iter([1, 2, 3, 4, 5]);
+  /// source
+  ///   .throttle_time(Duration::from_millis(100), ThrottleEdge::leading())
+  ///   .subscribe(|v| println!("Throttled: {}", v));
+  /// ```
+  fn throttle_time(
+    self, duration: Duration, edge: ThrottleEdge,
+  ) -> Self::With<Throttle<Self::Inner, Self::With<Duration>>>
+  where
+    Self::With<Duration>: Context<Scheduler = Self::Scheduler>,
+  {
+    let scheduler = self.scheduler().clone();
+    self.throttle_time_with(duration, edge, scheduler)
+  }
+
+  /// Throttle emissions with a fixed duration using a custom scheduler
+  ///
+  /// This variant allows specifying a custom scheduler for the throttle timer.
+  fn throttle_time_with<Sch>(
+    self, duration: Duration, edge: ThrottleEdge, scheduler: Sch,
+  ) -> Self::With<Throttle<Self::Inner, Self::With<Duration>>>
+  where
+    Self::With<Duration>: Context<Scheduler = Sch>,
+  {
+    self.transform(move |core| Throttle {
+      source: core,
+      param: Self::With::from_parts(duration, scheduler),
+      edge,
+    })
+  }
+
+  /// Emit the most recently emitted value when a sampler Observable emits
+  ///
+  /// Whenever the sampler Observable emits a value, emit the most recently
+  /// emitted value from the source Observable. Also emits the stored value
+  /// when the sampler completes.
+  ///
+  /// # Arguments
+  ///
+  /// * `sampler` - The observable that controls when to sample the source
+  ///
+  /// # Examples
+  ///
+  /// ```rust
+  /// use rxrust::prelude::*;
+  ///
+  /// let mut source = Local::subject();
+  /// let mut sampler = Local::subject();
+  ///
+  /// let source_sub = source.clone();
+  /// let sampler_sub = sampler.clone();
+  ///
+  /// source_sub
+  ///   .sample(sampler_sub)
+  ///   .subscribe(|v| println!("Sampled: {}", v));
+  ///
+  /// source.next(1);
+  /// source.next(2);
+  /// sampler.next(()); // Emits 2
+  /// source.next(3);
+  /// sampler.next(()); // Emits 3
+  /// ```
+  fn sample<N>(self, sampler: N) -> Self::With<Sample<Self::Inner, N::Inner>>
+  where
+    N: Observable<Err = Self::Err, Inner: ObservableType>,
+  {
+    self.transform(|source| Sample { source, sampler: sampler.into_inner() })
+  }
+
+  /// Combine items from two observables pairwise
+  ///
+  /// Zip combines items from this observable with items from another observable
+  /// pairwise. It buffers items from each source and emits a tuple `(ItemA,
+  /// ItemB)` when both sources have emitted a value. The stream completes
+  /// when both sources complete.
+  ///
+  /// # Arguments
+  ///
+  /// * `other` - The second observable to zip with
+  ///
+  /// # Examples
+  ///
+  /// ```rust
+  /// use rxrust::prelude::*;
+  ///
+  /// Local::from_iter([1, 2, 3])
+  ///   .zip(Local::from_iter([4, 5, 6]))
+  ///   .subscribe(|(a, b)| println!("({}, {})", a, b));
+  /// // Prints: (1, 4), (2, 5), (3, 6)
+  /// ```
+  fn zip<B>(self, other: B) -> Self::With<Zip<Self::Inner, B::Inner>>
+  where
+    B: Observable<Err = Self::Err, Inner: ObservableType>,
+  {
+    self.transform(|source_a| Zip { source_a, source_b: other.into_inner() })
+  }
+
+  /// Perform a side effect for each emission
+  ///
+  /// The `tap` operator allows you to perform side effects for each value
+  /// emitted by the source observable, without modifying the values themselves.
+  /// It's useful for debugging, logging, or triggering external actions.
+  ///
+  /// # Arguments
+  ///
+  /// * `f` - A function that takes a reference to each emitted value
+  ///
+  /// # Examples
+  ///
+  /// ```rust
+  /// use rxrust::prelude::*;
+  ///
+  /// Local::from_iter([1, 2, 3])
+  ///   .tap(|v| println!("Got value: {}", v))
+  ///   .subscribe(|_| {});
+  /// ```
+  fn tap<F>(self, f: F) -> Self::With<Tap<Self::Inner, F>>
+  where
+    F: for<'a> FnMut(&Self::Item<'a>),
+  {
+    self.transform(|source| Tap { source, func: f })
+  }
+
+  /// Execute cleanup logic when the Observable terminates
+  ///
+  /// The `finalize` operator calls a function when the Observable completes,
+  /// errors, or is unsubscribed. The function is guaranteed to be called
+  /// exactly once, regardless of how the Observable terminates.
+  ///
+  /// # Examples
+  ///
+  /// ```rust
+  /// use std::{cell::Cell, rc::Rc};
+  ///
+  /// use rxrust::prelude::*;
+  ///
+  /// let finalized = Rc::new(Cell::new(false));
+  /// let finalized_clone = finalized.clone();
+  ///
+  /// Local::of(1)
+  ///   .finalize(move || finalized_clone.set(true))
+  ///   .subscribe(|_| {});
+  ///
+  /// assert!(finalized.get());
+  /// ```
+  fn finalize<F>(self, f: F) -> Self::With<Finalize<Self::Inner, F>>
+  where
+    F: FnOnce(),
+  {
+    self.transform(|source| Finalize { source, func: f })
+  }
+
+  /// Emit specified values before beginning to emit source values
+  ///
+  /// The `start_with` operator prepends the provided values to the source
+  /// Observable. The values are emitted synchronously before subscribing
+  /// to the source.
+  ///
+  /// # Arguments
+  ///
+  /// * `values` - A Vec of items to emit before the source items
+  ///
+  /// # Examples
+  ///
+  /// ```rust
+  /// use rxrust::prelude::*;
+  ///
+  /// Local::from_iter([3, 4, 5])
+  ///   .start_with(vec![1, 2])
+  ///   .subscribe(|v| println!("{}", v));
+  /// // Prints: 1, 2, 3, 4, 5
+  /// ```
+  fn start_with<Item>(self, values: Vec<Item>) -> Self::With<StartWith<Self::Inner, Item>> {
+    self.transform(|source| StartWith { source, values })
+  }
+
+  /// Emit a default value if the observable completes without emitting any
+  /// items
+  ///
+  /// The `default_if_empty` operator emits a default value if the source
+  /// Observable completes without emitting any items. If the source emits
+  /// any items, the default value is not emitted.
+  ///
+  /// # Arguments
+  ///
+  /// * `default_value` - The value to emit if the source is empty
+  ///
+  /// # Examples
+  ///
+  /// ```rust
+  /// use rxrust::prelude::*;
+  ///
+  /// Local::empty()
+  ///   .map_to(0)
+  ///   .default_if_empty(42)
+  ///   .subscribe(|v| println!("{}", v));
+  /// // Prints: 42
+  /// ```
+  fn default_if_empty<'a>(
+    self, default_value: Self::Item<'a>,
+  ) -> Self::With<DefaultIfEmpty<Self::Inner, Self::Item<'a>>> {
+    self.transform(|source| DefaultIfEmpty::new(source, default_value))
+  }
+
+  /// Collect all emitted items into a collection
+  ///
+  /// The `collect` operator accumulates all items emitted by the source
+  /// Observable into a collection. When the source completes, the collection
+  /// is emitted as a single value.
+  ///
+  /// If the source errors, the error is propagated without emitting the
+  /// collection.
+  ///
+  /// # Type Parameters
+  ///
+  /// * `C` - The collection type, must implement `Default` and `Extend<Item>`
+  ///
+  /// # Examples
+  ///
+  /// ```rust
+  /// use rxrust::prelude::*;
+  ///
+  /// Local::from_iter([1, 2, 3])
+  ///   .collect::<Vec<_>>()
+  ///   .subscribe(|v| println!("{:?}", v));
+  /// // Prints: [1, 2, 3]
+  /// ```
+  fn collect<C>(self) -> Self::With<Collect<Self::Inner, C>>
+  where
+    C: Default,
   {
     self.collect_into(C::default())
   }
 
-  /// Collects all the items emitted by the observable into the given collection.
+  /// Collect all emitted items into an existing collection
   ///
-  /// # Example
-  /// ```
+  /// Similar to `collect`, but starts with a pre-populated collection.
+  /// New items are appended to the provided initial collection.
+  ///
+  /// # Arguments
+  ///
+  /// * `initial` - The initial collection to start with
+  ///
+  /// # Type Parameters
+  ///
+  /// * `C` - The collection type, must implement `Extend<Item>`
+  ///
+  /// # Examples
+  ///
+  /// ```rust
   /// use rxrust::prelude::*;
   ///
-  /// #[tokio::main]
-  /// async fn main() {
-  ///   let observable = observable::from_iter(['x', 'y', 'z']);
-  ///   let base = vec!['a', 'b', 'c'];
-  ///   let values = observable.collect_into::<Vec<_>>(base)
-  ///       .to_future()
-  ///       .await
-  ///       .unwrap()
-  ///       .ok();
-  ///
-  ///   assert_eq!(values, Some(vec!['a', 'b', 'c', 'x', 'y', 'z']));
-  /// }
+  /// Local::from_iter([4, 5, 6])
+  ///   .collect_into::<Vec<_>>(vec![1, 2, 3])
+  ///   .subscribe(|v| println!("{:?}", v));
+  /// // Prints: [1, 2, 3, 4, 5, 6]
   /// ```
-  #[inline]
-  fn collect_into<C>(self, collection: C) -> CollectOp<Self, C>
-  where
-    C: IntoIterator + Extend<C::Item>,
-  {
-    CollectOp::new(self, collection)
+  fn collect_into<C>(self, initial: C) -> Self::With<Collect<Self::Inner, C>> {
+    self.transform(|source| Collect { source, collection: initial })
   }
 
-  /// Converts this observable into a `Future` that resolves to `Result<Result<Item, Err>, ObservableError>`.
+  /// Buffer items until a notifier observable emits
   ///
-  /// # Error
-  /// - ObservableError::Empty: If the observable emitted no values.
-  /// - Observable::MultipleValues: If the observable emitted more than one value.
+  /// Collects items from the source observable into a Vec. When the notifier
+  /// emits, the buffered items are emitted as a Vec and the buffer is cleared.
+  /// When the source completes, any remaining items are emitted.
   ///
-  /// # Example
-  /// ```
+  /// # Arguments
+  ///
+  /// * `notifier` - The observable that triggers buffer emission
+  ///
+  /// # Examples
+  ///
+  /// ```rust
+  /// use std::convert::Infallible;
+  ///
   /// use rxrust::prelude::*;
   ///
-  /// #[tokio::main]
-  /// async fn main() {
-  ///   let observable = observable::of(12);
-  ///   let value = observable.to_future().await.unwrap().ok();
-  ///   assert_eq!(value, Some(12));
-  /// }
+  /// let notifier = Local::subject::<(), Infallible>();
+  /// let source = Local::subject::<i32, Infallible>();
+  ///
+  /// source
+  ///   .buffer(notifier)
+  ///   .subscribe(|v| println!("{:?}", v));
   /// ```
-  #[inline]
-  fn to_future(self) -> ObservableFuture<Item, Err>
+  fn buffer<N>(self, notifier: N) -> Self::With<Buffer<Self::Inner, N::Inner>>
   where
-    Self: Observable<Item, Err, ObservableFutureObserver<Item, Err>>,
+    N: Observable<Err = Self::Err, Inner: ObservableType>,
   {
-    ObservableFuture::new(self)
+    self.transform(|source| Buffer { source, notifier: notifier.into_inner() })
   }
 
-  /// Converts this observable into a stream that emits the values of the observable.
+  /// Buffer items until a count is reached
+  ///
+  /// Collects items from the source observable into a Vec. When the count
+  /// is reached, the buffered items are emitted as a Vec and the buffer is
+  /// cleared. When the source completes, any remaining items are emitted.
+  ///
+  /// # Arguments
+  ///
+  /// * `count` - The number of items to buffer before emitting
+  ///
+  /// # Examples
+  ///
+  /// ```rust
+  /// use rxrust::prelude::*;
+  ///
+  /// Local::from_iter([1, 2, 3, 4, 5])
+  ///   .buffer_count(2)
+  ///   .subscribe(|v| println!("{:?}", v));
+  /// // Prints: [1, 2], [3, 4], [5]
+  /// ```
+  fn buffer_count(self, count: usize) -> Self::With<BufferCount<Self::Inner>> {
+    self.transform(|source| BufferCount { source, count })
+  }
+
+  /// Buffer items for a time window
+  ///
+  /// Collects items from the source observable into a Vec. When the time
+  /// window expires, the buffered items are emitted as a Vec and a new
+  /// window starts. When the source completes, any remaining items are emitted.
+  ///
+  /// # Examples
+  ///
+  /// ```rust,no_run
+  /// use rxrust::prelude::*;
+  ///
+  /// let source = Local::from_iter([1, 2, 3, 4, 5]);
+  /// source
+  ///   .buffer_time(Duration::from_millis(100))
+  ///   .subscribe(|v| println!("{:?}", v));
+  /// ```
+  fn buffer_time(self, duration: Duration) -> Self::With<BufferTime<Self::Inner, Self::Scheduler>> {
+    let scheduler = self.scheduler().clone();
+    self.transform(|source| BufferTime { source, duration, max_buffer_size: None, scheduler })
+  }
+
+  /// Buffer items until time OR max count is reached
+  ///
+  /// The buffer is emitted when either the time window expires or the max
+  /// buffer size is reached, whichever comes first.
+  ///
+  /// # Examples
+  ///
+  /// ```rust,no_run
+  /// use rxrust::prelude::*;
+  ///
+  /// let source = Local::from_iter([1, 2, 3, 4, 5]);
+  /// source
+  ///   .buffer_time_max(Duration::from_millis(100), 10)
+  ///   .subscribe(|v| println!("{:?}", v));
+  /// ```
+  fn buffer_time_max(
+    self, duration: Duration, max_buffer_size: usize,
+  ) -> Self::With<BufferTime<Self::Inner, Self::Scheduler>> {
+    let scheduler = self.scheduler().clone();
+    self.transform(|source| BufferTime {
+      source,
+      duration,
+      max_buffer_size: Some(max_buffer_size),
+      scheduler,
+    })
+  }
+
+  /// Buffers items emitted by the source observable for a specified time
+  /// window, using a custom scheduler for timing control.
+  ///
+  /// When the time window expires, the buffered items are emitted as a `Vec<T>`
+  /// and a new buffer window starts. This variant allows you to provide your
+  /// own scheduler for precise timing control (e.g., `TestScheduler` for
+  /// testing).
+  ///
+  /// # Arguments
+  /// * `duration` - The time span for each buffer window
+  /// * `scheduler` - The scheduler to use for timing the buffer windows
   ///
   /// # Example
+  /// ```ignore
+  /// observable
+  ///   .buffer_time_with(Duration::from_millis(100), my_scheduler)
+  ///   .subscribe(|buffer| println!("Buffered: {:?}", buffer));
   /// ```
-  /// use rxrust::prelude::*;
-  /// use futures::StreamExt;
   ///
+  /// # See Also
+  /// * [`buffer_time`] - Uses the default scheduler
+  /// * [`buffer_time_max_with`] - Adds a max buffer size constraint
+  fn buffer_time_with<Sch>(
+    self, duration: Duration, scheduler: Sch,
+  ) -> Self::With<BufferTime<Self::Inner, Sch>> {
+    self.transform(|source| BufferTime { source, duration, max_buffer_size: None, scheduler })
+  }
+
+  /// Buffers items emitted by the source observable until either the time
+  /// window expires OR the maximum buffer size is reached, whichever comes
+  /// first. Uses a custom scheduler for timing control.
+  ///
+  /// This is useful when you want to limit memory usage by capping the buffer
+  /// size while still ensuring timely delivery of smaller batches.
+  ///
+  /// # Arguments
+  /// * `duration` - The maximum time span for each buffer window
+  /// * `max_buffer_size` - The maximum number of items per buffer; when
+  ///   reached, the buffer is emitted immediately and a new window starts
+  /// * `scheduler` - The scheduler to use for timing the buffer windows
+  ///
+  /// # Example
+  /// ```ignore
+  /// // Emit buffer every 100ms OR when 5 items are collected
+  /// observable
+  ///   .buffer_time_max_with(Duration::from_millis(100), 5, my_scheduler)
+  ///   .subscribe(|buffer| println!("Buffered: {:?}", buffer));
+  /// ```
+  ///
+  /// # See Also
+  /// * [`buffer_time_max`] - Uses the default scheduler
+  /// * [`buffer_time_with`] - Without max buffer size constraint
+  fn buffer_time_max_with<Sch>(
+    self, duration: Duration, max_buffer_size: usize, scheduler: Sch,
+  ) -> Self::With<BufferTime<Self::Inner, Sch>> {
+    self.transform(|source| BufferTime {
+      source,
+      duration,
+      max_buffer_size: Some(max_buffer_size),
+      scheduler,
+    })
+  }
+
+  /// Convert this observable into a ConnectableObservable using the specified
+  /// subject
+  ///
+  /// This operator creates a ConnectableObservable that will multicast values
+  /// from this observable through the provided subject. The connection must
+  /// be established explicitly via the `connect()` method on the resulting
+  /// ConnectableObservable.
+  ///
+  /// # Multicasting Behavior
+  ///
+  /// - The source observable is subscribed to only once when `connect()` is
+  ///   called
+  /// - Values are broadcast to all subscribed observers
+  /// - Requires `Item: Clone` for value broadcasting
+  /// - Multiple observers share the same subscription to the source
+  ///
+  /// # Arguments
+  ///
+  /// * `subject` - The subject that will multicast values to observers
+  ///
+  /// # Returns
+  ///
+  /// A ConnectableObservable wrapped in the same Context. Use `fork()` to
+  /// create Observable instances and `connect()` to start multicasting.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rxrust::prelude::*;
+  ///
+  /// let source = Local::of(1).merge(Local::of(2));
+  /// let subject = Local::subject();
+  /// let connectable = source.multicast(subject.into_inner());
+  ///
+  /// // Subscribe multiple observers (they will receive cloned values)
+  /// let obs1 = connectable.fork();
+  /// let obs2 = connectable.fork();
+  /// obs1.subscribe(|v| println!("Observer 1: {}", v));
+  /// obs2.subscribe(|v| println!("Observer 2: {}", v));
+  ///
+  /// // Start multicasting - source is subscribed to once
+  /// let connection = connectable.connect();
+  ///
+  /// // Later, disconnect to stop multicasting
+  /// connection.unsubscribe();
+  /// ```
+  fn multicast<'a>(
+    self, subject: Subject<SubjectPtr<'a, Self, Self::Item<'a>, Self::Err>>,
+  ) -> ConnectableObservableCtx<'a, Self> {
+    self.transform(|source| ConnectableObservable { source, subject })
+  }
+
+  /// Convert this observable into a ConnectableObservable using the specified
+  /// subject for mutable reference broadcasting
+  ///
+  /// This operator creates a ConnectableObservable that will multicast mutable
+  /// references from this observable through the provided subject. The
+  /// connection must be established explicitly via the `connect()` method on
+  /// the resulting ConnectableObservable.
+  ///
+  /// # Mutable Reference Broadcasting
+  ///
+  /// - Uses Higher-Rank Trait Bounds (HRTB) to allow sequential modification
+  /// - No `Clone` requirement on `Item` type
+  /// - Observers receive `&mut Item` and can modify values
+  /// - Multiple observers can modify the same value sequentially
+  /// - Source observable is subscribed to only once when `connect()` is called
+  ///
+  /// # Arguments
+  ///
+  /// * `subject` - The subject that will multicast mutable references to
+  ///   observers
+  ///
+  /// # Returns
+  ///
+  /// A ConnectableObservable wrapped in the same Context.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rxrust::prelude::*;
+  ///
+  /// let source = Local::subject_mut_ref();
+  /// let subject = Local::subject_mut_ref();
+  /// let connectable = source.multicast_mut_ref(subject.into_inner());
+  ///
+  /// // Subscribe multiple observers that can modify values sequentially
+  /// connectable
+  ///   .fork()
+  ///   .subscribe(|v: &mut i32| *v += 1);
+  /// connectable
+  ///   .fork()
+  ///   .subscribe(|v: &mut i32| *v *= 2);
+  ///
+  /// // Start multicasting - source is subscribed to once
+  /// let connection = connectable.connect();
+  ///
+  /// // Later, disconnect to stop multicasting
+  /// connection.unsubscribe();
+  /// ```
+  #[allow(clippy::type_complexity)]
+  fn multicast_mut_ref<'a, Item: 'a>(
+    self, subject: Subject<SubjectPtrMutRef<'a, Self, Item, Self::Err>>,
+  ) -> ConnectableObservableCtxMutRef<'a, Self, Item>
+  where
+    Self: Observable<Item<'a> = &'a mut Item> + 'a,
+  {
+    self.transform(|source| ConnectableObservable { source, subject })
+  }
+
+  /// Convert this observable into a ConnectableObservable for value
+  /// broadcasting
+  ///
+  /// This operator creates a ConnectableObservable that will multicast values
+  /// from this observable through a subject. The connection must
+  /// be established explicitly via the `connect()` method on the resulting
+  /// ConnectableObservable.
+  ///
+  /// This is equivalent to `multicast(Subject::default())` and provides
+  /// a convenient shorthand for creating a standard hot observable.
+  ///
+  /// # Value Broadcasting Behavior
+  ///
+  /// - New subscribers will only receive values emitted **after** they
+  ///   subscribe
+  /// - No historical values are replayed
+  /// - Multiple observers share the same subscription to the source
+  /// - Requires `Item: Clone` for broadcasting values to multiple observers
+  /// - Source observable is subscribed to only once when `connect()` is called
+  ///
+  /// # Returns
+  ///
+  /// A ConnectableObservable wrapped in the same Context.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rxrust::prelude::*;
+  ///
+  /// let source = Local::of(1).merge(Local::of(2));
+  /// let connectable = source.publish();
+  ///
+  /// // Subscribe multiple observers
+  /// let obs1 = connectable.fork();
+  /// let obs2 = connectable.fork();
+  /// obs1.subscribe(|v| println!("Observer 1: {}", v));
+  /// obs2.subscribe(|v| println!("Observer 2: {}", v));
+  ///
+  /// // Start multicasting - source is subscribed to once
+  /// let connection = connectable.connect();
+  ///
+  /// // Later, disconnect to stop multicasting
+  /// connection.unsubscribe();
+  /// ```
+  fn publish<'a>(self) -> ConnectableObservableCtx<'a, Self> { self.multicast(Subject::default()) }
+
+  /// Convert this observable into a ConnectableObservable for mutable reference
+  /// broadcasting
+  ///
+  /// This operator creates a ConnectableObservable that will multicast mutable
+  /// references from this observable through a subject. The connection must
+  /// be established explicitly via the `connect()` method on the resulting
+  /// ConnectableObservable.
+  ///
+  /// This is equivalent to `multicast_mut_ref(Subject::default())` and provides
+  /// a convenient shorthand for creating a standard hot observable that
+  /// supports sequential modification via re-borrowing.
+  ///
+  /// # Mutable Reference Broadcasting Behavior
+  ///
+  /// - Uses Higher-Rank Trait Bounds (HRTB) to allow sequential modification
+  /// - Subscribers receive `&mut Item` and can modify values
+  /// - Multiple observers can modify the same value sequentially
+  /// - No `Clone` requirement on `Item` type
+  /// - No historical values are replayed
+  /// - Source observable is subscribed to only once when `connect()` is called
+  ///
+  /// # Returns
+  ///
+  /// A ConnectableObservable wrapped in the same Context.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rxrust::prelude::*;
+  ///
+  /// let source = Local::subject_mut_ref();
+  /// let connectable = source.publish_mut_ref();
+  ///
+  /// // Subscribe multiple observers that can modify values sequentially
+  /// let obs1 = connectable.fork();
+  /// let obs2 = connectable.fork();
+  /// obs1.subscribe(|v: &mut i32| *v += 1);
+  /// obs2.subscribe(|v: &mut i32| *v *= 2);
+  ///
+  /// // Start multicasting - source is subscribed to once
+  /// let connection = connectable.connect();
+  ///
+  /// // Later, disconnect to stop multicasting
+  /// connection.unsubscribe();
+  /// ```
+  #[allow(clippy::type_complexity)]
+  fn publish_mut_ref<'a, Item: 'a>(
+    self,
+  ) -> Self::With<ConnectableObservable<Self::Inner, SubjectPtrMutRef<'a, Self, Item, Self::Err>>>
+  where
+    Self: Observable<Item<'a> = &'a mut Item> + 'a,
+  {
+    self.multicast_mut_ref(Subject::default())
+  }
+
+  /// Type-erases a local observable into a boxed observable.
+  ///
+  /// This enables storing observables in collections or returning them from
+  /// functions without complex generic types. All type information except
+  /// `Item` and `Err` is erased.
+  ///
+  /// # Examples
+  ///
+  /// ```rust
+  /// use rxrust::prelude::*;
+  ///
+  /// // Different source types become the same boxed type
+  /// let boxed1 = Local::of(1).box_it();
+  /// let boxed2 = Local::from_iter([2, 3]).map(|x| x * 2).box_it();
+  ///
+  /// // Store in a collection
+  /// let observables = vec![boxed1, boxed2];
+  /// ```
+  fn box_it<'a>(self) -> Self::With<Self::BoxedCoreObservable<'a, Self::Item<'a>, Self::Err>>
+  where
+    Self::Inner: IntoBoxedCoreObservable<Self::BoxedCoreObservable<'a, Self::Item<'a>, Self::Err>>,
+  {
+    self.transform(|inner| inner.into_boxed())
+  }
+
+  /// Type-erases a local/shared observable into a *cloneable* boxed observable.
+  ///
+  /// This is only available when the underlying observable pipeline is
+  /// `Clone` (enforced via trait bounds on the boxing target).
+  ///
+  /// # Examples
+  ///
+  /// ```rust
+  /// use rxrust::prelude::*;
+  ///
+  /// let boxed = Local::of(42).box_it_clone();
+  /// let boxed2 = boxed.clone();
+  ///
+  /// boxed.subscribe(|v| assert_eq!(v, 42));
+  /// boxed2.subscribe(|v| assert_eq!(v, 42));
+  /// ```
+  fn box_it_clone<'a>(
+    self,
+  ) -> Self::With<Self::BoxedCoreObservableClone<'a, Self::Item<'a>, Self::Err>>
+  where
+    Self::Inner:
+      IntoBoxedCoreObservable<Self::BoxedCoreObservableClone<'a, Self::Item<'a>, Self::Err>>,
+  {
+    self.transform(|inner| inner.into_boxed())
+  }
+
+  /// Type-erases the observable into a boxed mutable reference observable.
+  ///
+  /// This enables type erasure for observables that emit mutable references,
+  /// useful for mut_ref broadcasting patterns.
+  fn box_it_mut_ref<'a, Item>(
+    self,
+  ) -> Self::With<Self::BoxedCoreObservableMutRef<'a, Item, Self::Err>>
+  where
+    Self: 'a,
+    Self::Item<'a>: std::ops::DerefMut<Target = Item> + 'a,
+    Self::Inner: IntoBoxedCoreObservable<Self::BoxedCoreObservableMutRef<'a, Item, Self::Err>>,
+  {
+    self.transform(|inner| inner.into_boxed())
+  }
+
+  /// Type-erases the observable into a *cloneable* boxed mutable reference
+  /// observable.
+  ///
+  /// This is only available when the underlying observable pipeline is
+  /// `Clone` (enforced via trait bounds on the boxing target).
+  ///
+  /// # Examples
+  ///
+  /// ```rust
+  /// use std::convert::Infallible;
+  ///
+  /// use rxrust::prelude::*;
+  ///
+  /// // Choose `Item = i32` so the observable emits `&mut i32`.
+  /// let subject = Local::subject_mut_ref::<i32, Infallible>();
+  /// let boxed = subject.clone().box_it_mut_ref_clone();
+  /// let boxed2 = boxed.clone();
+  ///
+  /// boxed.subscribe(|_v: &mut i32| {});
+  /// boxed2.subscribe(|_v: &mut i32| {});
+  /// ```
+  fn box_it_mut_ref_clone<'a, Item>(
+    self,
+  ) -> Self::With<Self::BoxedCoreObservableMutRefClone<'a, Item, Self::Err>>
+  where
+    Self: 'a,
+    Self::Item<'a>: std::ops::DerefMut<Target = Item> + 'a,
+    Self::Inner: IntoBoxedCoreObservable<Self::BoxedCoreObservableMutRefClone<'a, Item, Self::Err>>,
+  {
+    self.transform(|inner| inner.into_boxed())
+  }
+
+  /// Convert this observable into a Future that resolves with the last emitted
+  /// value.
+  ///
+  /// This method subscribes to the observable and returns a future that
+  /// resolves when the observable completes. It supports both synchronous and
+  /// asynchronous observables.
+  ///
+  /// # Returns
+  ///
+  /// - `Ok(Ok(value))` - Observable emitted exactly one value
+  /// - `Ok(Err(error))` - Observable emitted an error
+  /// - `Err(IntoFutureError::Empty)` - Observable completed without emitting
+  ///   any values
+  /// - `Err(IntoFutureError::MultipleValues)` - Observable emitted more than
+  ///   one value
+  ///
+  /// # Examples
+  ///
+  /// ```rust
+  /// use rxrust::prelude::*;
+  ///
+  /// #[cfg(not(target_arch = "wasm32"))]
   /// #[tokio::main]
   /// async fn main() {
-  ///   let observable = observable::from_iter([1,2,3]);
-  ///   let mut stream = observable.to_stream();
-  ///   let mut values = vec![];
+  ///   // Single value
+  ///   let fut = Local::of(42).into_future();
+  ///   let value = fut.await.unwrap().ok().unwrap();
+  ///   assert_eq!(value, 42);
   ///
-  ///   while let Some(Ok(x)) = stream.next().await {
-  ///     values.push(x);
+  ///   // Empty observable
+  ///   let fut = Local::from_iter(std::iter::empty::<i32>()).into_future();
+  ///   assert!(matches!(fut.await, Err(IntoFutureError::Empty)));
+  ///
+  ///   // Multiple values
+  ///   let fut = Local::from_iter([1, 2, 3]).into_future();
+  ///   assert!(matches!(fut.await, Err(IntoFutureError::MultipleValues)));
+  /// }
+  /// #[cfg(target_arch = "wasm32")]
+  /// fn main() {}
+  /// ```
+  fn into_future<'a>(self) -> ObservableFuture<Self::Item<'a>, Self::Err>
+  where
+    Self::Inner: SupportsIntoFuture<'a, Self>,
+  {
+    <Self::Inner as SupportsIntoFuture<'a, Self>>::into_future(self)
+  }
+
+  /// Convert this observable into a `futures_core::stream::Stream`.
+  ///
+  /// This method transforms the observable into an asynchronous stream,
+  /// allowing you to iterate over the emitted values using standard async
+  /// patterns like `while let` or stream combinators.
+  ///
+  /// The stream yields items of type `Result<Self::Item, Self::Err>`.
+  ///
+  /// # Requirements
+  ///
+  /// * The observable items must be `'static` (owned values) to safely cross
+  ///   async boundaries.
+  ///
+  /// # Examples
+  ///
+  /// ```rust
+  /// use futures::stream::StreamExt;
+  /// use rxrust::prelude::*;
+  ///
+  /// async fn test_stream() {
+  ///   let mut stream = Local::of(42).into_stream();
+  ///
+  ///   while let Some(result) = stream.next().await {
+  ///     match result {
+  ///       Ok(value) => println!("Got value: {}", value),
+  ///       Err(e) => println!("Error: {:?}", e),
+  ///     }
   ///   }
-  ///
-  ///   assert_eq!(values, vec![1,2,3]);
   /// }
   /// ```
-  #[inline]
-  fn to_stream(self) -> ObservableStream<Item, Err>
+  fn into_stream<'a>(self) -> <Self::Inner as SupportsIntoStream<'a, Self>>::Stream
   where
-    Self: Observable<Item, Err, ObservableStreamObserver<Item, Err>>,
+    Self::Inner: SupportsIntoStream<'a, Self>,
   {
-    ObservableStream::new(self)
+    <Self::Inner as SupportsIntoStream<'a, Self>>::into_stream(self)
+  }
+
+  /// Apply an accumulator function and emit only the final result
+  ///
+  /// This operator applies an accumulator function over the source Observable
+  /// and returns only the final accumulated value when the source completes.
+  /// If the source is empty, nothing is emitted.
+  ///
+  /// This is equivalent to `scan(Default::default(), f).last()`.
+  ///
+  /// # Arguments
+  ///
+  /// * `f` - A function that takes the current accumulator and a value, and
+  ///   returns the new accumulator
+  ///
+  /// # Type Parameters
+  ///
+  /// * `Output` - The type of the accumulator value (must implement `Default`
+  ///   and `Clone`)
+  /// * `F` - The accumulator function type
+  ///
+  /// # Examples
+  ///
+  /// ```
+  /// use rxrust::prelude::*;
+  ///
+  /// let mut result = 0;
+  /// Local::from_iter([1, 2, 3, 4, 5])
+  ///   .reduce(|acc: i32, v| acc + v)
+  ///   .subscribe(|v| result = v);
+  /// assert_eq!(result, 15);
+  ///
+  /// // On empty observable, nothing is emitted
+  /// let mut emitted = false;
+  /// Local::from_iter(std::iter::empty::<i32>())
+  ///   .reduce(|acc: i32, v| acc + v)
+  ///   .subscribe(|_| emitted = true);
+  /// assert!(!emitted);
+  /// ```
+  #[allow(clippy::type_complexity)]
+  fn reduce<'a, F>(self, f: F) -> Self::With<Reduce<Self::Inner, ReduceFn<F>, Self::Item<'a>>>
+  where
+    F: FnMut(Self::Item<'a>, Self::Item<'a>) -> Self::Item<'a>,
+  {
+    self.transform(|source| Reduce { source, strategy: ReduceFn(f), initial: None })
+  }
+
+  /// Apply an accumulator function with an initial value and emit the final
+  /// result
+  ///
+  /// This operator applies an accumulator function over the source Observable,
+  /// starting with an initial value, and returns the final accumulated value
+  /// when the source completes. If the source is empty, the initial value is
+  /// emitted.
+  ///
+  /// This is equivalent to `scan(initial, f).last().default_if_empty(initial)`.
+  ///
+  /// # Arguments
+  ///
+  /// * `initial` - The initial accumulator value
+  /// * `f` - A function that takes the current accumulator and a value, and
+  ///   returns the new accumulator
+  ///
+  /// # Type Parameters
+  ///
+  /// * `Output` - The type of the accumulator value
+  /// * `F` - The accumulator function type
+  ///
+  /// # Examples
+  ///
+  /// ```
+  /// use rxrust::prelude::*;
+  ///
+  /// let mut result = 0;
+  /// Local::from_iter([1, 1, 1, 1, 1])
+  ///   .reduce_initial(100, |acc, v| acc + v)
+  ///   .subscribe(|v| result = v);
+  /// assert_eq!(result, 105);
+  ///
+  /// // On empty observable, the initial value is emitted
+  /// let mut result = 0;
+  /// Local::from_iter(std::iter::empty::<i32>())
+  ///   .reduce_initial(100, |acc, v| acc + v)
+  ///   .subscribe(|v| result = v);
+  /// assert_eq!(result, 100);
+  /// ```
+  fn reduce_initial<Output, F>(
+    self, initial: Output, f: F,
+  ) -> Self::With<Reduce<Self::Inner, ReduceInitialFn<F>, Output>>
+  where
+    F: for<'a> FnMut(Output, Self::Item<'a>) -> Output,
+  {
+    self.transform(|source| Reduce { source, strategy: ReduceInitialFn(f), initial: Some(initial) })
+  }
+
+  /// Emit the maximum item emitted by the source observable.
+  ///
+  /// **Empty source:** emits nothing.
+  ///
+  /// **Note:** This operator compares and returns owned items
+  /// (`Item<'static>`).
+  ///
+  /// # Examples
+  ///
+  /// ```
+  /// use rxrust::prelude::*;
+  ///
+  /// let mut out = None;
+  /// Local::from_iter([3, 1, 4])
+  ///   .max()
+  ///   .subscribe(|v| out = Some(v));
+  /// assert_eq!(out, Some(4));
+  /// ```
+  #[allow(clippy::type_complexity)]
+  fn max<'a>(
+    self,
+  ) -> Self::With<
+    Reduce<
+      Self::Inner,
+      ReduceFn<fn(Self::Item<'a>, Self::Item<'a>) -> Self::Item<'a>>,
+      Self::Item<'a>,
+    >,
+  >
+  where
+    Self::Item<'a>: PartialOrd,
+  {
+    self.reduce(|acc, v| if v > acc { v } else { acc })
+  }
+
+  /// Emit the minimum item emitted by the source observable.
+  ///
+  /// **Empty source:** emits nothing.
+  ///
+  /// **Note:** This operator compares and returns owned items
+  /// (`Item<'static>`).
+  ///
+  /// # Examples
+  ///
+  /// ```
+  /// use rxrust::prelude::*;
+  ///
+  /// let mut out = None;
+  /// Local::from_iter([3, 1, 4])
+  ///   .min()
+  ///   .subscribe(|v| out = Some(v));
+  /// assert_eq!(out, Some(1));
+  /// ```
+  #[allow(clippy::type_complexity)]
+  fn min<'a>(
+    self,
+  ) -> Self::With<
+    Reduce<
+      Self::Inner,
+      ReduceFn<fn(Self::Item<'a>, Self::Item<'a>) -> Self::Item<'a>>,
+      Self::Item<'a>,
+    >,
+  >
+  where
+    Self::Item<'a>: PartialOrd,
+  {
+    self.reduce(|acc, v| if v < acc { v } else { acc })
+  }
+
+  /// Emit the sum of items emitted by the source observable.
+  ///
+  /// **Empty source:** emits the additive identity (via `Default`).
+  ///
+  /// # Type requirements
+  ///
+  /// Items must implement `Default` and `Add<Output = Self>`.
+  ///
+  /// # Examples
+  ///
+  /// ```
+  /// use rxrust::prelude::*;
+  ///
+  /// let mut out = 0;
+  /// Local::from_iter([1, 2, 3])
+  ///   .sum()
+  ///   .subscribe(|v| out = v);
+  /// assert_eq!(out, 6);
+  /// ```
+  #[allow(clippy::type_complexity)]
+  fn sum<'a>(
+    self,
+  ) -> Self::With<
+    Reduce<
+      Self::Inner,
+      ReduceInitialFn<fn(Self::Item<'a>, Self::Item<'a>) -> Self::Item<'a>>,
+      Self::Item<'a>,
+    >,
+  >
+  where
+    Self::Item<'a>: Default + std::ops::Add<Output = Self::Item<'a>>,
+  {
+    self.transform(|source| Reduce {
+      source,
+      strategy: ReduceInitialFn((|acc, v| acc + v) as _),
+      initial: Some(Default::default()),
+    })
+  }
+
+  /// Count the number of items emitted by the source observable.
+  ///
+  /// **Empty source:** emits `0`.
+  ///
+  /// # Examples
+  ///
+  /// ```
+  /// use rxrust::prelude::*;
+  ///
+  /// let mut out = 0;
+  /// Local::from_iter(['a', 'b', 'c'])
+  ///   .count()
+  ///   .subscribe(|v| out = v);
+  /// assert_eq!(out, 3);
+  /// ```
+  #[allow(clippy::type_complexity)]
+  fn count(
+    self,
+  ) -> Self::With<
+    Reduce<Self::Inner, ReduceInitialFn<for<'a> fn(usize, Self::Item<'a>) -> usize>, usize>,
+  > {
+    self.transform(|source| Reduce {
+      source,
+      strategy: ReduceInitialFn(
+        (|acc, _v| acc + 1usize) as for<'a> fn(usize, Self::Item<'a>) -> usize,
+      ),
+      initial: Some(0),
+    })
+  }
+
+  /// Emit the average of items emitted by the source observable
+  ///
+  /// This operator calculates the average of all items emitted by the source
+  /// observable and emits the result when the source completes.
+  ///
+  /// # Requirements
+  ///
+  /// * `Item` must implement [`Averageable`] (e.g., `f32`, `f64`).
+  ///
+  /// # Examples
+  ///
+  /// ```
+  /// use rxrust::prelude::*;
+  ///
+  /// // Average of floats
+  /// let mut result_f = 0.0;
+  /// Local::from_iter([1.0, 2.0, 3.0])
+  ///   .average()
+  ///   .subscribe(|v| result_f = v);
+  /// assert_eq!(result_f, 2.0);
+  ///
+  /// // Average of integers
+  /// let mut result_i = 0;
+  /// Local::from_iter([1, 2, 3, 4, 5])
+  ///   .average()
+  ///   .subscribe(|v| result_i = v);
+  /// assert_eq!(result_i, 3);
+  ///
+  /// // Empty observable
+  /// let mut emitted_empty = false;
+  /// Local::from_iter(std::iter::empty::<f64>())
+  ///   .average()
+  ///   .subscribe(|_| emitted_empty = true);
+  /// assert!(!emitted_empty);
+  /// ```
+  fn average(self) -> Self::With<Average<Self::Inner>>
+  where
+    for<'a> Self::Item<'a>: Averageable,
+  {
+    self.transform(Average::new)
+  }
+
+  /// Map each item into an inner observable and merge the results.
+  ///
+  /// This is equivalent to `map(f).merge_all(usize::MAX)`.
+  ///
+  /// - Subscribes to inner observables eagerly (unlimited concurrency).
+  /// - Does **not** guarantee ordering across inners.
+  /// - Errors from either the outer or any inner observable terminate
+  ///   downstream.
+  ///
+  /// # Examples
+  ///
+  /// ```
+  /// use rxrust::prelude::*;
+  ///
+  /// let mut out = Vec::new();
+  /// Local::from_iter([1_i32, 2_i32])
+  ///   .flat_map(|x| Local::from_iter([x, x + 10]))
+  ///   .subscribe(|v| out.push(v));
+  /// assert_eq!(out, vec![1, 11, 2, 12]);
+  /// ```
+  fn flat_map<F, Inner>(self, f: F) -> Self::With<MergeAll<Map<Self::Inner, F>>>
+  where
+    F: for<'a> FnMut(Self::Item<'a>) -> Inner,
+    Inner: Context<Inner: ObservableType<Err = Self::Err>>,
+  {
+    self.transform(|source| MergeAll { source: Map { source, func: f }, concurrent: usize::MAX })
+  }
+
+  /// Map each item into an inner observable and concatenate the results.
+  ///
+  /// This is equivalent to `map(f).concat_all()`.
+  ///
+  /// - Subscribes to inner observables sequentially (concurrency = 1).
+  /// - Preserves ordering between inners.
+  /// - Errors from either the outer or any inner observable terminate
+  ///   downstream.
+  ///
+  /// # Examples
+  ///
+  /// ```
+  /// use rxrust::prelude::*;
+  ///
+  /// let mut out = Vec::new();
+  /// Local::from_iter([1_i32, 2_i32])
+  ///   .concat_map(|x| Local::from_iter([x, x + 10]))
+  ///   .subscribe(|v| out.push(v));
+  /// assert_eq!(out, vec![1, 11, 2, 12]);
+  /// ```
+  fn concat_map<F, Inner>(self, f: F) -> Self::With<MergeAll<Map<Self::Inner, F>>>
+  where
+    F: for<'a> FnMut(Self::Item<'a>) -> Inner,
+    Inner: Context<Inner: ObservableType<Err = Self::Err>>,
+  {
+    self.transform(|source| MergeAll { source: Map { source, func: f }, concurrent: 1 })
+  }
+
+  /// Map each item into an inner observable and switch to the latest one.
+  ///
+  /// This operator transforms each item emitted by the source observable into
+  /// a new observable. It subscribes to each inner observable, but when a new
+  /// inner observable arrives, it unsubscribes from the previous one.
+  ///
+  /// - Only emits values from the most recent inner observable.
+  /// - Previous inner observables are unsubscribed when new ones arrive.
+  /// - Errors from either the outer or the current inner observable terminate
+  ///   downstream.
+  ///
+  /// # Examples
+  ///
+  /// ```
+  /// use rxrust::prelude::*;
+  ///
+  /// let mut out = Vec::new();
+  /// Local::from_iter([1_i32, 2_i32, 3_i32])
+  ///   .switch_map(|x| {
+  ///     // Each number creates an observable that emits that number twice
+  ///     Local::from_iter([x, x])
+  ///   })
+  ///   .subscribe(|v| out.push(v));
+  /// assert_eq!(out, vec![1, 1, 2, 2, 3, 3]);
+  /// ```
+  fn switch_map<F, Out>(self, f: F) -> Self::With<SwitchMap<Self::Inner, F>>
+  where
+    F: for<'a> FnMut(Self::Item<'a>) -> Out,
+    Out: Context<Inner: ObservableType<Err = Self::Err> + 'static>,
+  {
+    self.transform(|source| SwitchMap { source, func: f })
   }
 }
 
-#[cfg(test)]
-mod tests {
-  use super::*;
+pub type ConnectableObservableCtx<'a, O> = <O as Context>::With<
+  ConnectableObservable<
+    <O as Context>::Inner,
+    SubjectPtr<'a, O, <O as Observable>::Item<'a>, <O as Observable>::Err>,
+  >,
+>;
+pub type ConnectableObservableCtxMutRef<'a, O, Item> = <O as Context>::With<
+  ConnectableObservable<
+    <O as Context>::Inner,
+    SubjectPtrMutRef<'a, O, Item, <O as Observable>::Err>,
+  >,
+>;
 
-  #[test]
-  fn smoke_element_at() {
-    let s = observable::from_iter(0..20);
-    s.clone().element_at(0).subscribe(|v| assert_eq!(v, 0));
-    s.clone().element_at(5).subscribe(|v| assert_eq!(v, 5));
-    s.clone().element_at(20).subscribe(|v| assert_eq!(v, 20));
-    s.element_at(21).subscribe(|_| panic!());
-  }
-
-  #[test]
-  fn bench_element_at() {
-    do_bench_element_at();
-  }
-
-  benchmark_group!(do_bench_element_at, element_at_bench);
-
-  fn element_at_bench(b: &mut bencher::Bencher) {
-    b.iter(smoke_element_at);
-  }
-
-  #[test]
-  fn first() {
-    let mut completed = 0;
-    let mut next_count = 0;
-
-    observable::from_iter(0..2)
-      .first()
-      .on_complete(|| completed += 1)
-      .subscribe(|_| next_count += 1);
-
-    assert_eq!(completed, 1);
-    assert_eq!(next_count, 1);
-  }
-
-  #[test]
-  fn bench_first() {
-    do_bench_first();
-  }
-
-  benchmark_group!(do_bench_first, first_bench);
-
-  fn first_bench(b: &mut bencher::Bencher) {
-    b.iter(first);
-  }
-
-  #[test]
-  fn first_or() {
-    let mut completed = false;
-    let mut next_count = 0;
-
-    observable::from_iter(0..2)
-      .first_or(100)
-      .on_complete(|| completed = true)
-      .subscribe(|_| next_count += 1);
-
-    assert_eq!(next_count, 1);
-    assert!(completed);
-
-    completed = false;
-    let mut v = 0;
-    observable::empty()
-      .first_or(100)
-      .on_complete(|| completed = true)
-      .subscribe(|value| v = value);
-
-    assert!(completed);
-    assert_eq!(v, 100);
-  }
-
-  #[test]
-  fn bench_first_or() {
-    do_bench_first_or();
-  }
-
-  benchmark_group!(do_bench_first_or, first_or_bench);
-
-  fn first_or_bench(b: &mut bencher::Bencher) {
-    b.iter(first_or);
-  }
-
-  #[test]
-  fn first_support_fork() {
-    let mut value = 0;
-    let mut value2 = 0;
-    {
-      let o = observable::from_iter(1..100).first();
-      let o1 = o.clone().first();
-      let o2 = o.first();
-      o1.subscribe(|v| value = v);
-      o2.subscribe(|v| value2 = v);
-    }
-    assert_eq!(value, 1);
-    assert_eq!(value2, 1);
-  }
-
-  #[test]
-  fn first_or_support_fork() {
-    let mut default = 0;
-    let mut default2 = 0;
-    let o = observable::create(|subscriber: Subscriber<_>| {
-      subscriber.complete();
-    })
-    .first_or(100);
-    let o1 = o.clone().first_or(0);
-    let o2 = o.clone().first_or(0);
-    let u1: Box<dyn FnMut(i32) + '_> = Box::new(|v| default = v);
-    let u2: Box<dyn FnMut(i32) + '_> = Box::new(|v| default2 = v);
-    o1.subscribe(u1);
-    o2.subscribe(u2);
-    assert_eq!(default, 100);
-    assert_eq!(default, 100);
-  }
-
-  #[test]
-  fn smoke_ignore_elements() {
-    observable::from_iter(0..20)
-      .ignore_elements()
-      .subscribe(move |_| panic!());
-  }
-
-  #[test]
-  fn bench_ignore() {
-    do_bench_ignore();
-  }
-
-  benchmark_group!(do_bench_ignore, ignore_emements_bench);
-
-  fn ignore_emements_bench(b: &mut bencher::Bencher) {
-    b.iter(smoke_ignore_elements);
-  }
-
-  #[test]
-  fn smoke_all() {
-    observable::from_iter(0..10)
-      .all(|v| v < 10)
-      .subscribe(|b| assert!(b));
-    observable::from_iter(0..10)
-      .all(|v| v < 5)
-      .subscribe(|b| assert!(!b));
-  }
-
-  #[test]
-  fn bench_all() {
-    do_bench_all();
-  }
-
-  benchmark_group!(do_bench_all, all_bench);
-
-  fn all_bench(b: &mut bencher::Bencher) {
-    b.iter(smoke_all);
-  }
-
-  #[test]
-  fn timestamp() {
-    let mut vs = Vec::new();
-    let mut ts = Vec::new();
-
-    let before = Instant::now();
-
-    observable::from_iter(0..3).timestamp().subscribe(|(v, t)| {
-      vs.push(v);
-      ts.push(t);
-    });
-
-    let after = Instant::now();
-
-    assert_eq!(vs, vec![0, 1, 2]);
-    assert_eq!(ts.len(), 3);
-
-    for i in 0..3 {
-      assert!(
-        ts[i] <= after,
-        "element {} in accumulated timestamps ({:#?}) was after end ({:#?})",
-        i,
-        ts,
-        after
-      );
-      assert!(
-        ts[i] >= before,
-        "element {} in accumulated timestamps ({:#?}) was before start ({:#?})",
-        i,
-        ts,
-        after
-      );
-    }
-
-    for i in 1..3 {
-      assert!(
-        ts[i - 1] <= ts[i],
-        "element {} ({:#?}) is not after previous element ({:#?})",
-        i,
-        ts[i],
-        ts[i - 1]
-      );
-    }
-  }
+/// Blanket implementation of Observable for any Context
+///
+/// This implementation uses ObservableType to infer Item and Err types
+/// from the CoreObservable implementation.
+impl<T> Observable for T
+where
+  T: Context,
+  T::Inner: ObservableType,
+{
+  type Item<'a>
+    = <T::Inner as ObservableType>::Item<'a>
+  where
+    T: 'a;
+  type Err = <T::Inner as ObservableType>::Err;
 }

@@ -1,45 +1,75 @@
+name: Code coverage
+
 on:
-  pull_request:
   push:
     branches:
       - master
+      - release-1.0
+  pull_request:
+    branches:
+      - master
+      - release-1.0
 
-name: Code coverage with grcov
+permissions:
+  contents: read
+
+concurrency:
+  group: coverage-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  grcov:
+  coverage:
+    name: grcov coverage
     runs-on: ubuntu-latest
+    env:
+      CARGO_TERM_COLOR: always
     steps:
-      - uses: actions/checkout@v1
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Install toolchain
+      - name: Cache cargo and target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Install Rust stable
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly
+          profile: minimal
+          toolchain: stable
           override: true
 
-      - name: Clean
-        uses: actions-rs/cargo@v1
-        with:
-          command: clean
-      - name: Execute tests
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --all
+      - name: Install coverage tools
+        run: |
+          rustup component add llvm-tools-preview || true
+          cargo install --locked grcov || true
+
+      - name: Run tests with coverage
         env:
           CARGO_INCREMENTAL: 0
-          RUSTFLAGS: "-Zprofile -Ccodegen-units=1 -Copt-level=0 -Clink-dead-code -Coverflow-checks=off"
+          RUSTFLAGS: "-Cinstrument-coverage -Ccodegen-units=1 -Copt-level=0 --cfg tokio_unstable --check-cfg=cfg(tokio_unstable)"
+          LLVM_PROFILE_FILE: "target/coverage-%p-%m.profraw"
+        run: |
+          cargo test --workspace --tests --verbose
 
-      - name: Gather coverage data
-        id: coverage
-        uses: actions-rs/grcov@v0.1
+      - name: Generate lcov report
+        if: always()
+        run: |
+          mkdir -p target/coverage
+          grcov . --binary-path target/debug/ -s . -t lcov --branch --ignore-not-existing -o target/coverage/lcov.info
+
+      - name: Upload lcov to Codecov
+        if: always()
+        uses: codecov/codecov-action@v4
         with:
-          config: configs/grcov.config.yml
-          coveralls-token: ${{ secrets.COVERALLS_TOKEN }}
-      - name: Upload coverage to Codecov  
-        uses: codecov/codecov-action@v1
-        with:
+          files: target/coverage/lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}
-          file: ${{ steps.coverage.outputs.report }}
           fail_ci_if_error: true

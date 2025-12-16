@@ -1,3 +1,20 @@
-max_width = 80
-struct_lit_width = 40
+unstable_features = true
+style_edition = "2024"
+
+error_on_line_overflow = true
+error_on_unformatted = false
+fn_single_line = true
+use_small_heuristics = "Max"
 tab_spaces = 2
+wrap_comments = true
+merge_derives = false
+
+format_code_in_doc_comments = true
+format_macro_bodies = true
+format_macro_matchers = true
+format_strings = true
+imports_granularity = "Crate"
+group_imports = "StdExternalCrate"
+normalize_doc_attributes = true
+fn_params_layout = "Compressed"
+chain_width = 50

@@ -1,35 +1,66 @@
-use crate::prelude::*;
+//! Contains operator implementation
+//!
+//! This module contains the Contains operator, which emits a boolean indicating
+//! whether a specific value is emitted by the source Observable.
 
+use crate::{
+  context::Context,
+  observable::{CoreObservable, ObservableType},
+  observer::Observer,
+};
+
+/// Contains operator: Checks if the source observable emits a specific value
+///
+/// This operator compares each emitted item with a target value. If a match is
+/// found, it emits `true` and completes immediately. If the source completes
+/// without finding the value, it emits `false` and completes.
+///
+/// # Type Parameters
+///
+/// * `S` - The source observable type
+/// * `Item` - The type of item being searched for (must implement PartialEq)
+///
+/// # Examples
+///
+/// ```
+/// use rxrust::prelude::*;
+///
+/// let observable = Local::from_iter([1, 2, 3, 4, 5]);
+///
+/// // Check for existing value
+/// let mut found = false;
+/// observable
+///   .clone()
+///   .contains(3)
+///   .subscribe(|v| found = v);
+/// assert!(found);
+///
+/// // Check for missing value
+/// let mut found = true;
+/// observable.contains(10).subscribe(|v| found = v);
+/// assert!(!found);
+/// ```
 #[derive(Clone)]
-pub struct ContainsOp<S, Item> {
-  pub(crate) source: S,
-  pub(crate) target: Item,
+pub struct Contains<S, Item> {
+  pub source: S,
+  pub target: Item,
 }
 
-impl<Item, Err, O, S> Observable<bool, Err, O> for ContainsOp<S, Item>
+impl<S, Item> ObservableType for Contains<S, Item>
 where
-  S: Observable<Item, Err, ContainsObserver<O, Item>>,
-  O: Observer<bool, Err>,
-  Item: PartialEq,
+  S: ObservableType,
 {
-  type Unsub = S::Unsub;
-
-  fn actual_subscribe(self, observer: O) -> Self::Unsub {
-    self.source.actual_subscribe(ContainsObserver {
-      observer: Some(observer),
-      target: self.target,
-    })
-  }
+  type Item<'a>
+    = bool
+  where
+    Self: 'a;
+  type Err = S::Err;
 }
 
-impl<Item, Err, S> ObservableExt<bool, Err> for ContainsOp<S, Item> where
-  S: ObservableExt<Item, Err>
-{
-}
-
-pub struct ContainsObserver<S, T> {
-  observer: Option<S>,
-  target: T,
+/// ContainsObserver wrapper for checking if an item exists
+pub struct ContainsObserver<O, Item> {
+  observer: Option<O>,
+  target: Item,
 }
 
 impl<O, Item, Err> Observer<Item, Err> for ContainsObserver<O, Item>
@@ -37,55 +68,137 @@ where
   O: Observer<bool, Err>,
   Item: PartialEq,
 {
-  fn next(&mut self, value: Item) {
-    if self.target == value {
-      if let Some(mut observer) = self.observer.take() {
-        observer.next(true);
-        observer.complete();
-      }
+  fn next(&mut self, v: Item) {
+    if v == self.target
+      && let Some(mut observer) = self.observer.take()
+    {
+      observer.next(true);
+      observer.complete();
     }
   }
 
-  fn error(mut self, err: Err) {
-    if let Some(observer) = self.observer.take() {
-      observer.error(err);
+  fn error(self, e: Err) {
+    if let Some(observer) = self.observer {
+      observer.error(e);
     }
   }
 
-  fn complete(mut self) {
-    if let Some(mut observer) = self.observer.take() {
+  fn complete(self) {
+    if let Some(mut observer) = self.observer {
       observer.next(false);
       observer.complete();
     }
   }
 
-  fn is_finished(&self) -> bool {
-    self.observer.as_ref().is_none_or(|o| o.is_finished())
+  fn is_closed(&self) -> bool {
+    self
+      .observer
+      .as_ref()
+      .is_none_or(|o| o.is_closed())
+  }
+}
+
+impl<S, C, Item> CoreObservable<C> for Contains<S, Item>
+where
+  C: Context,
+  S: CoreObservable<C::With<ContainsObserver<C::Inner, Item>>>,
+  Item: PartialEq,
+{
+  type Unsub = S::Unsub;
+
+  fn subscribe(self, context: C) -> Self::Unsub {
+    let Contains { source, target } = self;
+    let wrapped =
+      context.transform(|observer| ContainsObserver { observer: Some(observer), target });
+    source.subscribe(wrapped)
   }
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
+  use std::{cell::RefCell, rc::Rc};
+
   use crate::prelude::*;
-  #[test]
-  fn contains_smoke() {
-    observable::from_iter(0..10)
-      .contains(4)
-      .subscribe(|b| assert!(b));
-    observable::from_iter(0..10)
-      .contains(99)
-      .subscribe(|b| assert!(!b));
-    observable::empty().contains(1).subscribe(|b| assert!(!b));
+
+  #[rxrust_macro::test]
+  fn test_contains_found() {
+    let result = Rc::new(RefCell::new(Vec::new()));
+    let result_clone = result.clone();
+
+    Local::from_iter([1, 2, 3, 4, 5])
+      .contains(3)
+      .subscribe(move |v| {
+        result_clone.borrow_mut().push(v);
+      });
+
+    assert_eq!(*result.borrow(), vec![true]);
   }
 
-  #[test]
-  fn bench() {
-    do_bench();
+  #[rxrust_macro::test]
+  fn test_contains_not_found() {
+    let result = Rc::new(RefCell::new(Vec::new()));
+    let result_clone = result.clone();
+
+    Local::from_iter([1, 2, 3, 4, 5])
+      .contains(10)
+      .subscribe(move |v| {
+        result_clone.borrow_mut().push(v);
+      });
+
+    assert_eq!(*result.borrow(), vec![false]);
   }
 
-  benchmark_group!(do_bench, bench_contains);
+  #[rxrust_macro::test]
+  fn test_contains_empty() {
+    let result = Rc::new(RefCell::new(Vec::new()));
+    let result_clone = result.clone();
 
-  fn bench_contains(b: &mut bencher::Bencher) {
-    b.iter(contains_smoke);
+    Local::from_iter([])
+      .contains(1)
+      .subscribe(move |v| {
+        result_clone.borrow_mut().push(v);
+      });
+
+    assert_eq!(*result.borrow(), vec![false]);
+  }
+
+  #[rxrust_macro::test]
+  fn test_contains_short_circuit() {
+    let result = Rc::new(RefCell::new(Vec::new()));
+    let items_emitted = Rc::new(RefCell::new(0));
+    let result_clone = result.clone();
+    let items_emitted_clone = items_emitted.clone();
+
+    Local::from_iter([1, 2, 3, 4, 5])
+      .tap(move |_| *items_emitted_clone.borrow_mut() += 1)
+      .contains(3)
+      .subscribe(move |v| {
+        result_clone.borrow_mut().push(v);
+      });
+
+    assert_eq!(*result.borrow(), vec![true]);
+    // Should process 1, 2, 3 and then stop
+    assert_eq!(*items_emitted.borrow(), 3);
+  }
+
+  #[rxrust_macro::test]
+  fn test_contains_error_propagation() {
+    let result = Rc::new(RefCell::new(Vec::new()));
+    let error = Rc::new(RefCell::new(String::new()));
+    let result_clone = result.clone();
+    let error_clone = error.clone();
+
+    Local::throw_err("test error".to_string())
+      .map(|_| 0)
+      .contains(5)
+      .on_error(move |e| {
+        *error_clone.borrow_mut() = e;
+      })
+      .subscribe(move |v| {
+        result_clone.borrow_mut().push(v);
+      });
+
+    assert_eq!(*result.borrow(), Vec::<bool>::new());
+    assert_eq!(*error.borrow(), "test error");
   }
 }

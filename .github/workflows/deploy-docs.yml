@@ -1,0 +1,110 @@
+name: Deploy Documentation
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup mdBook
+        uses: peaceiris/actions-mdbook@v1
+        with:
+          mdbook-version: 'latest'
+
+      - name: Determine Version & Paths
+        id: vars
+        run: |
+          if [[ $GITHUB_REF == refs/tags/* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/}
+            echo "IS_LATEST=false" >> $GITHUB_ENV
+          else
+            VERSION="latest"
+            echo "IS_LATEST=true" >> $GITHUB_ENV
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "Current version is $VERSION"
+
+      - name: Fetch existing versions.json
+        continue-on-error: true
+        run: |
+          # Fetch the gh-pages branch to get the current versions.json
+          git fetch origin gh-pages:gh-pages || echo "No gh-pages branch yet"
+          git show gh-pages:versions.json > versions.json || echo "[]" > versions.json
+
+      - name: Update versions.json
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const version = process.env.VERSION;
+            
+            let versions = [];
+            try {
+              if (fs.existsSync('versions.json')) {
+                const content = fs.readFileSync('versions.json', 'utf8');
+                versions = JSON.parse(content);
+              }
+            } catch (e) {
+              console.log('Error parsing versions.json, starting fresh');
+            }
+
+            // Remove existing entry for this version if it exists
+            versions = versions.filter(v => v.path !== version);
+
+            // Add new version to the top
+            versions.unshift({
+              path: version,
+              name: version
+            });
+            
+            // Optional: Sort? Usually we want "latest" first, then semver descending.
+            // For now, simple unshift puts newest build on top.
+            // But strict ordering is better.
+            
+            const latest = versions.find(v => v.path === 'latest');
+            const others = versions.filter(v => v.path !== 'latest');
+            
+            // Simple sort by name descending (v1.1 before v1.0)
+            others.sort((a, b) => b.name.localeCompare(a.name));
+            
+            const finalVersions = latest ? [latest, ...others] : others;
+
+            fs.writeFileSync('versions.json', JSON.stringify(finalVersions, null, 2));
+            console.log('Updated versions.json:', finalVersions);
+
+      - name: Build mdBook
+        run: |
+          mdbook build guide
+          
+      - name: Prepare Deployment Staging
+        run: |
+          mkdir -p deploy_staging/$VERSION
+          cp -r guide/book/* deploy_staging/$VERSION/
+          cp versions.json deploy_staging/
+          
+          # If this is the very first deploy, create a root index.html redirecting to latest
+          if [ ! -f "deploy_staging/index.html" ]; then
+            echo '<meta http-equiv="refresh" content="0; url=latest/">' > deploy_staging/index.html
+          fi
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./deploy_staging
+          keep_files: true
+          # We deploy to the root of gh-pages, but our structure in deploy_staging 
+          # is already set up correctly (e.g. ./latest/..., ./versions.json).

@@ -1,201 +1,283 @@
-use crate::prelude::*;
-use std::{clone::Clone, collections::HashMap, hash::Hash};
+//! GroupBy operator implementation
+//!
+//! This module contains the GroupBy operator, which splits a source observable
+//! into multiple `GroupedObservable`s, each corresponding to a key derived from
+//! the values.
 
-/// Observable used to keep track of the key of the items emitted by the contained subject.
+use std::{collections::HashMap, hash::Hash, marker::PhantomData};
+
+use crate::{
+  context::Context,
+  observable::{CoreObservable, ObservableType},
+  observer::Observer,
+};
+
+/// GroupBy operator: Splits the source observable into multiple
+/// GroupedObservables
+///
+/// Each unique key derived from source values creates a new
+/// `GroupedObservable`. Values with the same key are forwarded to the
+/// corresponding group's observer.
+///
+/// # Type Parameters
+///
+/// - `S`: The source observable type
+/// - `F`: The key selector function type
+/// - `C`: Context type where `C::Inner` is `Subject<P>` for some pointer type
+///   `P`
 #[derive(Clone)]
-pub struct KeyObservable<Key, Subject> {
+pub struct GroupBy<S, F, C> {
+  pub source: S,
+  pub key_selector: F,
+  pub _marker: PhantomData<C>,
+}
+
+impl<S, F, C> GroupBy<S, F, C> {
+  /// Create a new GroupBy operator
+  pub fn new(source: S, key_selector: F) -> Self {
+    Self { source, key_selector, _marker: PhantomData }
+  }
+}
+
+/// An observable that contains a key and emits values belonging to that key's
+/// group
+///
+/// When subscribing to a `GroupedObservable`, you will receive all values
+/// from the source that have the same key.
+///
+/// # Type Parameters
+///
+/// - `Key`: The type of the grouping key
+/// - `Sub`: The subject type used for this group (typically `Subject<P>`)
+#[derive(Clone)]
+pub struct GroupedObservable<Key, Sub> {
+  /// The key identifying this group
   pub key: Key,
-  subject: Subject,
+  /// The inner subject for multicasting values
+  pub subject: Sub,
 }
 
-impl<Key, Item, Err, O, Subject> Observable<Item, Err, O>
-  for KeyObservable<Key, Subject>
-where
-  Subject: Observable<Item, Err, O>,
-  O: Observer<Item, Err>,
-{
-  type Unsub = Subject::Unsub;
-
-  fn actual_subscribe(self, observer: O) -> Self::Unsub {
-    self.subject.actual_subscribe(observer)
-  }
-}
-
-impl<Item, Err, Key, Subject> ObservableExt<Item, Err>
-  for KeyObservable<Key, Subject>
-where
-  Subject: Observer<Item, Err>,
-{
-}
-
-#[derive(Clone)]
-pub struct GroupByObserver<O, Discr, Key, Subject> {
+/// Observer wrapper that manages group creation and value routing.
+///
+/// # Type Parameters
+///
+/// - `O`: The downstream observer receiving Context-wrapped GroupedObservables
+/// - `F`: The key selector function type
+/// - `Key`: The grouping key type
+/// - `C`: Context type where `C::Inner` is `Subject<P>`
+pub struct GroupByObserver<O, F, Key, C> {
   observer: O,
-  discr: Discr,
-  subjects: HashMap<Key, Subject>,
+  key_selector: F,
+  subjects: HashMap<Key, C>,
 }
 
-///////////////////////////////////////////////////////////////////////////////
+// ============================================================================
+// Implementation for GroupedObservable
+// ============================================================================
 
-/// Main observable returned by the group_by method.
-/// `subject` is actually only present to keep track of the type of scheduling to use for
-/// the emitted observables
-#[derive(Clone)]
-pub struct GroupByOp<Source, Discr, Subject> {
-  pub(crate) source: Source,
-  pub(crate) discr: Discr,
-  _hint: TypeHint<Subject>,
+impl<Key, Sub> ObservableType for GroupedObservable<Key, Sub>
+where
+  Sub: ObservableType,
+{
+  type Item<'m>
+    = <Sub as ObservableType>::Item<'m>
+  where
+    Self: 'm;
+  type Err = <Sub as ObservableType>::Err;
 }
 
-impl<Source, Discr, Subject> GroupByOp<Source, Discr, Subject> {
-  #[inline]
-  pub fn new(source: Source, discr: Discr) -> Self {
-    Self {
-      source,
-      discr,
-      _hint: TypeHint::default(),
-    }
+impl<Key, Sub, C> CoreObservable<C> for GroupedObservable<Key, Sub>
+where
+  Sub: CoreObservable<C>,
+{
+  type Unsub = <Sub as CoreObservable<C>>::Unsub;
+  fn subscribe(self, observer: C) -> Self::Unsub { self.subject.subscribe(observer) }
+}
+
+// ============================================================================
+// Implementation for GroupBy
+// ============================================================================
+impl<S, F, Key, CtxMarker> ObservableType for GroupBy<S, F, CtxMarker>
+where
+  S: ObservableType,
+  CtxMarker: Context,
+  CtxMarker::Inner: Clone,
+  F: for<'a> FnMut(&S::Item<'a>) -> Key,
+{
+  type Item<'m>
+    = CtxMarker::With<GroupedObservable<Key, CtxMarker::Inner>>
+  where
+    Self: 'm;
+  type Err = <S as ObservableType>::Err;
+}
+
+impl<S, F, Key, CtxMarker, Ctx> CoreObservable<Ctx> for GroupBy<S, F, CtxMarker>
+where
+  Ctx: Context,
+  CtxMarker: Context,
+  CtxMarker::Inner: Clone,
+  F: for<'a> FnMut(&S::Item<'a>) -> Key,
+  S: CoreObservable<Ctx::With<GroupByObserver<Ctx::Inner, F, Key, CtxMarker>>>,
+{
+  type Unsub = S::Unsub;
+  fn subscribe(self, observer: Ctx) -> Self::Unsub {
+    let observer = observer.transform(|inner| GroupByObserver {
+      observer: inner,
+      key_selector: self.key_selector,
+      subjects: HashMap::new(),
+    });
+    self.source.subscribe(observer)
   }
 }
 
-macro_rules! impl_observable_for_group_by {
-  ($ty: ty $(,$lf:lifetime)?) => {
-    impl<$($lf,)? Source, Discr, Key, Item, Err, O>
-      Observable<KeyObservable<Key, $ty>, Err, O>
-      for GroupByOp<Source, Discr, $ty>
-    where
-      O: Observer<KeyObservable<Key, $ty>, Err>,
-      Source: Observable<Item, Err, GroupByObserver<O, Discr, Key, $ty>>,
-      Discr: FnMut(&Item) -> Key,
-      Key: Hash + Eq + Clone,
-      Item: Clone,
-      Err: Clone,
-    {
-      type Unsub = Source::Unsub;
-
-      fn actual_subscribe(self, observer: O) -> Self::Unsub {
-        self.source.actual_subscribe(GroupByObserver {
-          observer,
-          discr: self.discr,
-          subjects: <_>::default(),
-        })
-      }
-    }
-
-    impl<$($lf,)? Source, Discr, Key, Item, Err>
-      ObservableExt<KeyObservable<Key, $ty>, Err>
-      for GroupByOp<Source, Discr, $ty>
-    where
-      Source: ObservableExt<Item, Err>
-    {
-    }
-  };
-}
-
-impl_observable_for_group_by!(Subject<'a, Item, Err>, 'a);
-impl_observable_for_group_by!(SubjectThreads<Item, Err>);
-
-impl<Discr, Key, Subject, Item, Err, O> Observer<Item, Err>
-  for GroupByObserver<O, Discr, Key, Subject>
+// ============================================================================
+// Implementation for GroupByObserver
+// ============================================================================
+impl<Discr, Key, CtxMarker, Item, Err, O> Observer<Item, Err>
+  for GroupByObserver<O, Discr, Key, CtxMarker>
 where
-  O: Observer<KeyObservable<Key, Subject>, Err>,
+  CtxMarker: Context,
+  O: Observer<CtxMarker::With<GroupedObservable<Key, CtxMarker::Inner>>, Err>,
   Discr: FnMut(&Item) -> Key,
   Key: Hash + Eq + Clone,
-  Subject: Clone + Default + Observer<Item, Err>,
+  CtxMarker::Inner: Observer<Item, Err> + Clone + Default,
   Err: Clone,
 {
   fn next(&mut self, value: Item) {
-    let key = (self.discr)(&value);
-    let subject = self.subjects.entry(key.clone()).or_insert_with(|| {
-      let subject = Subject::default();
-      let wrapper = KeyObservable { key, subject: subject.clone() };
-      self.observer.next(wrapper);
-      subject
-    });
-    subject.next(value);
+    let key = (self.key_selector)(&value);
+    let ctx_subject = self
+      .subjects
+      .entry(key.clone())
+      .or_insert_with(|| {
+        let subject: CtxMarker::Inner = CtxMarker::Inner::default();
+        let grouped = GroupedObservable { key, subject: subject.clone() };
+        let wrapped = CtxMarker::lift(grouped);
+        self.observer.next(wrapped);
+        CtxMarker::new(subject)
+      });
+    ctx_subject.inner_mut().next(value);
   }
 
   #[inline]
   fn error(mut self, err: Err) {
-    for (_, subject) in self.subjects.drain() {
-      subject.error(err.clone());
-    }
+    self.handle_completion(|ctx_subject| ctx_subject.into_inner().error(err.clone()));
     self.observer.error(err)
   }
 
   #[inline]
   fn complete(mut self) {
-    for (_, subject) in self.subjects.drain() {
-      subject.complete();
-    }
+    self.handle_completion(|ctx_subject| ctx_subject.into_inner().complete());
     self.observer.complete()
   }
 
   #[inline]
-  fn is_finished(&self) -> bool {
-    self.observer.is_finished()
+  fn is_closed(&self) -> bool { self.observer.is_closed() }
+}
+
+impl<O, Discr, Key, CtxMarker> GroupByObserver<O, Discr, Key, CtxMarker> {
+  fn handle_completion<F>(&mut self, mut action: F)
+  where
+    F: FnMut(CtxMarker),
+  {
+    for (_, ctx_subject) in self.subjects.drain() {
+      action(ctx_subject);
+    }
   }
 }
 
 #[cfg(test)]
-mod test {
-  use crate::prelude::*;
-  use crate::rc::{MutRc, RcDeref, RcDerefMut};
+mod tests {
+  use std::{cell::RefCell, rc::Rc};
 
-  #[test]
-  fn group_by_parity() {
-    let mut obs_count = 0;
-    observable::from_iter(0..100)
-      .group_by::<_, _, Subject<_, _>>(|val| val % 2 == 0)
-      .subscribe(|obs| {
-        obs_count += 1;
-        if obs.key {
-          let _ = obs.subscribe(|val| assert_eq!(val % 2, 0));
+  use crate::prelude::*;
+
+  #[rxrust_macro::test]
+  fn test_group_by_parity() {
+    let group_count = Rc::new(RefCell::new(0));
+    let even_values = Rc::new(RefCell::new(Vec::new()));
+    let odd_values = Rc::new(RefCell::new(Vec::new()));
+
+    let group_count_clone = group_count.clone();
+    let even_clone = even_values.clone();
+    let odd_clone = odd_values.clone();
+
+    Local::from_iter(0..10)
+      .group_by(|v| *v % 2 == 0)
+      .subscribe(move |group: Local<_>| {
+        *group_count_clone.borrow_mut() += 1;
+        // group is Context-wrapped, use .inner() to access key
+        let key = group.inner().key;
+        if key {
+          let even = even_clone.clone();
+          group.subscribe(move |v| even.borrow_mut().push(v));
         } else {
-          let _ = obs.subscribe(|val| assert_ne!(val % 2, 0));
+          let odd = odd_clone.clone();
+          group.subscribe(move |v| odd.borrow_mut().push(v));
         }
       });
-    assert_eq!(obs_count, 2);
+
+    assert_eq!(*group_count.borrow(), 2);
+    assert_eq!(*even_values.borrow(), vec![0, 2, 4, 6, 8]);
+    assert_eq!(*odd_values.borrow(), vec![1, 3, 5, 7, 9]);
   }
 
-  #[test]
-  fn it_only_subscribes_once_local() {
-    let obs_count = MutRc::own(0);
-    observable::create(|mut subscriber: Subscriber<_>| {
-      subscriber.next(1);
-      subscriber.next(2);
-      subscriber.complete();
-    })
-    .group_by::<_, _, Subject<_, _>>(|value: &i64| *value)
-    .subscribe(|group| {
-      let obs_clone = obs_count.clone();
-      group.subscribe(move |_| {
-        *obs_clone.rc_deref_mut() += 1;
+  #[rxrust_macro::test]
+  fn test_group_by_multiple_values_same_key() {
+    let results = Rc::new(RefCell::new(Vec::new()));
+    let results_clone = results.clone();
+
+    // Group strings by their first character
+    Local::from_iter(vec!["apple", "apricot", "banana", "avocado", "blueberry"])
+      .group_by(|s| s.chars().next().unwrap())
+      .subscribe(move |group| {
+        let r = results_clone.clone();
+        let key = group.inner().key;
+        group.subscribe(move |v| {
+          r.borrow_mut().push((key, v));
+        });
       });
-    });
-    assert_eq!(2, *obs_count.rc_deref());
+
+    let received = results.borrow();
+    assert_eq!(
+      received
+        .iter()
+        .filter(|(k, _)| *k == 'a')
+        .map(|(_, v)| *v)
+        .collect::<Vec<_>>(),
+      vec!["apple", "apricot", "avocado"]
+    );
+    assert_eq!(
+      received
+        .iter()
+        .filter(|(k, _)| *k == 'b')
+        .map(|(_, v)| *v)
+        .collect::<Vec<_>>(),
+      vec!["banana", "blueberry"]
+    );
   }
 
-  #[test]
-  fn propagates_complete() {
-    let mut sum = 0;
-    from_iter(vec![1, 2, 3])
-      .group_by::<_, _, Subject<_, _>>(|v| *v)
-      .flat_map(|group| group.sum())
-      .subscribe(|avg| {
-        sum += avg;
+  #[rxrust_macro::test]
+  fn test_group_by_propagates_complete() {
+    let completed_groups = Rc::new(RefCell::new(Vec::new()));
+    let outer_completed = Rc::new(RefCell::new(false));
+
+    let completed_clone = completed_groups.clone();
+    let outer_clone = outer_completed.clone();
+
+    Local::from_iter(vec![1, 2, 3])
+      .group_by(|v| *v)
+      .on_complete(move || *outer_clone.borrow_mut() = true)
+      .subscribe(move |group: Local<_>| {
+        let c = completed_clone.clone();
+        let key = group.inner().key;
+        group
+          .on_complete(move || c.borrow_mut().push(key))
+          .subscribe(|_| {});
       });
-    assert_eq!(sum, 6);
-  }
 
-  #[test]
-  fn bench() {
-    do_bench();
-  }
-
-  benchmark_group!(do_bench, bench_group_by);
-
-  fn bench_group_by(b: &mut bencher::Bencher) {
-    b.iter(group_by_parity);
+    assert!(*outer_completed.borrow());
+    let mut completed = completed_groups.borrow().clone();
+    completed.sort();
+    assert_eq!(completed, vec![1, 2, 3]);
   }
 }

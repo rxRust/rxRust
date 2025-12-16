@@ -1,39 +1,69 @@
-use crate::prelude::*;
+//! Distinct operator implementation
+//!
+//! This module contains the `Distinct` and `DistinctKey` operators, which
+//! filtering items emitted by the source observable.
+
 use std::{collections::HashSet, hash::Hash};
 
+use crate::{
+  context::Context,
+  observable::{CoreObservable, ObservableType},
+  observer::Observer,
+  subscription::Subscription,
+};
+
+/// Distinct operator: Emits only items that have not been seen before.
+///
+/// This operator uses a `HashSet` to store seen items, filtering out
+/// duplicates.
+///
+/// It requires the item type to implement `Eq`, `Hash` and `Clone`.
 #[derive(Clone)]
-pub struct DistinctOp<S> {
-  pub(crate) source: S,
+pub struct Distinct<S>(pub S);
+
+impl<S> ObservableType for Distinct<S>
+where
+  S: ObservableType,
+{
+  type Item<'a>
+    = S::Item<'a>
+  where
+    Self: 'a;
+  type Err = S::Err;
 }
 
-impl<Item, Err, O, S> Observable<Item, Err, O> for DistinctOp<S>
+impl<S, C, Unsub> CoreObservable<C> for Distinct<S>
 where
-  S: Observable<Item, Err, DistinctObserver<O, Item>>,
-  O: Observer<Item, Err>,
-  Item: Eq + Hash + Clone,
+  C: Context,
+  S: for<'a> CoreObservable<
+      C::With<DistinctObserver<C::Inner, <S as ObservableType>::Item<'a>>>,
+      Item<'a>: Eq + Hash + Clone,
+      Unsub = Unsub,
+    >,
+  Unsub: Subscription,
 {
-  type Unsub = S::Unsub;
-  fn actual_subscribe(self, observer: O) -> Self::Unsub {
-    self
-      .source
-      .actual_subscribe(DistinctObserver { observer, seen: HashSet::new() })
+  type Unsub = Unsub;
+
+  fn subscribe(self, context: C) -> Self::Unsub {
+    let observer = context.transform(DistinctObserver::new);
+    self.0.subscribe(observer)
   }
 }
 
-impl<Item, Err, S> ObservableExt<Item, Err> for DistinctOp<S> where
-  S: ObservableExt<Item, Err>
-{
-}
-
+/// DistinctObserver wrapper for filtering duplicates
 pub struct DistinctObserver<O, Item> {
   observer: O,
   seen: HashSet<Item>,
 }
 
+impl<O, Item> DistinctObserver<O, Item> {
+  pub fn new(observer: O) -> Self { Self { observer, seen: HashSet::new() } }
+}
+
 impl<O, Item, Err> Observer<Item, Err> for DistinctObserver<O, Item>
 where
   O: Observer<Item, Err>,
-  Item: Hash + Eq + Clone,
+  Item: Eq + Hash + Clone,
 {
   fn next(&mut self, value: Item) {
     if !self.seen.contains(&value) {
@@ -42,286 +72,113 @@ where
     }
   }
 
-  #[inline]
-  fn error(self, err: Err) {
-    self.observer.error(err)
-  }
+  fn error(self, err: Err) { self.observer.error(err); }
 
-  #[inline]
-  fn complete(self) {
-    self.observer.complete()
-  }
+  fn complete(self) { self.observer.complete(); }
 
-  #[inline]
-  fn is_finished(&self) -> bool {
-    self.observer.is_finished()
-  }
+  fn is_closed(&self) -> bool { self.observer.is_closed() }
 }
 
+/// DistinctKey operator: Emits items where the keys derived have not been seen
+/// before.
+///
+/// This operator uses a `HashSet` to store seen keys, filtering out items with
+/// duplicate keys.
+///
+/// It requires the key type to implement `Eq`, `Hash` and `Clone`.
 #[derive(Clone)]
-pub struct DistinctKeyOp<S, F> {
+pub struct DistinctKey<S, F> {
   pub(crate) source: S,
-  pub(crate) key: F,
+  pub(crate) key_selector: F,
 }
 
-impl<Item, Err, O, S, F, K> Observable<Item, Err, O> for DistinctKeyOp<S, F>
+impl<S, F> ObservableType for DistinctKey<S, F>
 where
-  S: Observable<Item, Err, DistinctKeyObserver<O, F, K>>,
-  O: Observer<Item, Err>,
-  F: Fn(&Item) -> K,
-  K: Eq + Hash + Clone,
+  S: ObservableType,
+{
+  type Item<'a>
+    = S::Item<'a>
+  where
+    Self: 'a;
+  type Err = S::Err;
+}
+
+impl<S, F, C, Key> CoreObservable<C> for DistinctKey<S, F>
+where
+  C: Context,
+  S: CoreObservable<C::With<DistinctKeyObserver<C::Inner, F, Key>>>,
+  F: for<'a> Fn(&S::Item<'a>) -> Key,
+  Key: Eq + Hash + Clone,
 {
   type Unsub = S::Unsub;
 
-  fn actual_subscribe(self, observer: O) -> Self::Unsub {
-    self.source.actual_subscribe(DistinctKeyObserver {
-      observer,
-      key: self.key,
-      seen: HashSet::new(),
-    })
+  fn subscribe(self, context: C) -> Self::Unsub {
+    let DistinctKey { source, key_selector } = self;
+    let observer = context.transform(|observer| DistinctKeyObserver::new(observer, key_selector));
+    source.subscribe(observer)
   }
 }
 
-impl<Item, Err, S, F> ObservableExt<Item, Err> for DistinctKeyOp<S, F> where
-  S: ObservableExt<Item, Err>
-{
-}
-pub struct DistinctKeyObserver<O, F, K> {
+/// DistinctKeyObserver wrapper for filtering duplicates by key
+pub struct DistinctKeyObserver<O, F, Key> {
   observer: O,
-  key: F,
-  seen: HashSet<K>,
+  key_selector: F,
+  seen: HashSet<Key>,
 }
 
-impl<O, F, K, Item, Err> Observer<Item, Err> for DistinctKeyObserver<O, F, K>
+impl<O, F, Key> DistinctKeyObserver<O, F, Key> {
+  pub fn new(observer: O, key_selector: F) -> Self {
+    Self { observer, key_selector, seen: HashSet::new() }
+  }
+}
+
+impl<O, F, Key, Item, Err> Observer<Item, Err> for DistinctKeyObserver<O, F, Key>
 where
   O: Observer<Item, Err>,
-  K: Hash + Eq + Clone,
-  F: Fn(&Item) -> K,
+  F: Fn(&Item) -> Key,
+  Key: Eq + Hash + Clone,
 {
   fn next(&mut self, value: Item) {
-    let key = (self.key)(&value);
+    let key = (self.key_selector)(&value);
     if !self.seen.contains(&key) {
       self.seen.insert(key);
       self.observer.next(value);
     }
   }
 
-  #[inline]
-  fn error(self, err: Err) {
-    self.observer.error(err)
-  }
+  fn error(self, err: Err) { self.observer.error(err); }
 
-  #[inline]
-  fn complete(self) {
-    self.observer.complete()
-  }
+  fn complete(self) { self.observer.complete(); }
 
-  #[inline]
-  fn is_finished(&self) -> bool {
-    self.observer.is_finished()
-  }
-}
-
-#[derive(Clone)]
-pub struct DistinctUntilChangedOp<S> {
-  pub(crate) source: S,
-}
-
-impl<Item, Err, O, S> Observable<Item, Err, O> for DistinctUntilChangedOp<S>
-where
-  S: Observable<Item, Err, DistinctUntilChangedObserver<O, Item>>,
-  O: Observer<Item, Err>,
-  Item: PartialEq + Clone,
-{
-  type Unsub = S::Unsub;
-
-  fn actual_subscribe(self, observer: O) -> Self::Unsub {
-    self
-      .source
-      .actual_subscribe(DistinctUntilChangedObserver { observer, last: None })
-  }
-}
-
-impl<Item, Err, S> ObservableExt<Item, Err> for DistinctUntilChangedOp<S> where
-  S: ObservableExt<Item, Err>
-{
-}
-
-pub struct DistinctUntilChangedObserver<O, Item> {
-  observer: O,
-  last: Option<Item>,
-}
-
-impl<O, Item, Err> Observer<Item, Err> for DistinctUntilChangedObserver<O, Item>
-where
-  O: Observer<Item, Err>,
-  Item: PartialEq + Clone,
-{
-  fn next(&mut self, value: Item) {
-    if self.last.is_none() || self.last.as_ref().unwrap() != &value {
-      self.last = Some(value.clone());
-      self.observer.next(value);
-    }
-  }
-
-  #[inline]
-  fn error(self, err: Err) {
-    self.observer.error(err)
-  }
-
-  #[inline]
-  fn complete(self) {
-    self.observer.complete()
-  }
-
-  #[inline]
-  fn is_finished(&self) -> bool {
-    self.observer.is_finished()
-  }
-}
-
-#[derive(Clone)]
-pub struct DistinctUntilKeyChangedOp<S, F> {
-  pub(crate) source: S,
-  pub(crate) key: F,
-}
-
-impl<Item, Err, O, S, F, K> Observable<Item, Err, O>
-  for DistinctUntilKeyChangedOp<S, F>
-where
-  S: Observable<Item, Err, DistinctUntilKeyChangedObserver<O, F, Item>>,
-  O: Observer<Item, Err>,
-  K: PartialEq,
-  Item: Clone,
-  F: Fn(&Item) -> K,
-{
-  type Unsub = S::Unsub;
-
-  fn actual_subscribe(self, observer: O) -> Self::Unsub {
-    self
-      .source
-      .actual_subscribe(DistinctUntilKeyChangedObserver {
-        observer,
-        key: self.key,
-        last: None,
-      })
-  }
-}
-
-impl<Item, Err, S, F> ObservableExt<Item, Err>
-  for DistinctUntilKeyChangedOp<S, F>
-where
-  S: ObservableExt<Item, Err>,
-{
-}
-pub struct DistinctUntilKeyChangedObserver<O, F, Item> {
-  observer: O,
-  key: F,
-  last: Option<Item>,
-}
-
-impl<O, F, K, Item, Err> Observer<Item, Err>
-  for DistinctUntilKeyChangedObserver<O, F, Item>
-where
-  O: Observer<Item, Err>,
-  Item: Clone,
-  K: PartialEq,
-  F: Fn(&Item) -> K,
-{
-  fn next(&mut self, value: Item) {
-    let last = self.last.as_ref();
-    if last.is_none_or(|last| (self.key)(last) != (self.key)(&value)) {
-      self.last = Some(value.clone());
-      self.observer.next(value);
-    }
-  }
-
-  #[inline]
-  fn error(self, err: Err) {
-    self.observer.error(err)
-  }
-
-  #[inline]
-  fn complete(self) {
-    self.observer.complete()
-  }
-
-  #[inline]
-  fn is_finished(&self) -> bool {
-    self.observer.is_finished()
-  }
+  fn is_closed(&self) -> bool { self.observer.is_closed() }
 }
 
 #[cfg(test)]
 mod tests {
-  use super::*;
+
   use std::{cell::RefCell, rc::Rc};
 
-  #[test]
+  use crate::prelude::*;
+
+  #[rxrust_macro::test]
   fn smoke() {
     let x = Rc::new(RefCell::new(vec![]));
     let x_c = x.clone();
-    observable::from_iter(0..20)
+    Local::from_iter(0..20)
       .map(|v| v % 5)
       .distinct()
-      .subscribe(move |v| x.borrow_mut().push(v));
-    assert_eq!(&*x_c.borrow(), &[0, 1, 2, 3, 4]);
+      .subscribe(move |v| x_c.borrow_mut().push(v));
+    assert_eq!(&*x.borrow(), &[0, 1, 2, 3, 4]);
   }
 
-  #[test]
-  fn bench() {
-    do_bench();
-  }
-
-  benchmark_group!(do_bench, bench_distinct);
-
-  fn bench_distinct(b: &mut bencher::Bencher) {
-    b.iter(smoke);
-  }
-
-  #[test]
-  fn distinct_until_changed() {
-    let x = Rc::new(RefCell::new(vec![]));
-    let x_c = x.clone();
-    observable::from_iter(&[1, 2, 2, 1, 2, 3])
-      .map(|v| v % 5)
-      .distinct_until_changed()
-      .subscribe(move |v| x.borrow_mut().push(v));
-    assert_eq!(&*x_c.borrow(), &[1, 2, 1, 2, 3]);
-  }
-
-  #[test]
-  fn bench2() {
-    do_bench_distinct_until_changed();
-  }
-  benchmark_group!(
-    do_bench_distinct_until_changed,
-    bench_distinct_until_changed
-  );
-
-  fn bench_distinct_until_changed(b: &mut bencher::Bencher) {
-    b.iter(smoke);
-  }
-
-  #[test]
-  fn distinct_until_key_changed() {
-    let x = Rc::new(RefCell::new(vec![]));
-    let x_c = x.clone();
-    observable::from_iter(vec![(1, 2), (2, 2), (2, 1), (1, 1), (2, 2), (3, 2)])
-      .map(|v| v)
-      .distinct_until_key_changed(|tup: &(i32, i32)| tup.0)
-      .subscribe(move |v| x.borrow_mut().push(v));
-    assert_eq!(&*x_c.borrow(), &[(1, 2), (2, 2), (1, 1), (2, 2), (3, 2)]);
-  }
-
-  #[test]
+  #[rxrust_macro::test]
   fn distinct_key() {
     let x = Rc::new(RefCell::new(vec![]));
     let x_c = x.clone();
-    observable::from_iter(vec![(1, 2), (2, 2), (2, 1), (1, 1), (2, 2), (3, 2)])
+    Local::from_iter(vec![(1, 2), (2, 2), (2, 1), (1, 1), (2, 2), (3, 2)])
       .distinct_key(|tup: &(i32, i32)| tup.0)
-      .subscribe(move |v| x.borrow_mut().push(v));
+      .subscribe(move |v| x_c.borrow_mut().push(v));
 
-    assert_eq!(&*x_c.borrow(), &[(1, 2), (2, 2), (3, 2)]);
+    assert_eq!(&*x.borrow(), &[(1, 2), (2, 2), (3, 2)]);
   }
 }

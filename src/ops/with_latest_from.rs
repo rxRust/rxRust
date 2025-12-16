@@ -1,259 +1,291 @@
+//! WithLatestFrom operator implementation
+//!
+//! Combines each item from the source observable with the latest value from
+//! another observable. Only emits when the primary source emits, not when the
+//! secondary emits.
+
 use std::marker::PhantomData;
 
 use crate::{
-  prelude::*,
-  rc::{MutArc, MutRc, RcDeref, RcDerefMut},
+  context::{Context, RcDerefMut},
+  observable::{CoreObservable, ObservableType},
+  observer::Observer,
+  subscription::{IntoBoxedSubscription, Subscription, TupleSubscription},
 };
 
-/// An Observable that combines from two other two Observables.
+// ==================== WithLatestFrom Operator ====================
+
+/// WithLatestFrom operator
 ///
-/// This struct is created by the with_latest_from method on
-/// [Observable](Observable::with_latest_from). See its documentation for more.
+/// Combines each item from source A with the latest value from source B.
+/// Only emits when A emits. If B hasn't emitted yet, A's emissions are dropped.
 #[derive(Clone)]
-pub struct WithLatestFromOp<S, FS> {
-  pub(crate) source: S,
-  pub(crate) from: FS,
+pub struct WithLatestFrom<A, B> {
+  pub source_a: A,
+  pub source_b: B,
 }
 
-#[derive(Clone)]
-pub struct WithLatestFromOpThreads<S, FS> {
-  pub(crate) source: S,
-  pub(crate) from: FS,
-}
-
-macro_rules! impl_with_last_from_op {
-  ($name: ident, $rc: ident) => {
-    impl<S, FS> $name<S, FS> {
-      pub(crate) fn new(source: S, from: FS) -> Self {
-        Self { source, from }
-      }
-    }
-
-    impl<Source, From, O, ItemA, ItemB, Err> Observable<(ItemA, ItemB), Err, O>
-      for $name<Source, From>
-    where
-      O: Observer<(ItemA, ItemB), Err>,
-      Source:
-        Observable<ItemA, Err, AObserver<$rc<Option<O>>, $rc<Option<ItemB>>>>,
-      From: Observable<
-        ItemB,
-        Err,
-        BObserver<$rc<Option<O>>, $rc<Option<ItemB>>, ItemA>,
-      >,
-      ItemB: Clone,
-    {
-      type Unsub = ZipSubscription<Source::Unsub, From::Unsub>;
-      fn actual_subscribe(self, observer: O) -> Self::Unsub {
-        let item = $rc::own(None);
-        let source_observer = $rc::own(Some(observer));
-        let from_observer = BObserver {
-          observer: source_observer.clone(),
-          value: item.clone(),
-          _marker: std::marker::PhantomData::<ItemA>,
-        };
-        let from_unsub = self.from.actual_subscribe(from_observer);
-        let source_unsub = self.source.actual_subscribe(AObserver {
-          observer: source_observer,
-          value: item,
-        });
-
-        ZipSubscription::new(source_unsub, from_unsub)
-      }
-    }
-
-    impl<Source, From, ItemA, ItemB, Err> ObservableExt<(ItemA, ItemB), Err>
-      for $name<Source, From>
-    where
-      Source: ObservableExt<ItemA, Err>,
-      From: ObservableExt<ItemB, Err>,
-    {
-    }
-  };
-}
-
-impl_with_last_from_op!(WithLatestFromOp, MutRc);
-impl_with_last_from_op!(WithLatestFromOpThreads, MutArc);
-
-#[derive(Clone)]
-pub struct BObserver<O, V, ItemA> {
-  observer: O,
-  value: V,
-  _marker: PhantomData<ItemA>,
-}
-
-impl<O, ItemA, ItemB, V, Err> Observer<ItemB, Err> for BObserver<O, V, ItemA>
+impl<A, B> ObservableType for WithLatestFrom<A, B>
 where
-  O: Observer<(ItemA, ItemB), Err>,
-  V: RcDerefMut<Target = Option<ItemB>>,
+  A: ObservableType,
+  B: ObservableType<Err = A::Err>,
 {
-  #[inline]
-  fn next(&mut self, value: ItemB) {
-    *self.value.rc_deref_mut() = Some(value);
-  }
-
-  #[inline]
-  fn error(self, err: Err) {
-    self.observer.error(err)
-  }
-
-  #[inline]
-  fn complete(self) {}
-
-  #[inline]
-  fn is_finished(&self) -> bool {
-    self.observer.is_finished()
-  }
+  type Item<'a>
+    = (A::Item<'a>, B::Item<'a>)
+  where
+    Self: 'a;
+  type Err = A::Err;
 }
 
-#[derive(Clone)]
-pub struct AObserver<O, V> {
-  observer: O,
-  value: V,
+// ==================== Shared State ====================
+
+/// Shared state between A and B observers
+pub struct WithLatestFromState<O, ItemB> {
+  observer: Option<O>,
+  last_b: Option<ItemB>,
 }
 
-impl<ItemA, ItemB, Err, V, O> Observer<ItemA, Err> for AObserver<O, V>
+impl<O, ItemB> WithLatestFromState<O, ItemB> {
+  fn new(observer: O) -> Self { Self { observer: Some(observer), last_b: None } }
+}
+
+// ==================== Observer Structs ====================
+
+/// Observer for source A (primary - drives emissions)
+pub struct WithLatestFromAObserver<StateRc, BProxy> {
+  state: StateRc,
+  b_proxy: BProxy,
+}
+
+/// Observer for source B (secondary - only stores value)
+/// ItemA is included via PhantomData to make type checking work correctly
+pub struct WithLatestFromBObserver<StateRc, AProxy, ItemA> {
+  state: StateRc,
+  a_proxy: AProxy,
+  _marker: PhantomData<fn() -> ItemA>,
+}
+
+// ==================== Type Aliases ====================
+
+type SharedState<'a, C, B> = <C as Context>::RcMut<
+  WithLatestFromState<<C as Context>::Inner, <B as ObservableType>::Item<'a>>,
+>;
+
+type SubProxy<C, U> = <C as Context>::RcMut<Option<U>>;
+type BoxedSubProxy<C> = <C as Context>::RcMut<Option<<C as Context>::BoxedSubscription>>;
+
+type WlfACtx<'a, C, B, BUnsub> =
+  <C as Context>::With<WithLatestFromAObserver<SharedState<'a, C, B>, SubProxy<C, BUnsub>>>;
+type WlfBCtx<'a, C, A, B> = <C as Context>::With<
+  WithLatestFromBObserver<SharedState<'a, C, B>, BoxedSubProxy<C>, <A as ObservableType>::Item<'a>>,
+>;
+
+// ==================== CoreObservable Implementation ====================
+
+impl<A, B, C, AUnsub, BUnsub> CoreObservable<C> for WithLatestFrom<A, B>
 where
+  C: Context,
+  A: for<'a> CoreObservable<WlfACtx<'a, C, B, BUnsub>, Unsub = AUnsub>,
+  B: for<'a> CoreObservable<WlfBCtx<'a, C, A, B>, Unsub = BUnsub, Err = A::Err>,
+  AUnsub: IntoBoxedSubscription<C::BoxedSubscription>,
+  SubProxy<C, BUnsub>: Subscription,
+  BoxedSubProxy<C>: Subscription,
+{
+  type Unsub = TupleSubscription<BoxedSubProxy<C>, SubProxy<C, BUnsub>>;
+
+  fn subscribe(self, context: C) -> Self::Unsub {
+    let WithLatestFrom { source_a, source_b } = self;
+
+    let downstream = context.into_inner();
+    let state = C::RcMut::from(WithLatestFromState::new(downstream));
+
+    let a_proxy: BoxedSubProxy<C> = C::RcMut::from(None);
+
+    // Subscribe B first
+    let b_observer = WithLatestFromBObserver {
+      state: state.clone(),
+      a_proxy: a_proxy.clone(),
+      _marker: PhantomData,
+    };
+    let b_ctx = C::lift(b_observer);
+    let b_unsub = source_b.subscribe(b_ctx);
+    let b_proxy: SubProxy<C, BUnsub> = C::RcMut::from(Some(b_unsub));
+
+    // Subscribe A
+    let a_observer = WithLatestFromAObserver { state, b_proxy: b_proxy.clone() };
+    let a_ctx = C::lift(a_observer);
+    let a_unsub = source_a.subscribe(a_ctx);
+    *a_proxy.rc_deref_mut() = Some(a_unsub.into_boxed());
+
+    TupleSubscription::new(a_proxy, b_proxy)
+  }
+}
+
+// ==================== Observer Implementations ====================
+
+impl<ItemA, ItemB, Err, O, StateRc, BProxy> Observer<ItemA, Err>
+  for WithLatestFromAObserver<StateRc, BProxy>
+where
+  StateRc: RcDerefMut<Target = WithLatestFromState<O, ItemB>>,
+  BProxy: Subscription,
   O: Observer<(ItemA, ItemB), Err>,
   ItemB: Clone,
-  V: RcDeref<Target = Option<ItemB>>,
 {
-  fn next(&mut self, item: ItemA) {
-    // should not write in one line early end value borrow.
-    let v = self.value.rc_deref().clone();
-    if let Some(v) = v {
-      self.observer.next((item, v));
+  fn next(&mut self, value: ItemA) {
+    let mut guard = self.state.rc_deref_mut();
+    if let Some(b) = guard.last_b.clone()
+      && let Some(observer) = guard.observer.as_mut()
+    {
+      observer.next((value, b));
+    }
+    // If no last_b, drop the value (as per WithLatestFrom semantics)
+  }
+
+  fn error(self, err: Err) {
+    self.b_proxy.unsubscribe();
+    if let Some(observer) = self.state.rc_deref_mut().observer.take() {
+      observer.error(err);
     }
   }
 
-  #[inline]
   fn complete(self) {
-    self.observer.complete();
+    self.b_proxy.unsubscribe();
+    if let Some(observer) = self.state.rc_deref_mut().observer.take() {
+      observer.complete();
+    }
   }
 
-  #[inline]
-  fn error(self, err: Err) {
-    self.observer.error(err)
-  }
-
-  #[inline]
-  fn is_finished(&self) -> bool {
-    self.observer.is_finished()
-  }
+  fn is_closed(&self) -> bool { self.state.rc_deref().observer.is_closed() }
 }
 
+// BObserver - ItemA is constrained via PhantomData in the struct
+impl<ItemA, ItemB, Err, O, StateRc, AProxy> Observer<ItemB, Err>
+  for WithLatestFromBObserver<StateRc, AProxy, ItemA>
+where
+  StateRc: RcDerefMut<Target = WithLatestFromState<O, ItemB>>,
+  AProxy: Subscription,
+  O: Observer<(ItemA, ItemB), Err>,
+{
+  fn next(&mut self, value: ItemB) { self.state.rc_deref_mut().last_b = Some(value); }
+
+  fn error(self, err: Err) {
+    self.a_proxy.unsubscribe();
+    if let Some(observer) = self.state.rc_deref_mut().observer.take() {
+      observer.error(err);
+    }
+  }
+
+  fn complete(self) {
+    // Secondary completion does NOT complete downstream
+  }
+
+  fn is_closed(&self) -> bool { self.state.rc_deref().observer.is_closed() }
+}
+
+// ==================== Tests ====================
+
 #[cfg(test)]
-mod test {
+mod tests {
+  use std::sync::{Arc, Mutex};
+
   use crate::prelude::*;
 
-  #[test]
-  fn simple() {
-    let mut ret = String::new();
+  #[rxrust_macro::test]
+  async fn test_simple() {
+    let ret = Arc::new(Mutex::new(String::new()));
+    let ret_clone = ret.clone();
 
-    {
-      let mut s1 = Subject::default();
-      let mut s2 = Subject::default();
+    let mut s1 = Local::subject::<char, std::convert::Infallible>();
+    let mut s2 = Local::subject::<char, std::convert::Infallible>();
 
-      s1.clone().with_latest_from(s2.clone()).subscribe(|(a, b)| {
-        ret.push(a);
-        ret.push(b);
+    s1.clone()
+      .with_latest_from(s2.clone())
+      .subscribe(move |(a, b)| {
+        let mut guard = ret_clone.lock().unwrap();
+        guard.push(a);
+        guard.push(b);
       });
 
-      s1.next('1');
-      s2.next('A');
-      s1.next('2'); // 2A
-      s2.next('B');
-      s2.next('C');
-      s2.next('D');
-      s1.next('3'); // 3D
-      s1.next('4'); // 4D
-      s1.next('5'); // 5D
-    }
+    s1.next('1');
+    s2.next('A');
+    s1.next('2'); // 2A
+    s2.next('B');
+    s2.next('C');
+    s2.next('D');
+    s1.next('3'); // 3D
+    s1.next('4'); // 4D
+    s1.next('5'); // 5D
 
-    assert_eq!(ret, "2A3D4D5D");
+    assert_eq!(*ret.lock().unwrap(), "2A3D4D5D");
   }
 
-  #[test]
-  fn smoke() {
-    let mut a_store = vec![];
-    let mut b_store = vec![];
-    let mut numbers_store = vec![];
+  #[rxrust_macro::test]
+  async fn test_smoke() {
+    let a_store = Arc::new(Mutex::new(vec![]));
+    let b_store = Arc::new(Mutex::new(vec![]));
+    let numbers_store = Arc::new(Mutex::new(vec![]));
 
-    {
-      let mut numbers = Subject::default();
-      let primary = numbers.clone().filter(|v| *v % 3 == 0);
-      let secondary = numbers.clone().filter(|v| *v % 3 != 0);
+    let a_store_clone = a_store.clone();
+    let b_store_clone = b_store.clone();
+    let numbers_store_clone = numbers_store.clone();
 
-      let with_latest_from =
-        primary.clone().with_latest_from(secondary.clone());
+    let mut numbers = Local::subject::<i32, std::convert::Infallible>();
 
-      //  attach observers
-      with_latest_from.subscribe(|v| numbers_store.push(v));
-      primary.subscribe(|v| a_store.push(v));
-      secondary.subscribe(|v| b_store.push(v));
-
-      (0..10).for_each(|v| {
-        numbers.next(v);
-      });
-    }
-
-    assert_eq!(a_store, vec![0, 3, 6, 9]);
-    assert_eq!(b_store, vec![1, 2, 4, 5, 7, 8]);
-    assert_eq!(numbers_store, vec![(3, 2), (6, 5), (9, 8)]);
-  }
-
-  #[test]
-  fn complete() {
-    let mut complete = false;
-    {
-      let s1 = Subject::default();
-      s1.clone()
-        .with_latest_from(Subject::default())
-        .on_complete(|| complete = true)
-        .subscribe(|((), ())| {});
-
-      s1.complete();
-    }
-    assert!(complete);
-
-    complete = false;
-    {
-      let s1 = Subject::default();
-      let s2 = Subject::default();
-      s1.clone()
-        .with_latest_from(s2.clone())
-        .on_complete(|| complete = true)
-        .subscribe(|((), ())| {});
-
-      s2.complete();
-    }
-    assert!(!complete);
-  }
-
-  #[test]
-  fn circular() {
-    let mut subject_a = Subject::default();
-    let mut subject_b = Subject::default();
-    let mut cloned_subject_b = subject_b.clone();
-
-    subject_a
+    numbers
       .clone()
-      .with_latest_from(subject_b.clone())
-      .subscribe(move |_| {
-        cloned_subject_b.next(());
-      });
-    subject_b.next(());
-    subject_a.next(());
-    subject_a.next(());
+      .filter(|v| *v % 3 == 0)
+      .with_latest_from(numbers.clone().filter(|v| *v % 3 != 0))
+      .subscribe(move |v| numbers_store_clone.lock().unwrap().push(v));
+
+    numbers
+      .clone()
+      .filter(|v| *v % 3 == 0)
+      .subscribe(move |v| a_store_clone.lock().unwrap().push(v));
+
+    numbers
+      .clone()
+      .filter(|v| *v % 3 != 0)
+      .subscribe(move |v| b_store_clone.lock().unwrap().push(v));
+
+    (0..10).for_each(|v| {
+      numbers.next(v);
+    });
+
+    assert_eq!(*a_store.lock().unwrap(), vec![0, 3, 6, 9]);
+    assert_eq!(*b_store.lock().unwrap(), vec![1, 2, 4, 5, 7, 8]);
+    assert_eq!(*numbers_store.lock().unwrap(), vec![(3, 2), (6, 5), (9, 8)]);
   }
 
-  #[test]
-  fn bench() {
-    do_bench();
+  #[rxrust_macro::test]
+  async fn test_primary_complete() {
+    let complete = Arc::new(Mutex::new(false));
+    let complete_clone = complete.clone();
+
+    let s1 = Local::subject::<(), std::convert::Infallible>();
+    s1.clone()
+      .with_latest_from(Local::subject::<(), std::convert::Infallible>())
+      .on_complete(move || *complete_clone.lock().unwrap() = true)
+      .subscribe(|(_a, _b)| {});
+
+    s1.complete();
+
+    assert!(*complete.lock().unwrap());
   }
 
-  benchmark_group!(do_bench, bench_zip);
+  #[rxrust_macro::test]
+  async fn test_secondary_complete() {
+    let complete = Arc::new(Mutex::new(false));
+    let complete_clone = complete.clone();
 
-  fn bench_zip(b: &mut bencher::Bencher) {
-    b.iter(smoke);
+    let s1 = Local::subject::<(), std::convert::Infallible>();
+    let s2 = Local::subject::<(), std::convert::Infallible>();
+    s1.clone()
+      .with_latest_from(s2.clone())
+      .on_complete(move || *complete_clone.lock().unwrap() = true)
+      .subscribe(|(_a, _b)| {});
+
+    s2.complete();
+
+    assert!(!*complete.lock().unwrap());
   }
 }

@@ -1,199 +1,362 @@
+//! Sample operator implementation
+//!
+//! This module contains the Sample operator, which emits the most recently
+//! emitted value from the source Observable whenever a notifier Observable
+//! emits.
+
 use crate::{
-  prelude::*,
-  rc::{MutArc, MutRc, RcDerefMut},
+  context::{Context, RcDeref, RcDerefMut},
+  observable::{CoreObservable, ObservableType},
+  observer::Observer,
+  subscription::{Subscription, TupleSubscription},
 };
 
+// ==================== Sample Operator ====================
+
+/// Sample operator
+///
+/// Emits the most recently emitted value from the source Observable whenever
+/// the `sampler` (notifier) Observable emits a value. Also emits the last
+/// stored value when the sampler completes.
 #[derive(Clone)]
-pub struct SampleOp<Source, Sample, SampleItem> {
-  source: Source,
-  sample: Sample,
-  _hint: TypeHint<SampleItem>,
+pub struct Sample<S, N> {
+  pub source: S,
+  pub sampler: N,
 }
 
-#[derive(Clone)]
-pub struct SampleOpThreads<Source, Sample, SampleItem> {
-  source: Source,
-  sample: Sample,
-  _hint: TypeHint<SampleItem>,
-}
-
-macro_rules! impl_sample_op {
-  ($name: ident, $rc: ident) => {
-    impl<Source, Sample, SampleItem> $name<Source, Sample, SampleItem> {
-      #[inline]
-      pub(crate) fn new(source: Source, sample: Sample) -> Self {
-        Self {
-          source,
-          sample,
-          _hint: TypeHint::default(),
-        }
-      }
-    }
-
-    impl<Item1, Item2, Err, Source, Sample, O> Observable<Item1, Err, O>
-      for $name<Source, Sample, Item2>
-    where
-      O: Observer<Item1, Err>,
-      Source: Observable<
-        Item1,
-        Err,
-        SourceObserver<$rc<Option<O>>, $rc<Option<Item1>>>,
-      >,
-      Sample: Observable<
-        Item2,
-        Err,
-        SampleObserver<$rc<Option<O>>, $rc<Option<Item1>>>,
-      >,
-    {
-      type Unsub = ZipSubscription<Source::Unsub, Sample::Unsub>;
-      fn actual_subscribe(self, observer: O) -> Self::Unsub {
-        let value = $rc::own(None);
-        let observer = $rc::own(Some(observer));
-        let source_observer = SourceObserver {
-          observer: observer.clone(),
-          value: value.clone(),
-        };
-        let sample_observer = SampleObserver { observer, value };
-
-        let source_unsub = self.source.actual_subscribe(source_observer);
-        let sample_unsub = self.sample.actual_subscribe(sample_observer);
-        ZipSubscription::new(source_unsub, sample_unsub)
-      }
-    }
-
-    impl<Item1, Item2, Err, Source, Sample> ObservableExt<Item1, Err>
-      for $name<Source, Sample, Item2>
-    where
-      Source: ObservableExt<Item1, Err>,
-      Sample: ObservableExt<Item2, Err>,
-    {
-    }
-  };
-}
-
-impl_sample_op!(SampleOp, MutRc);
-impl_sample_op!(SampleOpThreads, MutArc);
-
-pub struct SourceObserver<O, V> {
-  observer: O,
-  value: V,
-}
-
-impl<Item, Err, O, V> Observer<Item, Err> for SourceObserver<O, V>
+impl<S, N> ObservableType for Sample<S, N>
 where
+  S: ObservableType,
+{
+  type Item<'a>
+    = S::Item<'a>
+  where
+    Self: 'a;
+  type Err = S::Err;
+}
+
+// ==================== Shared State ====================
+
+/// Shared state between source and sampler observers
+///
+/// Contains the downstream observer and the latest sampled value.
+/// Users should wrap this in `MutRc` or `MutArc` to share between observers.
+pub struct SampleState<O, V> {
+  observer: Option<O>,
+  value: Option<V>,
+}
+
+impl<O, V> SampleState<O, V> {
+  /// Create a new SampleState with the given observer
+  pub fn new(observer: O) -> Self { Self { observer: Some(observer), value: None } }
+
+  /// Store a value for later sampling
+  #[inline]
+  pub fn store(&mut self, value: V) { self.value = Some(value); }
+
+  /// Take and emit the stored value if present
+  pub fn emit_if_present<Err>(&mut self)
+  where
+    O: Observer<V, Err>,
+  {
+    if let Some(value) = self.value.take()
+      && let Some(observer) = self.observer.as_mut()
+    {
+      observer.next(value);
+    }
+  }
+
+  /// Propagate error to downstream and consume the observer
+  pub fn error<Err>(&mut self, err: Err)
+  where
+    O: Observer<V, Err>,
+  {
+    if let Some(observer) = self.observer.take() {
+      observer.error(err);
+    }
+  }
+
+  /// Complete downstream and consume the observer
+  pub fn complete<Err>(&mut self)
+  where
+    O: Observer<V, Err>,
+  {
+    if let Some(observer) = self.observer.take() {
+      observer.complete();
+    }
+  }
+
+  /// Check if downstream is closed
+  pub fn is_closed<Err>(&self) -> bool
+  where
+    O: Observer<V, Err>,
+  {
+    self.observer.is_closed()
+  }
+}
+
+// ==================== Observer Structs ====================
+
+/// Observer for the source observable
+pub struct SampleSourceObserver<StateRc, NProxy> {
+  state: StateRc,
+  notifier_proxy: NProxy,
+}
+
+/// Observer for the sampler (notifier) observable
+pub struct SampleSamplerObserver<StateRc> {
+  state: StateRc,
+}
+
+// ==================== Type Aliases ====================
+
+/// Helper type alias for the shared state wrapped in RcMut
+type SharedState<'a, C, S> =
+  <C as Context>::RcMut<SampleState<<C as Context>::Inner, <S as ObservableType>::Item<'a>>>;
+
+/// Helper type alias for the Sample source observable context
+type SampleSourceCtx<'a, C, S, U> = <C as Context>::With<
+  SampleSourceObserver<SharedState<'a, C, S>, <C as Context>::RcMut<Option<U>>>,
+>;
+
+/// Helper type alias for the Sample sampler observable context
+type SampleSamplerCtx<'a, C, S> =
+  <C as Context>::With<SampleSamplerObserver<SharedState<'a, C, S>>>;
+
+// ==================== CoreObservable Implementation ====================
+
+impl<S, N, C, SrcUnsub, NotifyUnsub> CoreObservable<C> for Sample<S, N>
+where
+  C: Context,
+  S: for<'a> CoreObservable<SampleSourceCtx<'a, C, S, NotifyUnsub>, Unsub = SrcUnsub>,
+  N: for<'a> CoreObservable<SampleSamplerCtx<'a, C, S>, Unsub = NotifyUnsub>,
+  SrcUnsub: Subscription,
+  NotifyUnsub: Subscription,
+  C::RcMut<Option<NotifyUnsub>>: Subscription,
+  for<'a> C::Inner: Observer<S::Item<'a>, S::Err>,
+{
+  type Unsub = TupleSubscription<SrcUnsub, C::RcMut<Option<NotifyUnsub>>>;
+
+  fn subscribe(self, context: C) -> Self::Unsub {
+    let Sample { source, sampler } = self;
+
+    // Create shared state wrapped in RcMut
+    let downstream = context.into_inner();
+    let state: SharedState<C, S> = C::RcMut::from(SampleState::new(downstream));
+
+    // Initialize notifier proxy (empty initially)
+    let notifier_proxy: C::RcMut<Option<N::Unsub>> = C::RcMut::from(None);
+
+    // Subscribe to source first
+    let source_observer =
+      SampleSourceObserver { state: state.clone(), notifier_proxy: notifier_proxy.clone() };
+    let source_ctx = C::lift(source_observer);
+    let source_unsub = source.subscribe(source_ctx);
+
+    // Subscribe to sampler second
+    let sampler_observer = SampleSamplerObserver { state: state.clone() };
+    let sampler_ctx = C::lift(sampler_observer);
+    let sampler_unsub = sampler.subscribe(sampler_ctx);
+
+    // If downstream is not closed, store the sampler subscription in the proxy.
+    // Otherwise, unsubscribe the sampler immediately (as source already
+    // completed/errored).
+    if !state.rc_deref().is_closed::<S::Err>() {
+      *notifier_proxy.rc_deref_mut() = Some(sampler_unsub);
+    } else {
+      sampler_unsub.unsubscribe();
+    }
+
+    TupleSubscription::new(source_unsub, notifier_proxy)
+  }
+}
+
+// ==================== Observer Implementations ====================
+
+impl<Item, Err, O, StateRc, NProxy> Observer<Item, Err> for SampleSourceObserver<StateRc, NProxy>
+where
+  StateRc: RcDerefMut<Target = SampleState<O, Item>>,
+  NProxy: Subscription,
   O: Observer<Item, Err>,
-  V: RcDerefMut<Target = Option<Item>>,
 {
-  #[inline]
-  fn next(&mut self, value: Item) {
-    *self.value.rc_deref_mut() = Some(value);
-  }
+  fn next(&mut self, value: Item) { self.state.rc_deref_mut().store(value); }
 
-  #[inline]
   fn error(self, err: Err) {
-    self.observer.error(err)
+    self.notifier_proxy.unsubscribe();
+    self.state.rc_deref_mut().error(err);
   }
 
-  #[inline]
   fn complete(self) {
-    self.observer.complete()
+    self.notifier_proxy.unsubscribe();
+    self.state.rc_deref_mut().complete::<Err>();
   }
 
-  #[inline]
-  fn is_finished(&self) -> bool {
-    self.observer.is_finished()
-  }
+  fn is_closed(&self) -> bool { self.state.rc_deref().is_closed::<Err>() }
 }
 
-pub struct SampleObserver<O, V> {
-  observer: O,
-  value: V,
-}
-
-impl<Item1, Item2, V, Err, O> Observer<Item2, Err> for SampleObserver<O, V>
+impl<Item, Err, SamplerItem, O, StateRc> Observer<SamplerItem, Err>
+  for SampleSamplerObserver<StateRc>
 where
-  O: Observer<Item1, Err>,
-  V: RcDerefMut<Target = Option<Item1>>,
+  StateRc: RcDerefMut<Target = SampleState<O, Item>>,
+  O: Observer<Item, Err>,
 {
-  fn next(&mut self, _: Item2) {
-    if let Some(item) = self.value.rc_deref_mut().take() {
-      self.observer.next(item)
-    }
+  fn next(&mut self, _: SamplerItem) { self.state.rc_deref_mut().emit_if_present::<Err>(); }
+
+  fn error(self, err: Err) { self.state.rc_deref_mut().error(err); }
+
+  fn complete(self) {
+    let mut state = self.state.rc_deref_mut();
+    state.emit_if_present::<Err>();
+    state.complete::<Err>();
   }
 
-  #[inline]
-  fn error(self, err: Err) {
-    self.observer.error(err)
-  }
-
-  #[inline]
-  fn complete(mut self) {
-    if let Some(item) = self.value.rc_deref_mut().take() {
-      self.observer.next(item)
-    }
-  }
-
-  #[inline]
-  fn is_finished(&self) -> bool {
-    self.observer.is_finished()
-  }
+  fn is_closed(&self) -> bool { self.state.rc_deref().is_closed::<Err>() }
 }
+
+// ==================== Tests ====================
 
 #[cfg(test)]
-mod test {
-  use crate::{observable::fake_timer::FakeClock, prelude::*};
-  use std::{cell::RefCell, rc::Rc, time::Duration};
+mod tests {
+  use std::{cell::RefCell, convert::Infallible, rc::Rc};
 
-  #[test]
-  fn sample_base() {
-    let clock = FakeClock::default();
-    let x = Rc::new(RefCell::new(vec![]));
+  use crate::prelude::*;
 
-    let interval = clock.interval(Duration::from_millis(1));
-    {
-      let x_c = x.clone();
-      interval
-        .sample(clock.interval(Duration::from_millis(10)))
-        .subscribe(move |v| {
-          x_c.borrow_mut().push(v);
-        });
+  #[rxrust_macro::test]
+  fn test_sample_emits_on_notifier() {
+    let result = Rc::new(RefCell::new(Vec::new()));
+    let result_clone = result.clone();
 
-      clock.advance(Duration::from_millis(101));
-      assert_eq!(&*x.borrow(), &[9, 19, 29, 39, 49, 59, 69, 79, 89, 99]);
-    };
+    let mut source = Local::subject::<i32, Infallible>();
+    let mut sampler = Local::subject::<(), Infallible>();
+
+    source
+      .clone()
+      .sample(sampler.clone())
+      .subscribe(move |v| {
+        result_clone.borrow_mut().push(v);
+      });
+
+    source.next(1);
+    source.next(2);
+    sampler.next(()); // Should emit 2
+    source.next(3);
+    sampler.next(()); // Should emit 3
+
+    assert_eq!(*result.borrow(), vec![2, 3]);
   }
 
-  #[cfg(not(target_arch = "wasm32"))]
-  #[test]
-  fn sample_by_subject() {
-    use crate::rc::{MutArc, RcDeref, RcDerefMut};
+  #[rxrust_macro::test]
+  fn test_sample_no_value_when_sampler_emits() {
+    let result = Rc::new(RefCell::new(Vec::new()));
+    let result_clone = result.clone();
 
-    let mut subject = SubjectThreads::default();
-    let mut notifier = SubjectThreads::default();
-    let test_code = MutArc::own(0);
-    let c_test_code = test_code.clone();
-    subject.clone().sample_threads(notifier.clone()).subscribe(
-      move |v: i32| {
-        *c_test_code.rc_deref_mut() = v;
-      },
-    );
-    subject.next(1);
-    notifier.next(1);
-    assert_eq!(*test_code.rc_deref(), 1);
+    let source = Local::subject::<i32, Infallible>();
+    let mut sampler = Local::subject::<(), Infallible>();
 
-    subject.next(2);
-    assert_eq!(*test_code.rc_deref(), 1);
+    source
+      .clone()
+      .sample(sampler.clone())
+      .subscribe(move |v| {
+        result_clone.borrow_mut().push(v);
+      });
 
-    subject.next(3);
-    notifier.next(1);
-    assert_eq!(*test_code.rc_deref(), 3);
+    // Sampler emits before source has any value
+    sampler.next(());
+    sampler.next(());
 
-    *test_code.rc_deref_mut() = 0;
-    notifier.next(1);
-    assert_eq!(*test_code.rc_deref(), 0);
+    assert!(result.borrow().is_empty());
+  }
 
-    subject.next(4);
-    notifier.complete();
-    assert_eq!(*test_code.rc_deref(), 4);
+  #[rxrust_macro::test]
+  fn test_sample_emits_on_sampler_complete() {
+    let result = Rc::new(RefCell::new(Vec::new()));
+    let result_clone = result.clone();
+
+    let mut source = Local::subject::<i32, Infallible>();
+    let sampler = Local::subject::<(), Infallible>();
+
+    source
+      .clone()
+      .sample(sampler.clone())
+      .subscribe(move |v| {
+        result_clone.borrow_mut().push(v);
+      });
+
+    source.next(1);
+    source.next(2);
+    sampler.complete(); // Should emit 2 and complete
+
+    assert_eq!(*result.borrow(), vec![2]);
+  }
+
+  #[rxrust_macro::test]
+  fn test_sample_source_complete_completes_downstream() {
+    let completed = Rc::new(RefCell::new(false));
+    let completed_clone = completed.clone();
+
+    let mut source = Local::subject::<i32, Infallible>();
+    let sampler = Local::subject::<(), Infallible>();
+
+    source
+      .clone()
+      .sample(sampler.clone())
+      .on_complete(move || *completed_clone.borrow_mut() = true)
+      .subscribe(|_: i32| {});
+
+    source.next(1);
+    source.complete();
+
+    assert!(*completed.borrow());
+  }
+
+  #[rxrust_macro::test]
+  fn test_sample_each_sampler_takes_value() {
+    let result = Rc::new(RefCell::new(Vec::new()));
+    let result_clone = result.clone();
+
+    let mut source = Local::subject::<i32, Infallible>();
+    let mut sampler = Local::subject::<(), Infallible>();
+
+    source
+      .clone()
+      .sample(sampler.clone())
+      .subscribe(move |v| {
+        result_clone.borrow_mut().push(v);
+      });
+
+    source.next(1);
+    sampler.next(()); // Emits 1, clears value
+    sampler.next(()); // No value to emit
+    source.next(2);
+    sampler.next(()); // Emits 2
+
+    assert_eq!(*result.borrow(), vec![1, 2]);
+  }
+
+  #[rxrust_macro::test]
+  fn test_sample_behavior_subject_source_and_sampler() {
+    let result = Rc::new(RefCell::new(Vec::new()));
+    let result_clone = result.clone();
+
+    // BehaviorSubject(1) emits 1 immediately on subscription
+    let mut source = Local::behavior_subject(1);
+    // BehaviorSubject(()) emits () immediately on subscription
+    let mut sampler = Local::behavior_subject(());
+
+    source
+      .clone()
+      .sample(sampler.clone())
+      .subscribe(move |v| {
+        result_clone.borrow_mut().push(v);
+      });
+
+    // Should emit 1 immediately because source emits 1 (stored) then sampler emits
+    // (samples 1) If we subscribed sampler first: sampler emits, source not
+    // subbed (no value), then source emits 1. Result: empty.
+    assert_eq!(*result.borrow(), vec![1]);
+
+    source.next(2);
+    sampler.next(());
+    assert_eq!(*result.borrow(), vec![1, 2]);
   }
 }
