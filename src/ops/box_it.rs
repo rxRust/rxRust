@@ -1,212 +1,158 @@
-use crate::{
-  observer::{BoxObserver, BoxObserverThreads},
-  prelude::*,
+//! BoxIt operator implementation
+//!
+//! This module provides the `box_it()` operator for type-erasing observables.
+//! The actual boxed types are defined in `observable::boxed`.
+
+// Re-export the boxed types for backwards compatibility
+pub use crate::observable::boxed::{
+  BoxedCoreObservable, BoxedCoreObservableClone, BoxedCoreObservableMutRef,
+  BoxedCoreObservableMutRefClone, BoxedCoreObservableMutRefSend,
+  BoxedCoreObservableMutRefSendClone, BoxedCoreObservableSend, BoxedCoreObservableSendClone,
+  DynCoreObservable, DynCoreObservableClone, IntoBoxedCoreObservable,
 };
 
-pub trait BoxIt<O>: Sized {
-  /// box an observable to a safety object and convert it to a simple type
-  /// `BoxOp`, which only care `Item` and `Err` Observable emitted.
-  ///
-  /// # Example
-  /// ```
-  /// use rxrust::{prelude::*, ops::box_it::BoxOp};
-  ///
-  /// let mut boxed: BoxOp<'_, i32, _> = observable::of(1)
-  ///   .map(|v| v).box_it();
-  ///
-  /// // BoxOp can box any observable type
-  /// boxed = observable::empty().box_it();
-  ///
-  /// boxed.subscribe(|_| {});
-  /// ```
-  fn box_it(self) -> O;
-}
+// ============================================================================
+// Tests
+// ============================================================================
 
-pub struct BoxOp<'a, Item, Err>(Box<dyn BoxObservable<'a, Item, Err> + 'a>);
-pub struct CloneableBoxOp<'a, Item, Err>(
-  Box<dyn CloneableBox<'a, Item, Err> + 'a>,
-);
-pub struct BoxOpThreads<Item, Err>(
-  Box<dyn BoxObservableThreads<Item, Err> + Send>,
-);
-pub struct CloneableBoxOpThreads<Item, Err>(
-  Box<dyn CloneableBoxThreads<Item, Err> + Send>,
-);
-
-trait BoxObservable<'a, Item, Err> {
-  fn box_subscribe(
-    self: Box<Self>,
-    observer: BoxObserver<'a, Item, Err>,
-  ) -> BoxSubscription<'a>;
-}
-
-trait BoxObservableThreads<Item, Err> {
-  fn box_subscribe(
-    self: Box<Self>,
-    observer: BoxObserverThreads<Item, Err>,
-  ) -> BoxSubscriptionThreads;
-}
-
-trait CloneableBox<'a, Item, Err>: BoxObservable<'a, Item, Err> {
-  fn box_clone(&self) -> Box<dyn CloneableBox<'a, Item, Err> + 'a>;
-}
-
-trait CloneableBoxThreads<Item, Err>: BoxObservableThreads<Item, Err> {
-  fn box_clone(&self) -> Box<dyn CloneableBoxThreads<Item, Err> + Send>;
-}
-
-impl<'a, Item, Err, T> BoxObservable<'a, Item, Err> for T
-where
-  T: Observable<Item, Err, BoxObserver<'a, Item, Err>>,
-  T::Unsub: 'a,
-{
-  fn box_subscribe(
-    self: Box<Self>,
-    observer: BoxObserver<'a, Item, Err>,
-  ) -> BoxSubscription<'a> {
-    let u = self.actual_subscribe(observer);
-    BoxSubscription::new(u)
-  }
-}
-
-impl<Item, Err, T> BoxObservableThreads<Item, Err> for T
-where
-  T: Observable<Item, Err, BoxObserverThreads<Item, Err>>,
-  T::Unsub: Send + 'static,
-{
-  fn box_subscribe(
-    self: Box<Self>,
-    observer: BoxObserverThreads<Item, Err>,
-  ) -> BoxSubscriptionThreads {
-    let u = self.actual_subscribe(observer);
-    BoxSubscriptionThreads::new(u)
-  }
-}
-
-macro_rules! impl_observable_for_box {
-  (
-    $ty: ty,
-    $box_observer: ident,
-    $subscription:ty
-    $(,$lf:lifetime)?
-    $(,$send:ident)?
-  ) => {
-    impl<$($lf,)? Item, Err, O> Observable<Item, Err, O>
-      for $ty
-    where
-      O: Observer<Item, Err> $(+$lf)? $(+ $send +'static)?,
-    {
-      type Unsub = $subscription;
-
-      #[inline]
-      fn actual_subscribe(self, observer: O) -> Self::Unsub {
-        self.0.box_subscribe($box_observer::new(observer))
-      }
-    }
-
-    impl<$($lf,)? Item, Err> ObservableExt<Item, Err> for $ty {
-    }
-  };
-}
-
-impl_observable_for_box!(BoxOp<'a, Item,Err>, BoxObserver, BoxSubscription<'a>, 'a);
-impl_observable_for_box!(BoxOpThreads<Item,Err>, BoxObserverThreads, BoxSubscriptionThreads, Send);
-impl_observable_for_box!(CloneableBoxOp<'a,Item,Err>, BoxObserver, BoxSubscription<'a>, 'a);
-impl_observable_for_box!(CloneableBoxOpThreads<Item,Err>, BoxObserverThreads, BoxSubscriptionThreads, Send);
-
-macro_rules! impl_box_it {
-  ($($lf:lifetime,)? $name: ident, $($bounds: tt)*) => {
-    impl<$($lf,)? Item, Err, O> BoxIt<$name<$($lf,)? Item, Err>> for O
-    where
-      O: $($bounds)*,
-    {
-      #[inline]
-      fn box_it(self) -> $name<$($lf,)? Item, Err> {
-        $name(Box::new(self))
-      }
-    }
-  };
-}
-
-impl_box_it!('a, BoxOp, BoxObservable<'a, Item,Err> +'a);
-impl_box_it!('a, CloneableBoxOp, CloneableBox<'a, Item,Err> +'a);
-impl_box_it!(BoxOpThreads, BoxObservableThreads<Item, Err> + Send + 'static);
-impl_box_it!(CloneableBoxOpThreads, CloneableBoxThreads<Item, Err> + Send + 'static);
-
-impl<'a, Item: 'a, Err: 'a> Clone for CloneableBoxOp<'a, Item, Err> {
-  #[inline]
-  fn clone(&self) -> Self {
-    Self(self.0.box_clone())
-  }
-}
-
-impl<Item, Err> Clone for CloneableBoxOpThreads<Item, Err> {
-  #[inline]
-  fn clone(&self) -> Self {
-    Self(self.0.box_clone())
-  }
-}
-
-impl<'a, Item, Err, T> CloneableBox<'a, Item, Err> for T
-where
-  T: BoxObservable<'a, Item, Err> + Clone + 'a,
-{
-  #[inline]
-  fn box_clone(&self) -> Box<dyn CloneableBox<'a, Item, Err> + 'a> {
-    Box::new(self.clone())
-  }
-}
-
-impl<Item, Err, T> CloneableBoxThreads<Item, Err> for T
-where
-  T: BoxObservableThreads<Item, Err> + Clone + Send + 'static,
-{
-  #[inline]
-  fn box_clone(&self) -> Box<dyn CloneableBoxThreads<Item, Err> + Send> {
-    Box::new(self.clone())
-  }
-}
-
-#[cfg(not(target_arch = "wasm32"))]
 #[cfg(test)]
-mod test {
-  use super::*;
-  use bencher::Bencher;
+mod tests {
+  use std::{cell::RefCell, convert::Infallible, rc::Rc};
 
-  #[test]
-  fn box_observable() {
-    let mut test = 0;
-    let mut boxed: BoxOp<'_, i32, _> = observable::of(100).box_it();
-    boxed.subscribe(|v| test = v);
+  use crate::{observable::boxed::*, prelude::*, scheduler::LocalScheduler};
 
-    boxed = observable::empty().box_it();
-    boxed.subscribe(|_| unreachable!());
-    assert_eq!(test, 100);
+  #[rxrust_macro::test]
+  fn test_box_it_observable_method() {
+    let result = Rc::new(RefCell::new(Vec::new()));
+    let result_clone = result.clone();
+
+    // Use box_it() method on Observable trait directly
+    Local::of(42).box_it().subscribe(move |v| {
+      result_clone.borrow_mut().push(v);
+    });
+
+    assert_eq!(*result.borrow(), vec![42]);
   }
 
-  #[test]
-  fn shared_box_observable() {
-    let mut boxed: BoxOpThreads<i32, _> = observable::of(100).box_it();
-    boxed.subscribe(|_| {});
+  #[rxrust_macro::test]
+  fn test_box_it_clone_observable_method() {
+    let result = Rc::new(RefCell::new(Vec::new()));
 
-    boxed = observable::empty().box_it();
-    boxed.subscribe(|_| unreachable!());
+    let boxed = Local::of(42).box_it_clone();
+    let boxed2 = boxed.clone();
+
+    {
+      let result_clone = result.clone();
+      boxed.subscribe(move |v| {
+        result_clone.borrow_mut().push(v);
+      });
+    }
+    {
+      let result_clone = result.clone();
+      boxed2.subscribe(move |v| {
+        result_clone.borrow_mut().push(v);
+      });
+    }
+
+    assert_eq!(*result.borrow(), vec![42, 42]);
   }
 
-  #[test]
-  fn box_clone() {
-    let boxed: CloneableBoxOp<_, _> = observable::of(100).box_it();
-    boxed.clone().subscribe(|_| {});
+  #[rxrust_macro::test]
+  fn test_local_box_observable() {
+    let result = Rc::new(RefCell::new(Vec::new()));
+    let result_clone = result.clone();
+
+    // Box an observable - note: Of<T> has Err = Infallible
+    let boxed: BoxedCoreObservable<'_, i32, Infallible, LocalScheduler> =
+      Local::of(42).into_inner().into_boxed();
+
+    // Subscribe to the boxed observable
+    Local::new(boxed).subscribe(move |v| {
+      result_clone.borrow_mut().push(v);
+    });
+
+    assert_eq!(*result.borrow(), vec![42]);
   }
 
-  #[test]
-  fn bench() {
-    do_bench();
+  #[rxrust_macro::test]
+  fn test_heterogeneous_collection() {
+    let result = Rc::new(RefCell::new(Vec::new()));
+
+    // Create boxed observables from different sources - all sources have Err =
+    // Infallible
+    let boxed1: BoxedCoreObservable<'_, i32, Infallible, LocalScheduler> =
+      Local::of(1).into_inner().into_boxed();
+    let boxed2: BoxedCoreObservable<'_, i32, Infallible, LocalScheduler> =
+      Local::from_iter([2, 3]).into_inner().into_boxed();
+
+    // Store in a Vec
+    let observables = vec![boxed1, boxed2];
+
+    // Subscribe to each
+    for obs in observables {
+      let result_clone = result.clone();
+      Local::new(obs).subscribe(move |v| {
+        result_clone.borrow_mut().push(v);
+      });
+    }
+
+    assert_eq!(*result.borrow(), vec![1, 2, 3]);
   }
 
-  benchmark_group!(do_bench, bench_box_clone);
+  #[rxrust_macro::test]
+  fn test_type_erasure() {
+    // Different source types result in the same boxed type - all with Err =
+    // Infallible
+    let _boxed1: BoxedCoreObservable<'_, i32, Infallible, LocalScheduler> =
+      Local::of(1).into_inner().into_boxed();
 
-  fn bench_box_clone(b: &mut Bencher) {
-    b.iter(box_clone);
+    let _boxed2: BoxedCoreObservable<'_, i32, Infallible, LocalScheduler> = Local::of(2)
+      .map(|x| x * 2)
+      .into_inner()
+      .into_boxed();
+
+    let _boxed3: BoxedCoreObservable<'_, i32, Infallible, LocalScheduler> =
+      Local::from_iter([1, 2, 3])
+        .filter(|x| *x > 1)
+        .into_inner()
+        .into_boxed();
+
+    // All have the same type - compilation success proves type erasure works
+  }
+
+  #[rxrust_macro::test]
+  fn test_box_it_with_type_alias() {
+    let result = Rc::new(RefCell::new(Vec::new()));
+    let result_clone = result.clone();
+
+    // Use LocalBoxedObservable type alias
+    let boxed: LocalBoxedObservable<'_, i32, Infallible> = Local::of(42).box_it();
+    boxed.subscribe(move |v| {
+      result_clone.borrow_mut().push(v);
+    });
+
+    assert_eq!(*result.borrow(), vec![42]);
+  }
+
+  #[rxrust_macro::test]
+  fn test_box_it_heterogeneous_with_type_alias() {
+    let result = Rc::new(RefCell::new(Vec::new()));
+
+    // Different source types become the same LocalBoxedObservable type
+    let boxed1: LocalBoxedObservable<'_, i32, Infallible> = Local::of(1).box_it();
+    let boxed2: LocalBoxedObservable<'_, i32, Infallible> =
+      Local::from_iter([2, 3]).map(|x| x * 2).box_it();
+
+    // Store in a collection
+    let observables = vec![boxed1, boxed2];
+
+    for obs in observables {
+      let result_clone = result.clone();
+      obs.subscribe(move |v| {
+        result_clone.borrow_mut().push(v);
+      });
+    }
+
+    assert_eq!(*result.borrow(), vec![1, 4, 6]);
   }
 }

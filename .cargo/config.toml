@@ -1,0 +1,7 @@
+# Enables Tokio's `cfg(tokio_unstable)` APIs (e.g. `tokio::runtime::LocalRuntime`).
+#
+# This is a repo-level decision to keep tests concise and avoid repeating
+# `LocalSet` boilerplate.
+[build]
+rustflags = ["--cfg", "tokio_unstable", "--check-cfg=cfg(tokio_unstable)"]
+rustdocflags = ["--cfg", "tokio_unstable", "--check-cfg=cfg(tokio_unstable)"]

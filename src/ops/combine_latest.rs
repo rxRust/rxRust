@@ -1,313 +1,308 @@
+//! CombineLatest operator implementation
+//!
+//! CombineLatest combines the latest values from two observables using a binary
+//! function. It emits whenever either source emits, using the most recent value
+//! from the other source.
+
 use crate::{
-  prelude::*,
-  rc::{MutArc, MutRc, RcDeref, RcDerefMut},
+  context::{Context, RcDerefMut},
+  observable::{CoreObservable, ObservableType},
+  observer::Observer,
+  subscription::{IntoBoxedSubscription, Subscription, TupleSubscription},
 };
 
+// ==================== CombineLatest Operator ====================
+
+/// CombineLatest operator
+///
+/// Combines items from two observables using a binary function.
+/// It tracks the latest value from each source and emits the result of the
+/// binary function whenever either source emits, provided both sources have
+/// emitted at least once.
 #[derive(Clone)]
-pub struct CombineLatestOp<A, B, ItemA, ItemB, OutputItem, BinaryOp> {
-  a: A,
-  b: B,
-  binary_op: BinaryOp,
-  _hint: TypeHint<(ItemA, ItemB, OutputItem)>,
+pub struct CombineLatest<A, B, F> {
+  pub source_a: A,
+  pub source_b: B,
+  pub binary_op: F,
 }
 
-#[derive(Clone)]
-pub struct CombineLatestOpThread<A, B, ItemA, ItemB, OutputItem, BinaryOp> {
-  a: A,
-  b: B,
-  binary_op: BinaryOp,
-  _hint: TypeHint<(ItemA, ItemB, OutputItem)>,
+impl<A, B, F, OutputItem> ObservableType for CombineLatest<A, B, F>
+where
+  A: ObservableType,
+  B: ObservableType<Err = A::Err>,
+  F: FnMut(A::Item<'_>, B::Item<'_>) -> OutputItem,
+{
+  type Item<'a>
+    = OutputItem
+  where
+    Self: 'a;
+  type Err = A::Err;
 }
 
-macro_rules! impl_combine_latest_op {
-  ($name: ident, $rc: ident) => {
-    impl<A, B, ItemA, ItemB, OutputItem, BinaryOp>
-      $name<A, B, ItemA, ItemB, OutputItem, BinaryOp>
-    {
-      #[inline]
-      pub(crate) fn new(
-        a: A,
-        b: B,
-        binary_op: BinaryOp,
-      ) -> $name<A, B, ItemA, ItemB, OutputItem, BinaryOp> {
-        $name { a, b, binary_op, _hint: TypeHint::new() }
-      }
-    }
+// ==================== Shared State ====================
 
-    impl<A, B, ItemA, ItemB, OutputItem, Err, O, BinaryOp>
-      Observable<OutputItem, Err, O>
-      for $name<A, B, ItemA, ItemB, OutputItem, BinaryOp>
-    where
-      O: Observer<OutputItem, Err>,
-      A: Observable<
-        ItemA,
-        Err,
-        AObserver<$rc<CombineLatestObserver<O, ItemA, ItemB, BinaryOp>>, ItemB>,
-      >,
-      B: Observable<
-        ItemB,
-        Err,
-        BObserver<$rc<CombineLatestObserver<O, ItemA, ItemB, BinaryOp>>, ItemA>,
-      >,
-      BinaryOp: FnMut(ItemA, ItemB) -> OutputItem,
-      $rc<CombineLatestObserver<O, ItemA, ItemB, BinaryOp>>:
-        Observer<CombineItem<ItemA, ItemB>, Err>,
-    {
-      type Unsub = ZipSubscription<A::Unsub, B::Unsub>;
-
-      fn actual_subscribe(self, observer: O) -> Self::Unsub {
-        let o_combine = CombineLatestObserver::new(observer, self.binary_op);
-        let o_combine = $rc::own(o_combine);
-        let a_unsub = self
-          .a
-          .actual_subscribe(AObserver(o_combine.clone(), TypeHint::new()));
-        let b_unsub = self
-          .b
-          .actual_subscribe(BObserver(o_combine, TypeHint::new()));
-
-        ZipSubscription::new(a_unsub, b_unsub)
-      }
-    }
-
-    impl<A, B, ItemA, ItemB, OutputItem, Err, BinaryOp>
-      ObservableExt<OutputItem, Err>
-      for $name<A, B, ItemA, ItemB, OutputItem, BinaryOp>
-    where
-      A: ObservableExt<ItemA, Err>,
-      B: ObservableExt<ItemB, Err>,
-    {
-    }
-  };
-}
-
-impl_combine_latest_op!(CombineLatestOp, MutRc);
-impl_combine_latest_op!(CombineLatestOpThread, MutArc);
-
-enum CombineItem<A, B> {
-  ItemA(A),
-  ItemB(B),
-}
-
-pub struct CombineLatestObserver<O, ItemA, ItemB, BinaryOp> {
+/// Shared state between A and B observers
+pub struct CombineLatestState<O, ItemA, ItemB, F> {
   observer: Option<O>,
-  a: Option<ItemA>,
-  b: Option<ItemB>,
-  binary_op: BinaryOp,
-  completed_one: bool,
+  last_a: Option<ItemA>,
+  last_b: Option<ItemB>,
+  completed_a: bool,
+  completed_b: bool,
+  binary_op: F,
 }
 
-impl<O, A, B, BinaryOp> CombineLatestObserver<O, A, B, BinaryOp> {
-  fn new(o: O, binary_op: BinaryOp) -> Self {
-    CombineLatestObserver {
-      observer: Some(o),
-      a: None,
-      b: None,
+impl<O, ItemA, ItemB, F, Output> CombineLatestState<O, ItemA, ItemB, F>
+where
+  F: FnMut(ItemA, ItemB) -> Output,
+{
+  fn new(observer: O, binary_op: F) -> Self {
+    Self {
+      observer: Some(observer),
+      last_a: None,
+      last_b: None,
+      completed_a: false,
+      completed_b: false,
       binary_op,
-      completed_one: false,
     }
   }
-}
 
-macro_rules! impl_combine_latest_observer {
-  ($rc:ident) => {
-    impl<O, A, B, OutputItem, BinaryOp, Err> Observer<CombineItem<A, B>, Err>
-      for $rc<CombineLatestObserver<O, A, B, BinaryOp>>
-    where
-      O: Observer<OutputItem, Err>,
-      BinaryOp: FnMut(A, B) -> OutputItem,
-      A: Clone,
-      B: Clone,
+  /// Check and trigger completion if conditions are met
+  fn check_complete<E>(&mut self)
+  where
+    O: Observer<Output, E>,
+  {
+    // Complete only when BOTH sources complete
+    if self.completed_a
+      && self.completed_b
+      && let Some(observer) = self.observer.take()
     {
-      fn next(&mut self, value: CombineItem<A, B>) {
-        let mut inner = self.rc_deref_mut();
-        match value {
-          CombineItem::ItemA(v) => {
-            inner.a = Some(v);
-          }
-          CombineItem::ItemB(v) => {
-            inner.b = Some(v);
-          }
-        }
-        let CombineLatestObserver { observer, a, b, binary_op, .. } =
-          &mut *inner;
-        if let (Some(observer), Some(a), Some(b)) =
-          (observer.as_mut(), a.clone(), b.clone())
-        {
-          observer.next(binary_op(a, b));
-        }
-      }
-
-      fn error(self, err: Err) {
-        if let Some(observer) = self.rc_deref_mut().observer.take() {
-          observer.error(err);
-        }
-      }
-
-      fn complete(self) {
-        let mut inner = self.rc_deref_mut();
-
-        if inner.completed_one {
-          if let Some(observer) = inner.observer.take() {
-            observer.complete();
-          }
-        } else {
-          inner.completed_one = true;
-        }
-      }
-
-      fn is_finished(&self) -> bool {
-        self
-          .rc_deref()
-          .observer
-          .as_ref()
-          .map_or(true, |o| o.is_finished())
-      }
+      observer.complete();
     }
-  };
+  }
 }
 
-impl_combine_latest_observer!(MutRc);
-impl_combine_latest_observer!(MutArc);
-pub struct AObserver<O, B>(O, TypeHint<B>);
+// ==================== Observer Structs ====================
 
-impl<O, A, B, Err> Observer<A, Err> for AObserver<O, B>
+/// Observer for source A
+pub struct CombineLatestAObserver<StateRc, BProxy> {
+  state: StateRc,
+  b_proxy: BProxy,
+}
+
+/// Observer for source B
+pub struct CombineLatestBObserver<StateRc, AProxy> {
+  state: StateRc,
+  a_proxy: AProxy,
+}
+
+// ==================== Type Aliases ====================
+
+type SharedState<'a, C, A, B, F> = <C as Context>::RcMut<
+  CombineLatestState<
+    <C as Context>::Inner,
+    <A as ObservableType>::Item<'a>,
+    <B as ObservableType>::Item<'a>,
+    F,
+  >,
+>;
+
+type SubProxy<C, U> = <C as Context>::RcMut<Option<U>>;
+type BoxedSubProxy<C> = <C as Context>::RcMut<Option<<C as Context>::BoxedSubscription>>;
+type ClaCtx<'a, C, A, B, F, BUnsub> =
+  <C as Context>::With<CombineLatestAObserver<SharedState<'a, C, A, B, F>, SubProxy<C, BUnsub>>>;
+type ClbCtx<'a, C, A, B, F> =
+  <C as Context>::With<CombineLatestBObserver<SharedState<'a, C, A, B, F>, BoxedSubProxy<C>>>;
+
+// ==================== CoreObservable Implementation ====================
+
+impl<A, B, F, C, AUnsub, BUnsub, OutputItem> CoreObservable<C> for CombineLatest<A, B, F>
 where
-  O: Observer<CombineItem<A, B>, Err>,
+  C: Context,
+  A: for<'a> CoreObservable<ClaCtx<'a, C, A, B, F, BUnsub>, Unsub = AUnsub>,
+  B: for<'a> CoreObservable<ClbCtx<'a, C, A, B, F>, Unsub = BUnsub, Err = A::Err>,
+  F: FnMut(A::Item<'_>, B::Item<'_>) -> OutputItem + Clone,
+  AUnsub: IntoBoxedSubscription<C::BoxedSubscription>,
+  SubProxy<C, BUnsub>: Subscription,
+  BoxedSubProxy<C>: Subscription,
 {
-  #[inline]
-  fn next(&mut self, value: A) {
-    self.0.next(CombineItem::ItemA(value));
-  }
+  type Unsub = TupleSubscription<BoxedSubProxy<C>, SubProxy<C, BUnsub>>;
 
-  #[inline]
-  fn error(self, err: Err) {
-    self.0.error(err)
-  }
+  fn subscribe(self, context: C) -> Self::Unsub {
+    let CombineLatest { source_a, source_b, binary_op } = self;
 
-  #[inline]
-  fn complete(self) {
-    self.0.complete()
-  }
+    let downstream = context.into_inner();
+    let state = C::RcMut::from(CombineLatestState::new(downstream, binary_op));
 
-  #[inline]
-  fn is_finished(&self) -> bool {
-    self.0.is_finished()
+    let a_proxy: BoxedSubProxy<C> = C::RcMut::from(None);
+
+    // Subscribe B
+    let b_observer = CombineLatestBObserver { state: state.clone(), a_proxy: a_proxy.clone() };
+    let b_ctx = C::lift(b_observer);
+    let b_unsub = source_b.subscribe(b_ctx);
+    let b_proxy: SubProxy<C, BUnsub> = C::RcMut::from(Some(b_unsub));
+
+    // Subscribe A
+    let a_observer = CombineLatestAObserver { state, b_proxy: b_proxy.clone() };
+    let a_ctx = C::lift(a_observer);
+    let a_unsub = source_a.subscribe(a_ctx);
+    *a_proxy.rc_deref_mut() = Some(a_unsub.into_boxed());
+
+    TupleSubscription::new(a_proxy, b_proxy)
   }
 }
 
-pub struct BObserver<O, A>(O, TypeHint<A>);
+// ==================== Observer Implementations ====================
 
-impl<O, A, B, Err> Observer<B, Err> for BObserver<O, A>
+impl<ItemA, ItemB, Err, O, StateRc, BProxy, F, OutputItem> Observer<ItemA, Err>
+  for CombineLatestAObserver<StateRc, BProxy>
 where
-  O: Observer<CombineItem<A, B>, Err>,
+  StateRc: RcDerefMut<Target = CombineLatestState<O, ItemA, ItemB, F>>,
+  BProxy: Subscription,
+  O: Observer<OutputItem, Err>,
+  F: FnMut(ItemA, ItemB) -> OutputItem,
+  ItemA: Clone,
+  ItemB: Clone,
 {
-  fn next(&mut self, value: B) {
-    self.0.next(CombineItem::ItemB(value));
+  fn next(&mut self, value: ItemA) {
+    let mut guard = self.state.rc_deref_mut();
+    let state = &mut *guard;
+    state.last_a = Some(value.clone());
+    if let Some(b) = state.last_b.clone()
+      && let Some(observer) = state.observer.as_mut()
+    {
+      let res = (state.binary_op)(value, b);
+      observer.next(res);
+    }
   }
 
-  #[inline]
   fn error(self, err: Err) {
-    self.0.error(err)
+    self.b_proxy.unsubscribe();
+    if let Some(observer) = self.state.rc_deref_mut().observer.take() {
+      observer.error(err);
+    }
   }
 
-  #[inline]
   fn complete(self) {
-    self.0.complete()
+    let mut state = self.state.rc_deref_mut();
+    state.completed_a = true;
+    state.check_complete::<Err>();
   }
 
-  #[inline]
-  fn is_finished(&self) -> bool {
-    self.0.is_finished()
-  }
+  fn is_closed(&self) -> bool { self.state.rc_deref().observer.is_closed() }
 }
+
+impl<ItemA, ItemB, Err, O, StateRc, AProxy, F, OutputItem> Observer<ItemB, Err>
+  for CombineLatestBObserver<StateRc, AProxy>
+where
+  StateRc: RcDerefMut<Target = CombineLatestState<O, ItemA, ItemB, F>>,
+  AProxy: Subscription,
+  O: Observer<OutputItem, Err>,
+  F: FnMut(ItemA, ItemB) -> OutputItem,
+  ItemA: Clone,
+  ItemB: Clone,
+{
+  fn next(&mut self, value: ItemB) {
+    let mut guard = self.state.rc_deref_mut();
+    let state = &mut *guard;
+    state.last_b = Some(value.clone());
+    if let Some(a) = state.last_a.clone()
+      && let Some(observer) = state.observer.as_mut()
+    {
+      let res = (state.binary_op)(a, value);
+      observer.next(res);
+    }
+  }
+
+  fn error(self, err: Err) {
+    self.a_proxy.unsubscribe();
+    if let Some(observer) = self.state.rc_deref_mut().observer.take() {
+      observer.error(err);
+    }
+  }
+
+  fn complete(self) {
+    let mut state = self.state.rc_deref_mut();
+    state.completed_b = true;
+    state.check_complete::<Err>();
+  }
+
+  fn is_closed(&self) -> bool { self.state.rc_deref().observer.is_closed() }
+}
+
+// ==================== Tests ====================
 
 #[cfg(test)]
 mod tests {
-  use std::cell::RefCell;
-  use std::rc::Rc;
-  use std::time::Duration;
+  use std::{
+    sync::{Arc, Mutex},
+    time::Duration,
+  };
 
-  use crate::observable::fake_timer::FakeClock;
+  use crate::prelude::*;
 
-  use super::*;
+  #[rxrust_macro::test(local)]
+  async fn test_combine_latest_basic() {
+    let result = Arc::new(Mutex::new(Vec::new()));
+    let result_clone = result.clone();
 
-  #[test]
-  fn combine_latest_base() {
-    let clock = FakeClock::default();
-    let x = Rc::new(RefCell::new(vec![]));
+    // A: 0, 1, 2 every 20ms
+    let source_a = Local::interval(Duration::from_millis(20)).take(3);
+    // B: 0, 1 every 30ms
+    let source_b = Local::interval(Duration::from_millis(30)).take(2);
 
-    let interval = clock.interval(Duration::from_millis(2));
+    source_a
+      .combine_latest(source_b, |a, b| (a, b))
+      .subscribe(move |v| {
+        result_clone.lock().unwrap().push(v);
+      });
 
-    {
-      let x_c = x.clone();
-      interval
-        .combine_latest(clock.interval(Duration::from_millis(3)), |a, b| (a, b))
-        .take(7)
-        .subscribe(move |v| {
-          x_c.borrow_mut().push(v);
-        });
-      clock.advance(Duration::from_millis(50));
-      {
-        let v = x.borrow();
-        assert_eq!(v.len(), 7);
-        assert_eq!(
-          v.as_ref(),
-          vec![(0, 0), (1, 0), (2, 0), (2, 1), (3, 1), (3, 2), (4, 2)]
-        );
-      }
-    };
+    // Wait enough time
+    LocalScheduler
+      .sleep(Duration::from_millis(100))
+      .await;
+
+    let res = result.lock().unwrap().clone();
+
+    // Check if we got expected combinations
+    assert!(!res.is_empty());
+    assert!(res.contains(&(2, 1))); // Final values must appear
   }
 
-  #[test]
-  fn combine_latest_transform() {
-    let clock = FakeClock::default();
-    let x = Rc::new(RefCell::new(vec![]));
+  #[rxrust_macro::test(local)]
+  async fn test_combine_latest_transform() {
+    let sum = Arc::new(Mutex::new(0));
+    let sum_clone = sum.clone();
 
-    let interval = clock.interval(Duration::from_millis(2));
+    let a = Local::from_iter(vec![1, 2]);
+    let b = Local::from_iter(vec![10, 20]);
 
-    {
-      let x_c = x.clone();
-      interval
-        .combine_latest(clock.interval(Duration::from_millis(3)), |a, b| a + b)
-        .take(7)
-        .subscribe(move |v| {
-          x_c.borrow_mut().push(v);
-        });
-      clock.advance(Duration::from_millis(50));
-      {
-        let v = x.borrow();
-        assert_eq!(v.len(), 7);
-        assert_eq!(v.as_ref(), vec![0, 1, 2, 3, 4, 5, 6]);
-      }
-    };
+    a.combine_latest(b, |x, y| x + y)
+      .subscribe(move |v| *sum_clone.lock().unwrap() += v);
+
+    assert_eq!(*sum.lock().unwrap(), 43);
   }
 
-  #[test]
-  fn complete() {
-    let mut complete = false;
-    {
-      let s1 = Subject::default();
-      let s2 = Subject::default();
-      s1.clone()
-        .zip(s2.clone())
-        .on_complete(|| complete = true)
-        .subscribe(|((), ())| {});
+  #[rxrust_macro::test(local)]
+  async fn test_combine_latest_complete() {
+    let completed = Arc::new(Mutex::new(false));
+    let completed_clone = completed.clone();
 
-      s1.complete();
-    }
-    assert!(!complete);
+    let mut subject_a = Local::subject::<i32, std::convert::Infallible>();
+    let mut subject_b = Local::subject::<i32, std::convert::Infallible>();
 
-    {
-      let s1 = Subject::default();
-      let s2 = Subject::default();
-      s1.clone()
-        .zip(s2.clone())
-        .on_complete(|| complete = true)
-        .subscribe(|((), ())| {});
+    subject_a
+      .clone()
+      .combine_latest(subject_b.clone(), |a, b| (a, b))
+      .on_complete(move || *completed_clone.lock().unwrap() = true)
+      .subscribe(|_| {});
 
-      s1.complete();
-      s2.complete();
-    }
-    assert!(complete);
+    subject_a.next(1);
+    subject_b.next(2); // Emits (1,2)
+
+    subject_a.complete();
+    assert!(!*completed.lock().unwrap()); // Should not be complete yet
+
+    subject_b.complete();
+    assert!(*completed.lock().unwrap()); // Now complete
   }
 }

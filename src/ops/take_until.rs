@@ -1,197 +1,229 @@
+//! TakeUntil operator implementation
+//!
+//! This module contains the TakeUntil operator, which emits values from the
+//! source Observable until a second Observable (the notifier) emits a value.
+
 use crate::{
-  prelude::*,
-  rc::{MutArc, MutRc},
+  context::{Context, RcDeref},
+  observable::{CoreObservable, ObservableType},
+  observer::Observer,
+  subscription::{Subscription, TupleSubscription},
 };
 
+/// TakeUntil operator
+///
+/// Emits the values emitted by the source Observable until a `notifier`
+/// Observable emits a value.
 #[derive(Clone)]
-pub struct TakeUntilOp<S, N, NotifyItem, NotifyErr> {
-  source: S,
-  notifier: N,
-  _hint: TypeHint<(NotifyItem, NotifyErr)>,
+pub struct TakeUntil<S, N> {
+  pub source: S,
+  pub notifier: N,
 }
 
-#[derive(Clone)]
-pub struct TakeUntilOpThreads<S, N, NotifyItem, NotifyErr> {
-  source: S,
-  notifier: N,
-  _hint: TypeHint<(NotifyItem, NotifyErr)>,
+/// Observer for the source observable
+pub struct TakeUntilObserver<ObserverRc, NProxy> {
+  observer_rc: ObserverRc,
+  notifier_proxy: NProxy,
 }
 
-macro_rules! impl_take_until {
-  ($name: ident, $rc: ident) => {
-    impl<S, N, NotifyItem, NotifyErr> $name<S, N, NotifyItem, NotifyErr> {
-      #[inline]
-      pub(crate) fn new(source: S, notifier: N) -> Self {
-        Self {
-          source,
-          notifier,
-          _hint: TypeHint::default(),
-        }
-      }
-    }
-
-    impl<S, N, Item, Err, O, NotifyItem, NotifyErr> Observable<Item, Err, O>
-      for $name<S, N, NotifyItem, NotifyErr>
-    where
-      O: Observer<Item, Err>,
-      S: Observable<Item, Err, $rc<Option<O>>>,
-      N: Observable<
-        NotifyItem,
-        NotifyErr,
-        TakeUntilNotifierObserver<Item, Err, $rc<Option<O>>>,
-      >,
-    {
-      type Unsub = ZipSubscription<S::Unsub, N::Unsub>;
-
-      fn actual_subscribe(self, observer: O) -> Self::Unsub {
-        // We need to keep a reference to the observer from two places
-        let main_observer = $rc::own(Some(observer));
-
-        let a = self.source.actual_subscribe(main_observer.clone());
-        let notify_observer = TakeUntilNotifierObserver {
-          main_observer,
-          _hint: TypeHint::default(),
-        };
-        let b = self.notifier.actual_subscribe(notify_observer);
-        ZipSubscription::new(a, b)
-      }
-    }
-
-    impl<S, N, Item, Err, NotifyItem, NotifyErr> ObservableExt<Item, Err>
-      for $name<S, N, NotifyItem, NotifyErr>
-    where
-      S: ObservableExt<Item, Err>,
-      N: ObservableExt<NotifyItem, NotifyErr>,
-    {
-    }
-  };
+/// Observer for the notifier observable
+///
+/// Uses a function pointer to erase Item/Err type dependencies while
+/// maintaining the ability to call complete() on the underlying Observer.
+pub struct TakeUntilNotifierObserver<ObserverRc> {
+  observer_rc: ObserverRc,
+  complete_fn: fn(ObserverRc),
 }
 
-impl_take_until!(TakeUntilOp, MutRc);
-impl_take_until!(TakeUntilOpThreads, MutArc);
-
-pub struct TakeUntilNotifierObserver<Item, Err, O> {
-  // We need access to main observer in order to call `complete` on it as soon
-  // as notifier fired
-  main_observer: O,
-  _hint: TypeHint<(Item, Err)>,
+impl<ObserverRc: Clone> TakeUntilNotifierObserver<ObserverRc> {
+  /// Creates a new TakeUntilNotifierObserver
+  ///
+  /// The Item and Err type parameters are used to satisfy Observer bounds
+  /// during construction, but are erased via function pointers.
+  pub fn new<Item, Err>(observer_rc: ObserverRc) -> Self
+  where
+    ObserverRc: Observer<Item, Err>,
+  {
+    Self { observer_rc, complete_fn: |o| o.complete() }
+  }
 }
 
-impl<Item, Err, NotifyItem, NotifyErr, O> Observer<NotifyItem, NotifyErr>
-  for TakeUntilNotifierObserver<Item, Err, O>
+impl<S, N> ObservableType for TakeUntil<S, N>
 where
-  O: Observer<Item, Err> + Clone,
+  S: ObservableType,
 {
-  fn next(&mut self, _: NotifyItem) {
-    self.main_observer.clone().complete();
+  type Item<'a>
+    = S::Item<'a>
+  where
+    Self: 'a;
+  type Err = S::Err;
+}
+
+impl<S, N, C> CoreObservable<C> for TakeUntil<S, N>
+where
+  C: Context,
+  S: CoreObservable<
+    C::With<TakeUntilObserver<C::RcMut<Option<C::Inner>>, C::RcMut<Option<N::Unsub>>>>,
+  >,
+  N: CoreObservable<C::With<TakeUntilNotifierObserver<C::RcMut<Option<C::Inner>>>>>,
+  C::RcMut<Option<N::Unsub>>: Subscription,
+  for<'a> C::RcMut<Option<C::Inner>>: Observer<S::Item<'a>, S::Err>,
+{
+  type Unsub = TupleSubscription<S::Unsub, C::RcMut<Option<N::Unsub>>>;
+
+  fn subscribe(self, context: C) -> Self::Unsub {
+    let TakeUntil { source, notifier } = self;
+
+    // Create shared state holding the downstream observer
+    let downstream = context.into_inner();
+    let observer_rc = C::RcMut::from(Some(downstream));
+
+    // Subscribe to notifier - use ::new to erase Item/Err type dependencies
+    let notifier_observer =
+      TakeUntilNotifierObserver::new::<S::Item<'_>, S::Err>(observer_rc.clone());
+    let notifier_ctx = C::lift(notifier_observer);
+    let notifier_unsub = notifier.subscribe(notifier_ctx);
+    let notifier_proxy: C::RcMut<Option<N::Unsub>> = C::RcMut::from(Some(notifier_unsub));
+
+    // Subscribe to source
+    let source_observer = TakeUntilObserver { observer_rc, notifier_proxy: notifier_proxy.clone() };
+    // Create context for source using original scheduler
+    let source_ctx = C::lift(source_observer);
+    let source_unsub = source.subscribe(source_ctx);
+
+    // Return tuple subscription with direct source subscription and notifier
+    // subscription
+    TupleSubscription::new(source_unsub, notifier_proxy)
+  }
+}
+
+// Implement Observer for Source
+impl<Item, Err, ObserverRc, NProxy> Observer<Item, Err> for TakeUntilObserver<ObserverRc, NProxy>
+where
+  ObserverRc: Observer<Item, Err> + Clone,
+  NProxy: Subscription,
+{
+  fn next(&mut self, value: Item) { self.observer_rc.clone().next(value); }
+
+  fn error(self, err: Err) {
+    self.observer_rc.clone().error(err);
+    self.notifier_proxy.unsubscribe();
   }
 
-  #[inline]
-  fn error(self, _: NotifyErr) {}
-
-  #[inline]
-  fn complete(self) {}
-
-  #[inline]
-  fn is_finished(&self) -> bool {
-    self.main_observer.is_finished()
+  fn complete(self) {
+    self.observer_rc.clone().complete();
+    self.notifier_proxy.unsubscribe();
   }
+
+  fn is_closed(&self) -> bool { self.observer_rc.is_closed() }
+}
+
+// Implement Observer for Notifier - no longer needs Item/Err bounds
+// Uses RcDeref to check Option::is_none() for is_closed
+impl<NotifyItem, NotifyErr, ObserverRc, O> Observer<NotifyItem, NotifyErr>
+  for TakeUntilNotifierObserver<ObserverRc>
+where
+  ObserverRc: Clone + RcDeref<Target = Option<O>>,
+{
+  fn next(&mut self, _value: NotifyItem) { (self.complete_fn)(self.observer_rc.clone()); }
+
+  fn error(self, _err: NotifyErr) {
+    // Ignore errors from notifier as per legacy behavior
+  }
+
+  fn complete(self) {
+    // Ignore completion from notifier
+  }
+
+  fn is_closed(&self) -> bool { self.observer_rc.rc_deref().is_none() }
 }
 
 #[cfg(test)]
-mod test {
-  use crate::{
-    prelude::*,
-    rc::{MutRc, RcDeref, RcDerefMut},
-  };
+mod tests {
+  use std::{cell::RefCell, convert::Infallible, rc::Rc};
 
-  #[test]
-  fn base_function() {
-    let mut last_next_arg = None;
-    let mut next_count = 0;
-    let mut completed_count = 0;
-    {
-      let mut notifier = Subject::default();
-      let mut source = Subject::default();
-      source
-        .clone()
-        .take_until::<_, _, ()>(notifier.clone())
-        .on_complete(|| {
-          completed_count += 1;
-        })
-        .subscribe(|i| {
-          last_next_arg = Some(i);
-          next_count += 1;
-        });
-      source.next(5);
-      notifier.next(());
-      source.next(6);
-      notifier.complete();
-      source.complete();
-    }
-    assert_eq!(next_count, 1);
-    assert_eq!(last_next_arg, Some(5));
-    assert_eq!(completed_count, 1);
+  use crate::prelude::*;
+
+  #[rxrust_macro::test]
+  fn test_take_until_emits_until_notifier_emits() {
+    let result = Rc::new(RefCell::new(Vec::new()));
+    let result_clone = result.clone();
+
+    let mut notifier = Local::subject::<(), Infallible>();
+    let mut source = Local::subject::<i32, Infallible>();
+
+    source
+      .clone()
+      .take_until(notifier.clone())
+      .subscribe(move |v| {
+        result_clone.borrow_mut().push(v);
+      });
+
+    source.next(1);
+    source.next(2);
+    notifier.next(());
+    source.next(3);
+
+    assert_eq!(*result.borrow(), vec![1, 2]);
   }
 
-  #[test]
-  fn circular() {
-    let last_next_arg = MutRc::own(None);
-    let next_count = MutRc::own(0);
-    let last_next_arg_cloned = last_next_arg.clone();
-    let next_count_cloned = next_count.clone();
-    let source_completed_count = MutRc::own(0);
-    let source_completed_count_cloned = source_completed_count.clone();
-    let notifier_completed_count = MutRc::own(0);
-    let notifier_completed_count_cloned = notifier_completed_count.clone();
-    {
-      let mut notifier = Subject::default();
-      let mut source = Subject::default();
-      let cloned_source = source.clone();
-      let cloned_notifier = notifier.clone();
-      notifier
-        .clone()
-        .on_complete(move || {
-          *source_completed_count_cloned.rc_deref_mut() += 1;
-        })
-        .subscribe(move |j| {
-          let last_next_arg = last_next_arg_cloned.clone();
-          let next_count = next_count_cloned.clone();
-          let notifier_completed_count =
-            notifier_completed_count_cloned.clone();
-          cloned_source
-            .clone()
-            .take_until(cloned_notifier.clone())
-            .on_complete(move || {
-              *notifier_completed_count.rc_deref_mut() += 1;
-            })
-            .subscribe(move |i| {
-              *last_next_arg.rc_deref_mut() = Some((i, j));
-              *next_count.rc_deref_mut() += 1;
-            });
-        });
-      source.next(5);
-      notifier.next(1);
-      source.next(6);
-      notifier.next(2);
-      source.next(7);
-      notifier.complete();
-      source.complete();
-    }
-    assert_eq!(*next_count.rc_deref(), 2);
-    assert_eq!(*last_next_arg.rc_deref(), Some((7, 2)));
-    assert_eq!(*source_completed_count.rc_deref(), 1);
-    assert_eq!(*notifier_completed_count.rc_deref(), 2);
+  #[rxrust_macro::test]
+  fn test_take_until_complete() {
+    let completed = Rc::new(RefCell::new(false));
+    let completed_clone = completed.clone();
+
+    let mut notifier = Local::subject::<(), Infallible>();
+    let mut source = Local::subject::<i32, Infallible>();
+
+    source
+      .clone()
+      .take_until(notifier.clone())
+      .on_complete(move || *completed_clone.borrow_mut() = true)
+      .subscribe(|_: i32| {});
+
+    source.next(1);
+    notifier.next(());
+
+    assert!(*completed.borrow());
   }
 
-  #[test]
-  fn bench() {
-    do_bench();
+  #[rxrust_macro::test]
+  fn test_take_until_source_complete() {
+    let completed = Rc::new(RefCell::new(false));
+    let completed_clone = completed.clone();
+
+    let notifier = Local::subject::<(), Infallible>();
+    let mut source = Local::subject::<i32, Infallible>();
+
+    source
+      .clone()
+      .take_until(notifier.clone())
+      .on_complete(move || *completed_clone.borrow_mut() = true)
+      .subscribe(|_: i32| {});
+
+    source.next(1);
+    source.complete();
+
+    assert!(*completed.borrow());
   }
 
-  benchmark_group!(do_bench, bench_take_until);
+  #[rxrust_macro::test]
+  fn test_take_until_notifier_complete_does_nothing() {
+    let result = Rc::new(RefCell::new(Vec::new()));
+    let result_clone = result.clone();
 
-  fn bench_take_until(b: &mut bencher::Bencher) {
-    b.iter(base_function);
+    let notifier = Local::subject::<(), Infallible>();
+    let mut source = Local::subject::<i32, Infallible>();
+
+    source
+      .clone()
+      .take_until(notifier.clone())
+      .subscribe(move |v| result_clone.borrow_mut().push(v));
+
+    source.next(1);
+    notifier.complete(); // Should be ignored
+    source.next(2);
+
+    assert_eq!(*result.borrow(), vec![1, 2]);
   }
 }

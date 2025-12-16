@@ -1,127 +1,148 @@
-use crate::prelude::*;
+//! DefaultIfEmpty operator implementation
+//!
+//! Emits a default value if the source Observable completes without emitting
+//! any items.
 
+use crate::{
+  context::Context,
+  observable::{CoreObservable, ObservableType},
+  observer::Observer,
+};
+
+/// DefaultIfEmpty operator: Emits a default value if the source is empty
+///
+/// This operator emits a default value if the source Observable completes
+/// without emitting any items. If the source emits any items, the default
+/// value is not emitted.
+///
+/// # Examples
+///
+/// ```
+/// use rxrust::prelude::*;
+///
+/// let mut result = Vec::new();
+/// Local::empty()
+///   .map_to(0)
+///   .default_if_empty(42)
+///   .subscribe(|v| result.push(v));
+/// assert_eq!(result, vec![42]);
+/// ```
 #[derive(Clone)]
-pub struct DefaultIfEmptyOp<S, Item> {
-  source: S,
-  is_empty: bool,
-  default_value: Item,
+pub struct DefaultIfEmpty<S, Item> {
+  pub(crate) source: S,
+  pub(crate) default_value: Item,
 }
 
-impl<Item, S> DefaultIfEmptyOp<S, Item> {
-  pub(crate) fn new(source: S, default_value: Item) -> Self {
-    Self { source, is_empty: true, default_value }
-  }
+impl<S, Item> DefaultIfEmpty<S, Item> {
+  pub(crate) fn new(source: S, default_value: Item) -> Self { Self { source, default_value } }
 }
 
-impl<Item, Err, O, S> Observable<Item, Err, O> for DefaultIfEmptyOp<S, Item>
+impl<S, Item> ObservableType for DefaultIfEmpty<S, Item>
 where
-  S: Observable<Item, Err, DefaultIfEmptyObserver<O, Item>>,
-  O: Observer<Item, Err>,
-  Item: Clone,
+  S: ObservableType,
+{
+  type Item<'a>
+    = Item
+  where
+    Self: 'a;
+  type Err = S::Err;
+}
+
+impl<S, Item, C> CoreObservable<C> for DefaultIfEmpty<S, Item>
+where
+  C: Context,
+  S: CoreObservable<C::With<DefaultIfEmptyObserver<C::Inner, Item>>>,
 {
   type Unsub = S::Unsub;
 
-  fn actual_subscribe(self, observer: O) -> Self::Unsub {
-    self.source.actual_subscribe(DefaultIfEmptyObserver {
+  fn subscribe(self, context: C) -> Self::Unsub {
+    let DefaultIfEmpty { source, default_value } = self;
+
+    let wrapped = context.transform(|observer| DefaultIfEmptyObserver {
       observer,
-      is_empty: self.is_empty,
-      default_value: self.default_value,
-    })
+      is_empty: true,
+      default_value,
+    });
+
+    source.subscribe(wrapped)
   }
 }
 
-impl<Item, Err, S> ObservableExt<Item, Err> for DefaultIfEmptyOp<S, Item> where
-  S: ObservableExt<Item, Err>
-{
-}
+/// DefaultIfEmptyObserver: wrapper for tracking emissions
 pub struct DefaultIfEmptyObserver<O, Item> {
   observer: O,
   is_empty: bool,
   default_value: Item,
 }
 
-impl<Item, Err, O> Observer<Item, Err> for DefaultIfEmptyObserver<O, Item>
+impl<O, Item, Err> Observer<Item, Err> for DefaultIfEmptyObserver<O, Item>
 where
   O: Observer<Item, Err>,
-  Item: Clone,
 {
   fn next(&mut self, value: Item) {
+    self.is_empty = false;
     self.observer.next(value);
-    if self.is_empty {
-      self.is_empty = false;
+  }
+
+  fn error(self, err: Err) { self.observer.error(err); }
+
+  fn complete(self) {
+    let DefaultIfEmptyObserver { mut observer, is_empty, default_value } = self;
+    if is_empty {
+      observer.next(default_value);
     }
+    observer.complete();
   }
 
-  #[inline]
-  fn error(self, err: Err) {
-    self.observer.error(err)
-  }
-
-  fn complete(mut self) {
-    if self.is_empty {
-      self.observer.next(self.default_value.clone());
-    }
-    self.observer.complete()
-  }
-
-  #[inline]
-  fn is_finished(&self) -> bool {
-    self.observer.is_finished()
-  }
+  fn is_closed(&self) -> bool { self.observer.is_closed() }
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
+  use std::{cell::RefCell, rc::Rc};
+
   use crate::prelude::*;
-  use bencher::Bencher;
 
-  #[test]
-  fn base_function() {
-    let mut completed = false;
-    let mut value = 0;
+  #[rxrust_macro::test(local)]
+  async fn default_if_empty() {
+    let result = Rc::new(RefCell::new(Vec::new()));
+    let result_clone = result.clone();
 
-    observable::of(10)
+    Local::of(10)
       .default_if_empty(5)
-      .on_complete(|| completed = true)
-      .subscribe(|v| value = v);
+      .subscribe(move |v| {
+        result_clone.borrow_mut().push(v);
+      });
 
-    assert_eq!(value, 10);
-    assert!(completed);
+    assert_eq!(*result.borrow(), vec![10]);
   }
 
-  #[test]
-  fn base_empty_function() {
-    let mut completed = false;
-    let mut value = 0;
+  #[rxrust_macro::test(local)]
+  async fn default_if_empty_when_empty() {
+    let result = Rc::new(RefCell::new(Vec::new()));
+    let result_clone = result.clone();
 
-    observable::empty()
+    Local::from_iter(std::iter::empty::<i32>())
       .default_if_empty(5)
-      .on_complete(|| completed = true)
-      .subscribe(|v| value = v);
+      .subscribe(move |v| {
+        result_clone.borrow_mut().push(v);
+      });
 
-    assert_eq!(value, 5);
-    assert!(completed);
+    assert_eq!(*result.borrow(), vec![5]);
   }
 
-  #[test]
-  fn bench_base() {
-    bench_b();
-  }
+  #[rxrust_macro::test(local)]
+  async fn test_non_clone_item() {
+    struct NonClone(i32);
+    let result = Rc::new(RefCell::new(Vec::new()));
+    let result_clone = result.clone();
 
-  benchmark_group!(bench_b, bench_base_function);
+    Local::from_iter(std::iter::empty::<NonClone>())
+      .default_if_empty(NonClone(42))
+      .subscribe(move |v| {
+        result_clone.borrow_mut().push(v.0);
+      });
 
-  fn bench_base_function(b: &mut Bencher) {
-    b.iter(base_function);
-  }
-
-  #[test]
-  fn bench_empty() {
-    bench_e();
-  }
-
-  benchmark_group!(bench_e, bench_empty_function);
-
-  fn bench_empty_function(b: &mut Bencher) {
-    b.iter(base_empty_function);
+    assert_eq!(*result.borrow(), vec![42]);
   }
 }

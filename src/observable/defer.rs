@@ -1,118 +1,202 @@
-use crate::prelude::*;
+//! Defer operator implementation
+//!
+//! This module contains the Defer operator, which creates an observable that
+//! calls an observable factory to make an observable for each new observer.
+//! This allows for lazy creation of observables at subscription time.
 
-/// Creates an observable that will on subscription defer to another observable
-/// that is supplied by a supplier-function which will be run once at each
-/// subscription
+use crate::{
+  context::Context,
+  observable::{CoreObservable, ObservableType},
+};
+
+/// Defer operator: Creates an observable that calls an observable factory
 ///
-/// ```rust
-/// # use rxrust::prelude::*;
+/// This operator creates an observable that, on subscription, calls an
+/// observable factory function to make an Observable for each new Observer.
+/// This allows for lazy creation of observables and ensures that the factory
+/// function is called each time someone subscribes.
 ///
-/// observable::defer(|| {
-///   println!("Hi!");
-///   observable::of("Hello!")
-/// })
-///   .subscribe(move |v| {
-///     println!("{}", v);
-///   });
-/// // Prints: Hi!\nHello!\n
+/// # Examples
+///
 /// ```
-pub fn defer<F, U>(observable_supplier: F) -> ObservableDeref<F>
-where
-  F: FnOnce() -> U,
-{
-  ObservableDeref(observable_supplier)
+/// use rxrust::prelude::*;
+///
+/// let observable = Local::defer(|| {
+///   println!("Creating observable!");
+///   Local::of("Hello!")
+/// });
+///
+/// observable.subscribe(|v| {
+///   println!("{}", v);
+/// });
+/// // Prints: Creating observable!
+/// //         Hello!
+/// ```
+pub struct Defer<F, S> {
+  pub func: F,
+  _marker: std::marker::PhantomData<S>,
 }
 
-#[derive(Clone)]
-pub struct ObservableDeref<F>(F);
-
-impl<Item, Err, O, F, U> Observable<Item, Err, O> for ObservableDeref<F>
-where
-  F: FnOnce() -> U,
-  U: Observable<Item, Err, O>,
-  O: Observer<Item, Err>,
-{
-  type Unsub = U::Unsub;
-
-  fn actual_subscribe(self, observer: O) -> Self::Unsub {
-    (self.0)().actual_subscribe(observer)
-  }
+impl<F, S> Defer<F, S> {
+  pub fn new(func: F) -> Self { Self { func, _marker: std::marker::PhantomData } }
 }
 
-impl<Item, Err, F, U> ObservableExt<Item, Err> for ObservableDeref<F>
+impl<F, S> ObservableType for Defer<F, S>
 where
-  F: FnOnce() -> U,
-  U: ObservableExt<Item, Err>,
+  S: ObservableType,
 {
+  type Item<'a>
+    = S::Item<'a>
+  where
+    Self: 'a;
+  type Err = S::Err;
 }
-#[cfg(not(target_arch = "wasm32"))]
+
+impl<F, S, C> CoreObservable<C> for Defer<F, S>
+where
+  C: Context,
+  F: FnOnce() -> C::With<S>,
+  S: CoreObservable<C>,
+{
+  type Unsub = S::Unsub;
+
+  fn subscribe(self, context: C) -> Self::Unsub { (self.func)().into_inner().subscribe(context) }
+}
+
+impl<F: Clone, S> Clone for Defer<F, S> {
+  fn clone(&self) -> Self { Self { func: self.func.clone(), _marker: std::marker::PhantomData } }
+}
+
 #[cfg(test)]
-mod test {
-  use std::ops::Deref;
-  use std::sync::{Arc, Mutex};
+mod tests {
+  use std::{cell::RefCell, rc::Rc};
 
   use crate::prelude::*;
-  use bencher::Bencher;
 
-  #[test]
-  fn no_results_before_deferred_subscribe() {
-    let calls = Arc::new(Mutex::new(0));
-    let sum = Arc::new(Mutex::new(0));
-    let errs = Arc::new(Mutex::new(0));
-    let completes = Arc::new(Mutex::new(0));
+  #[rxrust_macro::test(local)]
+  async fn test_defer_calls_factory_on_subscribe() {
+    let calls = Rc::new(RefCell::new(0));
+    let calls_clone = calls.clone();
 
-    let deferred = observable::defer(|| {
-      *calls.lock().unwrap() += 1;
-      observable::of(&2)
+    let observable = Local::defer(move || {
+      *calls_clone.borrow_mut() += 1;
+      Local::of(42)
     });
 
-    assert_eq!(calls.lock().unwrap().deref(), &0);
+    // Before subscription, no calls should have been made
+    assert_eq!(*calls.borrow(), 0);
 
-    for i in 1..4 {
-      let sum_copy = Arc::clone(&sum);
-      let errs_copy = Arc::clone(&errs);
-      let completes_copy = Arc::clone(&completes);
-      deferred
-        .clone()
-        .on_complete(move || *completes_copy.lock().unwrap() += 1)
-        .on_error(move |_| *errs_copy.lock().unwrap() += 1)
-        .subscribe(move |v| *sum_copy.lock().unwrap() += v);
-      assert_eq!(*calls.lock().unwrap(), i);
-    }
+    let result = Rc::new(RefCell::new(None));
+    let result_clone = result.clone();
 
-    assert_eq!(*calls.lock().unwrap().deref(), 3);
-    assert_eq!(*sum.lock().unwrap().deref(), 6);
-    assert_eq!(*errs.lock().unwrap().deref(), 0);
-    assert_eq!(*completes.lock().unwrap().deref(), 3);
-  }
-
-  #[test]
-  fn support_fork() {
-    let calls = Arc::new(Mutex::new(0));
-    let o = observable::defer(|| {
-      *calls.lock().unwrap() += 1;
-      observable::of(10)
+    observable.clone().subscribe(move |v| {
+      *result_clone.borrow_mut() = Some(v);
     });
-    let sum1 = Arc::new(Mutex::new(0));
-    let sum2 = Arc::new(Mutex::new(0));
-    let c_sum1 = sum1.clone();
-    let c_sum2 = sum2.clone();
-    o.clone().subscribe(move |v| *sum1.lock().unwrap() += v);
-    o.clone().subscribe(move |v| *sum2.lock().unwrap() += v);
 
-    assert_eq!(*c_sum1.lock().unwrap(), 10);
-    assert_eq!(*c_sum2.lock().unwrap(), 10);
-    assert_eq!(*calls.lock().unwrap().deref(), 2);
+    // After first subscription, exactly one call should have been made
+    assert_eq!(*calls.borrow(), 1);
+    assert_eq!(*result.borrow(), Some(42));
+
+    // Subscribe again
+    let result2 = Rc::new(RefCell::new(None));
+    let result2_clone = result2.clone();
+
+    observable.clone().subscribe(move |v| {
+      *result2_clone.borrow_mut() = Some(v);
+    });
+
+    // After second subscription, exactly two calls should have been made
+    assert_eq!(*calls.borrow(), 2);
+    assert_eq!(*result2.borrow(), Some(42));
   }
 
-  #[test]
-  fn bench() {
-    do_bench();
+  #[rxrust_macro::test(local)]
+  async fn test_defer_with_different_observables() {
+    let counter = Rc::new(RefCell::new(0));
+    let counter_clone = counter.clone();
+
+    let observable = Local::defer(move || {
+      let value = *counter_clone.borrow();
+      *counter_clone.borrow_mut() += 1;
+      Local::of(value)
+    });
+
+    let result = Rc::new(RefCell::new(Vec::new()));
+    let result_clone = result.clone();
+
+    observable.clone().subscribe(move |v| {
+      result_clone.borrow_mut().push(v);
+    });
+
+    // First subscription should get 0
+    assert_eq!(*result.borrow(), vec![0]);
+
+    // Second subscription should get 1
+    let result2 = Rc::new(RefCell::new(Vec::new()));
+    let result2_clone = result2.clone();
+
+    observable.clone().subscribe(move |v| {
+      result2_clone.borrow_mut().push(v);
+    });
+
+    assert_eq!(*result2.borrow(), vec![1]);
   }
 
-  benchmark_group!(do_bench, bench_deref);
+  #[rxrust_macro::test(local)]
+  async fn test_defer_with_error() {
+    let observable = Local::defer(|| Local::throw_err("Test error"));
 
-  fn bench_deref(b: &mut Bencher) {
-    b.iter(no_results_before_deferred_subscribe);
+    let error = Rc::new(RefCell::new(None));
+    let error_clone = error.clone();
+
+    observable
+      .on_error(move |e| {
+        *error_clone.borrow_mut() = Some(e);
+      })
+      .subscribe(|_| panic!("Should not receive any values"));
+
+    assert_eq!(*error.borrow(), Some("Test error"));
+  }
+
+  #[rxrust_macro::test(local)]
+  async fn test_defer_multiple_subscriptions() {
+    let calls = Rc::new(RefCell::new(0));
+    let calls_clone = calls.clone();
+
+    let observable = Local::defer(move || {
+      *calls_clone.borrow_mut() += 1;
+      Local::of(10)
+    });
+
+    // Subscribe twice by cloning the observable
+    let result1 = Rc::new(RefCell::new(None));
+    let result1_clone = result1.clone();
+    let result2 = Rc::new(RefCell::new(None));
+    let result2_clone = result2.clone();
+
+    observable.clone().subscribe(move |v| {
+      *result1_clone.borrow_mut() = Some(v);
+    });
+
+    observable.clone().subscribe(move |v| {
+      *result2_clone.borrow_mut() = Some(v);
+    });
+
+    // Both should receive the value and 2 calls should have been made
+    assert_eq!(*result1.borrow(), Some(10));
+    assert_eq!(*result2.borrow(), Some(10));
+    assert_eq!(*calls.borrow(), 2);
+  }
+
+  #[rxrust_macro::test]
+  async fn test_defer_with_shared_context() {
+    let result = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let result_clone = result.clone();
+
+    Shared::defer(|| Shared::of("deferred value")).subscribe(move |v| {
+      *result_clone.lock().unwrap() = Some(v);
+    });
+
+    assert_eq!(*result.lock().unwrap(), Some("deferred value"));
   }
 }

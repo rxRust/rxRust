@@ -1,54 +1,74 @@
-use crate::prelude::*;
+//! TakeLast operator implementation
+//!
+//! This module contains the TakeLast operator, which emits only the last
+//! `count` values emitted by the source Observable when the source completes.
+
 use std::collections::VecDeque;
 
+use crate::{
+  context::Context,
+  observable::{CoreObservable, ObservableType},
+  observer::Observer,
+  subscription::Subscription,
+};
+
+/// TakeLast operator: Emits only the last `count` values from the source
+/// observable
+///
+/// This operator buffers the last `count` values emitted by the source
+/// observable. When the source completes, it emits all buffered values in order
+/// and then completes. If the source emits fewer than `count` values, all
+/// values are emitted.
+///
+/// # Examples
+///
+/// ```
+/// use rxrust::prelude::*;
+///
+/// let observable = Local::from_iter([1, 2, 3, 4, 5]).take_last(3);
+/// let mut result = Vec::new();
+/// observable.subscribe(|v| result.push(v));
+/// assert_eq!(result, vec![3, 4, 5]);
+/// ```
 #[derive(Clone)]
-pub struct TakeLastOp<S> {
-  pub(crate) source: S,
-  pub(crate) count: usize,
+pub struct TakeLast<S> {
+  pub source: S,
+  pub count: usize,
 }
 
-impl<Item, Err, O, S> Observable<Item, Err, O> for TakeLastOp<S>
-where
-  S: Observable<Item, Err, TakeLastObserver<O, Item>>,
-  O: Observer<Item, Err>,
-{
-  type Unsub = S::Unsub;
-
-  fn actual_subscribe(self, observer: O) -> Self::Unsub {
-    self.source.actual_subscribe(TakeLastObserver {
-      observer,
-      count: self.count,
-      queue: VecDeque::new(),
-    })
-  }
+impl<S: ObservableType> ObservableType for TakeLast<S> {
+  type Item<'a>
+    = S::Item<'a>
+  where
+    Self: 'a;
+  type Err = S::Err;
 }
 
-impl<Item, Err, S> ObservableExt<Item, Err> for TakeLastOp<S> where
-  S: ObservableExt<Item, Err>
-{
-}
-
+/// TakeLastObserver wrapper for buffering and emitting the last `count` values
+///
+/// This observer wraps another observer and buffers up to `count` values.
+/// When the source completes, it emits all buffered values in order.
 pub struct TakeLastObserver<O, Item> {
   observer: O,
   count: usize,
-  queue: VecDeque<Item>, // TODO: replace VecDeque with RingBuf
+  queue: VecDeque<Item>,
 }
 
-impl<Item, Err, O> Observer<Item, Err> for TakeLastObserver<O, Item>
+impl<O, Item, Err> Observer<Item, Err> for TakeLastObserver<O, Item>
 where
   O: Observer<Item, Err>,
 {
-  fn next(&mut self, value: Item) {
-    self.queue.push_back(value);
-    while self.queue.len() > self.count {
+  fn next(&mut self, v: Item) {
+    if self.count == 0 {
+      return;
+    }
+    if self.queue.len() == self.count {
       self.queue.pop_front();
     }
+    self.queue.push_back(v);
   }
 
-  #[inline]
-  fn error(self, err: Err) {
-    self.observer.error(err)
-  }
+  fn error(self, e: Err) { self.observer.error(e); }
 
   fn complete(mut self) {
     for value in self.queue.drain(..) {
@@ -57,54 +77,138 @@ where
     self.observer.complete();
   }
 
-  #[inline]
-  fn is_finished(&self) -> bool {
-    self.observer.is_finished()
+  fn is_closed(&self) -> bool { self.observer.is_closed() }
+}
+
+impl<S, C, Unsub> CoreObservable<C> for TakeLast<S>
+where
+  C: Context,
+  S: for<'a> CoreObservable<
+      C::With<TakeLastObserver<C::Inner, <S as ObservableType>::Item<'a>>>,
+      Unsub = Unsub,
+    >,
+  Unsub: Subscription,
+{
+  type Unsub = Unsub;
+
+  fn subscribe(self, context: C) -> Self::Unsub {
+    let TakeLast { source, count } = self;
+    let wrapped =
+      context.transform(|observer| TakeLastObserver { observer, count, queue: VecDeque::new() });
+    source.subscribe(wrapped)
   }
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
+  use std::{cell::RefCell, rc::Rc};
+
   use crate::prelude::*;
 
-  #[test]
-  fn base_function() {
-    let mut completed = false;
-    let mut ticks = vec![];
+  #[rxrust_macro::test]
+  fn test_take_last_emits_last_values() {
+    let result = Rc::new(RefCell::new(Vec::new()));
+    let result_clone = result.clone();
 
-    observable::from_iter(0..100)
+    Local::from_iter([1, 2, 3, 4, 5])
+      .take_last(3)
+      .subscribe(move |v| {
+        result_clone.borrow_mut().push(v);
+      });
+
+    assert_eq!(*result.borrow(), vec![3, 4, 5]);
+  }
+
+  #[rxrust_macro::test]
+  fn test_take_last_completes_after_emitting() {
+    let result = Rc::new(RefCell::new(Vec::new()));
+    let completed = Rc::new(RefCell::new(false));
+    let result_clone = result.clone();
+    let completed_clone = completed.clone();
+
+    Local::from_iter(0..100)
       .take_last(5)
-      .on_complete(|| completed = true)
-      .subscribe(|v| ticks.push(v));
+      .on_complete(move || {
+        *completed_clone.borrow_mut() = true;
+      })
+      .subscribe(move |v| {
+        result_clone.borrow_mut().push(v);
+      });
 
-    assert_eq!(ticks, vec![95, 96, 97, 98, 99]);
-    assert!(completed);
+    assert_eq!(*result.borrow(), vec![95, 96, 97, 98, 99]);
+    assert!(*completed.borrow());
   }
 
-  #[test]
-  fn take_last_support_fork() {
-    let mut nc1 = 0;
-    let mut nc2 = 0;
-    {
-      let take_last5 = observable::from_iter(0..100).take_last(5);
-      let f1 = take_last5.clone();
-      let f2 = take_last5;
+  #[rxrust_macro::test]
+  fn test_take_last_with_zero_count() {
+    let result = Rc::new(RefCell::new(Vec::new()));
+    let completed = Rc::new(RefCell::new(false));
+    let result_clone = result.clone();
+    let completed_clone = completed.clone();
 
-      f1.take_last(5).subscribe(|_| nc1 += 1);
-      f2.take_last(5).subscribe(|_| nc2 += 1);
-    }
-    assert_eq!(nc1, 5);
-    assert_eq!(nc2, 5);
+    Local::from_iter([1, 2, 3, 4, 5])
+      .take_last(0)
+      .on_complete(move || {
+        *completed_clone.borrow_mut() = true;
+      })
+      .subscribe(move |v| {
+        result_clone.borrow_mut().push(v);
+      });
+
+    // Should not emit any values
+    assert_eq!(*result.borrow(), Vec::<i32>::new());
+    assert!(*completed.borrow());
   }
 
-  #[test]
-  fn bench() {
-    do_bench();
+  #[rxrust_macro::test]
+  fn test_take_last_with_count_greater_than_source() {
+    let result = Rc::new(RefCell::new(Vec::new()));
+    let result_clone = result.clone();
+
+    Local::from_iter([1, 2, 3])
+      .take_last(10)
+      .subscribe(move |v| {
+        result_clone.borrow_mut().push(v);
+      });
+
+    // Should emit all values since count > source length
+    assert_eq!(*result.borrow(), vec![1, 2, 3]);
   }
 
-  benchmark_group!(do_bench, bench_take_last);
+  #[rxrust_macro::test]
+  fn test_take_last_chaining() {
+    let result = Rc::new(RefCell::new(Vec::new()));
+    let result_clone = result.clone();
 
-  fn bench_take_last(b: &mut bencher::Bencher) {
-    b.iter(base_function);
+    Local::from_iter(0..100)
+      .take_last(5)
+      .take_last(3)
+      .subscribe(move |v| {
+        result_clone.borrow_mut().push(v);
+      });
+
+    // First take_last(5) gives [95, 96, 97, 98, 99]
+    // Second take_last(3) gives [97, 98, 99]
+    assert_eq!(*result.borrow(), vec![97, 98, 99]);
+  }
+
+  #[rxrust_macro::test]
+  fn test_take_last_error_propagation() {
+    let result = Rc::new(RefCell::new(Vec::new()));
+    let error = Rc::new(RefCell::new(String::new()));
+    let result_clone = result.clone();
+    let error_clone = error.clone();
+
+    Local::throw_err("test error".to_string())
+      .take_last(5)
+      .on_error(move |e| {
+        *error_clone.borrow_mut() = e;
+      })
+      .subscribe(move |v| {
+        result_clone.borrow_mut().push(v);
+      });
+
+    assert_eq!(*result.borrow(), vec![]);
+    assert_eq!(*error.borrow(), "test error");
   }
 }

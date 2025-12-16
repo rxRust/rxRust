@@ -1,477 +1,282 @@
+//! Buffer operator implementation.
+
 use crate::{
-  prelude::*,
-  rc::{MutArc, RcDerefMut},
+  context::{Context, RcDerefMut},
+  observable::{CoreObservable, ObservableType},
+  observer::Observer,
+  subscription::{IntoBoxedSubscription, Subscription, TupleSubscription},
 };
-use std::vec;
 
+/// Buffer operator.
+///
+/// Collects items from the source into a `Vec`, emitting the buffer when the
+/// `notifier` emits. On completion of the source, any remaining items in the
+/// buffer are emitted.
 #[derive(Clone)]
-pub struct BufferOp<S, N> {
-  pub(crate) source: S,
-  pub(crate) closing_notifier: N,
+pub struct Buffer<S, N> {
+  pub source: S,
+  pub notifier: N,
 }
 
-impl<Item, Err, O, S, N> Observable<Vec<Item>, Err, O> for BufferOp<S, N>
+impl<S, N> ObservableType for Buffer<S, N>
 where
-  S: Observable<Item, Err, RcBufferObserver<O, Item>>,
-  O: Observer<Vec<Item>, Err>,
-  N: Observable<(), Err, NotifierObserver<O, Item>>,
+  S: ObservableType,
+  N: ObservableType<Err = S::Err>,
 {
-  type Unsub = ZipSubscription<S::Unsub, N::Unsub>;
-  fn actual_subscribe(self, observer: O) -> Self::Unsub {
-    let observer = MutArc::own(Some(BufferObserver { observer, data: vec![] }));
-    ZipSubscription::new(
-      self.source.actual_subscribe(observer.clone()),
-      self
-        .closing_notifier
-        .actual_subscribe(NotifierObserver(observer)),
-    )
-  }
-}
-
-impl<Item, Err, S, N> ObservableExt<Vec<Item>, Err> for BufferOp<S, N>
-where
-  S: ObservableExt<Item, Err>,
-  N: ObservableExt<(), Err>,
-{
-}
-
-#[derive(Clone)]
-pub struct BufferWithCountOp<S> {
-  pub(crate) source: S,
-  pub(crate) count: usize,
-}
-
-impl<Item, Err, O, S> Observable<Vec<Item>, Err, O> for BufferWithCountOp<S>
-where
-  S: Observable<Item, Err, BufferWithCountObserver<O, Item>>,
-  O: Observer<Vec<Item>, Err>,
-{
-  type Unsub = S::Unsub;
-
-  fn actual_subscribe(self, observer: O) -> Self::Unsub {
-    self.source.actual_subscribe(BufferWithCountObserver {
-      buffer: BufferObserver { observer, data: vec![] },
-      count: self.count,
-    })
-  }
-}
-
-impl<Item, Err, S> ObservableExt<Vec<Item>, Err> for BufferWithCountOp<S> where
-  S: ObservableExt<Item, Err>
-{
-}
-
-#[derive(Clone)]
-pub struct BufferObserver<O, Item> {
-  observer: O,
-  data: Vec<Item>,
-}
-
-pub struct NotifierObserver<O, Item>(RcBufferObserver<O, Item>);
-
-impl<O, Item, Err> Observer<(), Err> for NotifierObserver<O, Item>
-where
-  O: Observer<Vec<Item>, Err>,
-{
-  fn next(&mut self, _value: ()) {
-    if let Some(v) = self.0.rc_deref_mut().as_mut() {
-      v.emit()
-    }
-  }
-
-  #[inline]
-  fn complete(self) {
-    self.0.complete()
-  }
-
-  #[inline]
-  fn error(self, err: Err) {
-    self.0.error(err)
-  }
-
-  #[inline]
-  fn is_finished(&self) -> bool {
-    self.0.is_finished()
-  }
-}
-
-impl<O, Item, Err> Observer<Item, Err> for BufferObserver<O, Item>
-where
-  O: Observer<Vec<Item>, Err>,
-{
-  #[inline]
-  fn next(&mut self, value: Item) {
-    self.data.push(value);
-  }
-
-  fn complete(mut self) {
-    self.emit();
-    self.observer.complete();
-  }
-
-  #[inline]
-  fn error(self, err: Err) {
-    self.observer.error(err)
-  }
-
-  #[inline]
-  fn is_finished(&self) -> bool {
-    self.observer.is_finished()
-  }
-}
-
-impl<O, Item> BufferObserver<O, Item> {
-  fn emit<Err>(&mut self)
+  type Item<'a>
+    = Vec<S::Item<'a>>
   where
-    O: Observer<Vec<Item>, Err>,
-  {
-    if !self.data.is_empty() {
-      let buffer = std::mem::take(&mut self.data);
-      self.observer.next(buffer);
-    }
-  }
+    Self: 'a;
+  type Err = S::Err;
 }
 
-#[derive(Clone)]
-pub struct BufferWithCountObserver<O, Item> {
-  buffer: BufferObserver<O, Item>,
-  count: usize,
+/// Shared state maintained between the source and notifier observers.
+pub struct BufferState<O, Item> {
+  pub observer: Option<O>,
+  pub buffer: Vec<Item>,
 }
 
-impl<O, Item, Err> Observer<Item, Err> for BufferWithCountObserver<O, Item>
+impl<O, Item> BufferState<O, Item> {
+  fn new(observer: O) -> Self { Self { observer: Some(observer), buffer: Vec::new() } }
+}
+
+/// Observer for the source observable.
+pub struct BufferSourceObserver<R, NotifierUnsub> {
+  pub state: R,
+  pub notifier_unsub: NotifierUnsub,
+}
+
+impl<R, O, Item, Err, NotifierUnsub> Observer<Item, Err> for BufferSourceObserver<R, NotifierUnsub>
 where
+  R: RcDerefMut<Target = BufferState<O, Item>>,
   O: Observer<Vec<Item>, Err>,
+  NotifierUnsub: Subscription,
 {
-  fn next(&mut self, value: Item) {
-    self.buffer.next(value);
+  fn next(&mut self, v: Item) { self.state.rc_deref_mut().buffer.push(v); }
 
-    if self.buffer.data.len() >= self.count {
-      self.buffer.emit()
+  fn error(self, e: Err) {
+    self.notifier_unsub.unsubscribe();
+    if let Some(observer) = self.state.rc_deref_mut().observer.take() {
+      observer.error(e);
     }
   }
 
-  #[inline]
   fn complete(self) {
-    self.buffer.complete()
-  }
-
-  #[inline]
-  fn error(self, err: Err) {
-    self.buffer.error(err)
-  }
-
-  #[inline]
-  fn is_finished(&self) -> bool {
-    self.buffer.is_finished()
-  }
-}
-
-#[derive(Clone)]
-pub struct BufferWithTimeOp<Source, Scheduler> {
-  pub(crate) source: Source,
-  pub(crate) time: Duration,
-  pub(crate) scheduler: Scheduler,
-}
-
-type RcBufferObserver<O, Item> = MutArc<Option<BufferObserver<O, Item>>>;
-
-fn emit_buffer<O, Item, Err>(
-  observer: &mut RcBufferObserver<O, Item>,
-  _seq: usize,
-) -> bool
-where
-  O: Observer<Vec<Item>, Err>,
-{
-  if !observer.is_finished() {
-    if let Some(v) = observer.rc_deref_mut().as_mut() {
-      v.emit()
+    self.notifier_unsub.unsubscribe();
+    let mut state = self.state.rc_deref_mut();
+    let buffer = std::mem::take(&mut state.buffer);
+    if let Some(mut observer) = state.observer.take() {
+      observer.next(buffer);
+      observer.complete();
     }
-    true
-  } else {
-    false
   }
+
+  fn is_closed(&self) -> bool { self.state.rc_deref_mut().observer.is_none() }
 }
 
-impl<S, Item, Err, O, SD> Observable<Vec<Item>, Err, O>
-  for BufferWithTimeOp<S, SD>
+/// Observer for the notifier observable.
+pub struct BufferNotifierObserver<R, SourceUnsub> {
+  pub state: R,
+  pub source_unsub: SourceUnsub,
+}
+
+impl<R, O, Item, Err, NotifierItem, SourceUnsub> Observer<NotifierItem, Err>
+  for BufferNotifierObserver<R, SourceUnsub>
 where
+  R: RcDerefMut<Target = BufferState<O, Item>>,
   O: Observer<Vec<Item>, Err>,
-  S: Observable<Item, Err, RcBufferObserver<O, Item>>,
-  SD: Scheduler<RepeatTask<RcBufferObserver<O, Item>>>,
+  SourceUnsub: Subscription,
 {
-  type Unsub = ZipSubscription<TaskHandle<NormalReturn<()>>, S::Unsub>;
-
-  fn actual_subscribe(self, observer: O) -> Self::Unsub {
-    let Self { source, time, scheduler } = self;
-    let observer = BufferObserver { observer, data: vec![] };
-    let observer = MutArc::own(Some(observer));
-
-    let handler = scheduler
-      .schedule(RepeatTask::new(time, emit_buffer, observer.clone()), None);
-
-    let subscription = source.actual_subscribe(observer);
-    ZipSubscription::new(handler, subscription)
-  }
-}
-
-impl<Item, Err, S, SD> ObservableExt<Vec<Item>, Err> for BufferWithTimeOp<S, SD> where
-  S: ObservableExt<Item, Err>
-{
-}
-
-#[derive(Clone)]
-pub struct BufferWithCountOrTimerOp<Source, Scheduler> {
-  pub(crate) source: Source,
-  pub(crate) count: usize,
-  pub(crate) time: Duration,
-  pub(crate) scheduler: Scheduler,
-}
-
-type RcBufferWitchCountObserver<O, Item> =
-  MutArc<Option<BufferWithCountObserver<O, Item>>>;
-
-fn emit_count_buffer<O, Item, Err>(
-  observer: &mut RcBufferWitchCountObserver<O, Item>,
-  _seq: usize,
-) -> bool
-where
-  O: Observer<Vec<Item>, Err>,
-{
-  if !observer.is_finished() {
-    if let Some(v) = observer.rc_deref_mut().as_mut() {
-      v.buffer.emit()
+  fn next(&mut self, _v: NotifierItem) {
+    let mut state = self.state.rc_deref_mut();
+    let buffer = std::mem::take(&mut state.buffer);
+    if let Some(ref mut observer) = state.observer {
+      observer.next(buffer);
     }
-    true
-  } else {
-    false
+  }
+
+  fn error(self, e: Err) {
+    self.source_unsub.unsubscribe();
+    if let Some(observer) = self.state.rc_deref_mut().observer.take() {
+      observer.error(e);
+    }
+  }
+
+  fn complete(self) {
+    self.source_unsub.unsubscribe();
+    let mut state = self.state.rc_deref_mut();
+    let buffer = std::mem::take(&mut state.buffer);
+    if let Some(mut observer) = state.observer.take() {
+      observer.next(buffer);
+      observer.complete();
+    }
+  }
+
+  fn is_closed(&self) -> bool { self.state.rc_deref_mut().observer.is_none() }
+}
+
+// Define type aliases to simplify the generics
+pub type SourceObserver<'a, C, S> = BufferSourceObserver<
+  <C as Context>::RcMut<BufferState<<C as Context>::Inner, <S as ObservableType>::Item<'a>>>,
+  <C as Context>::RcMut<Option<<C as Context>::BoxedSubscription>>,
+>;
+
+pub type NotifyObserver<'a, C, S, SourceUnsub> = BufferNotifierObserver<
+  <C as Context>::RcMut<BufferState<<C as Context>::Inner, <S as ObservableType>::Item<'a>>>,
+  <C as Context>::RcMut<Option<SourceUnsub>>,
+>;
+
+impl<S, N, C, SourceUnsub, NotifierUnsub> CoreObservable<C> for Buffer<S, N>
+where
+  C: Context,
+  N: ObservableType<Err = S::Err>,
+  S: for<'a> CoreObservable<C::With<SourceObserver<'a, C, S>>, Unsub = SourceUnsub>,
+  N: for<'a> CoreObservable<C::With<NotifyObserver<'a, C, S, SourceUnsub>>, Unsub = NotifierUnsub>,
+  SourceUnsub: Subscription,
+  NotifierUnsub: IntoBoxedSubscription<C::BoxedSubscription>,
+  C::RcMut<Option<SourceUnsub>>: Subscription,
+  C::RcMut<Option<C::BoxedSubscription>>: Subscription,
+{
+  type Unsub =
+    TupleSubscription<C::RcMut<Option<SourceUnsub>>, C::RcMut<Option<C::BoxedSubscription>>>;
+
+  fn subscribe(self, context: C) -> Self::Unsub {
+    let Buffer { source, notifier } = self;
+
+    let state = C::RcMut::from(BufferState::new(context.into_inner()));
+
+    let source_unsub_proxy: C::RcMut<Option<SourceUnsub>> = C::RcMut::from(None);
+    let notifier_unsub_proxy: C::RcMut<Option<C::BoxedSubscription>> = C::RcMut::from(None);
+
+    let source_observer =
+      BufferSourceObserver { state: state.clone(), notifier_unsub: notifier_unsub_proxy.clone() };
+    let source_sub = source.subscribe(C::lift(source_observer));
+    *source_unsub_proxy.rc_deref_mut() = Some(source_sub);
+
+    let notifier_observer =
+      BufferNotifierObserver { state: state.clone(), source_unsub: source_unsub_proxy.clone() };
+    let notifier_sub = notifier.subscribe(C::lift(notifier_observer));
+    *notifier_unsub_proxy.rc_deref_mut() = Some(notifier_sub.into_boxed());
+
+    TupleSubscription::new(source_unsub_proxy, notifier_unsub_proxy)
   }
 }
 
-impl<S, SD, Item, Err, O> Observable<Vec<Item>, Err, O>
-  for BufferWithCountOrTimerOp<S, SD>
-where
-  O: Observer<Vec<Item>, Err>,
-  S: Observable<Item, Err, RcBufferWitchCountObserver<O, Item>>,
-  SD: Scheduler<RepeatTask<RcBufferWitchCountObserver<O, Item>>>,
-{
-  type Unsub = ZipSubscription<TaskHandle<NormalReturn<()>>, S::Unsub>;
-
-  fn actual_subscribe(self, observer: O) -> Self::Unsub {
-    let Self { source, time, scheduler, count } = self;
-
-    let observer = BufferWithCountObserver {
-      buffer: BufferObserver { observer, data: vec![] },
-      count,
-    };
-    let observer = MutArc::own(Some(observer));
-
-    let handler = scheduler.schedule(
-      RepeatTask::new(time, emit_count_buffer, observer.clone()),
-      None,
-    );
-
-    let subscription = source.actual_subscribe(observer);
-    ZipSubscription::new(handler, subscription)
-  }
-}
-
-impl<Item, Err, S, SD> ObservableExt<Vec<Item>, Err>
-  for BufferWithCountOrTimerOp<S, SD>
-where
-  S: ObservableExt<Item, Err>,
-{
-}
+// ==================== Tests ====================
 
 #[cfg(test)]
 mod tests {
-  use crate::prelude::*;
-  use futures::executor::LocalPool;
-  use std::cell::RefCell;
-  use std::convert::Infallible;
-  use std::rc::Rc;
-  use std::sync::atomic::{AtomicBool, Ordering};
+  use std::{cell::RefCell, rc::Rc};
 
-  #[test]
-  fn it_shall_buffer() {
-    let mut closing_notifier = Subject::<(), Infallible>::default();
-    let mut source = Subject::<i32, Infallible>::default();
-    let expected = vec![vec![0, 1], vec![2]];
-    let actual = Rc::new(RefCell::new(vec![]));
-    let actual_c = actual.clone();
+  use crate::prelude::*;
+
+  #[rxrust_macro::test]
+  fn test_buffer_with_notifier() {
+    use std::convert::Infallible;
+
+    let result = Rc::new(RefCell::new(Vec::new()));
+    let result_clone = result.clone();
+
+    let mut source = Local::subject::<i32, Infallible>();
+    let mut notifier = Local::subject::<(), Infallible>();
+
     source
       .clone()
-      .buffer(closing_notifier.clone())
-      .subscribe(move |vec| actual_c.borrow_mut().push(vec));
-    source.next(0);
+      .buffer(notifier.clone())
+      .subscribe(move |v| result_clone.borrow_mut().push(v));
+
     source.next(1);
-    closing_notifier.next(());
     source.next(2);
-    closing_notifier.next(());
+    notifier.next(());
+
     source.next(3);
-    assert_eq!(expected, *actual.borrow());
+    notifier.next(());
+
+    source.next(4);
+    source.complete();
+
+    assert_eq!(*result.borrow(), vec![vec![1, 2], vec![3], vec![4]]);
   }
 
-  #[test]
-  fn it_shall_buffer_with_count() {
-    let expected =
-      vec![vec![0, 1], vec![2, 3], vec![4, 5], vec![6, 7], vec![8, 9]];
-    let mut actual = vec![];
-    observable::from_iter(0..10)
-      .buffer_with_count(2)
-      .subscribe(|vec| actual.push(vec));
+  #[rxrust_macro::test]
+  fn test_buffer_emits_empty_on_notifier() {
+    use std::convert::Infallible;
 
-    assert_eq!(expected, actual);
+    let result = Rc::new(RefCell::new(Vec::new()));
+    let result_clone = result.clone();
+
+    let mut source = Local::subject::<i32, Infallible>();
+    let mut notifier = Local::subject::<(), Infallible>();
+
+    source
+      .clone()
+      .buffer(notifier.clone())
+      .subscribe(move |v| result_clone.borrow_mut().push(v));
+
+    notifier.next(());
+    source.next(1);
+    notifier.next(());
+    notifier.next(());
+
+    assert_eq!(*result.borrow(), vec![vec![], vec![1], vec![]]);
   }
 
-  #[test]
-  fn it_shall_emit_buffer_on_completed() {
-    let expected = vec![vec![0, 1], vec![2, 3], vec![4]];
-    let mut actual = vec![];
+  #[rxrust_macro::test]
+  fn test_buffer_notifier_complete_emits_remaining() {
+    use std::convert::Infallible;
 
-    let is_completed = Rc::new(AtomicBool::new(false));
-    let is_completed_c = is_completed.clone();
+    use crate::observer::Observer;
 
-    observable::create(|mut subscriber: Subscriber<_>| {
-      subscriber.next(0);
-      subscriber.next(1);
-      subscriber.next(2);
-      subscriber.next(3);
-      subscriber.next(4);
-      subscriber.complete();
-    })
-    .buffer_with_count(2)
-    .on_complete(move || is_completed_c.store(true, Ordering::Relaxed))
-    .subscribe(|vec| actual.push(vec));
+    struct TestObserver {
+      result: Rc<RefCell<Vec<Vec<i32>>>>,
+      completed: Rc<RefCell<bool>>,
+    }
 
-    assert_eq!(expected, actual);
-    assert!(is_completed.load(Ordering::Relaxed));
+    impl Observer<Vec<i32>, Infallible> for TestObserver {
+      fn next(&mut self, v: Vec<i32>) { self.result.borrow_mut().push(v); }
+      fn error(self, _: Infallible) {}
+      fn complete(self) { *self.completed.borrow_mut() = true; }
+      fn is_closed(&self) -> bool { false }
+    }
+
+    let result = Rc::new(RefCell::new(Vec::new()));
+    let completed = Rc::new(RefCell::new(false));
+
+    let mut source = Local::subject::<i32, Infallible>();
+    let notifier = Local::subject::<(), Infallible>();
+
+    let observer = TestObserver { result: result.clone(), completed: completed.clone() };
+
+    source
+      .clone()
+      .buffer(notifier.clone())
+      .subscribe_with(observer);
+
+    source.next(1);
+    source.next(2);
+    notifier.complete();
+
+    assert_eq!(*result.borrow(), vec![vec![1, 2]]);
+    assert!(*completed.borrow());
   }
 
-  #[test]
-  fn it_shall_discard_buffer_on_error() {
-    let expected = vec![vec![0, 1], vec![2, 3]];
-    let mut actual = vec![];
-    let mut err_called = false;
+  #[rxrust_macro::test]
+  fn test_buffer_source_complete_emits_empty() {
+    use std::convert::Infallible;
 
-    observable::create(|mut subscriber: Subscriber<_>| {
-      subscriber.next(0);
-      subscriber.next(1);
-      subscriber.next(2);
-      subscriber.next(3);
-      subscriber.next(4);
-      subscriber.error(());
-    })
-    .buffer_with_count(2)
-    .on_error(|_| err_called = true)
-    .subscribe(|vec| actual.push(vec));
+    let result = Rc::new(RefCell::new(Vec::new()));
+    let result_clone = result.clone();
 
-    assert_eq!(expected, actual);
-    assert!(err_called);
-  }
+    let source = Local::subject::<i32, Infallible>();
+    let notifier = Local::subject::<(), Infallible>();
 
-  #[test]
-  fn it_shall_buffer_with_time_local() {
-    let mut local = LocalPool::new();
+    source
+      .clone()
+      .buffer(notifier.clone())
+      .subscribe(move |v| result_clone.borrow_mut().push(v));
 
-    let expected = vec![vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9]];
-    let actual = Rc::new(RefCell::new(vec![]));
-    let actual_c = actual.clone();
+    source.complete();
 
-    observable::from_iter(0..10)
-      .buffer_with_time(Duration::from_millis(500), local.spawner())
-      .subscribe(move |vec| actual_c.borrow_mut().push(vec));
-
-    local.run();
-
-    // this can't be really tested as local scheduler runs on a single thread
-    assert_eq!(expected, *actual.borrow());
-  }
-
-  #[test]
-  fn it_shall_not_block_with_error_on_time_local() {
-    let mut local = LocalPool::new();
-
-    observable::create(|mut subscriber: Subscriber<_>| {
-      subscriber.next(0);
-      subscriber.next(1);
-      subscriber.next(2);
-      subscriber.error(());
-    })
-    .buffer_with_time(Duration::from_millis(500), local.spawner())
-    .on_error(|_| {})
-    .subscribe(|_| {});
-
-    // if this call blocks execution, the observer's handle has not been
-    // unsubscribed
-    local.run();
-  }
-
-  #[test]
-  fn it_shall_buffer_with_time_with_observable_ext() {
-    let mut local = LocalPool::new();
-
-    let expected = vec![vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9]];
-    let actual = Rc::new(RefCell::new(vec![]));
-    let actual_c = actual.clone();
-
-    observable::from_iter(0..10)
-      .buffer_with_time(Duration::from_millis(500), local.spawner())
-      .filter(move |_vec: &Vec<i32>| true)
-      .subscribe(move |vec| actual_c.borrow_mut().push(vec));
-
-    local.run();
-
-    // this can't be really tested as local scheduler runs on a single thread
-    assert_eq!(expected, *actual.borrow());
-  }
-
-  #[test]
-  fn it_shall_buffer_with_count_and_time() {
-    let mut local = LocalPool::new();
-
-    let expected =
-      vec![vec![0, 1], vec![2, 3], vec![4, 5], vec![6, 7], vec![8, 9]];
-    let actual = Rc::new(RefCell::new(vec![]));
-    let actual_c = actual.clone();
-
-    observable::from_iter(0..10)
-      .buffer_with_count_and_time(
-        2,
-        Duration::from_millis(500),
-        local.spawner(),
-      )
-      .subscribe(move |vec| actual_c.borrow_mut().push(vec));
-
-    local.run();
-
-    // this can't be really tested as local scheduler runs on a single thread
-    assert_eq!(expected, *actual.borrow());
-  }
-
-  #[test]
-  fn it_shall_buffer_with_count_and_time_on_error() {
-    let mut local = LocalPool::new();
-
-    let expected = vec![vec![0, 1]];
-    let actual = Rc::new(RefCell::new(vec![]));
-    let actual_c = actual.clone();
-
-    let error_called = Rc::new(AtomicBool::new(false));
-    let error_called_c = error_called.clone();
-
-    observable::create(|mut subscriber: Subscriber<_>| {
-      subscriber.next(0);
-      subscriber.next(1);
-      subscriber.next(2);
-      subscriber.error(());
-    })
-    .buffer_with_count_and_time(2, Duration::from_millis(500), local.spawner())
-    .on_error(move |_| error_called_c.store(true, Ordering::Relaxed))
-    .subscribe(move |vec| actual_c.borrow_mut().push(vec));
-
-    local.run();
-
-    assert_eq!(expected, *actual.borrow());
-    assert!(error_called.load(Ordering::Relaxed));
+    assert_eq!(*result.borrow(), vec![Vec::<i32>::new()]);
   }
 }

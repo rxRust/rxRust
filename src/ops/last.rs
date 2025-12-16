@@ -1,181 +1,254 @@
-use crate::prelude::*;
+//! Last operator implementation
+//!
+//! This module contains the Last operator, which emits only the last value
+//! emitted by the source Observable when the source completes.
 
+use crate::{
+  context::Context,
+  observable::{CoreObservable, ObservableType},
+  observer::Observer,
+  subscription::Subscription,
+};
+
+/// Last operator: Emits only the last value from the source observable
+///
+/// This operator keeps track of the last value emitted by the source
+/// observable. When the source completes, it emits that last value and then
+/// completes. If the source emits no values, it completes without emitting
+/// anything.
+///
+/// # Examples
+///
+/// ```
+/// use rxrust::prelude::*;
+///
+/// let observable = Local::from_iter([1, 2, 3, 4, 5]).last();
+/// let mut result = Vec::new();
+/// observable.subscribe(|v| result.push(v));
+/// assert_eq!(result, vec![5]);
+/// ```
 #[derive(Clone)]
-pub struct LastOp<S, Item> {
-  pub(crate) source: S,
-  pub(crate) last: Option<Item>,
+pub struct Last<S> {
+  pub source: S,
 }
 
-impl<S, Item> LastOp<S, Item> {
-  #[inline]
-  pub(crate) fn new(source: S) -> Self {
-    LastOp { source, last: None }
-  }
+impl<S: ObservableType> ObservableType for Last<S> {
+  type Item<'a>
+    = S::Item<'a>
+  where
+    Self: 'a;
+  type Err = S::Err;
 }
 
-impl<Item, S, Err, O> Observable<Item, Err, O> for LastOp<S, Item>
-where
-  S: Observable<Item, Err, LastObserver<O, Item>>,
-  O: Observer<Item, Err>,
-{
-  type Unsub = S::Unsub;
-  fn actual_subscribe(self, observer: O) -> Self::Unsub {
-    self
-      .source
-      .actual_subscribe(LastObserver { observer, last: self.last })
-  }
-}
-
-impl<Item, S, Err> ObservableExt<Item, Err> for LastOp<S, Item> where
-  S: ObservableExt<Item, Err>
-{
-}
-pub struct LastObserver<S, T> {
-  observer: S,
-  last: Option<T>,
+/// LastObserver wrapper for emitting the last value
+///
+/// This observer wraps another observer and tracks the last value seen.
+/// When the source completes, it emits the last value (if any).
+pub struct LastObserver<O, Item> {
+  observer: O,
+  last: Option<Item>,
 }
 
 impl<O, Item, Err> Observer<Item, Err> for LastObserver<O, Item>
 where
   O: Observer<Item, Err>,
 {
-  #[inline]
-  fn next(&mut self, value: Item) {
-    self.last = Some(value);
-  }
+  fn next(&mut self, value: Item) { self.last = Some(value); }
 
-  #[inline]
-  fn error(self, err: Err) {
-    self.observer.error(err)
-  }
+  fn error(self, e: Err) { self.observer.error(e); }
 
-  #[inline]
   fn complete(mut self) {
-    if let Some(v) = self.last.take() {
-      self.observer.next(v)
+    if let Some(value) = self.last.take() {
+      self.observer.next(value);
     }
     self.observer.complete();
   }
 
-  #[inline]
-  fn is_finished(&self) -> bool {
-    self.observer.is_finished()
+  fn is_closed(&self) -> bool { self.observer.is_closed() }
+}
+
+impl<S, C, Unsub> CoreObservable<C> for Last<S>
+where
+  C: Context,
+  S: for<'a> CoreObservable<
+      C::With<LastObserver<C::Inner, <S as ObservableType>::Item<'a>>>,
+      Unsub = Unsub,
+    >,
+  Unsub: Subscription,
+{
+  type Unsub = Unsub;
+
+  fn subscribe(self, context: C) -> Self::Unsub {
+    let Last { source } = self;
+    let wrapped = context.transform(|observer| LastObserver { observer, last: None });
+    source.subscribe(wrapped)
   }
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
+  use std::{cell::RefCell, rc::Rc};
+
   use crate::prelude::*;
 
-  #[test]
-  fn last_or_hundered_items() {
-    let mut completed = 0;
-    let mut errors = 0;
-    let mut last_item = None;
+  #[rxrust_macro::test]
+  fn test_last_emits_last_value() {
+    let result = Rc::new(RefCell::new(Vec::new()));
+    let result_clone = result.clone();
 
-    observable::from_iter(0..100)
-      .last_or(200)
-      .on_complete(|| completed += 1)
-      .on_error(|_| errors += 1)
-      .subscribe(|v| last_item = Some(v));
-
-    assert_eq!(errors, 0);
-    assert_eq!(completed, 1);
-    assert_eq!(Some(99), last_item);
-  }
-
-  #[test]
-  fn last_or_no_items() {
-    let mut completed = 0;
-    let mut errors = 0;
-    let mut last_item = None;
-
-    observable::empty()
-      .last_or(100)
-      .on_error(|_| errors += 1)
-      .on_complete(|| completed += 1)
-      .subscribe(|v| last_item = Some(v));
-
-    assert_eq!(errors, 0);
-    assert_eq!(completed, 1);
-    assert_eq!(Some(100), last_item);
-  }
-
-  #[test]
-  fn last_one_item() {
-    let mut completed = 0;
-    let mut errors = 0;
-    let mut last_item = None;
-
-    observable::from_iter(0..2)
+    Local::from_iter([1, 2, 3, 4, 5])
       .last()
-      .on_complete(|| completed += 1)
-      .on_error(|_| errors += 1)
-      .subscribe(|v| last_item = Some(v));
+      .subscribe(move |v| {
+        result_clone.borrow_mut().push(v);
+      });
 
-    assert_eq!(errors, 0);
-    assert_eq!(completed, 1);
-    assert_eq!(Some(1), last_item);
+    assert_eq!(*result.borrow(), vec![5]);
   }
 
-  #[test]
-  fn last_no_items() {
-    let mut completed = 0;
-    let mut errors = 0;
-    let mut last_item = None;
+  #[rxrust_macro::test]
+  fn test_last_with_single_value() {
+    let result = Rc::new(RefCell::new(Vec::new()));
+    let result_clone = result.clone();
 
-    observable::empty()
+    Local::of(42).last().subscribe(move |v| {
+      result_clone.borrow_mut().push(v);
+    });
+
+    assert_eq!(*result.borrow(), vec![42]);
+  }
+
+  #[rxrust_macro::test]
+  fn test_last_with_no_values() {
+    let result = Rc::new(RefCell::new(Vec::new()));
+    let completed = Rc::new(RefCell::new(false));
+    let result_clone = result.clone();
+    let completed_clone = completed.clone();
+
+    Local::from_iter(std::iter::empty::<i32>())
       .last()
-      .on_error(|_| errors += 1)
-      .on_complete(|| completed += 1)
-      .subscribe(|v: i32| last_item = Some(v));
+      .on_complete(move || {
+        *completed_clone.borrow_mut() = true;
+      })
+      .subscribe(move |v| {
+        result_clone.borrow_mut().push(v);
+      });
 
-    assert_eq!(errors, 0);
-    assert_eq!(completed, 1);
-    assert_eq!(None, last_item);
+    // Should not emit any values but should complete
+    assert_eq!(*result.borrow(), Vec::<i32>::new());
+    assert!(*completed.borrow());
   }
 
-  #[test]
-  fn last_support_fork() {
-    let mut value = 0;
-    let mut value2 = 0;
-    {
-      let o = observable::from_iter(1..100).last();
-      let o1 = o.clone().last();
-      let o2 = o.last();
-      o1.subscribe(|v| value = v);
-      o2.subscribe(|v| value2 = v);
-    }
-    assert_eq!(value, 99);
-    assert_eq!(value2, 99);
+  #[rxrust_macro::test]
+  fn test_last_error_propagation() {
+    let result = Rc::new(RefCell::new(Vec::new()));
+    let error = Rc::new(RefCell::new(String::new()));
+    let result_clone = result.clone();
+    let error_clone = error.clone();
+
+    Local::throw_err("test error".to_string())
+      .last()
+      .on_error(move |e| {
+        *error_clone.borrow_mut() = e;
+      })
+      .subscribe(move |v| {
+        result_clone.borrow_mut().push(v);
+      });
+
+    assert_eq!(*result.borrow(), vec![]);
+    assert_eq!(*error.borrow(), "test error");
   }
 
-  #[test]
-  fn last_or_support_fork() {
-    let mut default = 0;
-    let mut default2 = 0;
-    let o = observable::create(|subscriber: Subscriber<_>| {
-      subscriber.complete();
-    })
-    .last_or(100);
-    let o1 = o.clone().last_or(0);
-    let o2 = o.clone().last_or(0);
-    let u1: Box<dyn FnMut(i32) + '_> = Box::new(|v| default = v);
-    let u2: Box<dyn FnMut(i32) + '_> = Box::new(|v| default2 = v);
-    o1.subscribe(u1);
-    o2.subscribe(u2);
-    assert_eq!(default, 100);
-    assert_eq!(default, 100);
+  #[rxrust_macro::test]
+  fn test_last_chaining() {
+    let result = Rc::new(RefCell::new(Vec::new()));
+    let result_clone = result.clone();
+
+    Local::from_iter(0..100)
+      .take(50)
+      .filter(|v| v % 2 == 0)
+      .last()
+      .subscribe(move |v| {
+        result_clone.borrow_mut().push(v);
+      });
+
+    // The last even number in 0..49 is 48
+    assert_eq!(*result.borrow(), vec![48]);
   }
 
-  #[test]
-  fn bench() {
-    do_bench();
+  #[rxrust_macro::test]
+  fn test_last_or_emits_last_value() {
+    let result = Rc::new(RefCell::new(Vec::new()));
+    let result_clone = result.clone();
+
+    Local::from_iter([1, 2, 3, 4, 5])
+      .last_or(0)
+      .subscribe(move |v| {
+        result_clone.borrow_mut().push(v);
+      });
+
+    assert_eq!(*result.borrow(), vec![5]);
   }
 
-  benchmark_group!(do_bench, bench_last);
+  #[rxrust_macro::test]
+  fn test_last_or_emits_default_when_empty() {
+    let result = Rc::new(RefCell::new(Vec::new()));
+    let result_clone = result.clone();
 
-  fn bench_last(b: &mut bencher::Bencher) {
-    b.iter(last_or_hundered_items);
+    Local::from_iter(std::iter::empty::<i32>())
+      .last_or(0)
+      .subscribe(move |v| {
+        result_clone.borrow_mut().push(v);
+      });
+
+    assert_eq!(*result.borrow(), vec![0]);
+  }
+
+  #[rxrust_macro::test]
+  fn test_last_or_with_single_value() {
+    let result = Rc::new(RefCell::new(Vec::new()));
+    let result_clone = result.clone();
+
+    Local::of(42).last_or(0).subscribe(move |v| {
+      result_clone.borrow_mut().push(v);
+    });
+
+    assert_eq!(*result.borrow(), vec![42]);
+  }
+
+  #[rxrust_macro::test]
+  fn test_last_or_error_propagation() {
+    let result = Rc::new(RefCell::new(Vec::new()));
+    let error = Rc::new(RefCell::new(String::new()));
+    let result_clone = result.clone();
+    let error_clone = error.clone();
+
+    Local::throw_err("test error".to_string())
+      .last_or(())
+      .on_error(move |e| {
+        *error_clone.borrow_mut() = e;
+      })
+      .subscribe(move |_v| {
+        result_clone.borrow_mut().push(());
+      });
+
+    assert_eq!(*result.borrow(), vec![]);
+    assert_eq!(*error.borrow(), "test error");
+  }
+
+  #[rxrust_macro::test]
+  fn test_last_or_chaining() {
+    let result = Rc::new(RefCell::new(Vec::new()));
+    let result_clone = result.clone();
+
+    Local::from_iter(0..100)
+      .take(5)
+      .filter(|v| *v > 10) // This will filter out all values
+      .last_or(0)
+      .subscribe(move |v| {
+        result_clone.borrow_mut().push(v);
+      });
+
+    // Should emit default value since filter removed all items
+    assert_eq!(*result.borrow(), vec![0]);
   }
 }

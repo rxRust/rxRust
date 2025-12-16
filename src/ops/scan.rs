@@ -1,157 +1,200 @@
-use crate::prelude::*;
+//! Scan operator implementation
+//!
+//! This module contains the Scan operator, which applies an accumulator
+//! function over the source Observable and returns each intermediate result.
 
+use crate::{
+  context::Context,
+  observable::{CoreObservable, ObservableType},
+  observer::Observer,
+};
+
+/// Scan operator: Applies an accumulator function and emits intermediate
+/// results
+///
+/// This operator demonstrates:
+/// - Observer wrapping with state (ScanObserver)
+/// - Context unpacking with `transform`
+/// - Accumulation logic with initial value
+///
+/// # Examples
+///
+/// ```
+/// use rxrust::prelude::*;
+///
+/// let observable = Local::from_iter([1, 2, 3, 4]).scan(0, |acc, v| acc + v);
+/// let mut result = Vec::new();
+/// observable.subscribe(|v| {
+///   result.push(v);
+/// });
+/// assert_eq!(result, vec![1, 3, 6, 10]);
+/// ```
 #[derive(Clone)]
-pub struct ScanOp<Source, BinaryOp, OutputItem, InputItem> {
-  source: Source,
-  binary_op: BinaryOp,
-  initial_value: OutputItem,
-  _m: TypeHint<InputItem>,
+pub struct Scan<S, F, Output> {
+  pub source: S,
+  pub func: F,
+  pub initial_value: Output,
 }
 
-impl<Source, BinaryOp, OutputItem, InputItem>
-  ScanOp<Source, BinaryOp, OutputItem, InputItem>
-{
-  pub(crate) fn new(
-    source: Source,
-    binary_op: BinaryOp,
-    initial_value: OutputItem,
-  ) -> Self {
-    Self {
-      source,
-      binary_op,
-      initial_value,
-      _m: TypeHint::default(),
-    }
-  }
-}
-
-pub struct ScanObserver<Observer, BinaryOp, OutputItem> {
-  target_observer: Observer,
-  binary_op: BinaryOp,
-  acc: OutputItem,
-}
-
-impl<InputItem, OutputItem, Err, O, S, BinaryOp> Observable<OutputItem, Err, O>
-  for ScanOp<S, BinaryOp, OutputItem, InputItem>
+impl<S, F, Output> ObservableType for Scan<S, F, Output>
 where
-  S: Observable<InputItem, Err, ScanObserver<O, BinaryOp, OutputItem>>,
-  O: Observer<OutputItem, Err>,
-  BinaryOp: FnMut(OutputItem, InputItem) -> OutputItem,
-  OutputItem: Clone,
+  S: ObservableType,
+  F: for<'a> FnMut(Output, S::Item<'a>) -> Output,
+  Output: Clone,
+{
+  type Item<'a>
+    = Output
+  where
+    Self: 'a;
+  type Err = S::Err;
+}
+
+/// ScanObserver wrapper for accumulating values
+///
+/// This observer wraps another observer and applies an accumulator function
+/// to each value, emitting each intermediate accumulation.
+pub struct ScanObserver<O, F, Output> {
+  observer: O,
+  func: F,
+  acc: Output,
+}
+
+impl<O, F, Item, Output, Err> Observer<Item, Err> for ScanObserver<O, F, Output>
+where
+  O: Observer<Output, Err>,
+  F: FnMut(Output, Item) -> Output,
+  Output: Clone,
+{
+  fn next(&mut self, value: Item) {
+    self.acc = (self.func)(self.acc.clone(), value);
+    self.observer.next(self.acc.clone());
+  }
+
+  fn error(self, err: Err) { self.observer.error(err); }
+
+  fn complete(self) { self.observer.complete(); }
+
+  fn is_closed(&self) -> bool { self.observer.is_closed() }
+}
+
+impl<S, F, C, Output> CoreObservable<C> for Scan<S, F, Output>
+where
+  C: Context,
+  S: CoreObservable<C::With<ScanObserver<C::Inner, F, Output>>>,
+  F: for<'a> FnMut(Output, S::Item<'a>) -> Output,
+  Output: Clone,
 {
   type Unsub = S::Unsub;
-  fn actual_subscribe(self, observer: O) -> Self::Unsub {
-    self.source.actual_subscribe(ScanObserver {
-      target_observer: observer,
-      binary_op: self.binary_op,
-      acc: self.initial_value,
-    })
-  }
-}
 
-impl<InputItem, OutputItem, Err, S, BinaryOp> ObservableExt<OutputItem, Err>
-  for ScanOp<S, BinaryOp, OutputItem, InputItem>
-where
-  S: ObservableExt<InputItem, Err>,
-{
-}
-
-// We're making `ScanObserver` being able to be subscribed to other observables
-// by implementing `Observer` trait. Thanks to this, it is able to observe
-// sources having `Item` type as its `InputItem` type.
-impl<InputItem, Err, Source, BinaryOp, OutputItem> Observer<InputItem, Err>
-  for ScanObserver<Source, BinaryOp, OutputItem>
-where
-  Source: Observer<OutputItem, Err>,
-  BinaryOp: FnMut(OutputItem, InputItem) -> OutputItem,
-  OutputItem: Clone,
-{
-  fn next(&mut self, value: InputItem) {
-    // accumulating each item with a current value
-    self.acc = (self.binary_op)(self.acc.clone(), value);
-    self.target_observer.next(self.acc.clone())
-  }
-
-  #[inline]
-  fn error(self, err: Err) {
-    self.target_observer.error(err)
-  }
-
-  #[inline]
-  fn complete(self) {
-    self.target_observer.complete()
-  }
-
-  #[inline]
-  fn is_finished(&self) -> bool {
-    self.target_observer.is_finished()
+  fn subscribe(self, context: C) -> Self::Unsub {
+    let Scan { source, func, initial_value } = self;
+    // Use transform to preserve scheduler automatically
+    let wrapped = context.transform(|observer| ScanObserver { observer, func, acc: initial_value });
+    source.subscribe(wrapped)
   }
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
+  use std::{cell::RefCell, rc::Rc};
+
   use crate::prelude::*;
 
-  #[test]
-  fn scan_initial() {
-    let mut emitted = Vec::<i32>::new();
-    // should work like accumulate from 100
-    observable::from_iter(vec![1, 1, 1, 1, 1])
-      .scan_initial(100, |acc, v| acc + v)
-      .subscribe(|v| emitted.push(v));
+  #[rxrust_macro::test(local)]
+  async fn test_scan_initial() {
+    let result = Rc::new(RefCell::new(Vec::new()));
+    let result_clone = result.clone();
 
-    assert_eq!(vec!(101, 102, 103, 104, 105), emitted);
-  }
-  #[test]
-  fn scan_initial_on_empty_observable() {
-    let mut emitted = Vec::<i32>::new();
-    // should work like accumulate from 100
-    observable::empty()
-      .scan_initial(100, |acc, v: i32| acc + v)
-      .subscribe(|v| emitted.push(v));
+    Local::from_iter([1, 1, 1, 1, 1])
+      .scan(100, |acc, v| acc + v)
+      .subscribe(move |v| {
+        result_clone.borrow_mut().push(v);
+      });
 
-    assert_eq!(Vec::<i32>::new(), emitted);
+    assert_eq!(*result.borrow(), vec![101, 102, 103, 104, 105]);
   }
 
-  #[test]
-  fn scan_initial_mixed_types() {
-    let mut emitted = Vec::<i32>::new();
-    // Should work like accumulate from 100,
-    // as we ignore the input characters and just
-    // increment the accumulated value given.
-    observable::from_iter(vec!['a', 'b', 'c', 'd', 'e'])
-      .scan_initial(100, |acc, _v| acc + 1)
-      .subscribe(|v| emitted.push(v));
+  #[rxrust_macro::test(local)]
+  async fn test_scan_initial_on_empty_observable() {
+    let result = Rc::new(RefCell::new(Vec::new()));
+    let result_clone = result.clone();
 
-    assert_eq!(vec!(101, 102, 103, 104, 105), emitted);
+    Local::from_iter(std::iter::empty::<i32>())
+      .scan(100, |acc, v| acc + v)
+      .subscribe(move |v| {
+        result_clone.borrow_mut().push(v);
+      });
+
+    assert_eq!(*result.borrow(), Vec::<i32>::new());
   }
 
-  #[test]
-  fn scan_with_default() {
-    let mut emitted = Vec::<i32>::new();
-    // should work like accumulate from 0
-    observable::from_iter(vec![1, 1, 1, 1, 1])
-      .scan(|acc, v| acc + v)
-      .subscribe(|v| emitted.push(v));
+  #[rxrust_macro::test(local)]
+  async fn test_scan_initial_mixed_types() {
+    let result = Rc::new(RefCell::new(Vec::new()));
+    let result_clone = result.clone();
 
-    assert_eq!(vec!(1, 2, 3, 4, 5), emitted);
+    Local::from_iter(['a', 'b', 'c', 'd', 'e'])
+      .scan(100, |acc, _v| acc + 1)
+      .subscribe(move |v| {
+        result_clone.borrow_mut().push(v);
+      });
+
+    assert_eq!(*result.borrow(), vec![101, 102, 103, 104, 105]);
   }
 
-  #[test]
-  fn scan_fork_and_shared_mixed_types() {
-    // type to type can fork
-    let m = observable::from_iter(vec!['a', 'b', 'c']).scan(|_acc, _v| 1i32);
-    m.scan(|_acc, v| v as f32).subscribe(|_| {});
+  #[rxrust_macro::test(local)]
+  async fn test_scan_multiplication() {
+    let result = Rc::new(RefCell::new(Vec::new()));
+    let result_clone = result.clone();
+
+    Local::from_iter(vec![1, 2, 3, 4])
+      .scan(1, |acc, v| acc * v)
+      .subscribe(move |v| {
+        result_clone.borrow_mut().push(v);
+      });
+
+    assert_eq!(*result.borrow(), vec![1, 2, 6, 24]);
   }
 
-  #[test]
-  fn bench() {
-    do_bench();
+  #[rxrust_macro::test(local)]
+  async fn test_scan_string_concatenation() {
+    let result = Rc::new(RefCell::new(Vec::new()));
+    let result_clone = result.clone();
+
+    Local::from_iter(["hello", " ", "world", "!"])
+      .scan("".to_string(), |mut acc, v| {
+        acc.push_str(v);
+        acc
+      })
+      .subscribe(move |v| {
+        result_clone.borrow_mut().push(v);
+      });
+
+    assert_eq!(
+      *result.borrow(),
+      vec![
+        "hello".to_string(),
+        "hello ".to_string(),
+        "hello world".to_string(),
+        "hello world!".to_string()
+      ]
+    );
   }
 
-  benchmark_group!(do_bench, bench_scan);
+  #[rxrust_macro::test(local)]
+  async fn test_scan_with_observable_chaining() {
+    let result = Rc::new(RefCell::new(Vec::new()));
+    let result_clone = result.clone();
 
-  fn bench_scan(b: &mut bencher::Bencher) {
-    b.iter(scan_initial);
+    Local::from_iter([1, 2, 3, 4, 5])
+      .scan(0, |acc, v| acc + v)
+      .map(|v| v * 2)
+      .subscribe(move |v| {
+        result_clone.borrow_mut().push(v);
+      });
+
+    // Original scan would produce: [1, 3, 6, 10, 15]
+    // After map(*2): [2, 6, 12, 20, 30]
+    assert_eq!(*result.borrow(), vec![2, 6, 12, 20, 30]);
   }
 }

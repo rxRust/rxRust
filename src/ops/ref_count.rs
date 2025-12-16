@@ -1,185 +1,166 @@
-/// Make a ConnectableObservable behave like a ordinary observable and
-/// automates the way you can connect to it.
-///
-/// Internally it counts the subscriptions to the observable and subscribes
-/// (only once) to the source if the number of subscriptions is larger than
-/// 0. If the number of subscriptions is smaller than 1, it unsubscribes
-/// from the source. This way you can make sure that everything before the
-/// published refCount has only a single subscription independently of the
-/// number of subscribers to the target observable.
-///
-/// Note that using the share operator is exactly the same as using the
-/// publish operator (making the observable hot) and the refCount operator
-/// in a sequence.
+//! RefCount operator - auto-manages ConnectableObservable connection.
+//!
+//! Connects on first subscription, disconnects when all subscribers leave.
+//!
+//! # Example
+//!
+//! ```rust
+//! use rxrust::prelude::*;
+//!
+//! let shared = Local::from_iter([1, 2]).publish().ref_count();
+//!
+//! let sub = shared.subscribe(|v| println!("Got: {}", v));
+//! sub.unsubscribe();
+//! ```
+
 use crate::{
-  prelude::*,
-  rc::{MutArc, MutRc, RcDerefMut},
+  context::{Context, RcDeref, RcDerefMut},
+  observable::{CoreObservable, ObservableType, connectable::ConnectableObservable},
+  subject::{Subject, subscribers::Subscribers},
+  subscription::Subscription,
 };
 
-pub struct ShareOp<'a, Item, Err, Source>(
-  MutRc<InnerShareOp<Source, Subject<'a, Item, Err>>>,
-);
-
-pub struct ShareOpThreads<Item, Err, Source>(
-  MutArc<InnerShareOp<Source, SubjectThreads<Item, Err>>>,
-);
-
-enum InnerShareOp<Source, Subject> {
-  Connectable(ConnectableObservable<Source, Subject>),
-  Connected(Subject),
+/// Wraps a `ConnectableObservable` and manages connection based on subscriber
+/// count.
+///
+/// Uses the Subject's internal subscriber list instead of a separate counter.
+pub struct RefCount<S, P, ConnPtr> {
+  pub(crate) connectable: ConnectableObservable<S, P>,
+  pub(crate) connection: ConnPtr,
 }
 
-macro_rules! impl_trivial {
-  ($name: ident, $rc: ident $(,$lf: lifetime)?) => {
-    impl<$($lf,)? Item, Err, S> Clone for $name<$($lf,)? Item, Err, S> {
-      fn clone(&self) -> Self {
-        Self(self.0.clone())
-      }
+impl<S: Clone, P: Clone, ConnPtr: Clone> Clone for RefCount<S, P, ConnPtr> {
+  fn clone(&self) -> Self {
+    Self { connectable: self.connectable.clone(), connection: self.connection.clone() }
+  }
+}
+
+impl<S, P, ConnPtr> ObservableType for RefCount<S, P, ConnPtr>
+where
+  Subject<P>: ObservableType,
+{
+  type Item<'a>
+    = <Subject<P> as ObservableType>::Item<'a>
+  where
+    Self: 'a;
+  type Err = <Subject<P> as ObservableType>::Err;
+}
+
+impl<Ctx, O, S, P, ConnPtr> CoreObservable<Ctx> for RefCount<S, P, ConnPtr>
+where
+  Ctx: Context,
+  S: Clone + CoreObservable<Ctx::With<Subject<P>>>,
+  Subject<P>: CoreObservable<Ctx>,
+  P: Clone + RcDeref<Target = Subscribers<O>>,
+  ConnPtr: Clone + RcDerefMut<Target = Option<S::Unsub>> + Subscription,
+{
+  type Unsub = RefCountSubscription<P, <Subject<P> as CoreObservable<Ctx>>::Unsub, ConnPtr>;
+
+  fn subscribe(self, observer: Ctx) -> Self::Unsub {
+    let subject = self.connectable.fork();
+    let inner_sub = subject.clone().subscribe(observer);
+
+    if subject.subscriber_count() == 1 && self.connection.rc_deref().is_none() {
+      *self.connection.rc_deref_mut() = Some(self.connectable.connect::<Ctx>());
     }
 
-    impl<$($lf,)? Item, Err, S> $name<$($lf,)? Item, Err, S> {
-      #[inline]
-      pub fn new(source: S) -> Self {
-        let inner = InnerShareOp::Connectable(ConnectableObservable::new(source));
-        $name($rc::own(inner))
-      }
-    }
-  };
+    RefCountSubscription { subject, inner: inner_sub, connection: self.connection }
+  }
 }
 
-impl_trivial!(ShareOp, MutRc, 'a);
-impl_trivial!(ShareOpThreads, MutArc);
-
-macro_rules! impl_observable_methods {
-  ($subject: ty) => {
-    type Unsub = RefCountSubscription<
-      $subject,
-      <$subject as Observable<Item, Err, O>>::Unsub,
-    >;
-
-    fn actual_subscribe(self, observer: O) -> Self::Unsub {
-      let mut inner = self.0.rc_deref_mut();
-      match &mut *inner {
-        InnerShareOp::Connectable(c) => {
-          let subject = c.fork();
-
-          let subscription = subject.clone().actual_subscribe(observer);
-          let connected = InnerShareOp::Connected(subject.clone());
-          let connectable = std::mem::replace(&mut *inner, connected);
-
-          match connectable {
-            InnerShareOp::Connectable(connectable) => connectable.connect(),
-            InnerShareOp::Connected { .. } => unreachable!(),
-          };
-
-          RefCountSubscription { subject, subscription }
-        }
-        InnerShareOp::Connected(subject) => {
-          let subscription = subject.clone().actual_subscribe(observer);
-          RefCountSubscription { subject: subject.clone(), subscription }
-        }
-      }
-    }
-  };
+/// Subscription for RefCount. Disconnects source when last subscriber leaves.
+pub struct RefCountSubscription<P, InnerSub, ConnPtr> {
+  subject: Subject<P>,
+  inner: InnerSub,
+  connection: ConnPtr,
 }
 
-impl<'a, S, Item, Err, O> Observable<Item, Err, O> for ShareOp<'a, Item, Err, S>
+impl<P, InnerSub, ConnPtr, O> Subscription for RefCountSubscription<P, InnerSub, ConnPtr>
 where
-  Item: Clone,
-  Err: Clone,
-  O: Observer<Item, Err> + 'a,
-  S: Observable<Item, Err, Subject<'a, Item, Err>>,
-{
-  impl_observable_methods!(Subject<'a, Item, Err>);
-}
-
-impl<'a, S, Item, Err> ObservableExt<Item, Err> for ShareOp<'a, Item, Err, S> where
-  S: ObservableExt<Item, Err>
-{
-}
-
-impl<S, Item, Err, O> Observable<Item, Err, O> for ShareOpThreads<Item, Err, S>
-where
-  Item: Clone,
-  Err: Clone,
-  O: Observer<Item, Err> + Send + 'static,
-  S: Observable<Item, Err, SubjectThreads<Item, Err>>,
-{
-  impl_observable_methods!(SubjectThreads< Item, Err>);
-}
-
-impl<S, Item, Err> ObservableExt<Item, Err> for ShareOpThreads<Item, Err, S> where
-  S: ObservableExt<Item, Err>
-{
-}
-pub struct RefCountSubscription<Subject, U> {
-  subject: Subject,
-  subscription: U,
-}
-
-impl<U, Subject> Subscription for RefCountSubscription<Subject, U>
-where
-  Subject: Subscription + SubjectSize,
-  U: Subscription,
+  P: RcDeref<Target = Subscribers<O>>,
+  InnerSub: Subscription,
+  ConnPtr: Subscription,
 {
   fn unsubscribe(self) {
-    self.subscription.unsubscribe();
+    self.inner.unsubscribe();
     if self.subject.is_empty() {
-      self.subject.unsubscribe()
+      self.connection.unsubscribe();
     }
   }
 
-  #[inline(always)]
-  fn is_closed(&self) -> bool {
-    self.subscription.is_closed()
-  }
+  fn is_closed(&self) -> bool { self.inner.is_closed() }
 }
 
 #[cfg(test)]
-mod test {
-  use crate::prelude::*;
+mod tests {
+  use std::{cell::RefCell, rc::Rc};
 
-  #[test]
-  fn smoke() {
-    let mut accept1 = 0;
-    let mut accept2 = 0;
-    {
-      let ref_count = observable::of(1).share();
-      ref_count.clone().subscribe(|v| accept1 = v);
-      ref_count.clone().subscribe(|v| accept2 = v);
-    }
+  use crate::{observable::Observable, prelude::*};
 
-    assert_eq!(accept1, 1);
-    assert_eq!(accept2, 0);
+  #[rxrust_macro::test]
+  fn test_ref_count_basic() {
+    let results = Rc::new(RefCell::new(vec![]));
+    let r = results.clone();
+
+    let mut source = Local::subject();
+    let shared = source.clone().publish().ref_count();
+
+    shared.subscribe(move |v| r.borrow_mut().push(v));
+    source.next(42);
+
+    assert_eq!(*results.borrow(), vec![42]);
   }
 
-  #[test]
-  fn auto_unsubscribe() {
-    let mut accept1 = 0;
-    let mut accept2 = 0;
-    {
-      let mut subject = Subject::default();
-      let ref_count = subject.clone().share();
-      let s1 = ref_count.clone().subscribe(|v| accept1 = v);
-      let s2 = ref_count.clone().subscribe(|v| accept2 = v);
-      subject.next(1);
-      s1.unsubscribe();
-      s2.unsubscribe();
-      subject.next(2);
-    }
+  #[rxrust_macro::test]
+  fn test_ref_count_multiple_subscribers() {
+    let results1 = Rc::new(RefCell::new(vec![]));
+    let results2 = Rc::new(RefCell::new(vec![]));
 
-    assert_eq!(accept1, 1);
-    assert_eq!(accept2, 1);
+    let mut subject = Local::subject();
+    let shared = subject.clone().publish().ref_count();
+
+    let r1 = results1.clone();
+    let _sub1 = shared
+      .clone()
+      .subscribe(move |v| r1.borrow_mut().push(v));
+
+    let r2 = results2.clone();
+    let _sub2 = shared.subscribe(move |v| r2.borrow_mut().push(v));
+
+    subject.next(1);
+    subject.next(2);
+
+    assert_eq!(*results1.borrow(), vec![1, 2]);
+    assert_eq!(*results2.borrow(), vec![1, 2]);
   }
 
-  #[test]
-  fn bench() {
-    do_bench();
-  }
+  #[rxrust_macro::test]
+  fn test_ref_count_unsubscribe() {
+    let results = Rc::new(RefCell::new(vec![]));
 
-  benchmark_group!(do_bench, bench_ref_count);
+    let mut subject = Local::subject();
+    let shared = subject.clone().publish().ref_count();
 
-  fn bench_ref_count(b: &mut bencher::Bencher) {
-    b.iter(smoke)
+    let r1 = results.clone();
+    let sub1 = shared
+      .clone()
+      .subscribe(move |v| r1.borrow_mut().push(format!("A:{}", v)));
+
+    subject.next(1);
+
+    let r2 = results.clone();
+    let sub2 = shared.subscribe(move |v| r2.borrow_mut().push(format!("B:{}", v)));
+
+    subject.next(2);
+    sub1.unsubscribe();
+    subject.next(3);
+    sub2.unsubscribe();
+
+    let received = results.borrow();
+    assert!(received.contains(&"A:1".to_string()));
+    assert!(received.contains(&"A:2".to_string()));
+    assert!(received.contains(&"B:2".to_string()));
+    assert!(received.contains(&"B:3".to_string()));
+    assert!(!received.contains(&"A:3".to_string()));
   }
 }

@@ -1,3 +1,5 @@
+name: CI
+
 on:
   merge_group:
   pull_request:
@@ -5,97 +7,147 @@ on:
     branches:
       - master
 
-name: base check
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
-  check:
-    name: Check
+  # 快速检查 - 代码格式和编译错误
+  format:
+    name: Code Format
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout sources
-        uses: actions/checkout@v1
-
-      - name: Install toolchain
-        uses: actions-rs/toolchain@v1
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
         with:
-          profile: minimal
-          toolchain: stable
-          override: true
-      - name: Run cargo check
-        uses: actions-rs/cargo@v1
-        with:
-          command: check
-
-  test:
-    name: Test Suite
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout sources
-        uses: actions/checkout@v1
-
-      - name: Install toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
-
-      - name: Run cargo test
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --all-features
-
-  test-wasm:
-    name: wasm Test Suite
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout sources
-        uses: actions/checkout@v1
-
-      - name: Install toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
-
-      - name: Install wasm-pack
-        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
-
-      - name: Run wasm-pack test
-        run: wasm-pack test --node
-
-  rustfmt:
-    name: rust code format style check
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout sources
-        uses: actions/checkout@v1
-
-      - name: Install toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
           components: rustfmt
+      - run: cargo fmt --all -- --check
 
-      - name: Run cargo fmt
-        uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: --all -- --check
-
-  clippy_check:
+  lint-nightly:
+    name: Clippy Lint (nightly, all-features)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v1
-      - uses: actions-rs/toolchain@v1
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
         with:
-            toolchain: stable
-            components: clippy
-            override: true
-      - uses: actions-rs/clippy-check@v1
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --all-targets --all-features -- -D warnings
+
+  stable-features:
+    name: Compute stable features
+    runs-on: ubuntu-latest
+    outputs:
+      features: ${{ steps.stable_features.outputs.features }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Compute stable feature set (exclude nightly)
+        id: stable_features
+        run: |
+          FEATURES=$(python3 - <<'PY'
+          import json, subprocess
+
+          meta = subprocess.check_output(
+            ["cargo", "metadata", "--no-deps", "--format-version=1"],
+            text=True,
+          )
+          data = json.loads(meta)
+          pkg = next(p for p in data["packages"] if p["name"] == "rxrust")
+          features = sorted(k for k in pkg["features"].keys() if k not in ("default", "nightly"))
+          print(",".join(features))
+          PY
+          )
+          echo "features=$FEATURES" >> "$GITHUB_OUTPUT"
+
+  # 编译检查
+  check:
+    name: Cargo Check (stable)
+    runs-on: ubuntu-latest
+    needs: stable-features
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --all-targets --no-default-features --features "${{ needs.stable-features.outputs.features }}"
+      - run: cargo check --no-default-features --features "${{ needs.stable-features.outputs.features }}" --lib
+        env:
+          RUSTFLAGS: ""
+          CARGO_ENCODED_RUSTFLAGS: ""
+
+  check-nightly:
+    name: Cargo Check (nightly, all-features)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --all-features
+      - run: cargo check --all-features --lib
+        env:
+          RUSTFLAGS: ""
+          CARGO_ENCODED_RUSTFLAGS: ""
+
+  # 测试
+  test:
+    name: Tests (stable)
+    runs-on: ubuntu-latest
+    needs: [check, stable-features]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --no-default-features --features "${{ needs.stable-features.outputs.features }}"
+
+  test-nightly:
+    name: Tests (nightly, all-features)
+    runs-on: ubuntu-latest
+    needs: check-nightly
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --all-features
+
+  # WASM 测试
+  test-wasm:
+    name: WASM Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          args: --all-targets --all-features -- -D warnings
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+      - run: wasm-pack test --node
+
+  # 汇总检查 - 用于分支保护规则
+  ci:
+    name: CI Status
+    runs-on: ubuntu-latest
+    needs:
+      [
+        format,
+        lint-nightly,
+        stable-features,
+        check,
+        check-nightly,
+        test,
+        test-nightly,
+        test-wasm,
+      ]
+    if: always()
+    steps:
+      - name: Check CI Status
+        run: |
+          if [ "${{ needs.format.result }}" != "success" ] || \
+             [ "${{ needs.lint-nightly.result }}" != "success" ] || \
+             [ "${{ needs.stable-features.result }}" != "success" ] || \
+             [ "${{ needs.check.result }}" != "success" ] || \
+             [ "${{ needs.check-nightly.result }}" != "success" ] || \
+             [ "${{ needs.test.result }}" != "success" ] || \
+             [ "${{ needs.test-nightly.result }}" != "success" ] || \
+             [ "${{ needs.test-wasm.result }}" != "success" ]; then
+            echo "CI failed"
+            exit 1
+          fi
