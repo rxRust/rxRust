@@ -1,7 +1,6 @@
 [book]
 authors = ["rxRust Developers"]
 language = "en"
-multilingual = false
 src = "."
 title = "The rxRust Book"
 

@@ -2,7 +2,7 @@
 
 [![](https://docs.rs/rxrust/badge.svg)](https://docs.rs/rxrust/)
 [![codecov](https://codecov.io/gh/rxRust/rxRust/branch/master/graph/badge.svg)](https://codecov.io/gh/rxRust/rxRust)
-![](https://github.com/rxRust/rxRust/workflows/test/badge.svg)
+[![CI](https://github.com/rxRust/rxRust/actions/workflows/main.yml/badge.svg)](https://github.com/rxRust/rxRust/actions/workflows/main.yml)
 [![](https://img.shields.io/crates/v/rxrust.svg)](https://crates.io/crates/rxrust)
 [![](https://img.shields.io/crates/d/rxrust.svg)](https://crates.io/crates/rxrust)
 
@@ -27,45 +27,9 @@ Add this to your `Cargo.toml`:
 rxrust = "1.0.0-rc.0"
 ```
 
-## 📚 Documentation & Guide
+## ⚡ Quick Start
 
-For a deeper dive into core concepts, advanced architecture, and cookbooks, check out our **[Guide](guide/SUMMARY.md)**.
-
-*   [Getting Started](guide/getting_started.md)
-*   [Core Concepts](guide/core_concepts/context.md)
-*   [Advanced Architecture](guide/advanced/architecture_deep_dive.md)
-
-## 🌙 Nightly (Experimental)
-
-rxRust targets **stable Rust** by default.
-
-For advanced use-cases involving **lifetime-dependent mapped outputs** (e.g.
-`&'a mut T -> &'a U`), `map` provides an **experimental** implementation behind
-the Cargo feature `nightly`.
-
-- Enable: `rxrust = { version = "1.0.0-beta.11", features = ["nightly"] }`
-- Build with: `cargo +nightly test --features nightly`
-
-This is intentionally **not** rolled out to every operator yet, because it is
-hard to maintain while the required capabilities are still nightly-only.
-Once the relevant language support is stable, we plan to expand support.
-
-## 🛠 Usage & Architecture
-
-rxRust v1.0 unifies its **API and implementation logic**, while the **Context** (environment) compile-time provides the most suitable resource types. This allows a single, elegant implementation to be optimally optimized for both single-threaded (`Local`) and multi-threaded (`Shared`) environments.
-
-![Architecture Diagram](guide/advanced/architecture_diagram.jpeg)
-
-### 1. Select Your Context
-
-The **Context** determines the execution strategy and memory management:
-
-*   **`Local`**: **No Locking.** Uses `Rc` and `RefCell`. Ideal for UI threads, WASM, or single-threaded event loops. The compiler ensures these types don't leak across threads.
-*   **`Shared`**: **Thread Safe.** Uses `Arc` and `Mutex`. Required when streams need to jump across threads or share state globally.
-
-### 2. Write Unified Logic
-
-The API remains consistent regardless of the context.
+rxRust v1.0 unifies its **API and implementation logic**, while the **Context** (environment) provides the most suitable resource types at compile-time. The API remains consistent regardless of whether you are in a single-threaded or multi-threaded environment.
 
 ```rust
 use rxrust::prelude::*;
@@ -83,11 +47,20 @@ fn main() {
 }
 ```
 
-### 3. Schedulers & Timing
+## 🎯 Core Concepts
 
-Control *when* and *where* work happens using schedulers. By default, **rxRust** schedulers rely on `tokio`.
+### 1. Select Your Context
 
-The example below uses `#[tokio::main(flavor = "current_thread")]` for simplicity, avoiding explicit `LocalSet` setup. However, note that `Local` context schedulers (using `spawn_local`) require `tokio_unstable`'s `LocalRuntime` to work this way; otherwise, you must run within a `LocalSet` context.
+The **Context** determines the execution strategy and memory management:
+
+*   **`Local`**: **No Locking.** Uses `Rc` and `RefCell`. Ideal for UI threads, WASM, or single-threaded event loops. The compiler ensures these types don't leak across threads.
+*   **`Shared`**: **Thread Safe.** Uses `Arc` and `Mutex`. Required when streams need to jump across threads or share state globally.
+
+![Architecture Diagram](guide/advanced/architecture_diagram.jpeg)
+
+### 2. Schedulers & Timing
+
+Control *when* and *where* work happens using schedulers. By default, **rxRust** schedulers rely on `tokio`. You can also disable the default `scheduler` feature to implement a custom scheduler adapted to your own runtime.
 
 ```rust
 use rxrust::prelude::*;
@@ -105,7 +78,9 @@ async fn main() {
 }
 ```
 
-### 4. Subjects (Multicasting)
+*Note: `Local` context schedulers require running within a `LocalSet` or a compatible `LocalRuntime`.*
+
+### 3. Subjects (Multicasting)
 
 Subjects allow you to multicast events to multiple subscribers. The `Subject` type automatically adapts its internal storage (`Rc<RefCell<...>>` vs `Arc<Mutex<...>>`) based on the context used to create it.
 
@@ -121,6 +96,25 @@ subject.clone().subscribe(|v| println!("Observer B: {}", v));
 subject.next(1);
 subject.next(2);
 ```
+
+## 📚 Documentation & Guide
+
+For a deeper dive into core concepts, advanced architecture, and cookbooks, check out our **[Guide](guide/SUMMARY.md)**.
+
+*   [Getting Started](guide/getting_started.md)
+*   [Core Concepts](guide/core_concepts/context.md)
+*   [Advanced Architecture](guide/advanced/architecture_deep_dive.md)
+
+## 🌙 Nightly (Experimental)
+
+rxRust targets **stable Rust** by default.
+
+For advanced use-cases involving **lifetime-dependent mapped outputs** (e.g. `&'a mut T -> &'a U`), `map` provides an **experimental** implementation behind the Cargo feature `nightly`.
+
+- Enable: `rxrust = { version = "1.0.0-rc.0", features = ["nightly"] }`
+- Build with: `cargo +nightly test --features nightly`
+
+Once the relevant language support (like GATs stabilization in specific patterns) is mature, we plan to expand this support.
 
 ## 🤝 Contributing
 
