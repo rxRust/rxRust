@@ -1,6 +1,7 @@
 # rxRust: Reactive Extensions for Rust
 
 [![](https://docs.rs/rxrust/badge.svg)](https://docs.rs/rxrust/)
+[![Documentation](https://img.shields.io/badge/docs-latest-blue.svg)](https://rxrust.github.io/rxRust/)
 [![codecov](https://codecov.io/gh/rxRust/rxRust/branch/master/graph/badge.svg)](https://codecov.io/gh/rxRust/rxRust)
 [![CI](https://github.com/rxRust/rxRust/actions/workflows/main.yml/badge.svg)](https://github.com/rxRust/rxRust/actions/workflows/main.yml)
 [![](https://img.shields.io/crates/v/rxrust.svg)](https://crates.io/crates/rxrust)
@@ -99,7 +100,7 @@ subject.next(2);
 
 ## 📚 Documentation & Guide
 
-For a deeper dive into core concepts, advanced architecture, and cookbooks, check out our **[Guide](guide/SUMMARY.md)**.
+For a deeper dive into core concepts, advanced architecture, and cookbooks, check out our **[Online Guide](https://rxrust.github.io/rxRust/)**.
 
 *   [Getting Started](guide/getting_started.md)
 *   [Core Concepts](guide/core_concepts/context.md)
