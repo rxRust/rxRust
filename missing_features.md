@@ -138,10 +138,11 @@ Operators that evaluate one or more Observables or items emitted by Observables
 Operators that operate on the entire sequence of items emitted by an Observable
 
 - [x] Average — calculates the average of numbers emitted by an Observable and emits this average
-- [ ] Concat — emit the emissions from two or more Observables without interleaving them
+- [x] Concat — emit the emissions from two or more Observables without interleaving them
   - [x] ConcatAll (implemented as `merge_all(1)`)
   - [x] ConcatMap
-  - [ ] Concat (static version taking iterables/varargs)
+  - [x] Concat (static version taking iterables/varargs)
+    - implemented as `concat_observables` in `factory.rs`
 - [x] Count — count the number of items emitted by the source Observable and emit only this value
 - [x] Max — determine, and emit, the maximum-valued item emitted by an Observable
 - [x] Min — determine, and emit, the minimum-valued item emitted by an Observable
@@ -185,10 +186,7 @@ Specialty Observables that have more precisely-controlled subscription dynamics
 
 ## Workflows
 
-- [ ] Issues and PRs template
-- [ ] Tests
-  - [ ] Taking mature work from other Rx projects.
-  - [ ] Real-life representative algorithms implemented to measure performance.
 - [ ] CI
   - [x] Unit test coverage report.
   - [ ] Benchmark to measure performance for every commit.
+  - [ ] Real-life representative algorithms implemented to measure performance.
