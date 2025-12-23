@@ -52,9 +52,9 @@
 //!
 //! | Method | Description | Completion | Values Emitted | Error Emitted |
 //! |--------|-------------|------------|----------------|--------------|
-//! | [`empty()`] | Completes immediately without emitting any values | ✅ Yes | None | None |
-//! | [`never()`] | Never emits any values and never completes | ❌ No | None | None |
-//! | [`throw_err()`] | Immediately emits an error without any values | ❌ No | None | Yes |
+//! | `empty()` | Completes immediately without emitting any values | ✅ Yes | None | None |
+//! | `never()` | Never emits any values and never completes | ❌ No | None | None |
+//! | `throw_err()` | Immediately emits an error without any values | ❌ No | None | Yes |
 //!
 //! ### Use Cases for Trivial Observables
 //!
@@ -190,8 +190,8 @@ pub trait ObservableFactory: Context<Inner = ()> {
   ///
   /// # See Also
   ///
-  /// * [`never()`] - Creates an observable that never completes
-  /// * [`throw_err()`] - Creates an observable that immediately errors
+  /// * [`Self::never`] - Creates an observable that never completes
+  /// * [`Self::throw_err`] - Creates an observable that immediately errors
   /// * [`Empty`] - The underlying observable implementation
   fn empty() -> Self::With<Empty> { Self::lift(Empty) }
 
@@ -222,8 +222,8 @@ pub trait ObservableFactory: Context<Inner = ()> {
   ///
   /// # See Also
   ///
-  /// * [`empty()`] - Creates an observable that completes immediately
-  /// * [`throw_err()`] - Creates an observable that immediately errors
+  /// * [`Self::empty`] - Creates an observable that completes immediately
+  /// * [`Self::throw_err`] - Creates an observable that immediately errors
   /// * [`Never`] - The underlying observable implementation
   fn never() -> Self::With<Never> { Self::lift(Never) }
 
@@ -261,8 +261,8 @@ pub trait ObservableFactory: Context<Inner = ()> {
   ///
   /// # See Also
   ///
-  /// * [`empty()`] - Creates an observable that completes immediately
-  /// * [`never()`] - Creates an observable that never completes
+  /// * [`Self::empty`] - Creates an observable that completes immediately
+  /// * [`Self::never`] - Creates an observable that never completes
   /// * [`ThrowErr`] - The underlying observable implementation
   fn throw_err<E>(error: E) -> Self::With<ThrowErr<E>> { Self::lift(ThrowErr { error }) }
 
@@ -385,8 +385,8 @@ pub trait ObservableFactory: Context<Inner = ()> {
   ///
   /// # See Also
   ///
-  /// * [`of()`] - Creates an observable that emits a single value
-  /// * [`empty()`] - Creates an observable that completes without emitting
+  /// * [`Self::of`] - Creates an observable that emits a single value
+  /// * [`Self::empty`] - Creates an observable that completes without emitting
   ///   values
   /// * [`FromIter`] - The underlying observable implementation
   fn from_iter<I: IntoIterator>(iter: I) -> Self::With<FromIter<I>> { Self::lift(from_iter(iter)) }
@@ -431,9 +431,10 @@ pub trait ObservableFactory: Context<Inner = ()> {
   ///
   /// # See Also
   ///
-  /// * [`of()`] - Creates an observable that emits a predetermined single value
-  /// * [`defer()`] - Creates an observable that generates a new observable at
-  ///   subscription time
+  /// * [`Self::of`] - Creates an observable that emits a predetermined single
+  ///   value
+  /// * [`Self::defer`] - Creates an observable that generates a new observable
+  ///   at subscription time
   /// * [`FromFn`] - The underlying observable implementation
   fn from_fn<F>(f: F) -> Self::With<FromFn<F>> { Self::lift(FromFn(f)) }
 
@@ -448,10 +449,10 @@ pub trait ObservableFactory: Context<Inner = ()> {
   ///
   /// # Key Distinction
   ///
-  /// Unlike [`from_fn()`], which creates an observable that emits a **value**,
-  /// `defer()` creates an observable that emits an entire **observable
-  /// sequence**. This allows for dynamic observable construction based on
-  /// runtime conditions.
+  /// Unlike [`Self::from_fn`], which creates an observable that emits a
+  /// **value**, `defer()` creates an observable that emits an entire
+  /// **observable sequence**. This allows for dynamic observable construction
+  /// based on runtime conditions.
   ///
   /// # Arguments
   ///
@@ -484,9 +485,9 @@ pub trait ObservableFactory: Context<Inner = ()> {
   ///
   /// # See Also
   ///
-  /// * [`from_fn()`] - Generates a **value** at subscription time (emits one
-  ///   item)
-  /// * [`of()`] - Emits a predetermined value (no lazy evaluation)
+  /// * [`Self::from_fn`] - Generates a **value** at subscription time (emits
+  ///   one item)
+  /// * [`Self::of`] - Emits a predetermined value (no lazy evaluation)
   /// * [`Defer`] - The underlying observable implementation
   fn defer<F, O>(f: F) -> Self::With<Defer<F, O>>
   where
@@ -516,8 +517,8 @@ pub trait ObservableFactory: Context<Inner = ()> {
   ///
   /// # See Also
   ///
-  /// * [`timer_with()`] - Same functionality with custom scheduler
-  /// * [`delay()`] - Delays emissions from an existing observable
+  /// * [`Self::timer_with`] - Same functionality with custom scheduler
+  /// * `delay()` - Delays emissions from an existing observable
   fn timer(delay: Duration) -> Self::With<Timer<Self::Scheduler>> {
     Self::lift(Timer { delay, scheduler: Self::Scheduler::default() })
   }
@@ -525,9 +526,9 @@ pub trait ObservableFactory: Context<Inner = ()> {
   /// Creates an observable that emits a single value after a specified delay,
   /// using a custom scheduler.
   ///
-  /// Same as [`timer()`], but uses a custom scheduler instead of the default
-  /// one. Useful for using `SharedScheduler` in `Local` context or for
-  /// specific scheduling behavior.
+  /// Same as [`Self::timer`], but uses a custom scheduler instead of the
+  /// default one. Useful for using `SharedScheduler` in `Local` context or
+  /// for specific scheduling behavior.
   ///
   /// # Examples
   ///
@@ -576,8 +577,8 @@ pub trait ObservableFactory: Context<Inner = ()> {
   ///
   /// # See Also
   ///
-  /// * [`interval_with()`] - Same functionality with custom scheduler
-  /// * [`timer()`] - Emits a single value after a delay
+  /// * [`Self::interval_with`] - Same functionality with custom scheduler
+  /// * [`Self::timer`] - Emits a single value after a delay
   fn interval(period: Duration) -> Self::With<Interval<Self::Scheduler>> {
     Self::lift(Interval { period, scheduler: Self::Scheduler::default() })
   }
@@ -585,8 +586,8 @@ pub trait ObservableFactory: Context<Inner = ()> {
   /// Creates an observable that emits sequential numbers at regular intervals,
   /// using a custom scheduler.
   ///
-  /// Same as [`interval()`], but uses a custom scheduler instead of the default
-  /// one.
+  /// Same as [`Self::interval`], but uses a custom scheduler instead of the
+  /// default one.
   ///
   /// # Examples
   ///
@@ -965,7 +966,7 @@ pub trait ObservableFactory: Context<Inner = ()> {
   ///
   /// # See Also
   ///
-  /// * [`concat_observables`] - Sequential subscription (one at a time)
+  /// * [`Self::concat_observables`] - Sequential subscription (one at a time)
   /// * [`Observable::merge`] - Instance method for merging two observables
   fn merge_observables<O, I>(
     observables: I,
@@ -1031,7 +1032,7 @@ pub trait ObservableFactory: Context<Inner = ()> {
   ///
   /// # See Also
   ///
-  /// * [`merge_observables`] - Concurrent subscription (all at once)
+  /// * [`Self::merge_observables`] - Concurrent subscription (all at once)
   /// * [`Observable::concat_all`] - Flatten a higher-order observable
   ///   sequentially
   fn concat_observables<O, I>(

@@ -29,6 +29,8 @@ use crate::{
 /// });
 /// assert_eq!(result, Some(84));
 /// ```
+#[doc(alias = "select")]
+#[doc(alias = "transform")]
 #[derive(Clone)]
 pub struct Map<S, F> {
   pub source: S,

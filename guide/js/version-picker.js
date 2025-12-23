@@ -50,6 +50,9 @@
         container.style.textAlign = 'center';
         container.style.borderBottom = '1px solid var(--border-color)';
         container.style.backgroundColor = 'var(--sidebar-bg)';
+        container.style.position = 'sticky';
+        container.style.top = '0';
+        container.style.zIndex = '100';
         container.className = 'version-picker-container';
 
         // Label

@@ -26,6 +26,7 @@ use crate::{
 /// });
 /// assert_eq!(result, vec![2, 4]);
 /// ```
+#[doc(alias = "where")]
 #[derive(Clone)]
 pub struct Filter<S, F> {
   pub source: S,
