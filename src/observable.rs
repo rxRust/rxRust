@@ -1121,8 +1121,8 @@ pub trait Observable: Context {
   ///
   /// * `policy` - The retry policy. This can be:
   ///   - `usize`: A simple retry count (e.g., `.retry(3)`).
-  ///   - [`RetryConfig`]: A configuration object for advanced control (delay,
-  ///     reset on success).
+  ///   - [`crate::ops::RetryConfig`]: A configuration object for advanced
+  ///     control (delay, reset on success).
   ///   - A custom type implementing the [`RetryPolicy`] trait.
   ///
   /// # Examples

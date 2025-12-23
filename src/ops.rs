@@ -1,7 +1,32 @@
-//! Operator implementations
+//! # Operators
 //!
-//! This module contains all operator implementations (Map, Filter, Merge,
-//! etc.).
+//! All operator implementations for transforming, filtering, and combining
+//! observable streams.
+//!
+//! ## Operator Categories
+//!
+//! ### Transformation
+//! - [`map`] - Transform each item
+//! - [`filter_map`] - Transform and filter in one step
+//! - [`scan`] - Accumulate with intermediate emissions
+//!
+//! ### Filtering
+//! - [`filter`] - Pass items matching a predicate
+//! - [`take`] / [`skip`] - Limit emissions
+//! - [`distinct`] - Remove duplicates
+//!
+//! ### Combination
+//! - [`merge`] - Interleave multiple streams
+//! - [`zip`] - Pair items from multiple streams
+//! - [`combine_latest`] - Combine latest values
+//!
+//! ### Timing
+//! - [`debounce`] - Emit after quiet period
+//! - [`throttle`] - Rate limit emissions
+//! - [`delay`] - Shift emissions in time
+//!
+//! For interactive marble diagrams, see [ReactiveX.io](http://reactivex.io/documentation/operators.html).
+//! For Rust-specific usage, see the [Operators Guide](https://rxrust.github.io/rxRust/operators.html).
 
 pub mod average;
 pub mod box_it;

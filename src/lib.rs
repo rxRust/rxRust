@@ -1,9 +1,48 @@
 #![cfg_attr(feature = "nightly", feature(fn_traits, unboxed_closures))]
-//! Reactive extensions library for Rust: a library for
-//! [Reactive Programming](http://reactivex.io/) using
-//! [Observable](crate::observable::Observable), to make
-//! it easier to compose asynchronous or callback-based code.
-#[cfg_attr(not(target_arch = "wasm32"), doc = include_str!("../README.md"))]
+//! # rxRust: Reactive Extensions for Rust
+//!
+//! Zero-cost, type-safe implementation of [Reactive Extensions](http://reactivex.io/).
+//!
+//! ## Quick Start
+//!
+//! ```rust
+//! use rxrust::prelude::*;
+//!
+//! // Local context: No locks, optimal for single-thread
+//! Local::from_iter(0..10)
+//!   .filter(|v| v % 2 == 0)
+//!   .map(|v| v * 2)
+//!   .subscribe(|v| println!("Value: {}", v));
+//! ```
+//!
+//! ## Key Concepts
+//!
+//! | Type | Description |
+//! |------|-------------|
+//! | [`Local`] / [`Shared`] | Execution contexts (single-thread vs thread-safe) |
+//! | [`Observable`] | The core trait defining stream operations |
+//! | [`Observer`] | Consumes `next`, `error`, and `complete` events |
+//! | [`Subscription`] | Handle to cancel an active subscription |
+//!
+//! ## 📚 Documentation
+//!
+//! For comprehensive guides, see the **[Online Guide](https://rxrust.github.io/rxRust/)**:
+//!
+//! - [Getting Started](https://rxrust.github.io/rxRust/getting_started.html)
+//! - [Core Concepts](https://rxrust.github.io/rxRust/core_concepts.html)
+//! - [Operators Reference](https://rxrust.github.io/rxRust/operators.html)
+//! - [Cookbook](https://rxrust.github.io/rxRust/cookbook.html)
+//!
+//! ## Feature Flags
+//!
+//! - **`scheduler`** (default): Tokio-based schedulers for timing operators
+//! - **`nightly`**: Experimental features requiring nightly Rust
+//!
+//! [`Local`]: prelude::Local
+//! [`Shared`]: prelude::Shared
+//! [`Observable`]: observable::Observable
+//! [`Observer`]: observer::Observer
+//! [`Subscription`]: subscription::Subscription
 #[cfg(test)]
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen::prelude::wasm_bindgen(start)]

@@ -18,6 +18,7 @@ use crate::{
 /// Emits an item from the source Observable only after a particular duration
 /// has passed without another source emission. Each new emission resets the
 /// timer.
+#[doc(alias = "debounceTime")]
 #[derive(Clone)]
 pub struct Debounce<S, Sch> {
   pub source: S,

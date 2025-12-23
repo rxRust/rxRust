@@ -7,13 +7,13 @@
 [![](https://img.shields.io/crates/v/rxrust.svg)](https://crates.io/crates/rxrust)
 [![](https://img.shields.io/crates/d/rxrust.svg)](https://crates.io/crates/rxrust)
 
-**rxRust** is a zero-cost, type-safe Rust implementation of [Reactive Extensions](http://reactivex.io/).
+**rxRust** is a zero-cost, type-safe Rust implementation of [Reactive Extensions](http://reactivex.io/). It brings **Functional Reactive Programming (FRP)** to Rust, enabling a declarative coding style for handling asynchronous events, stream processing, and concurrency.
 
-It enables a declarative coding style for handling asynchronous events, stream processing, and concurrency, leveraging Rust's ownership system to ensure memory safety and efficient resource usage.
+It leverages Rust's ownership system to ensure memory safety and efficient resource usage, making it ideal for build robust event-driven applications.
 
 ## 🚀 Key Features
 
-*   **Zero-Cost Abstractions**: Heavily relies on generic specialization and monomorphization to compile down to efficient code.
+*   **Zero-Cost Abstractions**: Heavily relies on generic specialization and monomorphization to compile down to efficient code, ensuring minimal overhead for your asynchronous streams.
 *   **Pay-for-what-you-need**: Choose the right tool for the job. Use `Local` (Rc/RefCell) for single-threaded performance without locking overhead, or `Shared` (Arc/Mutex) when thread synchronization is actually required.
 *   **Unified Logic, Adaptive Context**: Write your stream logic once. The same operator chains adapt seamlessly to different environments based on the context they run in.
 *   **Interoperability**: Seamlessly integrates with Rust `Future`s, streams, and `async/await`.
@@ -57,7 +57,7 @@ The **Context** determines the execution strategy and memory management:
 *   **`Local`**: **No Locking.** Uses `Rc` and `RefCell`. Ideal for UI threads, WASM, or single-threaded event loops. The compiler ensures these types don't leak across threads.
 *   **`Shared`**: **Thread Safe.** Uses `Arc` and `Mutex`. Required when streams need to jump across threads or share state globally.
 
-![Architecture Diagram](guide/advanced/architecture_diagram.jpeg)
+![rxRust Architecture - Local vs Shared Context](guide/advanced/architecture_diagram.jpeg)
 
 ### 2. Schedulers & Timing
 
@@ -100,7 +100,7 @@ subject.next(2);
 
 ## 📚 Documentation & Guide
 
-For a deeper dive into core concepts, advanced architecture, and cookbooks, check out our **[Online Guide](https://rxrust.github.io/rxRust/)**.
+For a deeper dive into core concepts, advanced architecture, and cookbooks, check out our **[rxRust Online Guide & Documentation](https://rxrust.github.io/rxRust/)**.
 
 *   [Getting Started](guide/getting_started.md)
 *   [Core Concepts](guide/core_concepts/context.md)
