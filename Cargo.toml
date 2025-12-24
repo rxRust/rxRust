@@ -6,12 +6,12 @@ documentation = "https://docs.rs/rxrust/"
 edition = "2024"
 exclude = ["macros"]
 homepage = "https://github.com/rxRust/rxRust"
-keywords = ["reactivex", "rx", "frp", "reactive-programming", "observables", "streams", "async", "reactive-rust"]
+keywords = ["rx", "reactivex", "frp", "async", "observables"]
 license = "MIT"
 name = "rxrust"
 readme = "README.md"
 repository = "https://github.com/rxRust/rxRust"
-version = "1.0.0-beta.11"
+version = "1.0.0-rc.0"
 
 [dependencies]
 crossbeam-utils = "0.8"
