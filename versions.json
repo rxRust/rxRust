@@ -2,5 +2,9 @@
   {
     "path": "latest",
     "name": "latest"
+  },
+  {
+    "path": "v1.0.0-rc.0",
+    "name": "v1.0.0-rc.0"
   }
 ]
