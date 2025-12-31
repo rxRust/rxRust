@@ -1897,9 +1897,9 @@ pub trait Observable: Context {
   /// // Store in a collection
   /// let observables = vec![boxed1, boxed2];
   /// ```
-  fn box_it<'a>(self) -> Self::With<Self::BoxedCoreObservable<'a, Self::Item<'a>, Self::Err>>
+  fn box_it<'a, 'b>(self) -> Self::With<Self::BoxedCoreObservable<'a, Self::Item<'b>, Self::Err>>
   where
-    Self::Inner: IntoBoxedCoreObservable<Self::BoxedCoreObservable<'a, Self::Item<'a>, Self::Err>>,
+    Self::Inner: IntoBoxedCoreObservable<Self::BoxedCoreObservable<'a, Self::Item<'b>, Self::Err>>,
   {
     self.transform(|inner| inner.into_boxed())
   }
@@ -1920,12 +1920,12 @@ pub trait Observable: Context {
   /// boxed.subscribe(|v| assert_eq!(v, 42));
   /// boxed2.subscribe(|v| assert_eq!(v, 42));
   /// ```
-  fn box_it_clone<'a>(
+  fn box_it_clone<'a, 'b>(
     self,
-  ) -> Self::With<Self::BoxedCoreObservableClone<'a, Self::Item<'a>, Self::Err>>
+  ) -> Self::With<Self::BoxedCoreObservableClone<'a, Self::Item<'b>, Self::Err>>
   where
     Self::Inner:
-      IntoBoxedCoreObservable<Self::BoxedCoreObservableClone<'a, Self::Item<'a>, Self::Err>>,
+      IntoBoxedCoreObservable<Self::BoxedCoreObservableClone<'a, Self::Item<'b>, Self::Err>>,
   {
     self.transform(|inner| inner.into_boxed())
   }

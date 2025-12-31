@@ -61,13 +61,3 @@ tokio = {version = "1.48", features = ["rt", "rt-multi-thread", "macros", "time"
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
 console_error_panic_hook = "0.1.7"
 wasm-bindgen = "0.2"
-
-[package.metadata.release]
-pre-release-replacements = [
-  {file = "README.md", search = "rxrust = .*", replace = "{{crate_name}} = \"{{version}}\""},
-  {file = "CHANGELOG.md", search = "Unreleased", replace = "{{version}}"},
-  {file = "CHANGELOG.md", search = "\\.\\.\\.HEAD", replace = "...{{tag_name}}", exactly = 1},
-  {file = "CHANGELOG.md", search = "ReleaseDate", replace = "{{date}}"},
-  {file = "CHANGELOG.md", search = "<!-- next-header -->", replace = "<!-- next-header -->\n\n## [Unreleased] - ReleaseDate", exactly = 1},
-  {file = "CHANGELOG.md", search = "<!-- next-url -->", replace = "<!-- next-url -->\n[Unreleased]: https://github.com/rxRust/rxRust/compare/{{tag_name}}...HEAD", exactly = 1},
-]

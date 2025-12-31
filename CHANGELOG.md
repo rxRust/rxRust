@@ -2,10 +2,8 @@
 
 All notable changes to this project will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-<!-- next-header -->
 
 ## [Unreleased] - ReleaseDate
 
@@ -48,5 +46,3 @@ We sincerely apologize for the long delay in reaching version 1.0 and for the si
 
 *   **API Unification**: Explicit types like `LocalObservable` and `SharedObservable` from previous beta versions are replaced by the `Local::of(...)` and `Shared::of(...)` factory patterns.
 *   **Scheduler Usage**: Explicit scheduler arguments have been removed from standard operators in favor of context-bound defaults. Use `_with` variants (e.g., `delay_with`) for manual control.
-
-<!-- next-url -->
