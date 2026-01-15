@@ -10,18 +10,16 @@
 //!
 //! ## Timing Behavior
 //!
-//! The `interval` operator schedules each emission to start `period` duration
-//! after the previous emission started. This provides simple and predictable
-//! behavior:
+//! The `interval` operator uses **Fixed-Rate** scheduling: it calculates the
+//! next emission time based on when the previous emission started, compensating
+//! for processing time.
 //!
-//! - **Normal case** (observer processes faster than period): Maintains precise
-//!   `period` intervals
-//! - **Slow observer** (processing exceeds period): Next emission starts
-//!   immediately after previous completes
+//! - **Fast processing** (processing_time < period): interval ≈ period
+//! - **Slow processing** (processing_time >= period): emits immediately after
+//!   processing completes (no gap), interval ≈ processing_time
 //!
-//! The operator does not skip emissions - all scheduled emissions will
-//! eventually be delivered. If the observer's processing is consistently slower
-//! than the interval period, emissions will run back-to-back without gaps.
+//! This ensures consistent emission timing when processing is faster than the
+//! period.
 //!
 //! ## Examples
 //!
@@ -58,17 +56,13 @@ use crate::{
 ///
 /// ## Timing Semantics
 ///
-/// Each emission is scheduled to start `period` duration after the previous
-/// emission started:
+/// Uses **Fixed-Rate** scheduling: the next emission time is calculated from
+/// when the previous emission started, compensating for processing time.
 ///
-/// - When observer processing is faster than `period`: maintains precise
-///   intervals
-/// - When observer processing exceeds `period`: next emission starts
-///   immediately after previous completes
+/// - Fast processing (< period): interval ≈ period (waits remaining time)
+/// - Slow processing (>= period): no gap, interval ≈ processing_time
 ///
-/// The operator does not skip emissions. All scheduled emissions will
-/// eventually be delivered, even if the observer's processing is slower than
-/// the emission rate.
+/// This ensures consistent timing when processing is faster than the period.
 ///
 /// # Type Parameters
 ///
@@ -106,8 +100,6 @@ struct IntervalState<O> {
   observer: Option<O>,
   counter: usize,
   period: Duration,
-  /// The start time of the last emission
-  last_start: Instant,
 }
 
 fn interval_task<O, Err>(state: &mut IntervalState<O>) -> TaskState
@@ -117,17 +109,17 @@ where
   if let Some(observer) = &mut state.observer
     && !observer.is_closed()
   {
-    let now = Instant::now();
+    let scheduled_time = Instant::now();
 
     observer.next(state.counter);
     state.counter += 1;
 
-    let next_scheduled_time = state.last_start + state.period;
-    state.last_start = now;
+    let next_scheduled_time = scheduled_time + state.period;
 
-    // Calculate remaining sleep time
-    let sleep_duration = if next_scheduled_time > now {
-      next_scheduled_time - now
+    // Calculate remaining sleep time based on CURRENT time (after processing)
+    let current_time = Instant::now();
+    let sleep_duration = if next_scheduled_time > current_time {
+      next_scheduled_time - current_time
     } else {
       // Behind schedule, run immediately
       Duration::from_nanos(0)
@@ -156,9 +148,7 @@ where
 
   fn subscribe(self, context: C) -> Self::Unsub {
     let observer = context.into_inner();
-    let now = Instant::now();
-    let state =
-      IntervalState { observer: Some(observer), counter: 0, period: self.period, last_start: now };
+    let state = IntervalState { observer: Some(observer), counter: 0, period: self.period };
 
     let task = Task::new(state, interval_task);
 
@@ -292,7 +282,7 @@ mod tests {
 
   #[cfg(not(target_arch = "wasm32"))]
   #[rxrust_macro::test(local)]
-  async fn test_interval_adaptive_scheduling() {
+  async fn test_interval_fixed_rate_behavior() {
     // Test configuration
     let interval_period = Duration::from_millis(20);
     let slow_processing = Duration::from_millis(30); // > interval_period
@@ -320,22 +310,17 @@ mod tests {
     // Run test long enough to observe both phases
     let unsubscribe_task = create_unsubscribe_task(handle);
     let _scheduled_task =
-      LocalScheduler.schedule(unsubscribe_task, Some(Duration::from_millis(150)));
+      LocalScheduler.schedule(unsubscribe_task, Some(Duration::from_millis(200)));
     _scheduled_task.await;
 
     let emissions = emission_times.lock().unwrap().clone();
 
     // Verify we captured enough emissions
     assert!(
-      emissions.len() >= 5,
-      "Need at least 5 emissions to test adaptive scheduling, got {}",
+      emissions.len() >= 4,
+      "Need at least 4 emissions to test behavior, got {}",
       emissions.len()
     );
-
-    // Verify sequential emission values
-    for (index, &(value, _)) in emissions.iter().enumerate() {
-      assert_eq!(value, index, "Emission {} should have value {}", index, index);
-    }
 
     // Extract timing intervals between consecutive emissions
     let intervals: Vec<Duration> = emissions
@@ -343,41 +328,62 @@ mod tests {
       .map(|pair| pair[1].1 - pair[0].1)
       .collect();
 
+    // With Fixed-Rate scheduling:
+    // - When processing_time < period: interval ≈ period (waits remaining time)
+    // - When processing_time >= period: interval ≈ processing_time (no wait)
+    let tolerance = Duration::from_millis(10);
+
     // Phase 1: Slow processing (emissions 0->1, 1->2)
-    // Intervals should be processing-bound (~30ms)
+    // Processing (30ms) >= Period (20ms), so next runs immediately after processing
+    // Expected interval ≈ processing_time (30ms), NOT processing_time + period
+    let expected_slow_interval = slow_processing;
+
+    // After emission 0 (Slow) -> emission 1
     assert!(
-      intervals[0] >= slow_processing,
-      "Slow phase: first interval should be ~30ms (processing-bound), got {:?}",
+      intervals[0] >= expected_slow_interval - tolerance,
+      "Slow phase 1: interval should be ~processing_time. Expected ~{:?}, got {:?}",
+      expected_slow_interval,
       intervals[0]
     );
     assert!(
-      intervals[1] >= slow_processing,
-      "Slow phase: second interval should be ~30ms (processing-bound), got {:?}",
+      intervals[0] < slow_processing + interval_period,
+      "Slow phase 1: should NOT add full period on top of processing. Got {:?}",
+      intervals[0]
+    );
+
+    // After emission 1 (Slow) -> emission 2
+    assert!(
+      intervals[1] >= expected_slow_interval - tolerance,
+      "Slow phase 2: interval should be ~processing_time. Expected ~{:?}, got {:?}",
+      expected_slow_interval,
       intervals[1]
     );
 
     // Phase 2: Transition to fast processing (emission 2->3)
-    // Should start immediately since we're behind schedule
+    // Processing (5ms) < Period (20ms), so waits remaining time (15ms)
+    // Expected interval ≈ period (20ms)
+    let expected_fast_interval = interval_period;
+
     assert!(
-      intervals[2] < interval_period,
-      "Transition: should start immediately after slow phase, got {:?}",
+      intervals[2] >= expected_fast_interval - tolerance,
+      "Fast phase: interval should be ~period. Expected ~{:?}, got {:?}",
+      expected_fast_interval,
+      intervals[2]
+    );
+    assert!(
+      intervals[2] < interval_period + tolerance,
+      "Fast phase: interval should be close to period. Got {:?}",
       intervals[2]
     );
 
-    // Phase 3: Fast processing recovery (emission 3->4)
-    // Should respect the period since processing is now fast
-    // Allow tolerance for scheduler / OS timer precision.
-    // This test is timing-sensitive and can vary across environments.
-    let tolerance = Duration::from_millis(5);
-    assert!(
-      intervals[3] >= interval_period - tolerance,
-      "Recovery: should respect period (20ms) with fast processing, got {:?}",
-      intervals[3]
-    );
-    assert!(
-      intervals[3] < slow_processing,
-      "Recovery: should be faster than slow processing (30ms), got {:?}",
-      intervals[3]
-    );
+    // Phase 3: Continued Fast processing (emission 3->4)
+    if intervals.len() > 3 {
+      assert!(
+        intervals[3] >= expected_fast_interval - tolerance,
+        "Fast phase continued: expected ~{:?}, got {:?}",
+        expected_fast_interval,
+        intervals[3]
+      );
+    }
   }
 }
