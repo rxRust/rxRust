@@ -6,7 +6,7 @@
 
 use std::convert::Infallible;
 
-use crate::context::{MutArc, MutRc, RcDeref, RcDerefMut};
+use crate::context::RcDerefMut;
 
 // ============================================================================
 // Observer Trait
@@ -306,33 +306,11 @@ where
   fn is_closed(&self) -> bool { self.as_ref().is_none_or(Observer::is_closed) }
 }
 
-/// MutRc<Option<O>> - shared ownership observer for local context
-/// Uses take() for terminal operations to consume the inner observer
-impl<O, Item, Err> Observer<Item, Err> for MutRc<Option<O>>
+/// MutRc<Option<O>> & MutArc<Option<O>> - shared ownership observer for local
+/// context Uses take() for terminal operations to consume the inner observer
+impl<O, Item, Err, P> Observer<Item, Err> for P
 where
-  O: Observer<Item, Err>,
-{
-  fn next(&mut self, value: Item) { self.rc_deref_mut().next(value); }
-
-  fn error(self, err: Err) {
-    if let Some(inner) = self.rc_deref_mut().take() {
-      inner.error(err);
-    }
-  }
-
-  fn complete(self) {
-    if let Some(inner) = self.rc_deref_mut().take() {
-      inner.complete();
-    }
-  }
-
-  fn is_closed(&self) -> bool { self.rc_deref().is_none() }
-}
-
-/// MutArc<Option<O>> - shared ownership observer for shared context
-/// Uses take() for terminal operations to consume the inner observer
-impl<O, Item, Err> Observer<Item, Err> for MutArc<Option<O>>
-where
+  P: RcDerefMut<Target = Option<O>>,
   O: Observer<Item, Err>,
 {
   fn next(&mut self, value: Item) { self.rc_deref_mut().next(value); }
