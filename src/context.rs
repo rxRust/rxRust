@@ -14,6 +14,42 @@ use crate::{
   subscription::{BoxedSubscription, BoxedSubscriptionSend, Subscription},
 };
 
+// ==================== Scope Trait ====================
+
+/// Scope defines environment capabilities (Local vs Shared) as a type-level
+/// marker.
+pub trait Scope {
+  type RcMut<T>: From<T> + Clone + RcDerefMut<Target = T>;
+  type RcCell<T: Copy + Eq>: SharedCell<T>;
+  type BoxedSubscription: Subscription;
+  type BoxedObserver<'a, Item, Err>;
+  type BoxedObserverMutRef<'a, Item: 'a, Err>;
+}
+
+/// Local scope marker - single-threaded, uses Rc/RefCell
+pub struct LocalScope;
+
+/// Shared scope marker - multi-threaded, uses Arc/Mutex
+pub struct SharedScope;
+
+impl Scope for LocalScope {
+  type RcMut<T> = MutRc<T>;
+  type RcCell<T: Copy + Eq> = CellRc<T>;
+  type BoxedSubscription = BoxedSubscription;
+  type BoxedObserver<'a, Item, Err> = BoxedObserver<'a, Item, Err>;
+  type BoxedObserverMutRef<'a, Item: 'a, Err> = BoxedObserverMutRef<'a, Item, Err>;
+}
+
+impl Scope for SharedScope {
+  type RcMut<T> = MutArc<T>;
+  type RcCell<T: Copy + Eq> = CellArc<T>;
+  type BoxedSubscription = BoxedSubscriptionSend;
+  type BoxedObserver<'a, Item, Err> = BoxedObserverSend<'a, Item, Err>;
+  type BoxedObserverMutRef<'a, Item: 'a, Err> = BoxedObserverMutRefSend<'a, Item, Err>;
+}
+
+// ==================== Context Trait ====================
+
 /// Context trait: Defines the execution environment and provides scheduling
 /// capabilities
 ///
@@ -34,44 +70,22 @@ use crate::{
 /// - `into_inner`: Consume and return inner value
 /// - `into_parts`: Consume and return (inner, scheduler)
 pub trait Context: Sized {
-  /// The inner value type
+  type Scope: Scope;
   type Inner;
-
-  /// Boxed observer type for regular observers
-  type BoxedObserver<'a, Item, Err>;
-
-  /// Boxed observer type for mutable reference observers
-  type BoxedObserverMutRef<'a, Item: 'a, Err>;
-
-  /// Boxed subscription type
-  type BoxedSubscription: Subscription;
-
-  /// Type-erased observable for value observers
-  type BoxedCoreObservable<'a, Item, Err>;
-
-  /// Type-erased observable for mutable reference observers
-  type BoxedCoreObservableMutRef<'a, Item: 'a, Err>;
-
-  /// Cloneable type-erased observable for value observers
-  type BoxedCoreObservableClone<'a, Item, Err>;
-
-  /// Cloneable type-erased observable for mutable reference observers
-  type BoxedCoreObservableMutRefClone<'a, Item: 'a, Err>;
-
-  /// The scheduler associated with this context
   type Scheduler: Clone + Default;
 
-  /// Mutable sharing for complex types (runtime borrow/lock checking)
-  /// Local: Rc<RefCell<T>> | Shared: Arc<Mutex<T>>
   type RcMut<T>: From<T> + Clone + RcDerefMut<Target = T>;
-
-  /// Mutable sharing for Copy types (no runtime borrow overhead)
-  /// Local: Rc<Cell<T>> | Shared: Arc<AtomicCell<T>>
   type RcCell<T: Copy + Eq>: SharedCell<T>;
+  type BoxedSubscription: Subscription;
+  type BoxedObserver<'a, Item, Err>;
+  type BoxedObserverMutRef<'a, Item: 'a, Err>;
 
-  /// Generic Associated Type (GAT) for type substitution
-  /// Crucially, this preserves the Scheduler type
-  type With<T>: Context<Inner = T, RcMut<T> = Self::RcMut<T>, Scheduler = Self::Scheduler>;
+  type BoxedCoreObservable<'a, Item, Err>;
+  type BoxedCoreObservableMutRef<'a, Item: 'a, Err>;
+  type BoxedCoreObservableClone<'a, Item, Err>;
+  type BoxedCoreObservableMutRefClone<'a, Item: 'a, Err>;
+
+  type With<T>: Context<Inner = T, Scope = Self::Scope, Scheduler = Self::Scheduler>;
 
   // ==================== Constructors (Static) ====================
 
@@ -234,6 +248,7 @@ pub struct SharedCtx<T, S> {
 macro_rules! impl_context_for_container {
   (
     $Struct:ident,
+    $ScopeType:ty,
     $RcMutType:ident,
     $RcCellType:ident,
     $BoxedObserver:ident,
@@ -248,6 +263,7 @@ macro_rules! impl_context_for_container {
     where
       S: Clone + Default,
     {
+      type Scope = $ScopeType;
       type Inner = T;
       type Scheduler = S;
       type RcMut<U> = $RcMutType<U>;
@@ -292,9 +308,9 @@ macro_rules! impl_context_for_container {
   };
 }
 
-// Implement `Context` for `LocalCtx` using the macro above.
 impl_context_for_container!(
   LocalCtx,
+  LocalScope,
   MutRc,
   CellRc,
   BoxedObserver,
@@ -305,9 +321,9 @@ impl_context_for_container!(
   crate::observable::boxed::BoxedCoreObservableClone<'a, Item, Err, S>,
   crate::observable::boxed::BoxedCoreObservableMutRefClone<'a, Item, Err, S>
 );
-// Implement `Context` for `SharedCtx` using the same macro.
 impl_context_for_container!(
   SharedCtx,
+  SharedScope,
   MutArc,
   CellArc,
   BoxedObserverSend,
@@ -484,10 +500,11 @@ mod tests {
   }
 
   impl<T> Context for CustomContext<T> {
+    type Scope = LocalScope;
     type Inner = T;
     type Scheduler = CustomTestScheduler;
-    type RcMut<U> = MutRc<U>; // Use MutRc since it's single-threaded like Local
-    type RcCell<U: Copy + Eq> = CellRc<U>; // Use CellRc for Copy types
+    type RcMut<U> = MutRc<U>;
+    type RcCell<U: Copy + Eq> = CellRc<U>;
     type With<U> = CustomContext<U>;
     type BoxedObserver<'a, Item, Err> = BoxedObserver<'a, Item, Err>;
     type BoxedObserverMutRef<'a, Item: 'a, Err> = BoxedObserverMutRef<'a, Item, Err>;
