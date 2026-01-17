@@ -32,10 +32,8 @@
 //! source.next(2);
 //! ```
 
-use std::marker::PhantomData;
-
 use crate::{
-  context::{Context, RcDeref, RcDerefMut},
+  context::{Context, RcDeref, RcDerefMut, Scope},
   observable::{CoreObservable, ObservableType},
   observer::Observer,
   subscription::{IntoBoxedSubscription, Subscription, TupleSubscription},
@@ -87,10 +85,9 @@ where
 
 #[doc(hidden)]
 #[derive(Clone)]
-pub struct SwitchMapOuterObserver<C: Context, F> {
-  state: SwitchState<C>,
+pub struct SwitchMapOuterObserver<Sc: Scope, O, F> {
+  state: SwitchState<Sc, O>,
   func: F,
-  _marker: PhantomData<C>,
 }
 
 #[doc(hidden)]
@@ -145,32 +142,32 @@ where
   type Err = S::Err;
 }
 
-type SwitchState<C> = <C as Context>::RcMut<
-  Option<SwitchMapState<<C as Context>::Inner, <C as Context>::BoxedSubscription>>,
+type SwitchState<Sc, O> =
+  <Sc as Scope>::RcMut<Option<SwitchMapState<O, <Sc as Scope>::BoxedSubscription>>>;
+type InnerObserverCtx<C> = <C as Context>::With<
+  SwitchMapInnerObserver<SwitchState<<C as Context>::Scope, <C as Context>::Inner>>,
 >;
-
-type InnerObsCtx<C> = <C as Context>::With<SwitchMapInnerObserver<SwitchState<C>>>;
 
 impl<S, F, C, Out, InnerObs> CoreObservable<C> for SwitchMap<S, F>
 where
   C: Context,
-  S: CoreObservable<C::With<SwitchMapOuterObserver<C, F>>>,
+  S: CoreObservable<C::With<SwitchMapOuterObserver<C::Scope, C::Inner, F>>>,
   F: for<'a> FnMut(S::Item<'a>) -> Out,
   Out: Context<Inner = InnerObs>,
-  InnerObs: CoreObservable<InnerObsCtx<C>, Err = S::Err> + 'static,
+  InnerObs: CoreObservable<InnerObserverCtx<C>, Err = S::Err> + 'static,
   InnerObs::Unsub: IntoBoxedSubscription<C::BoxedSubscription>,
-  SwitchState<C>: Subscription,
+  SwitchState<C::Scope, C::Inner>: Subscription,
 {
-  type Unsub = SwitchMapSubscription<S::Unsub, SwitchState<C>>;
+  type Unsub = SwitchMapSubscription<S::Unsub, SwitchState<C::Scope, C::Inner>>;
 
   fn subscribe(self, context: C) -> Self::Unsub {
     let SwitchMap { source, func } = self;
-    let state: SwitchState<C> = C::RcMut::from(None);
+    let state: SwitchState<C::Scope, C::Inner> = <C::Scope as Scope>::RcMut::from(None);
 
     let wrapped = context.transform(|observer| {
       *state.rc_deref_mut() =
         Some(SwitchMapState { observer, outer_completed: false, inner_sub: None });
-      SwitchMapOuterObserver { state: state.clone(), func, _marker: PhantomData }
+      SwitchMapOuterObserver { state: state.clone(), func }
     });
 
     let source_unsub = source.subscribe(wrapped);
@@ -179,12 +176,16 @@ where
   }
 }
 
-impl<C, InnerObs, Item, Err, F, Out> Observer<Item, Err> for SwitchMapOuterObserver<C, F>
+impl<Sc, O, InnerObs, Item, Err, F, Out> Observer<Item, Err> for SwitchMapOuterObserver<Sc, O, F>
 where
-  C: for<'a> Context<Inner: Observer<InnerObs::Item<'a>, Err>>,
+  Sc: Scope,
+  O: for<'a> Observer<InnerObs::Item<'a>, Err>,
   F: for<'a> FnMut(Item) -> Out,
-  Out: Context<Inner = InnerObs>,
-  InnerObs: CoreObservable<InnerObsCtx<C>, Unsub: IntoBoxedSubscription<C::BoxedSubscription>>,
+  Out: Context<Inner = InnerObs, Scope = Sc>,
+  InnerObs: CoreObservable<
+      Out::With<SwitchMapInnerObserver<SwitchState<Sc, O>>>,
+      Unsub: IntoBoxedSubscription<Sc::BoxedSubscription>,
+    >,
 {
   fn next(&mut self, value: Item) {
     if self.is_closed() {
@@ -207,7 +208,7 @@ where
 
     let inner_observer = SwitchMapInnerObserver(self.state.clone());
 
-    let inner_unsub = inner_obs.subscribe(C::lift(inner_observer));
+    let inner_unsub = inner_obs.subscribe(Out::lift(inner_observer));
     if let Some(st) = self.state.rc_deref_mut().as_mut() {
       st.inner_sub = Some(inner_unsub.into_boxed());
     }
@@ -239,7 +240,7 @@ where
       .state
       .rc_deref()
       .as_ref()
-      .is_none_or(|st| C::Inner::is_closed(&st.observer))
+      .is_none_or(|st| O::is_closed(&st.observer))
   }
 }
 

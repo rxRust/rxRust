@@ -1092,10 +1092,11 @@ mod tests {
   }
 
   impl<T> Context for CustomContext<T> {
+    type Scope = LocalScope;
     type Inner = T;
     type Scheduler = CustomTestScheduler;
-    type RcMut<U> = MutRc<U>; // Use MutRc since it's single-threaded like Local
-    type RcCell<U: Copy + Eq> = CellRc<U>; // Use CellRc for Copy types
+    type RcMut<U> = MutRc<U>;
+    type RcCell<U: Copy + Eq> = CellRc<U>;
     type With<U> = CustomContext<U>;
     type BoxedObserver<'a, Item, Err> = BoxedObserver<'a, Item, Err>;
     type BoxedObserverMutRef<'a, Item: 'a, Err> = BoxedObserverMutRef<'a, Item, Err>;
