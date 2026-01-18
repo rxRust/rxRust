@@ -36,7 +36,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-2afe6447.js";
+            window.path_to_searchindex_js = "searchindex-c6d0df11.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-959fc176.js"></script>
@@ -516,14 +516,14 @@ Shared::from_iter(1..=1000)
 <p>rxRust provides a <code>TestScheduler</code> to simulate time. This is essential for testing time-dependent logic (like <code>debounce</code>) instantly and deterministically.</p>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="type-erasure"><a class="header" href="#type-erasure">Type Erasure</a></h1>
-<p>One common challenge when working with RxRust (and Rust iterators/futures in general) is the rapidly growing complexity of types.</p>
+<p>One common challenge when working with rxRust (and Rust iterators/futures in general) is the rapidly growing complexity of types.</p>
 <h2 id="the-problem-type-explosion"><a class="header" href="#the-problem-type-explosion">The Problem: Type Explosion</a></h2>
 <p>Every operator you apply wraps the previous Observable in a new struct.</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>use rxrust::prelude::*;
 
-// Type: LocalObservable&lt;Map&lt;Filter&lt;Range, ...&gt;, ...&gt;, ...&gt;
+// Type: Local&lt;Map&lt;Filter&lt;FromIter&lt;...&gt;, ...&gt;, ...&gt;&gt;
 let stream = Local::from_iter(0..10)
     .filter(|v| v % 2 == 0)
     .map(|v| v * 2);
@@ -533,55 +533,101 @@ let stream = Local::from_iter(0..10)
 <li>Return an Observable from a function.</li>
 <li>Store an Observable in a struct.</li>
 <li>Conditionally return different Observable chains.</li>
+<li>Store heterogeneous observables in a collection.</li>
 </ol>
-<h2 id="solution-1-impl-observable-zero-cost"><a class="header" href="#solution-1-impl-observable-zero-cost">Solution 1: <code>impl Observable</code> (Zero Cost)</a></h2>
-<p>If you are returning an Observable from a function, the preferred way is to use <code>impl Observable</code>. This keeps the concrete type hidden but maintains static dispatch (zero runtime overhead).</p>
+<h2 id="the-solution-box_it-type-erasure"><a class="header" href="#the-solution-box_it-type-erasure">The Solution: <code>box_it()</code> (Type Erasure)</a></h2>
+<p>When you need to store an Observable or return different types from different branches, use <strong>Type Erasure</strong> via the <code>.box_it()</code> operator. This boxes the observable, unifying the type at the cost of heap allocation and dynamic dispatch.</p>
+<h3 id="basic-usage"><a class="header" href="#basic-usage">Basic Usage</a></h3>
+<pre class="playground"><code class="language-rust">use rxrust::prelude::*;
+use std::convert::Infallible;
+
+fn create_dynamic_stream(condition: bool) -&gt; LocalBoxedObservable&lt;'static, i32, Infallible&gt; {
+    if condition {
+        Local::of(1).box_it()
+    } else {
+        Local::from_iter(0..10).map(|v| v * 2).box_it()
+    }
+}
+
+fn main() {
+    let stream = create_dynamic_stream(true);
+    stream.subscribe(|v| println!("{}", v));
+}</code></pre>
+<h3 id="storing-in-collections"><a class="header" href="#storing-in-collections">Storing in Collections</a></h3>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>use rxrust::prelude::*;
 use std::convert::Infallible;
 
-fn create_stream() -&gt; impl for&lt;'a&gt; Observable&lt;Item&lt;'a&gt; = i32, Err = Infallible&gt; {
-    Local::from_iter(0..10)
-        .filter(|v| v % 2 == 0)
-        .map(|v| v * 2)
+// Different source types become the same boxed type
+let boxed1: LocalBoxedObservable&lt;'_, i32, Infallible&gt; = Local::of(1).box_it();
+let boxed2: LocalBoxedObservable&lt;'_, i32, Infallible&gt; = 
+    Local::from_iter([2, 3]).map(|x| x * 2).box_it();
+
+// Now they can be stored together
+let observables = vec![boxed1, boxed2];
+
+for obs in observables {
+    obs.subscribe(|v| println!("{}", v));
 }
 <span class="boring">}</span></code></pre>
 <p><strong>Pros:</strong></p>
 <ul>
-<li>Zero runtime cost.</li>
-<li>No heap allocation.</li>
+<li>Returns a unified concrete type.</li>
+<li>Can be stored in structs and collections easily.</li>
+<li>Works across conditional branches.</li>
 </ul>
 <p><strong>Cons:</strong></p>
 <ul>
-<li>Cannot be stored in a struct field (unless generic).</li>
-<li>All code paths must return the exact same concrete type.</li>
+<li>Heap allocation for the boxed observable.</li>
+<li>Dynamic dispatch overhead (usually negligible).</li>
 </ul>
-<h2 id="solution-2-box_it-dynamic-dispatch"><a class="header" href="#solution-2-box_it-dynamic-dispatch">Solution 2: <code>box_it()</code> (Dynamic Dispatch)</a></h2>
-<p>When you need to store an Observable or return different types from different branches, you need <strong>Type Erasure</strong>. The <code>.box_it()</code> operator boxes the observable, unifying the type to <code>LocalBoxedObservable</code> (or <code>SharedBoxedObservable</code>).</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>use rxrust::prelude::*;
-
-fn create_dynamic_stream(condition: bool) -&gt; LocalBoxedObservable&lt;'static, i32, ()&gt; {
-    if condition {
-        Local::of(1).map_err(|_| ()).box_it()
-    } else {
-        Local::from_iter(0..10).map(|v| v * 2).map_err(|_| ()).box_it()
-    }
-}
-<span class="boring">}</span></code></pre>
-<p><strong>Pros:</strong></p>
-<ul>
-<li>Returns a unified concrete type (one of the 4 boxed variants, e.g., <code>LocalBoxedObservable</code>).</li>
-<li>Can be stored in structs easily.</li>
-</ul>
-<h3 id="cloneable-boxed-observables-box_it_clone--box_it_mut_ref_clone"><a class="header" href="#cloneable-boxed-observables-box_it_clone--box_it_mut_ref_clone">Cloneable boxed observables: <code>box_it_clone()</code> / <code>box_it_mut_ref_clone()</code></a></h3>
-<p>The regular <code>box_it()</code> result is not <code>Clone</code>, because a boxed trait object
-cannot be cloned unless the underlying observable pipeline is cloneable.</p>
-<p>If you need a boxed observable that can be cloned (for example, to keep a
-template observable in a struct and create copies for multiple independent
-subscriptions), use <code>box_it_clone()</code>.</p>
+<blockquote>
+<p><strong>Note on Error Types</strong>: When using <code>.subscribe(|v| ...)</code> with a simple closure, the observable’s error type must be <code>Infallible</code>. This is because the closure-based subscription cannot handle errors. If you need a different error type, use <code>.subscribe_with()</code> with a full <code>Observer</code> implementation.</p>
+</blockquote>
+<h2 id="boxed-type-variants"><a class="header" href="#boxed-type-variants">Boxed Type Variants</a></h2>
+<p>rxRust provides multiple boxed observable types to cover different use cases:</p>
+<h3 id="by-context-local-vs-shared"><a class="header" href="#by-context-local-vs-shared">By Context (Local vs Shared)</a></h3>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Context</th><th>Type</th><th>Created with</th></tr>
+</thead>
+<tbody>
+<tr><td>Local (single-threaded)</td><td><code>LocalBoxedObservable&lt;'a, Item, Err&gt;</code></td><td><code>Local::...box_it()</code></td></tr>
+<tr><td>Shared (multi-threaded)</td><td><code>SharedBoxedObservable&lt;'a, Item, Err&gt;</code></td><td><code>Shared::...box_it()</code></td></tr>
+</tbody>
+</table>
+</div>
+<h3 id="by-item-type-value-vs-mutable-reference"><a class="header" href="#by-item-type-value-vs-mutable-reference">By Item Type (Value vs Mutable Reference)</a></h3>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Item Type</th><th>Method</th><th>Result Type</th></tr>
+</thead>
+<tbody>
+<tr><td>Owned values (<code>T</code>)</td><td><code>.box_it()</code></td><td><code>LocalBoxedObservable</code> / <code>SharedBoxedObservable</code></td></tr>
+<tr><td>Mutable references (<code>&amp;mut T</code>)</td><td><code>.box_it_mut_ref()</code></td><td><code>LocalBoxedObservableMutRef</code> / <code>SharedBoxedObservableMutRef</code></td></tr>
+</tbody>
+</table>
+</div>
+<h3 id="by-cloneability"><a class="header" href="#by-cloneability">By Cloneability</a></h3>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Cloneable?</th><th>Method</th><th>Result Type</th></tr>
+</thead>
+<tbody>
+<tr><td>No</td><td><code>.box_it()</code></td><td><code>LocalBoxedObservable</code></td></tr>
+<tr><td>Yes</td><td><code>.box_it_clone()</code></td><td><code>LocalBoxedObservableClone</code></td></tr>
+<tr><td>No (mut ref)</td><td><code>.box_it_mut_ref()</code></td><td><code>LocalBoxedObservableMutRef</code></td></tr>
+<tr><td>Yes (mut ref)</td><td><code>.box_it_mut_ref_clone()</code></td><td><code>LocalBoxedObservableMutRefClone</code></td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="cloneable-boxed-observables"><a class="header" href="#cloneable-boxed-observables">Cloneable Boxed Observables</a></h2>
+<p>The regular <code>box_it()</code> result is <strong>not</strong> <code>Clone</code>, because a boxed trait object cannot be cloned unless the underlying observable pipeline is cloneable.</p>
+<p>If you need a boxed observable that can be cloned (for example, to keep a template observable and create copies for multiple independent subscriptions), use <code>box_it_clone()</code>.</p>
 <pre class="playground"><code class="language-rust">use rxrust::prelude::*;
 use std::convert::Infallible;
 
@@ -602,8 +648,57 @@ fn main() {
         assert_eq!(v, 42);
     });
 }</code></pre>
-<p>For observables that emit mutable references (<code>Item = &amp;'a mut T</code>), use
-<code>box_it_mut_ref_clone()</code>.</p>
+<h2 id="mutable-reference-observables"><a class="header" href="#mutable-reference-observables">Mutable Reference Observables</a></h2>
+<p>For observables that emit mutable references (<code>Item = &amp;'a mut T</code>), use the <code>_mut_ref</code> variants:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use std::convert::Infallible;
+use rxrust::prelude::*;
+
+// Create a subject that emits mutable references
+let subject = Local::subject_mut_ref::&lt;i32, Infallible&gt;();
+
+// Box it for type erasure
+let boxed = subject.clone().box_it_mut_ref();
+
+// Or if you need it to be cloneable:
+let boxed_clone = subject.clone().box_it_mut_ref_clone();
+<span class="boring">}</span></code></pre>
+<h2 id="shared-context-example"><a class="header" href="#shared-context-example">Shared Context Example</a></h2>
+<p>For multi-threaded scenarios, use the <code>Shared</code> context:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use rxrust::prelude::*;
+use std::convert::Infallible;
+
+fn create_shared_stream(condition: bool) -&gt; SharedBoxedObservable&lt;'static, i32, Infallible&gt; {
+    if condition {
+        Shared::of(1).box_it()
+    } else {
+        Shared::from_iter(0..10).map(|v| v * 2).box_it()
+    }
+}
+
+// The returned observable can be sent across threads
+<span class="boring">}</span></code></pre>
+<h2 id="complete-type-reference"><a class="header" href="#complete-type-reference">Complete Type Reference</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Context</th><th>Cloneable</th><th>Item Type</th><th>Type Alias</th></tr>
+</thead>
+<tbody>
+<tr><td>Local</td><td>No</td><td><code>T</code></td><td><code>LocalBoxedObservable&lt;'a, Item, Err&gt;</code></td></tr>
+<tr><td>Local</td><td>Yes</td><td><code>T</code></td><td><code>LocalBoxedObservableClone&lt;'a, Item, Err&gt;</code></td></tr>
+<tr><td>Local</td><td>No</td><td><code>&amp;mut T</code></td><td><code>LocalBoxedObservableMutRef&lt;'a, Item, Err&gt;</code></td></tr>
+<tr><td>Local</td><td>Yes</td><td><code>&amp;mut T</code></td><td><code>LocalBoxedObservableMutRefClone&lt;'a, Item, Err&gt;</code></td></tr>
+<tr><td>Shared</td><td>No</td><td><code>T</code></td><td><code>SharedBoxedObservable&lt;'a, Item, Err&gt;</code></td></tr>
+<tr><td>Shared</td><td>Yes</td><td><code>T</code></td><td><code>SharedBoxedObservableClone&lt;'a, Item, Err&gt;</code></td></tr>
+<tr><td>Shared</td><td>No</td><td><code>&amp;mut T</code></td><td><code>SharedBoxedObservableMutRef&lt;'a, Item, Err&gt;</code></td></tr>
+<tr><td>Shared</td><td>Yes</td><td><code>&amp;mut T</code></td><td><code>SharedBoxedObservableMutRefClone&lt;'a, Item, Err&gt;</code></td></tr>
+</tbody>
+</table>
+</div>
 <h2 id="summary"><a class="header" href="#summary">Summary</a></h2>
 <div class="table-wrapper">
 <table>
@@ -611,11 +706,13 @@ fn main() {
 <tr><th>Scenario</th><th>Recommendation</th></tr>
 </thead>
 <tbody>
-<tr><td>Function return type</td><td><code>impl Observable</code></td></tr>
-<tr><td>Conditional branches</td><td><code>box_it()</code></td></tr>
-<tr><td>Struct fields</td><td><code>box_it()</code> or Generic parameters</td></tr>
-<tr><td>API boundaries</td><td><code>box_it()</code> (usually easier for consumers)</td></tr>
-<tr><td>Need <code>Clone</code> on boxed observable</td><td><code>box_it_clone()</code> / <code>box_it_mut_ref_clone()</code></td></tr>
+<tr><td>Return different types from branches</td><td><code>box_it()</code></td></tr>
+<tr><td>Store Observable in struct fields</td><td><code>box_it()</code></td></tr>
+<tr><td>API boundaries</td><td><code>box_it()</code> (easier for consumers)</td></tr>
+<tr><td>Collections of heterogeneous observables</td><td><code>box_it()</code></td></tr>
+<tr><td>Need <code>Clone</code> on boxed observable</td><td><code>box_it_clone()</code></td></tr>
+<tr><td>Mutable reference observables</td><td><code>box_it_mut_ref()</code> / <code>box_it_mut_ref_clone()</code></td></tr>
+<tr><td>Multi-threaded / cross-thread usage</td><td>Use <code>Shared::...box_it()</code></td></tr>
 </tbody>
 </table>
 </div>
