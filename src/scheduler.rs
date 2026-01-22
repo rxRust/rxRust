@@ -793,24 +793,33 @@ mod tests {
       assert!(*executed.lock().unwrap());
     }
 
-    #[rxrust_macro::test(local)]
-    async fn test_local_scheduler_with_delay() {
-      let executed = Arc::new(Mutex::new(false));
-      let executed_clone = executed.clone();
-      let start = Instant::now();
+    #[rxrust_macro::test]
+    fn test_local_scheduler_with_delay() {
+      use std::{cell::Cell, rc::Rc};
 
-      let scheduler = LocalScheduler;
+      use crate::scheduler::test_scheduler::TestScheduler;
+
+      TestScheduler::init();
+
+      let executed = Rc::new(Cell::new(false));
+      let executed_clone = executed.clone();
+
+      let scheduler = TestScheduler;
       let task = Task::new(executed_clone, |flag| {
-        *flag.lock().unwrap() = true;
+        flag.set(true);
         TaskState::Finished
       });
 
       let handle = scheduler.schedule(task, Some(Duration::from_millis(50)));
-      handle.await;
 
-      let elapsed = start.elapsed();
-      assert!(*executed.lock().unwrap());
-      assert!(elapsed >= Duration::from_millis(50));
+      assert!(!executed.get());
+
+      TestScheduler::advance_by(Duration::from_millis(30));
+      assert!(!executed.get());
+
+      TestScheduler::advance_by(Duration::from_millis(20));
+      assert!(executed.get());
+      assert!(handle.is_closed());
     }
 
     #[rxrust_macro::test(local)]
