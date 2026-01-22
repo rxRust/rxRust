@@ -164,14 +164,23 @@ where
   ItemB: Clone,
 {
   fn next(&mut self, value: ItemA) {
-    let mut guard = self.state.rc_deref_mut();
-    let state = &mut *guard;
-    state.last_a = Some(value.clone());
-    if let Some(b) = state.last_b.clone()
-      && let Some(observer) = state.observer.as_mut()
-    {
-      let res = (state.binary_op)(value, b);
-      observer.next(res);
+    let (output, mut downstream) = {
+      let mut state = self.state.rc_deref_mut();
+      state.last_a = Some(value.clone());
+
+      let output = state
+        .last_b
+        .clone()
+        .map(|b| (state.binary_op)(value, b));
+      (output, state.observer.take())
+    }; // Guard dropped, releasing mutable borrow
+
+    if let (Some(val), Some(ref mut obs)) = (output, downstream.as_mut()) {
+      obs.next(val);
+    }
+
+    if let Some(obs) = downstream {
+      self.state.rc_deref_mut().observer = Some(obs);
     }
   }
 
@@ -202,14 +211,23 @@ where
   ItemB: Clone,
 {
   fn next(&mut self, value: ItemB) {
-    let mut guard = self.state.rc_deref_mut();
-    let state = &mut *guard;
-    state.last_b = Some(value.clone());
-    if let Some(a) = state.last_a.clone()
-      && let Some(observer) = state.observer.as_mut()
-    {
-      let res = (state.binary_op)(a, value);
-      observer.next(res);
+    let (output, mut downstream) = {
+      let mut state = self.state.rc_deref_mut();
+      state.last_b = Some(value.clone());
+
+      let output = state
+        .last_a
+        .clone()
+        .map(|a| (state.binary_op)(a, value));
+      (output, state.observer.take())
+    }; // Guard dropped, releasing mutable borrow
+
+    if let (Some(val), Some(ref mut obs)) = (output, downstream.as_mut()) {
+      obs.next(val);
+    }
+
+    if let Some(obs) = downstream {
+      self.state.rc_deref_mut().observer = Some(obs);
     }
   }
 

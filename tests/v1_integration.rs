@@ -456,3 +456,26 @@ fn average_of_integers() {
     .subscribe(|v| emitted = v);
   assert_eq!(3, emitted);
 }
+
+#[rxrust_macro::test]
+fn test_combine_latest_reentrancy_path() {
+  // Source - https://stackoverflow.com/q
+  let mut s1 = Local::behavior_subject::<i32, Infallible>(1);
+  let s2 = Local::behavior_subject::<i32, Infallible>(1);
+
+  let c1 = s1
+    .clone()
+    .combine_latest(s2.clone(), |a, b| a + b)
+    .distinct_until_changed();
+  let c2 = s2
+    .clone()
+    .combine_latest(s1.clone(), |a, b| a + b)
+    .distinct_until_changed();
+
+  let mut s2_c = s2.clone();
+
+  c1.combine_latest(c2, |a, b| a + b)
+    .subscribe(move |v| s2_c.next(v));
+
+  s1.next(2);
+}
