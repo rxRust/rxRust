@@ -27,9 +27,8 @@ Operators that originate new Observables.
   - named `of`, `of_result`, `of_option` in rxRust
 - [x] Range — create an Observable that emits a range of sequential integers
   - use `from_iter` with a range
-- [x] Repeat — create an Observable that emits a particular item or sequence of items repeatedly
-  - `repeat` is not explicitly implemented but can be achieved with `from_iter` or recursive scheduling, but a dedicated operator might be missing. *Update: `repeat` is not in `ops`, marking as missing if strict.* 
-  - *Correction*: The original list had it checked. Let me verify. I didn't see `repeat.rs`. I saw `retry.rs`. `repeat` is similar. I will leave it as originally marked if unsure, but I suspect it might be missing or part of another op. *Actually, I'll mark it unchecked if I didn't see it.*
+- [ ] Repeat — create an Observable that emits a particular item or sequence of items repeatedly
+  - `repeat` is not explicitly implemented but can be achieved with `from_iter` or recursive scheduling, but a dedicated operator might be missing.
 - [x] Start — create an Observable that emits the return value of a function
   - `defer` or `from_fn` covers this.
 - [x] Timer — create an Observable that emits a single item after a given delay
@@ -115,7 +114,6 @@ A toolbox of useful Operators for working with Observables
 - [ ] TimeInterval — convert an Observable that emits items into one that emits indications of the amount of time elapsed between those emissions
 - [ ] Timeout — mirror the source Observable, but issue an error notification if a particular period of time elapses without any emitted items
 - [ ] Timestamp — attach a timestamp to each item emitted by an Observable
-  - *Correction*: I didn't see `timestamp.rs` in ops. `TimeInterval` and `Timestamp` are likely missing.
 - [ ] Using — create a disposable resource that has the same lifespan as the Observable
 
 ### Conditional and Boolean Operators
