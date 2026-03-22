@@ -169,6 +169,13 @@ pub trait Observable: Context {
     self.transform(|core| Map { source: core, func: f })
   }
 
+  // Keep the nightly `FnMut<(...)>` path here instead of replacing it with a
+  // custom callable trait. A custom trait can model the lifetime-dependent
+  // output for `map` itself, but it breaks closure inference further
+  // downstream, especially for `subscribe`, and that damage compounds across an
+  // operator chain. If we revisit stable support here, prefer a narrow,
+  // explicit API rather than swapping the whole closure ecosystem over to a
+  // library-defined trait.
   #[cfg(feature = "nightly")]
   fn map<F>(self, f: F) -> Self::With<Map<Self::Inner, F>>
   where

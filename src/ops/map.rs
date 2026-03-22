@@ -95,6 +95,10 @@ where
   S: ObservableType,
   F: for<'a> FnMut<(S::Item<'a>,)>,
 {
+  // Do not "stabilize" this by swapping to a custom callable trait here.
+  // That approach type-checks for `map` in isolation, but it weakens the
+  // compiler's built-in closure inference and quickly forces explicit
+  // annotations at subscribe sites and in longer operator chains.
   type Item<'a>
     = <F as FnOnce<(S::Item<'a>,)>>::Output
   where

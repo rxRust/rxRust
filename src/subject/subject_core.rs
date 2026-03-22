@@ -301,22 +301,38 @@ pub type SharedSubjectMutRef<'a, Item, Err> = Shared<InnerSubjectMutRefSend<'a, 
 /// });
 /// ```
 ///
-/// ### Example: explicit async boundary (works)
+/// ### Example: explicit async boundary for feedback loops
+///
+/// To safely emit values from within a callback, apply `delay(0)` to the
+/// observable chain. This schedules the callback on the next scheduler tick,
+/// breaking the synchronous call chain:
 ///
 /// ```rust,no_run
-/// use std::{convert::Infallible, time::Duration};
+/// # #[cfg(not(target_arch = "wasm32"))]
+/// # {
+/// use std::convert::Infallible;
 ///
 /// use rxrust::prelude::*;
 ///
-/// let subject = Local::subject::<i32, Infallible>();
-/// let s_clone = subject.clone();
+/// # #[tokio::main]
+/// # async fn main() {
+/// let mut subject = Shared::subject::<i32, Infallible>();
+/// let mut emitter = subject.clone();
 ///
-/// subject.clone().subscribe(move |_| {
-///   s_clone
-///     .clone()
-///     .delay(Duration::from_millis(0))
-///     .subscribe(|_| println!("Runs on a later tick"));
-/// });
+/// subject
+///   .clone()
+///   .delay(Duration::from_millis(0)) // Creates async boundary
+///   .subscribe(move |n| {
+///     println!("Received: {}", n);
+///     if n < 3 {
+///       emitter.next(n + 1); // Safe: now on a new scheduler tick
+///     }
+///   });
+///
+/// subject.next(0);
+/// tokio::time::sleep(Duration::from_millis(100)).await;
+/// # }
+/// # }
 /// ```
 pub struct Subject<P> {
   pub observers: P,

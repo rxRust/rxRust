@@ -88,7 +88,7 @@ Rust's standard `Stream` trait is a pull-based asynchronous iterator. `from_stre
 ```rust,no_run
 use rxrust::prelude::*;
 use futures::stream::{self, StreamExt};
-use tokio::time::{sleep, Duration};
+use tokio::time::sleep;
 
 #[tokio::main]
 async fn main() {

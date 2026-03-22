@@ -67,26 +67,40 @@
 //! - **Subscription mutations are allowed** (`subscribe`/`unsubscribe`) inside
 //!   callbacks. They may be applied after the current emission finishes.
 //!
-//! If you intentionally need feedback loops, insert an explicit async boundary
-//! (e.g. `delay(Duration::from_millis(0))`).
+//! If you intentionally need feedback loops (emitting values from within a
+//! callback), insert an explicit async boundary using `delay`:
 //!
-//! ```rust
-//! use std::time::Duration;
+//! ```rust,no_run
+//! # #[cfg(not(target_arch = "wasm32"))]
+//! # {
+//! use std::convert::Infallible;
 //!
 //! use rxrust::prelude::*;
 //!
-//! let subject = Local::subject();
-//! let s_clone = subject.clone();
+//! # #[tokio::main]
+//! # async fn main() {
+//! let mut subject = Shared::subject::<i32, Infallible>();
+//! let mut emitter = subject.clone();
 //!
-//! let subscription = subject.clone().subscribe(move |_: ()| {
-//!   // CORRECT: Insert an explicit async boundary before emitting.
-//!   s_clone
-//!     .clone()
-//!     .delay(Duration::from_millis(0))
-//!     .subscribe(|_| println!("Runs on a later tick"));
-//! });
+//! // Apply delay(0) to the observable chain to create an async boundary.
+//! // This schedules the callback on the next scheduler tick, after the
+//! // original emission has completed and the Subject's internal borrow
+//! // has been released.
+//! subject
+//!   .clone()
+//!   .delay(Duration::from_millis(0))
+//!   .subscribe(move |n| {
+//!     println!("Received: {}", n);
+//!     if n < 3 {
+//!       // Safe: delay(0) ensures we're on a new scheduler tick
+//!       emitter.next(n + 1);
+//!     }
+//!   });
 //!
-//! subscription.unsubscribe();
+//! subject.next(0);
+//! tokio::time::sleep(Duration::from_millis(100)).await;
+//! # }
+//! # }
 //! ```
 
 pub mod behavior_subject;
