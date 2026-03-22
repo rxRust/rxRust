@@ -4,8 +4,6 @@
 //! We define a custom scheduler that logs events and executes tasks immediately
 //! (blocking the thread for delays), and then inject it into rxRust.
 
-use std::time::Duration;
-
 use rxrust::{
   prelude::*,
   scheduler::{Schedulable, Scheduler, SleepProvider, TaskHandle},

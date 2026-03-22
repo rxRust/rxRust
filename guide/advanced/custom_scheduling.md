@@ -32,7 +32,6 @@ First, define your scheduler struct. You need to implement two traits:
 ```rust,ignore
 use rxrust::prelude::*;
 use rxrust::scheduler::{Scheduler, Schedulable, TaskHandle, SleepProvider};
-use std::time::Duration;
 
 #[derive(Clone, Default)]
 pub struct MyGameScheduler;

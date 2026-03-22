@@ -11,14 +11,14 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # 快速检查 - 代码格式和编译错误
   format:
     name: Code Format
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: dtolnay/rust-toolchain@stable
         with:
+          toolchain: nightly-2025-12-20
           components: rustfmt
       - run: cargo fmt --all -- --check
 
@@ -27,8 +27,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: dtolnay/rust-toolchain@stable
         with:
+          toolchain: nightly-2025-12-20
           components: clippy
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy --all-targets --all-features -- -D warnings
@@ -58,8 +59,6 @@ jobs:
           PY
           )
           echo "features=$FEATURES" >> "$GITHUB_OUTPUT"
-
-  # 编译检查
   check:
     name: Cargo Check (stable)
     runs-on: ubuntu-latest
@@ -79,7 +78,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: nightly-2025-12-20
       - uses: Swatinem/rust-cache@v2
       - run: cargo check --all-features
       - run: cargo check --all-features --lib
@@ -87,7 +88,6 @@ jobs:
           RUSTFLAGS: ""
           CARGO_ENCODED_RUSTFLAGS: ""
 
-  # 测试
   test:
     name: Tests (stable)
     runs-on: ubuntu-latest
@@ -104,11 +104,12 @@ jobs:
     needs: check-nightly
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: nightly-2025-12-20
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --all-features
 
-  # WASM 测试
   test-wasm:
     name: WASM Tests
     runs-on: ubuntu-latest
@@ -116,12 +117,12 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
+          toolchain: stable
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
       - run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
       - run: wasm-pack test --node
 
-  # 汇总检查 - 用于分支保护规则
   ci:
     name: CI Status
     runs-on: ubuntu-latest

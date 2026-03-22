@@ -1,4 +1,9 @@
 #![cfg_attr(feature = "nightly", feature(fn_traits, unboxed_closures))]
+// The nightly-only `fn_traits` support is intentionally kept as the primary
+// path for lifetime-dependent `map` outputs. Replacing it wholesale with a
+// library-defined callable trait degrades type inference for ordinary closures,
+// most visibly at `subscribe` call sites, and the pain spreads across operator
+// chains.
 //! # rxRust: Reactive Extensions for Rust
 //!
 //! Zero-cost, type-safe implementation of [Reactive Extensions](http://reactivex.io/).

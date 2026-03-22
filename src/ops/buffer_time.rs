@@ -180,7 +180,7 @@ where
 
 #[cfg(test)]
 mod tests {
-  use std::{cell::RefCell, rc::Rc, time::Duration};
+  use std::{cell::RefCell, rc::Rc};
 
   use crate::prelude::*;
 

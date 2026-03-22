@@ -426,8 +426,6 @@ where
 
 #[cfg(test)]
 mod tests {
-  use std::time::Duration;
-
   use super::*;
   use crate::prelude::*;
 
