@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-c6d0df11.js";
+            window.path_to_searchindex_js = "searchindex-3417d611.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-959fc176.js"></script>
@@ -248,7 +248,7 @@ async fn main() {
 <p>Rust’s standard <code>Stream</code> trait is a pull-based asynchronous iterator. <code>from_stream</code> allows you to take an existing <code>Stream</code> (e.g., from <code>tokio::io::split</code>, <code>tokio::sync::mpsc</code>, or <code>futures::stream</code>) and convert it into an <code>Observable</code>. This enables you to apply rxRust’s powerful set of operators, especially those focused on time-based logic, error handling, or complex event patterns.</p>
 <pre class="playground"><code class="language-rust no_run">use rxrust::prelude::*;
 use futures::stream::{self, StreamExt};
-use tokio::time::{sleep, Duration};
+use tokio::time::sleep;
 
 #[tokio::main]
 async fn main() {
