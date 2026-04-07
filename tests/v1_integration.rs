@@ -133,6 +133,18 @@ fn test_merge_integration() {
 }
 
 #[rxrust_macro::test]
+fn test_from_future_async_block_flat_map() {
+  let result = Rc::new(RefCell::new(None));
+  let result_clone = result.clone();
+
+  Local::of(Local::from_future(async { 42_u8 }))
+    .flat_map(|v| v)
+    .subscribe(move |v| *result_clone.borrow_mut() = Some(v));
+
+  assert_eq!(*result.borrow(), Some(42));
+}
+
+#[rxrust_macro::test]
 fn test_zip_integration() {
   // Test zipping two observables
   let results = Rc::new(RefCell::new(Vec::new()));
