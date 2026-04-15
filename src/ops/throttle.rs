@@ -18,7 +18,7 @@ use crate::{
   observable::{CoreObservable, ObservableType},
   observer::Observer,
   scheduler::Duration,
-  subscription::{IntoBoxedSubscription, SourceWithHandle, Subscription},
+  subscription::{IntoBoxedSubscription, Subscription},
 };
 
 // ===== ThrottleEdge =====·
@@ -111,7 +111,28 @@ where
 // ===== Subscription/state =====
 
 /// Subscription for the throttle operator.
-pub type ThrottleSubscription<U, H> = SourceWithHandle<U, H>;
+pub struct ThrottleSubscription<U, H> {
+  source: U,
+  handle: H,
+}
+
+impl<U, H> ThrottleSubscription<U, H> {
+  #[inline]
+  fn new(source: U, handle: H) -> Self { Self { source, handle } }
+}
+
+impl<U, H> Subscription for ThrottleSubscription<U, H>
+where
+  U: Subscription,
+  H: Subscription,
+{
+  fn unsubscribe(self) {
+    self.handle.unsubscribe();
+    self.source.unsubscribe();
+  }
+
+  fn is_closed(&self) -> bool { self.handle.is_closed() }
+}
 
 pub struct ThrottleState<Item, O, Param, BoxedSub> {
   // Downstream observer.
@@ -229,17 +250,18 @@ where
           observer.next(pending);
         }
       }
-      (pending, completed) => {
-        // If we don't need to start the next window, we can flush/complete while
-        // holding the guard.
+      (pending, true) => {
         if let (Some(p), Some(observer)) = (pending, inner.observer.as_mut()) {
           observer.next(p);
         }
 
-        if completed && let Some(observer) = inner.observer.take() {
+        if let Some(observer) = inner.observer.take() {
           observer.complete();
         }
+
+        *guard = None;
       }
+      (None, false) => {}
     }
   }
 
@@ -320,6 +342,8 @@ where
     if let Some(observer) = state.observer.take() {
       observer.complete();
     }
+
+    *guard = None;
   }
 
   fn is_closed(&self) -> bool {
@@ -418,7 +442,7 @@ where
     });
 
     let source_unsub = source.subscribe(wrapped);
-    SourceWithHandle::new(source_unsub, state_handle)
+    ThrottleSubscription::new(source_unsub, state_handle)
   }
 }
 
@@ -543,6 +567,38 @@ mod tests {
     // Window end should emit trailing value, then complete.
     assert_eq!(result, vec![42]);
     assert!(*completed.borrow());
+  }
+
+  #[rxrust_macro::test]
+  async fn test_throttle_trailing_subscription_stays_open_until_delayed_flush() {
+    use std::{cell::RefCell, rc::Rc};
+
+    use crate::{context::TestCtx, prelude::TestScheduler, subscription::Subscription};
+
+    TestScheduler::init();
+    let values = Rc::new(RefCell::new(Vec::new()));
+    let values_c = values.clone();
+    let completed = Rc::new(RefCell::new(false));
+    let completed_c = completed.clone();
+
+    let subscription = TestCtx::of(42)
+      .throttle_time(Duration::from_millis(100), ThrottleEdge::trailing())
+      .on_complete(move || *completed_c.borrow_mut() = true)
+      .subscribe(move |v| values_c.borrow_mut().push(v));
+
+    TestScheduler::advance_by(Duration::from_millis(10));
+    assert!(
+      !subscription.is_closed(),
+      "trailing throttle must stay open while the delayed trailing value is pending"
+    );
+    assert!(values.borrow().is_empty());
+    assert!(!*completed.borrow());
+
+    TestScheduler::advance_by(Duration::from_millis(120));
+
+    assert_eq!(*values.borrow(), vec![42]);
+    assert!(*completed.borrow());
+    assert!(subscription.is_closed());
   }
 
   #[rxrust_macro::test]

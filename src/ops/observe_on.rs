@@ -291,4 +291,31 @@ mod tests {
     let vals = values.lock().unwrap();
     assert!(vals.is_empty(), "Received {:?} but expected empty", vals);
   }
+
+  #[rxrust_macro::test(local)]
+  async fn test_observe_on_subscription_stays_open_until_scheduled_complete() {
+    use crate::subscription::Subscription;
+
+    let values = Arc::new(Mutex::new(Vec::new()));
+    let values_c = values.clone();
+    let completed = Arc::new(Mutex::new(false));
+    let completed_c = completed.clone();
+
+    let subscription = Local::of(42)
+      .observe_on(LocalScheduler)
+      .on_complete(move || *completed_c.lock().unwrap() = true)
+      .subscribe(move |v| values_c.lock().unwrap().push(v));
+
+    assert!(!subscription.is_closed());
+    assert!(values.lock().unwrap().is_empty());
+    assert!(!*completed.lock().unwrap());
+
+    LocalScheduler
+      .sleep(Duration::from_millis(0))
+      .await;
+
+    assert_eq!(*values.lock().unwrap(), vec![42]);
+    assert!(*completed.lock().unwrap());
+    assert!(subscription.is_closed());
+  }
 }

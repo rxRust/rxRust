@@ -99,8 +99,8 @@ where
 {
   let (observer, state, id) = task_state;
 
-  state.rc_deref_mut().remove(*id);
   observer.clone().complete();
+  state.rc_deref_mut().remove(*id);
 
   TaskState::Finished
 }
@@ -439,6 +439,78 @@ mod tests {
     let elapsed = start.elapsed();
     assert_eq!(*values.lock().unwrap(), vec![1]);
     assert!(elapsed >= Duration::from_millis(40));
+  }
+
+  #[rxrust_macro::test]
+  fn test_delay_subscription_stays_open_until_delayed_complete() {
+    use std::{cell::RefCell, rc::Rc};
+
+    use crate::{context::TestCtx, prelude::TestScheduler, subscription::Subscription};
+
+    TestScheduler::init();
+
+    let values = Rc::new(RefCell::new(Vec::new()));
+    let values_c = values.clone();
+    let completed = Rc::new(RefCell::new(false));
+    let completed_c = completed.clone();
+
+    let subscription = TestCtx::of(42)
+      .delay(Duration::from_millis(100))
+      .on_complete(move || *completed_c.borrow_mut() = true)
+      .subscribe(move |v| values_c.borrow_mut().push(v));
+
+    assert!(!subscription.is_closed());
+    assert!(values.borrow().is_empty());
+    assert!(!*completed.borrow());
+
+    TestScheduler::advance_by(Duration::from_millis(120));
+
+    assert_eq!(*values.borrow(), vec![42]);
+    assert!(*completed.borrow());
+    assert!(subscription.is_closed());
+  }
+
+  #[rxrust_macro::test]
+  fn test_delay_complete_callback_sees_open_subscription_until_delivery_finishes() {
+    use std::{cell::RefCell, rc::Rc};
+
+    use crate::{
+      context::TestCtx,
+      prelude::TestScheduler,
+      subscription::{BoxedSubscription, IntoBoxedSubscription, Subscription},
+    };
+
+    TestScheduler::init();
+
+    let subscription_cell = Rc::new(RefCell::new(None::<BoxedSubscription>));
+    let subscription_cell_c = subscription_cell.clone();
+    let closed_during_complete = Rc::new(RefCell::new(None));
+    let closed_during_complete_c = closed_during_complete.clone();
+
+    let subscription = TestCtx::of(42)
+      .delay(Duration::from_millis(100))
+      .on_complete(move || {
+        let is_closed = subscription_cell_c
+          .borrow()
+          .as_ref()
+          .expect("subscription should be assigned before delayed complete runs")
+          .is_closed();
+        *closed_during_complete_c.borrow_mut() = Some(is_closed);
+      })
+      .subscribe(|_| {});
+
+    *subscription_cell.borrow_mut() = Some(subscription.into_boxed());
+
+    TestScheduler::advance_by(Duration::from_millis(120));
+
+    assert_eq!(*closed_during_complete.borrow(), Some(false));
+    assert!(
+      subscription_cell
+        .borrow()
+        .as_ref()
+        .expect("subscription should still be stored after completion")
+        .is_closed()
+    );
   }
 
   /// Test that delay cancellation prevents emission.

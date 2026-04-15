@@ -48,5 +48,5 @@ where
     self.subs.rc_deref_mut().unsubscribe_all();
   }
 
-  fn is_closed(&self) -> bool { self.source.is_closed() }
+  fn is_closed(&self) -> bool { self.source.is_closed() && self.subs.rc_deref().all_closed() }
 }

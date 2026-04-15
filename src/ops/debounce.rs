@@ -320,4 +320,27 @@ mod tests {
     assert_eq!(result.len(), 1);
     assert!(*completed.lock().unwrap());
   }
+
+  #[rxrust_macro::test]
+  fn test_debounce_subscription_closes_immediately_on_sync_complete() {
+    use std::{cell::RefCell, rc::Rc};
+
+    use crate::{context::TestCtx, prelude::TestScheduler, subscription::Subscription};
+
+    TestScheduler::init();
+
+    let values = Rc::new(RefCell::new(Vec::new()));
+    let values_c = values.clone();
+    let completed = Rc::new(RefCell::new(false));
+    let completed_c = completed.clone();
+
+    let subscription = TestCtx::of(42)
+      .debounce(Duration::from_millis(100))
+      .on_complete(move || *completed_c.borrow_mut() = true)
+      .subscribe(move |v| values_c.borrow_mut().push(v));
+
+    assert_eq!(*values.borrow(), vec![42]);
+    assert!(*completed.borrow());
+    assert!(subscription.is_closed());
+  }
 }
