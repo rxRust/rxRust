@@ -341,6 +341,35 @@ mod tests {
     assert!(*completed.borrow());
   }
 
+  #[rxrust_macro::test(local)]
+  async fn test_merge_all_subscription_stays_open_while_inner_active() {
+    use std::time::Duration;
+
+    use crate::{scheduler::LocalScheduler, subscription::Subscription};
+
+    let values = Rc::new(RefCell::new(Vec::new()));
+    let values_c = values.clone();
+    let completed = Rc::new(RefCell::new(false));
+    let completed_c = completed.clone();
+
+    let subscription = Local::of(Local::of(42).delay_subscription(Duration::from_millis(20)))
+      .merge_all(usize::MAX)
+      .on_complete(move || *completed_c.borrow_mut() = true)
+      .subscribe(move |v| values_c.borrow_mut().push(v));
+
+    assert!(!subscription.is_closed());
+    assert!(values.borrow().is_empty());
+    assert!(!*completed.borrow());
+
+    LocalScheduler
+      .sleep(Duration::from_millis(40))
+      .await;
+
+    assert_eq!(*values.borrow(), vec![42]);
+    assert!(*completed.borrow());
+    assert!(subscription.is_closed());
+  }
+
   #[rxrust_macro::test]
   fn test_merge_all_concurrency() {
     let result = Rc::new(RefCell::new(Vec::new()));

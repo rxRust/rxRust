@@ -292,4 +292,27 @@ mod tests {
     // Buffer should be emitted due to time
     assert_eq!(*result.borrow(), vec![vec![1, 2]]);
   }
+
+  #[rxrust_macro::test]
+  fn test_buffer_time_subscription_closes_immediately_on_sync_complete() {
+    use crate::{
+      context::TestCtx, scheduler::test_scheduler::TestScheduler, subscription::Subscription,
+    };
+
+    TestScheduler::init();
+
+    let result = Rc::new(RefCell::new(Vec::new()));
+    let result_clone = result.clone();
+    let completed = Rc::new(RefCell::new(false));
+    let completed_c = completed.clone();
+
+    let subscription = TestCtx::of(42)
+      .buffer_time(Duration::from_millis(100))
+      .on_complete(move || *completed_c.borrow_mut() = true)
+      .subscribe(move |v: Vec<i32>| result_clone.borrow_mut().push(v));
+
+    assert_eq!(*result.borrow(), vec![vec![42]]);
+    assert!(*completed.borrow());
+    assert!(subscription.is_closed());
+  }
 }
