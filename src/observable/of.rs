@@ -41,7 +41,6 @@ impl<C, T> crate::observable::CoreObservable<C> for Of<T>
 where
   C: Context,
   C::Inner: Observer<T, Infallible>,
-  T: Clone,
 {
   type Unsub = ();
 

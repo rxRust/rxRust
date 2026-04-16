@@ -9,7 +9,10 @@ use std::{
   thread,
 };
 
-use rxrust::prelude::*;
+use rxrust::{
+  prelude::*,
+  scheduler::{Duration, LocalScheduler, SleepProvider},
+};
 
 fn approx_eq(expected: f64, actual: f64) -> bool { (expected - actual).abs() <= 1e-9 }
 
@@ -130,6 +133,22 @@ fn test_merge_integration() {
   let mut sorted = results.borrow().clone();
   sorted.sort_unstable();
   assert_eq!(sorted, vec![1, 2, 3]);
+}
+
+#[rxrust_macro::test(local)]
+async fn test_from_future_async_block_flat_map() {
+  let result = Rc::new(RefCell::new(None));
+  let result_clone = result.clone();
+
+  Local::of(async { 42_u8 })
+    .flat_map(Local::from_future)
+    .subscribe(move |v| *result_clone.borrow_mut() = Some(v));
+
+  LocalScheduler
+    .sleep(Duration::from_millis(0))
+    .await;
+
+  assert_eq!(*result.borrow(), Some(42));
 }
 
 #[rxrust_macro::test]

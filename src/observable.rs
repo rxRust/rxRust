@@ -55,6 +55,7 @@ use crate::ops::{
   filter::Filter,
   filter_map::FilterMap,
   finalize::Finalize,
+  flat_map::FlatMap,
   group_by::GroupBy,
   into_future::{ObservableFuture, SupportsIntoFuture},
   into_stream::SupportsIntoStream,
@@ -2360,12 +2361,12 @@ pub trait Observable: Context {
   ///   .subscribe(|v| out.push(v));
   /// assert_eq!(out, vec![1, 11, 2, 12]);
   /// ```
-  fn flat_map<F, Inner>(self, f: F) -> Self::With<MergeAll<Map<Self::Inner, F>>>
+  fn flat_map<F, Inner>(self, f: F) -> Self::With<FlatMap<Self::Inner, F, Inner>>
   where
     F: for<'a> FnMut(Self::Item<'a>) -> Inner,
     Inner: Context<Inner: ObservableType<Err = Self::Err>>,
   {
-    self.transform(|source| MergeAll { source: Map { source, func: f }, concurrent: usize::MAX })
+    self.transform(|source| FlatMap::new(source, f, usize::MAX))
   }
 
   /// Map each item into an inner observable and concatenate the results.
@@ -2388,12 +2389,12 @@ pub trait Observable: Context {
   ///   .subscribe(|v| out.push(v));
   /// assert_eq!(out, vec![1, 11, 2, 12]);
   /// ```
-  fn concat_map<F, Inner>(self, f: F) -> Self::With<MergeAll<Map<Self::Inner, F>>>
+  fn concat_map<F, Inner>(self, f: F) -> Self::With<FlatMap<Self::Inner, F, Inner>>
   where
     F: for<'a> FnMut(Self::Item<'a>) -> Inner,
     Inner: Context<Inner: ObservableType<Err = Self::Err>>,
   {
-    self.transform(|source| MergeAll { source: Map { source, func: f }, concurrent: 1 })
+    self.transform(|source| FlatMap::new(source, f, 1))
   }
 
   /// Map each item into an inner observable and switch to the latest one.
