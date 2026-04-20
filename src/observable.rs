@@ -72,6 +72,7 @@ use crate::ops::{
   retry::{Retry, RetryPolicy},
   sample::Sample,
   scan::Scan,
+  scan_map::ScanMap,
   skip::Skip,
   skip_last::SkipLast,
   skip_until::SkipUntil,
@@ -368,6 +369,41 @@ pub trait Observable: Context {
     F: for<'a> FnMut(Self::Item<'a>) -> Option<Out>,
   {
     self.transform(|source| FilterMap { source, func: f })
+  }
+
+  /// Transform each item while accumulating a value
+  ///
+  /// This operator applies a function over the source Observable that both
+  /// mutates an accumulated value and produces a new value.
+  ///
+  /// # Arguments
+  ///
+  /// * `initial` - The initial accumulator value
+  /// * `f` - A function that takes the current accumulator by mutable reference
+  ///   and a value, and returns an output value.
+  ///
+  /// # Type Parameters
+  ///
+  /// * `Acc` - The type of the accumulator value
+  /// * `Output` - The type of the output value
+  /// * `F` - The mapper/mutator function type
+  ///
+  /// # Examples
+  ///
+  /// ```rust
+  /// use rxrust::prelude::*;
+  ///
+  /// let observable = Local::from_iter([1, 2, 3, 4]).scan_map(0, |acc, v| {
+  ///   *acc += v;
+  ///   *acc + 10
+  /// });
+  /// // Emits: 11, 13, 16, 20
+  /// ```
+  fn scan_map<Acc, Output, F>(self, initial: Acc, f: F) -> Self::With<ScanMap<Self::Inner, F, Acc>>
+  where
+    F: for<'a> FnMut(&mut Acc, Self::Item<'a>) -> Output,
+  {
+    self.transform(|source| ScanMap { source, func: f, initial_value: initial })
   }
 
   /// Apply an accumulator function and emit each intermediate result

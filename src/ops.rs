@@ -9,6 +9,7 @@
 //! - [`map`] - Transform each item
 //! - [`filter_map`] - Transform and filter in one step
 //! - [`scan`] - Accumulate with intermediate emissions
+//! - [`scan_map`] - Transform each item while accumulating a value
 //!
 //! ### Filtering
 //! - [`filter`] - Pass items matching a predicate
@@ -62,6 +63,7 @@ pub mod ref_count;
 pub mod retry;
 pub mod sample;
 pub mod scan;
+pub mod scan_map;
 pub mod skip;
 pub mod skip_last;
 pub mod skip_until;
@@ -113,6 +115,7 @@ pub use ref_count::*;
 pub use retry::*;
 pub use sample::*;
 pub use scan::*;
+pub use scan_map::*;
 pub use skip::*;
 pub use skip_last::*;
 pub use skip_until::*;
