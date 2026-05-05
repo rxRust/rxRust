@@ -4,6 +4,10 @@
     "name": "latest"
   },
   {
+    "path": "v1.0.0-rc.5",
+    "name": "v1.0.0-rc.5"
+  },
+  {
     "path": "v1.0.0-rc.4",
     "name": "v1.0.0-rc.4"
   },
