@@ -36,16 +36,14 @@
 //! ```
 
 use std::{
-  cell::RefCell,
   fmt::Display,
   future::Future,
   pin::Pin,
-  rc::Rc,
   task::{Context as TaskContext, Poll, Waker},
 };
 
 use crate::{
-  context::Context,
+  context::{Context, RcDerefMut},
   observable::{CoreObservable, Observable, ObservableType},
   observer::Observer,
 };
@@ -103,11 +101,19 @@ pub(crate) enum State<Item, Err> {
 }
 
 /// Shared state between Future and Observer
-pub(crate) struct SharedState<Item, Err> {
+#[doc(hidden)]
+pub struct SharedState<Item, Err> {
   pub(crate) state: State<Item, Err>,
   pub(crate) waker: Option<Waker>,
   pub(crate) completed: bool,
 }
+
+type IntoFutureHandle<C, Item, Err> = <C as Context>::RcMut<SharedState<Item, Err>>;
+
+/// The concrete future returned by [`Observable::into_future()`] for a given
+/// observable context.
+pub type ObservableFutureOf<'a, C> =
+  ObservableFuture<IntoFutureHandle<C, <C as Observable>::Item<'a>, <C as Observable>::Err>>;
 
 // ============================================================================
 // ObservableFuture
@@ -117,15 +123,18 @@ pub(crate) struct SharedState<Item, Err> {
 ///
 /// This future supports both synchronous and asynchronous observables.
 /// It uses a shared state with a waker to properly await async observables.
-pub struct ObservableFuture<Item, Err> {
-  shared: Rc<RefCell<SharedState<Item, Err>>>,
+pub struct ObservableFuture<R> {
+  shared: R,
 }
 
-impl<Item, Err> Future for ObservableFuture<Item, Err> {
+impl<R, Item, Err> Future for ObservableFuture<R>
+where
+  R: RcDerefMut<Target = SharedState<Item, Err>> + Clone,
+{
   type Output = IntoFutureResult<Item, Err>;
 
   fn poll(self: Pin<&mut Self>, cx: &mut TaskContext<'_>) -> Poll<Self::Output> {
-    let mut shared = self.shared.borrow_mut();
+    let mut shared = self.shared.rc_deref_mut();
     if shared.completed {
       let result = match std::mem::replace(&mut shared.state, State::Empty) {
         State::Empty => Err(IntoFutureError::Empty),
@@ -150,24 +159,37 @@ impl<Item, Err> Future for ObservableFuture<Item, Err> {
 /// This observer stores the result in a shared state so it can be
 /// retrieved after subscription completes. It supports both synchronous
 /// and asynchronous observables by using a waker to notify the future.
-pub struct IntoFutureObserver<Item, Err> {
-  shared: Rc<RefCell<SharedState<Item, Err>>>,
+pub struct IntoFutureObserver<R> {
+  shared: R,
 }
 
-impl<Item, Err> IntoFutureObserver<Item, Err> {
-  pub(crate) fn new(shared: Rc<RefCell<SharedState<Item, Err>>>) -> Self { Self { shared } }
+impl<R> Clone for IntoFutureObserver<R>
+where
+  R: Clone,
+{
+  fn clone(&self) -> Self { Self { shared: self.shared.clone() } }
+}
+
+impl<R, Item, Err> IntoFutureObserver<R>
+where
+  R: RcDerefMut<Target = SharedState<Item, Err>> + Clone,
+{
+  pub(crate) fn new(shared: R) -> Self { Self { shared } }
 
   /// Wake the future if a waker is registered
   fn wake(&self) {
-    if let Some(waker) = self.shared.borrow_mut().waker.take() {
+    if let Some(waker) = self.shared.rc_deref_mut().waker.take() {
       waker.wake();
     }
   }
 }
 
-impl<Item, Err> Observer<Item, Err> for IntoFutureObserver<Item, Err> {
+impl<R, Item, Err> Observer<Item, Err> for IntoFutureObserver<R>
+where
+  R: RcDerefMut<Target = SharedState<Item, Err>> + Clone,
+{
   fn next(&mut self, value: Item) {
-    let mut shared = self.shared.borrow_mut();
+    let mut shared = self.shared.rc_deref_mut();
     match &shared.state {
       State::Empty => shared.state = State::HasValue(value),
       State::HasValue(_) => {
@@ -183,7 +205,7 @@ impl<Item, Err> Observer<Item, Err> for IntoFutureObserver<Item, Err> {
 
   fn error(self, err: Err) {
     {
-      let mut shared = self.shared.borrow_mut();
+      let mut shared = self.shared.rc_deref_mut();
       shared.state = State::Error(err);
       shared.completed = true;
     }
@@ -191,36 +213,15 @@ impl<Item, Err> Observer<Item, Err> for IntoFutureObserver<Item, Err> {
   }
 
   fn complete(self) {
-    self.shared.borrow_mut().completed = true;
+    self.shared.rc_deref_mut().completed = true;
     self.wake();
   }
 
   fn is_closed(&self) -> bool {
     // Stop receiving if we already have multiple values or an error
-    let shared = self.shared.borrow();
+    let shared = self.shared.rc_deref();
     shared.completed || matches!(shared.state, State::MultipleValues | State::Error(_))
   }
-}
-
-// ============================================================================
-// Factory Function
-// ============================================================================
-
-/// Creates a future from an observable.
-///
-/// This function subscribes to the observable and returns a future that
-/// resolves when the observable completes. It supports both synchronous
-/// and asynchronous observables.
-pub fn observable_into_future<T, E, F>(subscribe_fn: F) -> ObservableFuture<T, E>
-where
-  F: FnOnce(IntoFutureObserver<T, E>),
-{
-  let shared =
-    Rc::new(RefCell::new(SharedState { state: State::Empty, waker: None, completed: false }));
-  let observer = IntoFutureObserver::new(shared.clone());
-  subscribe_fn(observer);
-
-  ObservableFuture { shared }
 }
 
 // ============================================================================
@@ -239,7 +240,7 @@ where
   Self: 'a,
 {
   /// Convert a context-wrapped observable into an [`ObservableFuture`].
-  fn into_future(ctx: C) -> ObservableFuture<C::Item<'a>, C::Err>;
+  fn into_future(ctx: C) -> ObservableFutureOf<'a, C>;
 }
 
 impl<'a, C, T> SupportsIntoFuture<'a, C> for T
@@ -247,14 +248,17 @@ where
   C: Context<Inner = T> + Observable + 'a,
   T: ObservableType + 'a,
   // Use fully qualified syntax to break the cycle in trait bound computation
-  T: CoreObservable<C::With<IntoFutureObserver<C::Item<'a>, C::Err>>>,
+  T: CoreObservable<C::With<IntoFutureObserver<IntoFutureHandle<C, C::Item<'a>, C::Err>>>>,
 {
-  fn into_future(ctx: C) -> ObservableFuture<C::Item<'a>, C::Err> {
-    observable_into_future(|observer| {
-      let (core, wrapped) = ctx.swap(observer);
-      // NOTE: we currently drop the subscription handle, matching the old behavior.
-      core.subscribe(wrapped);
-    })
+  fn into_future(ctx: C) -> ObservableFutureOf<'a, C> {
+    let shared: IntoFutureHandle<C, C::Item<'a>, C::Err> =
+      SharedState { state: State::Empty, waker: None, completed: false }.into();
+    let observer = IntoFutureObserver::new(shared.clone());
+    let future = ObservableFuture { shared };
+    let (core, wrapped) = ctx.swap(observer);
+    // NOTE: we currently drop the subscription handle, matching the old behavior.
+    core.subscribe(wrapped);
+    future
   }
 }
 
@@ -267,7 +271,10 @@ mod tests {
   use futures::task::noop_waker;
 
   use super::*;
-  use crate::prelude::*;
+  use crate::{
+    prelude::*,
+    rc::{MutRc, RcDerefMut},
+  };
 
   #[rxrust_macro::test(local)]
   async fn test_into_future_single_value() {
@@ -332,11 +339,8 @@ mod tests {
   #[rxrust_macro::test]
   fn test_into_future_sync_observable_completes_immediately() {
     // Synchronous observables should have completed = true after subscribe
-    let shared = Rc::new(RefCell::new(SharedState::<i32, ()> {
-      state: State::Empty,
-      waker: None,
-      completed: false,
-    }));
+    let shared =
+      MutRc::from(SharedState::<i32, ()> { state: State::Empty, waker: None, completed: false });
     let observer = IntoFutureObserver::new(shared.clone());
 
     // Simulate a sync observable
@@ -345,7 +349,7 @@ mod tests {
 
     // For sync case, we need to manually complete
     {
-      let mut s = shared.borrow_mut();
+      let mut s = shared.rc_deref_mut();
       s.completed = true;
     }
 
@@ -361,5 +365,31 @@ mod tests {
       Poll::Ready(Ok(Ok(42))),
       "Synchronous observable should complete immediately"
     );
+  }
+
+  #[cfg(not(target_arch = "wasm32"))]
+  #[rxrust_macro::test]
+  async fn test_into_future_shared_with_observe_on() {
+    let fut = Shared::of(42)
+      .observe_on(SharedScheduler)
+      .into_future();
+
+    assert_eq!(fut.await, Ok(Ok(42)));
+  }
+
+  #[cfg(not(target_arch = "wasm32"))]
+  #[rxrust_macro::test]
+  async fn test_into_future_shared_behavior_subject_issue_276() {
+    let mut subject = Shared::behavior_subject::<bool, ()>(false);
+    let fut = subject
+      .clone()
+      .observe_on(SharedScheduler)
+      .filter(|v| *v)
+      .first()
+      .into_future();
+
+    subject.next(true);
+
+    assert_eq!(fut.await, Ok(Ok(true)));
   }
 }

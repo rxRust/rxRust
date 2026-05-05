@@ -57,7 +57,7 @@ use crate::ops::{
   finalize::Finalize,
   flat_map::FlatMap,
   group_by::GroupBy,
-  into_future::{ObservableFuture, SupportsIntoFuture},
+  into_future::{ObservableFutureOf, SupportsIntoFuture},
   into_stream::SupportsIntoStream,
   last::Last,
   lifecycle::{OnComplete, OnError},
@@ -2061,7 +2061,7 @@ pub trait Observable: Context {
   /// #[cfg(target_arch = "wasm32")]
   /// fn main() {}
   /// ```
-  fn into_future<'a>(self) -> ObservableFuture<Self::Item<'a>, Self::Err>
+  fn into_future<'a>(self) -> ObservableFutureOf<'a, Self>
   where
     Self::Inner: SupportsIntoFuture<'a, Self>,
   {
