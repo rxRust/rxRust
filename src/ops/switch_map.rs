@@ -32,6 +32,8 @@
 //! source.next(2);
 //! ```
 
+use std::marker::PhantomData;
+
 use crate::{
   context::{Context, RcDeref, RcDerefMut, Scope},
   observable::{CoreObservable, ObservableType},
@@ -85,9 +87,10 @@ where
 
 #[doc(hidden)]
 #[derive(Clone)]
-pub struct SwitchMapOuterObserver<Sc: Scope, O, F> {
+pub struct SwitchMapOuterObserver<Sc: Scope, O, F, InnerObs> {
   state: SwitchState<Sc, O>,
   func: F,
+  _inner: PhantomData<fn() -> InnerObs>,
 }
 
 #[doc(hidden)]
@@ -151,7 +154,7 @@ type InnerObserverCtx<C> = <C as Context>::With<
 impl<S, F, C, Out, InnerObs> CoreObservable<C> for SwitchMap<S, F>
 where
   C: Context,
-  S: CoreObservable<C::With<SwitchMapOuterObserver<C::Scope, C::Inner, F>>>,
+  S: CoreObservable<C::With<SwitchMapOuterObserver<C::Scope, C::Inner, F, InnerObs>>>,
   F: for<'a> FnMut(S::Item<'a>) -> Out,
   Out: Context<Inner = InnerObs>,
   InnerObs: CoreObservable<InnerObserverCtx<C>, Err = S::Err> + 'static,
@@ -167,7 +170,7 @@ where
     let wrapped = context.transform(|observer| {
       *state.rc_deref_mut() =
         Some(SwitchMapState { observer, outer_completed: false, inner_sub: None });
-      SwitchMapOuterObserver { state: state.clone(), func }
+      SwitchMapOuterObserver { state: state.clone(), func, _inner: PhantomData }
     });
 
     let source_unsub = source.subscribe(wrapped);
@@ -176,7 +179,8 @@ where
   }
 }
 
-impl<Sc, O, InnerObs, Item, Err, F, Out> Observer<Item, Err> for SwitchMapOuterObserver<Sc, O, F>
+impl<Sc, O, InnerObs, Item, Err, F, Out> Observer<Item, Err>
+  for SwitchMapOuterObserver<Sc, O, F, InnerObs>
 where
   Sc: Scope,
   O: for<'a> Observer<InnerObs::Item<'a>, Err>,

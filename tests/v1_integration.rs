@@ -14,9 +14,7 @@ use rxrust::{
   scheduler::{Duration, LocalScheduler, SleepProvider},
 };
 
-fn approx_eq(expected: f64, actual: f64) -> bool {
-  (expected - actual).abs() <= 1e-9
-}
+fn approx_eq(expected: f64, actual: f64) -> bool { (expected - actual).abs() <= 1e-9 }
 
 #[rxrust_macro::test]
 fn test_basic_chain_integration() {
@@ -37,32 +35,32 @@ fn test_basic_chain_integration() {
 fn test_switch_map_box_it() {
   // No problem with these
   Shared::empty().box_it();
-  Shared::empty().switch_map(|s| Shared::of(""));
+  Shared::empty().switch_map(|_| Shared::of(""));
   Shared::empty()
-    .flat_map(|s| Shared::empty())
+    .flat_map(|_| Shared::empty())
     .box_it();
   Shared::of(true)
-    .switch_map(|s| Shared::of(true))
+    .switch_map(|_| Shared::of(true))
     .subscribe(|_| {});
 
   // All these variations fail to satisfy trait bounds
   Shared::of(true)
-    .switch_map(|s| Shared::of(true))
+    .switch_map(|_| Shared::of(true))
     .box_it();
   Shared::empty()
-    .switch_map(|s| Shared::empty())
+    .switch_map(|_| Shared::empty())
     .box_it();
   Shared::empty()
-    .switch_map(|s| Shared::of(true))
+    .switch_map(|_| Shared::of(true))
     .box_it();
   Shared::empty()
-    .switch_map(|s| Shared::of(""))
+    .switch_map(|_| Shared::of(""))
     .box_it();
   Shared::of(true)
-    .switch_map(|s| Shared::of(true))
+    .switch_map(|_| Shared::of(true))
     .box_it_clone();
   Local::empty()
-    .switch_map(|s| Local::empty())
+    .switch_map(|_| Local::empty())
     .box_it();
 }
 
