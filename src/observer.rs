@@ -308,6 +308,10 @@ where
 
 /// MutRc<Option<O>> & MutArc<Option<O>> - shared ownership observer for local
 /// context Uses take() for terminal operations to consume the inner observer
+///
+/// Keep this forwarding implementation out of trait recommendations so it does
+/// not obscure a concrete observer's Item or Err mismatch.
+#[diagnostic::do_not_recommend]
 impl<O, Item, Err, P> Observer<Item, Err> for P
 where
   P: RcDerefMut<Target = Option<O>>,

@@ -13,7 +13,10 @@ use crate::{
 
 // ==================== OnError ====================
 
-/// OnError operator that executes a callback when an error occurs
+/// Executes a callback for a source error and consumes that terminal event.
+///
+/// The resulting observable is infallible because errors are not forwarded
+/// downstream.
 #[derive(Clone)]
 pub struct OnError<S, F> {
   pub source: S,
@@ -33,7 +36,7 @@ where
     = S::Item<'a>
   where
     Self: 'a;
-  type Err = S::Err;
+  type Err = Infallible;
 }
 
 /// Observer wrapper for OnError that executes the callback on error
@@ -140,9 +143,11 @@ where
 
 #[cfg(test)]
 mod tests {
-  use std::{cell::RefCell, rc::Rc};
+  use std::{cell::RefCell, convert::Infallible, rc::Rc};
 
   use crate::prelude::*;
+
+  fn assert_infallible<O: Observable<Err = Infallible>>(_observable: &O) {}
 
   #[rxrust_macro::test]
   fn test_on_complete() {
@@ -220,6 +225,21 @@ mod tests {
 
     assert_eq!(*values.borrow(), vec![42]);
     assert_eq!(errors.borrow().len(), 0); // No error occurred
+  }
+
+  #[rxrust_macro::test]
+  fn test_on_error_consumes_error_type() {
+    let error = Rc::new(RefCell::new(None));
+    let error_clone = error.clone();
+
+    let observable = Local::throw_err("boom").on_error(move |err| {
+      *error_clone.borrow_mut() = Some(err);
+    });
+
+    assert_infallible(&observable);
+    observable.subscribe(|_| unreachable!());
+
+    assert_eq!(*error.borrow(), Some("boom"));
   }
 
   #[rxrust_macro::test]

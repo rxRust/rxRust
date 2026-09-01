@@ -137,7 +137,9 @@ pub trait Observable: Context {
 
   /// Subscribe with a closure for the next values.
   ///
-  /// This is the primary subscription method, optimized for ergonomics.
+  /// This is the primary subscription method, optimized for ergonomics. It is
+  /// available only for infallible observables; use [`Observable::on_error`]
+  /// first to consume errors from a fallible observable.
   fn subscribe<F, U>(self, f: F) -> U
   where
     F: for<'a> FnMut(Self::Item<'a>),
