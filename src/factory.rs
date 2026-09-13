@@ -320,9 +320,10 @@ pub trait ObservableFactory: Context<Inner = ()> {
   ///
   /// # Returns
   /// A `BehaviorSubject` wrapped in the context's associated type.
+  #[allow(clippy::type_complexity)]
   fn behavior_subject<'a, Item: Clone, Err>(
     initial: Item,
-  ) -> Self::With<BehaviorSubject<Item, SubjectPtr<'a, Self, Item, Err>>> {
+  ) -> Self::With<BehaviorSubject<Self::RcMut<Item>, SubjectPtr<'a, Self, Item, Err>>> {
     Self::lift(BehaviorSubject::new(initial))
   }
 
@@ -346,9 +347,10 @@ pub trait ObservableFactory: Context<Inner = ()> {
   /// # Returns
   /// A `BehaviorSubject` with mutable reference observers wrapped in the
   /// context's associated type.
+  #[allow(clippy::type_complexity)]
   fn behavior_subject_mut_ref<'a, Item: Clone + 'a, Err>(
     initial: Item,
-  ) -> Self::With<BehaviorSubject<Item, SubjectPtrMutRef<'a, Self, Item, Err>>> {
+  ) -> Self::With<BehaviorSubject<Self::RcMut<Item>, SubjectPtrMutRef<'a, Self, Item, Err>>> {
     Self::lift(BehaviorSubject::new(initial))
   }
 
