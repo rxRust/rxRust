@@ -269,15 +269,12 @@ pub struct Retry<S, P> {
 /// but it is considered an internal implementation detail of the `retry`
 /// operator. Users should not instantiate or interact with this struct
 /// directly.
-pub struct RetryObserver<S, P, ObserverCtx>
-where
-  ObserverCtx: Context,
-{
+pub struct RetryObserver<S, P, O, SU> {
   source: S,
   policy: P,
-  observer: ObserverCtx,
+  observer: O,
   attempts: usize,
-  serial_subscription: ObserverCtx::RcMut<Option<ObserverCtx::BoxedSubscription>>,
+  serial_subscription: SU,
   // use function pointer to avoid circular type bounds requirements
   subscribe_fn: fn(Self),
 }
@@ -293,10 +290,9 @@ where
   type Err = S::Err;
 }
 
-impl<S, P, O> ObservableType for RetryObserver<S, P, O>
+impl<S, P, O, SU> ObservableType for RetryObserver<S, P, O, SU>
 where
   S: ObservableType,
-  O: Context,
 {
   type Item<'a>
     = S::Item<'a>
@@ -308,7 +304,8 @@ where
 impl<S, P, Ctx> CoreObservable<Ctx> for Retry<S, P>
 where
   Ctx: Context,
-  S: CoreObservable<Ctx::With<RetryObserver<S, P, Ctx>>> + Clone,
+  S: CoreObservable<Ctx::With<RetryObserver<S, P, Ctx, Ctx::RcMut<Option<Ctx::BoxedSubscription>>>>>
+    + Clone,
   S::Unsub: IntoBoxedSubscription<Ctx::BoxedSubscription>,
   Ctx::RcMut<Option<Ctx::BoxedSubscription>>: Subscription,
 {
@@ -332,7 +329,7 @@ where
   }
 }
 
-impl<S, P, Ctx, Item, Err> Observer<Item, Err> for RetryObserver<S, P, Ctx>
+impl<S, P, Ctx, SU, Item, Err> Observer<Item, Err> for RetryObserver<S, P, Ctx, SU>
 where
   Self: Clone,
   P: RetryPolicy<Err>,
@@ -368,7 +365,7 @@ where
   fn is_closed(&self) -> bool { self.observer.is_closed() }
 }
 
-impl<S, P, Ctx> RetryObserver<S, P, Ctx>
+impl<S, P, Ctx> RetryObserver<S, P, Ctx, Ctx::RcMut<Option<Ctx::BoxedSubscription>>>
 where
   Ctx: Context,
   S: CoreObservable<Ctx::With<Self>> + Clone,
@@ -385,11 +382,12 @@ where
   }
 }
 
-impl<S, P, Ctx> Clone for RetryObserver<S, P, Ctx>
+impl<S, P, Ctx, SU> Clone for RetryObserver<S, P, Ctx, SU>
 where
   S: Clone,
   P: Clone,
-  Ctx: Clone + Context,
+  SU: Clone,
+  Ctx: Clone,
 {
   fn clone(&self) -> Self {
     Self {
