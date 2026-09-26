@@ -293,12 +293,15 @@ mod tests {
     let mut writer = behavior.clone();
     let (values, mut capture) = create_value_capture();
 
-    behavior.clone().on_error(|_| {}).subscribe(move |value| {
-      capture(value);
-      if value == 0 {
-        writer.next(1);
-      }
-    });
+    behavior
+      .clone()
+      .on_error(|_| {})
+      .subscribe(move |value| {
+        capture(value);
+        if value == 0 {
+          writer.next(1);
+        }
+      });
 
     assert_eq!(behavior.peek(), 1);
     assert_eq!(*values.borrow(), vec![0]);
@@ -318,10 +321,13 @@ mod tests {
       let behavior = Shared::behavior_subject::<_, ()>(42);
       let reader = behavior.clone();
 
-      behavior.clone().on_error(|_| {}).subscribe(move |value| {
-        assert_eq!(value, 42);
-        assert_eq!(reader.peek(), value);
-      });
+      behavior
+        .clone()
+        .on_error(|_| {})
+        .subscribe(move |value| {
+          assert_eq!(value, 42);
+          assert_eq!(reader.peek(), value);
+        });
 
       behavior.complete();
       done_tx.send(()).unwrap();
