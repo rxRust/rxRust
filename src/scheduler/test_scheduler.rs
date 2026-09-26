@@ -342,7 +342,8 @@ where
           Poll::Ready(()) => TaskState::Finished,
           Poll::Pending => {
             // Check if the future requested a sleep duration via thread-local
-            // This is set by TestTaskFuture when Task returns TaskState::Sleeping
+            // This is set by TestTaskFuture when Task returns
+            // TaskState::Sleeping
             PENDING_SLEEP.with(|cell| {
               cell
                 .take()
@@ -548,9 +549,9 @@ mod tests {
 
     // Advance to exactly 100ms - task should execute and reschedule
     TestScheduler::advance_by(Duration::from_millis(100));
-    // Task should have executed once and rescheduled for immediate execution (Yield
-    // with 0 delay) But since we're at target_time, the rescheduled task should
-    // also execute
+    // Task should have executed once and rescheduled for immediate execution
+    // (Yield with 0 delay) But since we're at target_time, the rescheduled
+    // task should also execute
     assert_eq!(count.get(), 3);
     assert!(TestScheduler::is_empty());
   }

@@ -256,7 +256,8 @@ where
     let observer = IntoFutureObserver::new(shared.clone());
     let future = ObservableFuture { shared };
     let (core, wrapped) = ctx.swap(observer);
-    // NOTE: we currently drop the subscription handle, matching the old behavior.
+    // NOTE: we currently drop the subscription handle, matching the old
+    // behavior.
     core.subscribe(wrapped);
     future
   }

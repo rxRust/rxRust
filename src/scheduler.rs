@@ -281,7 +281,8 @@ where
   type Output = ();
 
   fn poll(self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<Self::Output> {
-    // Safety: We are manually projecting. `pending_sleep` is structurally pinned.
+    // Safety: We are manually projecting. `pending_sleep` is structurally
+    // pinned.
     let this = unsafe { self.get_unchecked_mut() };
 
     loop {
@@ -1017,9 +1018,9 @@ mod tests {
     #[rxrust_macro::test]
     fn test_unsubscribe_consumes_handle() {
       // With move semantics, unsubscribe() consumes the handle
-      // This is a compile-time guarantee, so this test just documents the behavior
-      // Attempting to call unsubscribe twice on the same handle would be a compile
-      // error
+      // This is a compile-time guarantee, so this test just documents the
+      // behavior Attempting to call unsubscribe twice on the same handle
+      // would be a compile error
       let handle = TaskHandle::finished();
       assert!(handle.is_closed());
       handle.unsubscribe();

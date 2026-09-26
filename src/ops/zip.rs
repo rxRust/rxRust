@@ -64,8 +64,8 @@ impl<O, ItemA, ItemB> ZipState<O, ItemA, ItemB> {
   where
     O: Observer<(ItemA, ItemB), E>,
   {
-    // Complete when both sources complete, or when one completes and the other's
-    // buffer is empty (no more pairs can be formed)
+    // Complete when both sources complete, or when one completes and the
+    // other's buffer is empty (no more pairs can be formed)
     let should_complete = (self.buffer_a.is_empty() || self.completed_b) && self.completed_a
       || (self.buffer_b.is_empty() || self.completed_a) && self.completed_b;
 

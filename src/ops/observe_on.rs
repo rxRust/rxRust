@@ -243,11 +243,11 @@ mod tests {
     let emitted = emitted_threads.rc_deref();
     let observed = observed_threads.rc_deref();
 
-    // Threads should be different (or at least could be, but SharedScheduler spawns
-    // new tasks usually on thread pool) With tokio multithreaded runtime, tasks
-    // might run on different threads. We just verify it works.
-    // Also, `observe_on` should have run the observer on the SharedScheduler
-    // (pool).
+    // Threads should be different (or at least could be, but SharedScheduler
+    // spawns new tasks usually on thread pool) With tokio multithreaded
+    // runtime, tasks might run on different threads. We just verify it
+    // works. Also, `observe_on` should have run the observer on the
+    // SharedScheduler (pool).
 
     // We can't strictly guarantee different threads without knowing the runtime
     // flavor perfectly, but we can verify execution happened.
@@ -277,16 +277,16 @@ mod tests {
       .sleep(Duration::from_millis(0))
       .await;
 
-    // 1 might or might not make it depending on when unsubscribe happens relative
-    // to schedule? unsubscribe() cancels pending tasks.
+    // 1 might or might not make it depending on when unsubscribe happens
+    // relative to schedule? unsubscribe() cancels pending tasks.
     // next(1) schedules task.
     // unsubscribe() empties the subscription list (cancels task).
-    // So 1 should NOT be received if unsubscribe happens synchronously after next
-    // but before task execution. LocalScheduler doesn't execute immediately
-    // unless yielded. So 1 should be cancelled.
+    // So 1 should NOT be received if unsubscribe happens synchronously after
+    // next but before task execution. LocalScheduler doesn't execute
+    // immediately unless yielded. So 1 should be cancelled.
     // 2 is not even scheduled because subject removes subscription? (Actually
-    // observed wrapper still receives next(2) if subject not fully unsubscribed?
-    // No, subject unsubscribes).
+    // observed wrapper still receives next(2) if subject not fully
+    // unsubscribed? No, subject unsubscribes).
 
     let vals = values.lock().unwrap();
     assert!(vals.is_empty(), "Received {:?} but expected empty", vals);

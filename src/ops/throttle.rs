@@ -179,8 +179,8 @@ where
 
   fn start_window_impl(&self, value: &Item) {
     // Do not hold the mutable borrow of `state` across `subscribe()`.
-    // The notifier may synchronously call back into this operator (re-entrancy),
-    // which would otherwise cause a runtime borrow panic.
+    // The notifier may synchronously call back into this operator
+    // (re-entrancy), which would otherwise cause a runtime borrow panic.
     let notifier = {
       let mut guard = self.state.rc_deref_mut();
       let Some(inner) = guard.as_mut() else { return };

@@ -93,8 +93,8 @@ fn main() {
       println!("Consumer received value: {}", v);
     });
 
-  // Wait a bit just to be sure (though our scheduler is blocking, so strictly not
-  // needed)
+  // Wait a bit just to be sure (though our scheduler is blocking, so strictly
+  // not needed)
   std::thread::sleep(Duration::from_millis(100));
 
   println!("--- Example Finished ---");

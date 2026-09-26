@@ -350,9 +350,9 @@ mod tests {
         result_clone.borrow_mut().push(v);
       });
 
-    // Should emit 1 immediately because source emits 1 (stored) then sampler emits
-    // (samples 1) If we subscribed sampler first: sampler emits, source not
-    // subbed (no value), then source emits 1. Result: empty.
+    // Should emit 1 immediately because source emits 1 (stored) then sampler
+    // emits (samples 1) If we subscribed sampler first: sampler emits,
+    // source not subbed (no value), then source emits 1. Result: empty.
     assert_eq!(*result.borrow(), vec![1]);
 
     source.next(2);

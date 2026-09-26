@@ -63,8 +63,8 @@ where
       self.count_down -= 1;
       self.queue.push_back(v);
     } else {
-      // Optimization: Pop before push to avoid reallocation if buffer is at capacity.
-      // If queue is empty (count == 0), pass through directly.
+      // Optimization: Pop before push to avoid reallocation if buffer is at
+      // capacity. If queue is empty (count == 0), pass through directly.
       if let Some(old) = self.queue.pop_front() {
         self.queue.push_back(v);
         self.observer.next(old);

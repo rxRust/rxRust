@@ -81,7 +81,8 @@ where
     // If we can't inspect (e.g. inner is borrowed), we assume it's open (false)
     // or rely on recursive calls not happening in a way that blocks this.
     // For standard MutRc/MutArc, rc_deref() blocks if mutably borrowed.
-    // But is_closed is called by upstream before emission, so it should be fine.
+    // But is_closed is called by upstream before emission, so it should be
+    // fine.
     self
       .0
       .rc_deref()

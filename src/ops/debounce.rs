@@ -247,7 +247,8 @@ mod tests {
     let completed = Arc::new(Mutex::new(false));
     let completed_c = completed.clone();
 
-    // Source completes immediately after emitting, trailing value should be emitted
+    // Source completes immediately after emitting, trailing value should be
+    // emitted
     Local::of(42)
       .debounce(Duration::from_millis(100))
       .on_complete(move || *completed_c.lock().unwrap() = true)

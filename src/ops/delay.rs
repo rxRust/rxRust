@@ -218,8 +218,8 @@ where
     let mut subscription = subscription.rc_deref_mut();
     if !subscription.is_closed() {
       let sub = source.subscribe(context);
-      // Switch the subscription from the TaskHandle (waiting) to the actual source
-      // subscription
+      // Switch the subscription from the TaskHandle (waiting) to the actual
+      // source subscription
       *subscription = EitherSubscription::Right(sub);
     }
   }
@@ -250,8 +250,8 @@ where
     let task = Task::new(task_state, delay_subscription_handler);
     let handle = scheduler.schedule(task, Some(delay));
 
-    // Store the task handle so it can be cancelled if the user unsubscribes before
-    // the delay passes
+    // Store the task handle so it can be cancelled if the user unsubscribes
+    // before the delay passes
     *subscription.rc_deref_mut() = EitherSubscription::Left(handle);
     subscription
   }
@@ -581,8 +581,8 @@ mod tests {
       .sleep(Duration::from_millis(100))
       .await;
 
-    // Should receive nothing because we unsubscribed before subscription to source
-    // occurred
+    // Should receive nothing because we unsubscribed before subscription to
+    // source occurred
     assert_eq!(*values.lock().unwrap(), Vec::<i32>::new());
   }
 

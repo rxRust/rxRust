@@ -5,7 +5,6 @@ description = "A Rust implementation of Reactive Extensions."
 documentation = "https://docs.rs/rxrust/"
 edition = "2024"
 exclude = ["macros"]
-homepage = "https://github.com/rxRust/rxRust"
 keywords = ["rx", "reactivex", "frp", "async", "observables"]
 license = "MIT"
 name = "rxrust"

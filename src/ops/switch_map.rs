@@ -184,7 +184,7 @@ impl<Sc, O, InnerObs, Item, Err, F, Out> Observer<Item, Err>
 where
   Sc: Scope,
   O: for<'a> Observer<InnerObs::Item<'a>, Err>,
-  F: for<'a> FnMut(Item) -> Out,
+  F: FnMut(Item) -> Out,
   Out: Context<Inner = InnerObs, Scope = Sc>,
   InnerObs: CoreObservable<
       Out::With<SwitchMapInnerObserver<SwitchState<Sc, O>>>,

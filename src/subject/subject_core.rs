@@ -618,7 +618,6 @@ mod tests {
     sync::{Arc, Mutex},
   };
 
-  use super::*;
   use crate::{observable::connectable::Connectable, prelude::*};
 
   #[rxrust_macro::test]
@@ -932,7 +931,8 @@ mod tests {
 
   #[rxrust_macro::test]
   fn test_behavior_subject() {
-    // Factory might need extension for behavior_subject or use constructor directly
+    // Factory might need extension for behavior_subject or use constructor
+    // directly
     let mut bs = Shared::behavior_subject::<i32, Infallible>(0);
 
     // Test basic functionality - let's verify structure
@@ -1157,9 +1157,9 @@ mod tests {
   fn test_subject_early_vs_late_subscription() {
     use crate::observable::Observable;
 
-    // Test that early subscribers receive values, late subscribers don't receive
-    // past values Use a simple subject instead of ConnectableObservable to
-    // avoid Clone issues
+    // Test that early subscribers receive values, late subscribers don't
+    // receive past values Use a simple subject instead of
+    // ConnectableObservable to avoid Clone issues
     let subject = Local::subject();
 
     let early_results = Rc::new(RefCell::new(vec![]));

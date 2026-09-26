@@ -334,8 +334,9 @@ mod tests {
     let tolerance = Duration::from_millis(10);
 
     // Phase 1: Slow processing (emissions 0->1, 1->2)
-    // Processing (30ms) >= Period (20ms), so next runs immediately after processing
-    // Expected interval ≈ processing_time (30ms), NOT processing_time + period
+    // Processing (30ms) >= Period (20ms), so next runs immediately after
+    // processing Expected interval ≈ processing_time (30ms), NOT
+    // processing_time + period
     let expected_slow_interval = slow_processing;
 
     // After emission 0 (Slow) -> emission 1

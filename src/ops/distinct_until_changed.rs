@@ -103,10 +103,7 @@ where
 impl<S, F, C, Key, Unsub> CoreObservable<C> for DistinctUntilKeyChanged<S, F>
 where
   C: Context,
-  S: for<'a> CoreObservable<
-      C::With<DistinctUntilKeyChangedObserver<C::Inner, F, Key>>,
-      Unsub = Unsub,
-    >,
+  S: CoreObservable<C::With<DistinctUntilKeyChangedObserver<C::Inner, F, Key>>, Unsub = Unsub>,
   Unsub: Subscription,
   F: for<'a> Fn(&<S as ObservableType>::Item<'a>) -> Key,
 {
@@ -195,10 +192,10 @@ mod tests {
     let x = Rc::new(RefCell::new(vec![]));
     let x_c = x.clone();
 
-    // Using from_iter requires Clone typically, so we use from_fn or just array?
-    // Local::from_iter takes IntoIterator. If we pass vec of NoClone, it might
-    // work? But map might require Clone if it was cloning?
-    // Let's rely on the fact that we moved items.
+    // Using from_iter requires Clone typically, so we use from_fn or just
+    // array? Local::from_iter takes IntoIterator. If we pass vec of
+    // NoClone, it might work? But map might require Clone if it was
+    // cloning? Let's rely on the fact that we moved items.
 
     let source = Local::from_iter(vec![NoClone(1), NoClone(2), NoClone(2), NoClone(3)]);
 

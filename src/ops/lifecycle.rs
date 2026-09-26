@@ -211,20 +211,16 @@ mod tests {
 
   #[rxrust_macro::test]
   fn test_on_error_with_no_error_stream() {
-    let errors = Rc::new(RefCell::new(Vec::new()));
     let values = Rc::new(RefCell::new(Vec::new()));
-
-    let errors_clone = errors.clone();
     let values_clone = values.clone();
 
     Local::of(42)
-      .on_error(move |e| errors_clone.borrow_mut().push(e))
+      .on_error(move |_| unreachable!())
       .subscribe(move |v| {
         values_clone.borrow_mut().push(v);
       });
 
     assert_eq!(*values.borrow(), vec![42]);
-    assert_eq!(errors.borrow().len(), 0); // No error occurred
   }
 
   #[rxrust_macro::test]
@@ -300,24 +296,21 @@ mod tests {
 
   #[rxrust_macro::test]
   fn test_combined_error_and_complete() {
-    let errors = Rc::new(RefCell::new(Vec::new()));
     let completed = Rc::new(RefCell::new(false));
     let values = Rc::new(RefCell::new(Vec::new()));
 
-    let errors_clone = errors.clone();
     let completed_clone = completed.clone();
     let values_clone = values.clone();
 
     // Test that both handlers can be attached to a normal stream
     Local::of(42)
-      .on_error(move |e| errors_clone.borrow_mut().push(e))
+      .on_error(move |_| unreachable!())
       .on_complete(move || *completed_clone.borrow_mut() = true)
       .subscribe(move |v| {
         values_clone.borrow_mut().push(v);
       });
 
     assert_eq!(*values.borrow(), vec![42]);
-    assert_eq!(errors.borrow().len(), 0); // No error occurred
     assert!(*completed.borrow()); // Completion still happens
   }
 }

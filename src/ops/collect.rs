@@ -75,7 +75,7 @@ where
 impl<S, F, C, Unsub> CoreObservable<F> for Collect<S, C>
 where
   F: Context,
-  S: for<'a> CoreObservable<F::With<CollectObserver<F::Inner, C>>, Unsub = Unsub>,
+  S: CoreObservable<F::With<CollectObserver<F::Inner, C>>, Unsub = Unsub>,
   Unsub: Subscription,
 {
   type Unsub = Unsub;
