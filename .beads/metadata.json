@@ -1,7 +1,0 @@
-{
-  "database": "dolt",
-  "backend": "dolt",
-  "dolt_mode": "embedded",
-  "dolt_database": "rxRust",
-  "project_id": "8fa861c2-933f-4324-a892-f7d5e523d387"
-}
