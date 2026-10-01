@@ -1,0 +1,7 @@
+updates:
+  - package-ecosystem: rust-toolchain
+    directory: /
+    schedule:
+      interval: daily
+
+version: 2

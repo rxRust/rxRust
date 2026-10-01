@@ -35,7 +35,7 @@ where
   fn subscriber_count(&self) -> usize { Subject::subscriber_count(self) }
 }
 
-impl<P, V> MulticastSubject for BehaviorSubject<P, V>
+impl<ValuePtr, P> MulticastSubject for BehaviorSubject<ValuePtr, P>
 where
   Subject<P>: MulticastSubject,
 {

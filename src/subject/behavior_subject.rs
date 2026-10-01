@@ -1,8 +1,9 @@
 use super::subject_core::Subject;
 use crate::{
-  context::{Context, RcDerefMut},
+  context::Context,
   observable::{CoreObservable, ObservableType},
   observer::Observer,
+  rc::{RcDeref, RcDerefMut},
 };
 
 /// A specialized Subject that maintains and emits the latest value to new
@@ -13,14 +14,10 @@ use crate::{
 /// value) to new subscribers. This makes it ideal for representing stateful
 /// values and current state.
 ///
-/// The current value lives behind the context's shared pointer, so every
-/// clone of the subject observes the same latest value.
-///
 /// # Type Parameters
 ///
+/// - `ValuePtr`: The shared pointer containing the current value
 /// - `P`: The smart pointer type for the Subject's observers list
-/// - `V`: The shared pointer holding the current value (`Item` behind
-///   `Rc<RefCell<_>>` or `Arc<Mutex<_>>` depending on the context)
 ///
 /// # Examples
 ///
@@ -33,39 +30,41 @@ use crate::{
 ///   .subscribe(|v| println!("Current: {}", v)); // Prints: 42
 /// behavior.next(99); // Prints: 99
 /// ```
-pub struct BehaviorSubject<P, V> {
+pub struct BehaviorSubject<ValuePtr, P> {
   /// The underlying subject that manages subscribers
   pub subject: Subject<P>,
-  /// Shared cell holding the current value
-  pub value: V,
+  /// The current value maintained by this behavior subject
+  pub value: ValuePtr,
 }
 
-impl<P: Clone, V: Clone> Clone for BehaviorSubject<P, V> {
+impl<ValuePtr: Clone, P: Clone> Clone for BehaviorSubject<ValuePtr, P> {
   fn clone(&self) -> Self { Self { subject: self.subject.clone(), value: self.value.clone() } }
 }
 
 /// The `BehaviorSubject` type that `behavior_subject` builds for an
 /// observable `O`.
 pub type BehaviorSubjectOf<'a, O> = BehaviorSubject<
+  <O as Context>::RcMut<<O as crate::observable::Observable>::Item<'a>>,
   super::SubjectPtr<
     'a,
     O,
     <O as crate::observable::Observable>::Item<'a>,
     <O as crate::observable::Observable>::Err,
   >,
-  <O as Context>::RcMut<<O as crate::observable::Observable>::Item<'a>>,
 >;
 
 // ============================================================================
 // Constructor
 // ============================================================================
 
-impl<P, V> BehaviorSubject<P, V>
+impl<ValuePtr, P> BehaviorSubject<ValuePtr, P>
 where
   Subject<P>: Default,
-  V: RcDerefMut,
 {
   /// Creates a new BehaviorSubject with the given initial value.
+  ///
+  /// # Arguments
+  /// * `initial` - The initial value to emit to new subscribers
   ///
   /// # Examples
   ///
@@ -76,11 +75,11 @@ where
   ///
   /// let behavior = Local::behavior_subject::<i32, Infallible>(0);
   /// ```
-  pub fn new(initial: V::Target) -> Self
+  pub fn new<Item>(initial: Item) -> Self
   where
-    V: From<V::Target>,
+    ValuePtr: From<Item>,
   {
-    Self { subject: Subject::default(), value: V::from(initial) }
+    Self { subject: Subject::default(), value: initial.into() }
   }
 }
 
@@ -88,22 +87,26 @@ where
 // Observer Implementation
 // ============================================================================
 
-impl<Item, Err, P, V> Observer<Item, Err> for BehaviorSubject<P, V>
+impl<Item, Err, ValuePtr, P> Observer<Item, Err> for BehaviorSubject<ValuePtr, P>
 where
   Item: Clone,
-  V: RcDerefMut<Target = Item>,
+  ValuePtr: RcDerefMut<Target = Item>,
   Subject<P>: Observer<Item, Err>,
 {
-  /// Updates the shared value first, then forwards the emission.
+  /// Updates stored value and forwards emission to all subscribers.
   fn next(&mut self, value: Item) {
+    // Update internal state first, then emit
     *self.value.rc_deref_mut() = value.clone();
     self.subject.next(value);
   }
 
+  /// Forwards error to all subscribers.
   fn error(self, err: Err) { self.subject.error(err); }
 
+  /// Completes the subject and notifies all subscribers.
   fn complete(self) { self.subject.complete(); }
 
+  /// Checks if the underlying subject is closed.
   fn is_closed(&self) -> bool { self.subject.is_closed() }
 }
 
@@ -111,30 +114,35 @@ where
 // CoreObservable Implementation
 // ============================================================================
 
-impl<P, V> ObservableType for BehaviorSubject<P, V>
+impl<Err, ValuePtr, P> ObservableType for BehaviorSubject<ValuePtr, P>
 where
-  Subject<P>: ObservableType,
+  Subject<P>: ObservableType<Err = Err>,
 {
   type Item<'a>
     = <Subject<P> as ObservableType>::Item<'a>
   where
     Self: 'a;
 
-  type Err = <Subject<P> as ObservableType>::Err;
+  type Err = Err;
 }
 
-impl<Item, Err, C, P, V> CoreObservable<C> for BehaviorSubject<P, V>
+impl<Err, C, ValuePtr, P> CoreObservable<C> for BehaviorSubject<ValuePtr, P>
 where
-  C: Context + Observer<Item, Err>,
+  C: Context + Observer<ValuePtr::Target, Err>,
   Subject<P>: CoreObservable<C, Err = Err>,
-  V: RcDerefMut<Target = Item>,
-  Item: Clone,
+  ValuePtr: RcDeref,
+  ValuePtr::Target: Clone,
 {
   type Unsub = <Subject<P> as CoreObservable<C>>::Unsub;
 
-  /// Emits the current value immediately, then subscribes to future changes.
+  /// Subscribes observer with immediate emission of current value.
+  ///
+  /// Unlike regular Subject, BehaviorSubject emits the most recent value
+  /// immediately upon subscription, then continues with normal emissions.
   fn subscribe(self, mut observer: C) -> Self::Unsub {
-    observer.next(self.value.rc_deref().clone());
+    // Emit current value immediately, then subscribe to future changes
+    let value = self.value.rc_deref().clone();
+    observer.next(value);
     self.subject.subscribe(observer)
   }
 }
@@ -180,18 +188,21 @@ pub trait Behavior {
   fn next_by(&mut self, f: impl FnOnce(Self::Item) -> Self::Item);
 }
 
-impl<Item, P, V> Behavior for BehaviorSubject<P, V>
+impl<ValuePtr, P> Behavior for BehaviorSubject<ValuePtr, P>
 where
-  Item: Clone,
-  V: RcDerefMut<Target = Item>,
-  Self: Observer<Item, ()>,
+  ValuePtr: RcDerefMut,
+  ValuePtr::Target: Clone,
+  Self: Observer<ValuePtr::Target, ()>,
 {
-  type Item = Item;
+  type Item = ValuePtr::Target;
 
   /// Returns a clone of the current value.
-  fn peek(&self) -> Item { self.value.rc_deref().clone() }
+  fn peek(&self) -> Self::Item { self.value.rc_deref().clone() }
 
   /// Updates the stored value and emits it to all subscribers.
+  ///
+  /// This method computes a new value based on the current one,
+  /// updates the internal state, and then notifies all subscribers.
   fn next_by(&mut self, f: impl FnOnce(Self::Item) -> Self::Item) {
     let new_val = f(self.peek());
     self.next(new_val);
@@ -286,6 +297,58 @@ mod tests {
 
     std::thread::sleep(Duration::from_millis(10));
     assert_eq!(*values.lock().unwrap(), vec![100, 200, 300]);
+  }
+
+  #[rxrust_macro::test]
+  fn test_behavior_subject_initial_callback_can_next() {
+    let mut behavior = Local::behavior_subject::<_, ()>(0);
+    let mut writer = behavior.clone();
+    let (values, mut capture) = create_value_capture();
+
+    behavior
+      .clone()
+      .on_error(|_| {})
+      .subscribe(move |value| {
+        capture(value);
+        if value == 0 {
+          writer.next(1);
+        }
+      });
+
+    assert_eq!(behavior.peek(), 1);
+    assert_eq!(*values.borrow(), vec![0]);
+
+    behavior.next(2);
+    assert_eq!(*values.borrow(), vec![0, 2]);
+    behavior.complete();
+  }
+
+  #[cfg(not(target_arch = "wasm32"))]
+  #[rxrust_macro::test]
+  fn test_behavior_subject_shared_initial_callback_can_peek() {
+    use std::{sync::mpsc, time::Duration};
+
+    let (done_tx, done_rx) = mpsc::channel();
+    let worker = std::thread::spawn(move || {
+      let behavior = Shared::behavior_subject::<_, ()>(42);
+      let reader = behavior.clone();
+
+      behavior
+        .clone()
+        .on_error(|_| {})
+        .subscribe(move |value| {
+          assert_eq!(value, 42);
+          assert_eq!(reader.peek(), value);
+        });
+
+      behavior.complete();
+      done_tx.send(()).unwrap();
+    });
+
+    done_rx
+      .recv_timeout(Duration::from_secs(5))
+      .expect("initial callback must be able to peek without deadlocking");
+    worker.join().unwrap();
   }
 
   /// Test Behavior trait peek functionality
@@ -427,6 +490,40 @@ mod tests {
     assert_eq!(*values2.borrow(), vec![5, 10, 15]);
   }
 
+  /// Cloned handles share the current value, not only their subscribers.
+  #[rxrust_macro::test]
+  fn test_behavior_subject_clone_shares_current_value() {
+    let behavior = Local::behavior_subject::<_, ()>(0);
+
+    behavior.clone().next(7);
+    for _ in 0..10 {
+      behavior.clone().next_by(|value| value + 1);
+    }
+
+    assert_eq!(behavior.peek(), 17);
+
+    let (values, capture) = create_value_capture();
+    behavior
+      .clone()
+      .on_error(|_| {})
+      .subscribe(capture);
+    assert_eq!(*values.borrow(), vec![17]);
+  }
+
+  /// Shared-context handles also share their current value.
+  #[cfg(not(target_arch = "wasm32"))]
+  #[rxrust_macro::test]
+  fn test_behavior_subject_shared_clone_shares_current_value() {
+    let behavior = Shared::behavior_subject::<_, ()>(0);
+
+    behavior.clone().next(7);
+    for _ in 0..10 {
+      behavior.clone().next_by(|value| value + 1);
+    }
+
+    assert_eq!(behavior.peek(), 17);
+  }
+
   /// Test Behavior trait functionality through Context wrapper
   #[rxrust_macro::test]
   fn test_behavior_context_wrapper() {
@@ -467,18 +564,5 @@ mod tests {
     // Test final emission
     behavior.next(Point { x: 4, y: 5 });
     assert_eq!(values.borrow().last(), Some(&Point { x: 4, y: 5 }));
-  }
-
-  #[rxrust_macro::test]
-  fn test_behavior_subject_value_shared_across_clones() {
-    let mut a = Local::behavior_subject::<i32, ()>(0);
-    let b = a.clone();
-    a.next(5);
-
-    let (results, capture) = create_value_capture();
-    b.on_error(|_| {}).subscribe(capture);
-
-    assert_eq!(*results.borrow(), vec![5]);
-    assert_eq!(a.peek(), 5);
   }
 }
