@@ -53,5 +53,5 @@ We sincerely apologize for the long delay in reaching version 1.0 and for the si
 
 *   **API Unification**: Explicit types like `LocalObservable` and `SharedObservable` from previous beta versions are replaced by the `Local::of(...)` and `Shared::of(...)` factory patterns.
 *   **Scheduler Usage**: Explicit scheduler arguments have been removed from standard operators in favor of context-bound defaults. Use `_with` variants (e.g., `delay_with`) for manual control.
-*   **BehaviorSubject**: the current value now lives behind the context's shared pointer, so every clone observes the latest value. The type is `BehaviorSubject<P, V>` instead of `BehaviorSubject<Item, P>`.
+*   **BehaviorSubject**: the current value now lives behind the context's shared pointer, so every clone observes the latest value. The type is `BehaviorSubject<ValuePtr, P>` instead of `BehaviorSubject<Item, P>`.
 *   **Multicasting**: `ConnectableObservable` and `RefCount` are generic over the subject type via the new `MulticastSubject` trait, and `multicast` accepts any subject.

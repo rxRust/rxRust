@@ -16,21 +16,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: nightly-2025-12-20
-          components: rustfmt
+      - run: rustup install --profile minimal
       - run: cargo fmt --all -- --check
 
-  lint-nightly:
-    name: Clippy Lint (nightly, all-features)
+  lint:
+    name: Clippy Lint (all-features)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: nightly-2025-12-20
-          components: clippy
+      - run: rustup install --profile minimal
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy --all-targets --all-features -- -D warnings
 
@@ -41,7 +35,7 @@ jobs:
       features: ${{ steps.stable_features.outputs.features }}
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - run: rustup install --profile minimal stable
       - name: Compute stable feature set (exclude nightly)
         id: stable_features
         run: |
@@ -49,7 +43,7 @@ jobs:
           import json, subprocess
 
           meta = subprocess.check_output(
-            ["cargo", "metadata", "--no-deps", "--format-version=1"],
+            ["rustup", "run", "stable", "cargo", "metadata", "--no-deps", "--format-version=1"],
             text=True,
           )
           data = json.loads(meta)
@@ -59,28 +53,26 @@ jobs:
           PY
           )
           echo "features=$FEATURES" >> "$GITHUB_OUTPUT"
-  check:
+  check-stable:
     name: Cargo Check (stable)
     runs-on: ubuntu-latest
     needs: stable-features
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - run: rustup install --profile minimal stable
       - uses: Swatinem/rust-cache@v2
-      - run: cargo check --all-targets --no-default-features --features "${{ needs.stable-features.outputs.features }}"
-      - run: cargo check --no-default-features --features "${{ needs.stable-features.outputs.features }}" --lib
+      - run: rustup run stable cargo check --all-targets --no-default-features --features "${{ needs.stable-features.outputs.features }}"
+      - run: rustup run stable cargo check --no-default-features --features "${{ needs.stable-features.outputs.features }}" --lib
         env:
           RUSTFLAGS: ""
           CARGO_ENCODED_RUSTFLAGS: ""
 
-  check-nightly:
-    name: Cargo Check (nightly, all-features)
+  check:
+    name: Cargo Check (all-features)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: nightly-2025-12-20
+      - run: rustup install --profile minimal
       - uses: Swatinem/rust-cache@v2
       - run: cargo check --all-features
       - run: cargo check --all-features --lib
@@ -88,26 +80,24 @@ jobs:
           RUSTFLAGS: ""
           CARGO_ENCODED_RUSTFLAGS: ""
 
-  test:
+  test-stable:
     name: Tests (stable)
     runs-on: ubuntu-latest
-    needs: [check, stable-features]
+    needs: [check-stable, stable-features]
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - run: rustup install --profile minimal stable
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test --no-default-features --features "${{ needs.stable-features.outputs.features }}"
-      - run: cargo test --examples --no-default-features --features "${{ needs.stable-features.outputs.features }}"
+      - run: rustup run stable cargo test --no-default-features --features "${{ needs.stable-features.outputs.features }}"
+      - run: rustup run stable cargo test --examples --no-default-features --features "${{ needs.stable-features.outputs.features }}"
 
-  test-nightly:
-    name: Tests (nightly, all-features)
+  test:
+    name: Tests (all-features)
     runs-on: ubuntu-latest
-    needs: check-nightly
+    needs: check
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: nightly-2025-12-20
+      - run: rustup install --profile minimal
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --all-features
       - run: cargo test --examples --all-features
@@ -117,13 +107,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
-          targets: wasm32-unknown-unknown
+      - run: rustup install --profile minimal stable
       - uses: Swatinem/rust-cache@v2
       - run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
-      - run: wasm-pack test --node
+      - run: RUSTUP_TOOLCHAIN="stable" wasm-pack test --node
 
   ci:
     name: CI Status
@@ -131,12 +118,12 @@ jobs:
     needs:
       [
         format,
-        lint-nightly,
+        lint,
         stable-features,
+        check-stable,
         check,
-        check-nightly,
+        test-stable,
         test,
-        test-nightly,
         test-wasm,
       ]
     if: always()
@@ -144,12 +131,12 @@ jobs:
       - name: Check CI Status
         run: |
           if [ "${{ needs.format.result }}" != "success" ] || \
-             [ "${{ needs.lint-nightly.result }}" != "success" ] || \
+             [ "${{ needs.lint.result }}" != "success" ] || \
              [ "${{ needs.stable-features.result }}" != "success" ] || \
+             [ "${{ needs.check-stable.result }}" != "success" ] || \
              [ "${{ needs.check.result }}" != "success" ] || \
-             [ "${{ needs.check-nightly.result }}" != "success" ] || \
+             [ "${{ needs.test-stable.result }}" != "success" ] || \
              [ "${{ needs.test.result }}" != "success" ] || \
-             [ "${{ needs.test-nightly.result }}" != "success" ] || \
              [ "${{ needs.test-wasm.result }}" != "success" ]; then
             echo "CI failed"
             exit 1
