@@ -89,6 +89,7 @@ jobs:
       - run: rustup install --profile minimal stable
       - uses: Swatinem/rust-cache@v2
       - run: rustup run stable cargo test --no-default-features --features "${{ needs.stable-features.outputs.features }}"
+      - run: rustup run stable cargo test --examples --no-default-features --features "${{ needs.stable-features.outputs.features }}"
 
   test:
     name: Tests (all-features)
@@ -99,6 +100,7 @@ jobs:
       - run: rustup install --profile minimal
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --all-features
+      - run: cargo test --examples --all-features
 
   test-wasm:
     name: WASM Tests

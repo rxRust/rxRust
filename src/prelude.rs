@@ -11,14 +11,23 @@
 // Scheduler-specific Observable aliases
 #[cfg(feature = "scheduler")]
 pub use crate::observable::{
-  LocalBoxedObservable, LocalBoxedObservableClone, LocalBoxedObservableMutRef,
-  LocalBoxedObservableMutRefClone, SharedBoxedObservable, SharedBoxedObservableClone,
-  SharedBoxedObservableMutRef, SharedBoxedObservableMutRefClone,
+  FromCallback, Generate, Iif, LocalBoxedObservable, LocalBoxedObservableClone,
+  LocalBoxedObservableMutRef, LocalBoxedObservableMutRefClone, SharedBoxedObservable,
+  SharedBoxedObservableClone, SharedBoxedObservableMutRef, SharedBoxedObservableMutRefClone, Using,
 };
 // Observer trait
 pub use crate::observer::Observer;
 // Operators
-pub use crate::ops::{into_future::*, into_stream::*};
+pub use crate::ops::{
+  into_future::*,
+  into_stream::*,
+  materialize::Notification,
+  share::{Connector, PublishConnector, ReplayConnector, ShareConfig},
+  single::SingleError,
+  time_interval::Elapsed,
+  timeout::TimeoutError,
+  timestamp::Timestamped,
+};
 // Test Scheduler
 #[cfg(test)]
 pub use crate::scheduler::test_scheduler::TestScheduler;

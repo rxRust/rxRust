@@ -4,12 +4,19 @@
 //! emitted value from the source Observable whenever a notifier Observable
 //! emits.
 
+use std::convert::Infallible;
+
 use crate::{
   context::{Context, RcDeref, RcDerefMut},
-  observable::{CoreObservable, ObservableType},
+  observable::{CoreObservable, Interval, ObservableType},
   observer::Observer,
+  ops::map_err::MapErr,
   subscription::{Subscription, TupleSubscription},
 };
+
+/// The sampler used by `sample_time`: an interval whose `Infallible` error is
+/// lifted to the source's error type.
+pub type SampleTimer<Sch, Err> = MapErr<Interval<Sch>, fn(Infallible) -> Err>;
 
 // ==================== Sample Operator ====================
 
@@ -358,5 +365,56 @@ mod tests {
     source.next(2);
     sampler.next(());
     assert_eq!(*result.borrow(), vec![1, 2]);
+  }
+}
+
+#[cfg(test)]
+mod sample_time_tests {
+  use std::{cell::RefCell, convert::Infallible, rc::Rc};
+
+  use crate::{context::TestCtx, prelude::*, scheduler::Duration};
+
+  #[rxrust_macro::test]
+  fn test_sample_time_emits_latest_item_each_period() {
+    TestScheduler::init();
+    let seen = Rc::new(RefCell::new(Vec::new()));
+    let sink = seen.clone();
+    let mut source = TestCtx::subject::<i32, Infallible>();
+
+    source
+      .clone()
+      .sample_time(Duration::from_millis(100))
+      .subscribe(move |v| sink.borrow_mut().push(v));
+
+    source.next(1);
+    source.next(2);
+    TestScheduler::advance_by(Duration::from_millis(100));
+    assert_eq!(*seen.borrow(), vec![2], "only the latest item of the period");
+
+    TestScheduler::advance_by(Duration::from_millis(100));
+    assert_eq!(*seen.borrow(), vec![2], "a period without items emits nothing");
+
+    source.next(3);
+    TestScheduler::advance_by(Duration::from_millis(100));
+    assert_eq!(*seen.borrow(), vec![2, 3]);
+  }
+
+  #[rxrust_macro::test]
+  fn test_sample_time_completes_with_source() {
+    TestScheduler::init();
+    let done = Rc::new(RefCell::new(false));
+    let done_c = done.clone();
+    let mut source = TestCtx::subject::<i32, Infallible>();
+
+    source
+      .clone()
+      .sample_time(Duration::from_millis(50))
+      .on_complete(move || *done_c.borrow_mut() = true)
+      .subscribe(|_| {});
+
+    source.next(1);
+    source.complete();
+    assert!(*done.borrow());
+    TestScheduler::advance_by(Duration::from_millis(200)); // nothing left to fire
   }
 }

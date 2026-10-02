@@ -102,10 +102,13 @@
 // Internal module imports
 use crate::{
   context::Context,
-  observable::{defer::Defer, *},
+  observable::{FromCallback, Generate, Iif, Using, defer::Defer, *},
   observer::Emitter,
   scheduler::{Duration, Instant},
-  subject::{BehaviorSubject, Subject, SubjectPtr, SubjectPtrMutRef},
+  subject::{
+    AsyncState, AsyncSubject, BehaviorSubject, ReplayBuffer, ReplaySubject, Subject, SubjectPtr,
+    SubjectPtrMutRef,
+  },
   subscription::Subscription,
 };
 
@@ -354,6 +357,79 @@ pub trait ObservableFactory: Context<Inner = ()> {
     Self::lift(BehaviorSubject::new(initial))
   }
 
+  /// Creates a `ReplaySubject` that replays the last `capacity` items and any
+  /// terminal event to late subscribers.
+  ///
+  /// # Examples
+  ///
+  /// ```rust
+  /// use std::convert::Infallible;
+  ///
+  /// use rxrust::prelude::*;
+  ///
+  /// let mut subject = Local::replay_subject::<i32, Infallible>(1);
+  /// subject.next(1);
+  /// subject.next(2);
+  /// subject.clone().subscribe(|v| assert_eq!(v, 2));
+  /// ```
+  #[allow(clippy::type_complexity)]
+  fn replay_subject<'a, Item: Clone, Err: Clone>(
+    capacity: usize,
+  ) -> Self::With<
+    ReplaySubject<SubjectPtr<'a, Self, Item, Err>, Self::RcMut<ReplayBuffer<Item, Err>>>,
+  > {
+    Self::lift(ReplaySubject::new(Some(capacity)))
+  }
+
+  /// Creates a `ReplaySubject` that replays every item to late subscribers.
+  #[allow(clippy::type_complexity)]
+  fn replay_subject_unbounded<'a, Item: Clone, Err: Clone>() -> Self::With<
+    ReplaySubject<SubjectPtr<'a, Self, Item, Err>, Self::RcMut<ReplayBuffer<Item, Err>>>,
+  > {
+    Self::lift(ReplaySubject::new(None))
+  }
+
+  /// Create a `ReplaySubject` that replays at most `capacity` items (all if
+  /// `None`) and forgets items older than `window` (RxJS `ReplaySubject`
+  /// with `windowTime`)
+  ///
+  /// # Examples
+  ///
+  /// ```rust
+  /// use std::{cell::RefCell, convert::Infallible, rc::Rc, time::Duration};
+  ///
+  /// use rxrust::prelude::*;
+  ///
+  /// let mut subject =
+  ///   Local::replay_subject_with_window::<i32, Infallible>(Some(2), Duration::from_secs(60));
+  /// subject.next(1);
+  /// subject.next(2);
+  /// subject.next(3);
+  /// let replayed = Rc::new(RefCell::new(Vec::new()));
+  /// let sink = replayed.clone();
+  /// subject
+  ///   .clone()
+  ///   .subscribe(move |v| sink.borrow_mut().push(v));
+  /// assert_eq!(*replayed.borrow(), vec![2, 3]);
+  /// ```
+  #[allow(clippy::type_complexity)]
+  fn replay_subject_with_window<'a, Item: Clone, Err: Clone>(
+    capacity: Option<usize>, window: Duration,
+  ) -> Self::With<
+    ReplaySubject<SubjectPtr<'a, Self, Item, Err>, Self::RcMut<ReplayBuffer<Item, Err>>>,
+  > {
+    Self::lift(ReplaySubject::new_with_window(capacity, window))
+  }
+
+  /// Creates an `AsyncSubject`, which emits only its last value, on
+  /// completion.
+  #[allow(clippy::type_complexity)]
+  fn async_subject<'a, Item: Clone, Err: Clone>()
+  -> Self::With<AsyncSubject<SubjectPtr<'a, Self, Item, Err>, Self::RcMut<AsyncState<Item, Err>>>>
+  {
+    Self::lift(AsyncSubject::default())
+  }
+
   /// Creates an observable from an iterator that emits each item synchronously
   /// when subscribed.
   ///
@@ -440,6 +516,46 @@ pub trait ObservableFactory: Context<Inner = ()> {
   /// * [`FromFn`] - The underlying observable implementation
   fn from_fn<F>(f: F) -> Self::With<FromFn<F>> { Self::lift(FromFn(f)) }
 
+  /// Emit every value handed to the callback, then complete when `f` returns.
+  ///
+  /// # Examples
+  ///
+  /// ```rust
+  /// use rxrust::prelude::*;
+  ///
+  /// Local::from_callback(|emit: &mut dyn FnMut(i32)| emit(42)).subscribe(|v| println!("{}", v));
+  /// // Prints: 42
+  /// ```
+  #[doc(alias = "bindCallback")]
+  fn from_callback<F, Item>(f: F) -> Self::With<FromCallback<F, Item>>
+  where
+    F: FnOnce(&mut dyn FnMut(Item)),
+  {
+    Self::lift(FromCallback::new(f))
+  }
+
+  /// Emit `initial`, then `iterate(&state)` while `condition(&state)` holds.
+  ///
+  /// Lazy: pairs well with `take` for unbounded generators.
+  ///
+  /// # Examples
+  ///
+  /// ```rust
+  /// use rxrust::prelude::*;
+  ///
+  /// Local::generate(1, |v| *v <= 3, |v| v + 1).subscribe(|v| println!("{}", v));
+  /// // Prints: 1, 2, 3
+  /// ```
+  fn generate<T, Cond, Iter>(
+    initial: T, condition: Cond, iterate: Iter,
+  ) -> Self::With<FromIter<Generate<T, Cond, Iter>>>
+  where
+    Cond: FnMut(&T) -> bool,
+    Iter: FnMut(&T) -> T,
+  {
+    Self::from_iter(Generate::new(initial, condition, iterate))
+  }
+
   /// Creates an observable that calls a factory function to generate a new
   /// observable for each subscriber.
   ///
@@ -497,6 +613,55 @@ pub trait ObservableFactory: Context<Inner = ()> {
     O: ObservableType,
   {
     Self::lift(Defer::new(f))
+  }
+
+  /// Create a resource per subscription and an observable from it; the
+  /// resource is dropped when the subscription terminates or is
+  /// unsubscribed.
+  ///
+  /// # Examples
+  ///
+  /// ```rust
+  /// use rxrust::prelude::*;
+  ///
+  /// Local::using(|| String::from("res"), |r| Local::of(r.len())).subscribe(|v| println!("{}", v));
+  /// // Prints: 3
+  /// ```
+  fn using<RF, OF, Res, Out>(
+    resource_factory: RF, observable_factory: OF,
+  ) -> Self::With<Using<RF, OF, Res, Self::With<Out>>>
+  where
+    RF: FnOnce() -> Res,
+    OF: FnOnce(&Res) -> Self::With<Out>,
+    Out: ObservableType,
+  {
+    Self::lift(Using::new(resource_factory, observable_factory))
+  }
+
+  /// Subscribe to `then_source` when `condition()` is true at subscribe
+  /// time, otherwise to `else_source`.
+  ///
+  /// # Examples
+  ///
+  /// ```rust
+  /// use rxrust::prelude::*;
+  ///
+  /// Local::iif(|| true, Local::of(1), Local::of(2)).subscribe(|v| println!("{}", v));
+  /// // Prints: 1
+  /// ```
+  fn iif<F, A, B>(
+    condition: F, then_source: Self::With<A>, else_source: Self::With<B>,
+  ) -> Self::With<Iif<F, A, B>>
+  where
+    F: FnOnce() -> bool,
+    A: ObservableType,
+    B: ObservableType<Err = A::Err>,
+  {
+    Self::lift(Iif {
+      condition,
+      then_source: then_source.into_inner(),
+      else_source: else_source.into_inner(),
+    })
   }
 
   /// Creates an observable that emits a single value after a specified delay.
@@ -1049,6 +1214,133 @@ pub trait ObservableFactory: Context<Inner = ()> {
       source: from_iter(observables),
       concurrent: 1, // Sequential execution
     })
+  }
+
+  /// Mirror whichever of many observables emits first.
+  ///
+  /// Subscribes in order; the first to emit an item, error, or completion
+  /// wins and the rest are unsubscribed (or never subscribed). An empty
+  /// iterator completes immediately.
+  ///
+  /// # Examples
+  ///
+  /// ```rust
+  /// use rxrust::prelude::*;
+  ///
+  /// Local::race_observables([Local::from_iter(vec![1, 2]), Local::from_iter(vec![3])])
+  ///   .subscribe(|v| println!("Got: {}", v));
+  /// // Prints: 1, 2
+  /// ```
+  ///
+  /// # See Also
+  ///
+  /// * [`Observable::race`] - Binary instance method
+  #[doc(alias = "race")]
+  fn race_observables<O, I>(observables: I) -> Self::With<crate::ops::race_all::RaceAll<O>>
+  where
+    O: ObservableType,
+    I: IntoIterator<Item = Self::With<O>>,
+  {
+    let sources = observables
+      .into_iter()
+      .map(Context::into_inner)
+      .collect();
+    Self::lift(crate::ops::race_all::RaceAll { sources })
+  }
+
+  /// Wait for every observable to complete, then emit their last values.
+  ///
+  /// Emits one `Vec` of last values in input order and completes. If any
+  /// source completes without emitting, completes without a value. Errors
+  /// are forwarded immediately. An empty iterator completes immediately.
+  ///
+  /// # Examples
+  ///
+  /// ```rust
+  /// use rxrust::prelude::*;
+  ///
+  /// Local::fork_join_observables([Local::from_iter(vec![1, 2]), Local::from_iter(vec![3])])
+  ///   .subscribe(|v| println!("{:?}", v));
+  /// // Prints: [2, 3]
+  /// ```
+  #[doc(alias = "forkJoin")]
+  fn fork_join_observables<O, I>(observables: I) -> Self::With<crate::ops::fork_join::ForkJoin<O>>
+  where
+    O: ObservableType,
+    I: IntoIterator<Item = Self::With<O>>,
+  {
+    let sources = observables
+      .into_iter()
+      .map(Context::into_inner)
+      .collect();
+    Self::lift(crate::ops::fork_join::ForkJoin { sources })
+  }
+
+  /// Combine the latest values of many observables.
+  ///
+  /// Once every source has emitted, each new item emits a `Vec` of the
+  /// latest value from every source in input order. Items must be `Clone`.
+  /// Completes when all sources complete, or as soon as one completes
+  /// without emitting. An empty iterator completes immediately.
+  ///
+  /// # Examples
+  ///
+  /// ```rust
+  /// use rxrust::prelude::*;
+  ///
+  /// Local::combine_latest_observables([Local::from_iter(vec![1, 2]), Local::from_iter(vec![3])])
+  ///   .subscribe(|v| println!("{:?}", v));
+  /// // Prints: [2, 3]
+  /// ```
+  ///
+  /// # See Also
+  ///
+  /// * [`Observable::combine_latest`] - Binary instance method with a combiner
+  #[doc(alias = "combineLatest")]
+  fn combine_latest_observables<O, I>(
+    observables: I,
+  ) -> Self::With<crate::ops::combine_latest_all::CombineLatestAll<O>>
+  where
+    O: ObservableType,
+    I: IntoIterator<Item = Self::With<O>>,
+  {
+    let sources = observables
+      .into_iter()
+      .map(Context::into_inner)
+      .collect();
+    Self::lift(crate::ops::combine_latest_all::CombineLatestAll { sources })
+  }
+
+  /// Zip many observables, emitting the nth item of each as one `Vec`.
+  ///
+  /// Completes as soon as a completed source has no buffered item left,
+  /// because no further row can be formed. An empty iterator completes
+  /// immediately.
+  ///
+  /// # Examples
+  ///
+  /// ```rust
+  /// use rxrust::prelude::*;
+  ///
+  /// Local::zip_observables([Local::from_iter(vec![1, 2, 3]), Local::from_iter(vec![10, 20])])
+  ///   .subscribe(|v| println!("{:?}", v));
+  /// // Prints: [1, 10], [2, 20]
+  /// ```
+  ///
+  /// # See Also
+  ///
+  /// * [`Observable::zip`] - Binary instance method emitting tuples
+  #[doc(alias = "zip")]
+  fn zip_observables<O, I>(observables: I) -> Self::With<crate::ops::zip_all::ZipAll<O>>
+  where
+    O: ObservableType,
+    I: IntoIterator<Item = Self::With<O>>,
+  {
+    let sources = observables
+      .into_iter()
+      .map(Context::into_inner)
+      .collect();
+    Self::lift(crate::ops::zip_all::ZipAll { sources })
   }
 }
 

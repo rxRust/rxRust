@@ -41,7 +41,10 @@ Operators that originate new Observables. These are typically factory methods av
 | `behavior_subject` | Creates a new `BehaviorSubject` (multicasting, replays last value). Use `behavior_subject_mut_ref` for mutable reference broadcasting. |
 | `merge_observables` | Merges multiple observables concurrently, subscribing to all at once. |
 | `concat_observables` | Concatenates multiple observables sequentially, subscribing one at a time. |
-
+| `generate` | Emits a state-machine sequence: `initial`, then `iterate(&state)` while `condition(&state)`. |
+| `iif` | Chooses one of two Observables at subscribe time. |
+| `from_callback` | Emits the values handed to a callback, then completes. |
+| `using` | Ties a resource's lifetime to the subscription. |
 ### Transformation Operators
 
 Operators that transform the items emitted by an Observable.
@@ -53,13 +56,21 @@ Operators that transform the items emitted by an Observable.
 | `filter_map` | Maps and filters items in one step (using `Option`). |
 | `scan` | Applies an accumulator function to each item, emitting each intermediate result. |
 | `reduce` | Applies an accumulator function and emits only the final result. |
-| `flat_map` | Projects each item to an Observable, then merges them all. |
+| `flat_map` / `merge_map` | Projects each item to an Observable, then merges them all. |
+| `switch_all` / `exhaust_all` | Flatten an Observable of Observables by switching to, or ignoring, new inners. |
 | `concat_map` | Projects each item to an Observable, then concatenates them (preserving order). |
 | `buffer` | Collects items into a `Vec` until a notifier emits. |
 | `buffer_count` | Collects items into a `Vec` of a specific size. |
 | `buffer_time` | Collects items into a `Vec` for a specific duration. |
 | `pairwise` | Groups consecutive emissions into pairs `(prev, current)`. |
 | `group_by` | Divides an Observable into a set of Observables that each emit a different group of items. |
+| `group_by_with_duration` / `group_by_connector` | `group_by` whose groups close when a per-group duration Observable emits or completes, optionally with a custom subject per group. |
+| `window` / `window_count` / `window_time` | Splits the source into windows, each an Observable of its own. |
+| `window_when` / `window_toggle` | Windows closed by selector-provided Observables; `window_toggle` windows may overlap. |
+| `buffer_when` / `buffer_toggle` | Buffers closed by selector-provided Observables; `buffer_toggle` buffers may overlap. |
+| `merge_scan` | Accumulates through Observables returned by the accumulator function. |
+| `switch_scan` | Like `merge_scan`, but each item cancels the previous inner Observable. |
+| `expand` | Recursively projects every emitted item and merges the results. |
 
 ### Filtering Operators
 
@@ -79,10 +90,21 @@ Operators that selectively emit items from the source Observable.
 | `distinct` | Suppresses duplicate items. |
 | `distinct_until_changed` | Suppresses consecutive duplicate items. |
 | `debounce` | Emits an item only after a specific timespan has passed without another emission. |
+| `debounce_when` | Like `debounce`, with a per-item duration Observable. |
 | `throttle` | Emits the first item emitted during a time window. |
 | `sample` | Emits the most recent item when another Observable emits. |
+| `sample_time` | Emits the most recent item once per period. |
 | `last` | Emits only the last item. |
 | `contains` | Emits true if the Observable emits a specific item. |
+| `every` | Emits `true` if every item satisfies a predicate, `false` on the first that does not. |
+| `is_empty` | Emits `true` if the source completes without items. |
+| `find` / `find_index` | Emits the first item (or its index) matching a predicate. |
+| `element_at` / `element_at_or` | Emits the item at a zero-based index, with an optional default. |
+| `ignore_elements` | Drops every item, mirrors only error and completion. |
+| `audit` / `audit_time` | Emits the latest item when a window ends; the next item opens a new window. |
+| `single` | Emits the only item, or errors with `SingleError`. |
+| `partition` | Splits the source into `(matching, rest)` by a predicate. |
+| `sequence_equal` | Emits whether two Observables emit equal sequences. |
 
 ### Combination Operators
 
@@ -97,6 +119,15 @@ Operators that work with multiple source Observables to create a single Observab
 | `start_with` | Emits a sequence of items before beginning to emit the items from the source. |
 | `merge_all` | Flattens a Higher-Order Observable by merging inner Observables. |
 | `concat_all` | Flattens a Higher-Order Observable by concatenating inner Observables sequentially. |
+| `race` / `race_observables` | Mirrors the first source to emit; the others are unsubscribed. |
+| `fork_join_observables` | Emits the last value of every source once all complete. |
+| `combine_latest_observables` | N-ary `combine_latest` emitting a `Vec` snapshot. |
+| `zip_observables` | N-ary `zip` emitting a `Vec` row. |
+| `end_with` | Emits given values after the source completes. |
+| `exhaust_map` | Maps to inner Observables, ignoring items while an inner one is active. |
+| `share` / `share_replay` | Multicasts with reference counting; `share_replay` replays the last `n` items to late subscribers. |
+| `share_with` / `share_replay_with` / `share_connector` | Multicasting with RxJS 7 reset semantics (`ShareConfig`: reset on error, completion, ref count zero); `ShareConfig::replay()` is RxJS `shareReplay`. |
+| `publish_replay` / `publish_behavior` / `publish_last` | Connectable multicasting through a `ReplaySubject`, `BehaviorSubject`, or `AsyncSubject`. |
 
 ### Utility Operators
 
@@ -107,6 +138,7 @@ Operators for observing, timing, and error handling.
 | `tap` | Performs a side effect for every emission (next, error, complete). |
 | `delay` | Shifts the emissions forward in time by a specified delay. |
 | `delay_subscription` | Delays the moment of subscription. |
+| `delay_when` | Delays each item until its own duration Observable emits or completes. |
 | `observe_on` | Specifies the Scheduler on which an observer will observe this Observable. |
 | `subscribe_on` | Specifies the Scheduler on which the subscription will happen. |
 | `finalize` | Registers a callback to be called when the Observable terminates. |
@@ -114,3 +146,11 @@ Operators for observing, timing, and error handling.
 | `map_err` | Transforms the error type. |
 | `on_error` | Performs a side effect if an error occurs. |
 | `on_complete` | Performs a side effect if the Observable completes. |
+| `materialize` / `dematerialize` | Converts events to `Notification` items and back. |
+| `timestamp` | Wraps each item with the `Instant` it was emitted. |
+| `time_interval` | Wraps each item with the time since the previous emission. |
+| `throw_if_empty` | Errors instead of completing when the source is empty. |
+| `catch_error` | Recovers from an error by switching to a fallback Observable. |
+| `timeout` | Errors if the source is silent for longer than a duration. |
+| `repeat` / `repeat_forever` | Resubscribes to the source when it completes. |
+| `on_error_resume_next` | Continues with another Observable when the source errors or completes. |

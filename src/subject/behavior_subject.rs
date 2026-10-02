@@ -41,6 +41,18 @@ impl<ValuePtr: Clone, P: Clone> Clone for BehaviorSubject<ValuePtr, P> {
   fn clone(&self) -> Self { Self { subject: self.subject.clone(), value: self.value.clone() } }
 }
 
+/// The `BehaviorSubject` type that `behavior_subject` builds for an
+/// observable `O`.
+pub type BehaviorSubjectOf<'a, O> = BehaviorSubject<
+  <O as Context>::RcMut<<O as crate::observable::Observable>::Item<'a>>,
+  super::SubjectPtr<
+    'a,
+    O,
+    <O as crate::observable::Observable>::Item<'a>,
+    <O as crate::observable::Observable>::Err,
+  >,
+>;
+
 // ============================================================================
 // Constructor
 // ============================================================================

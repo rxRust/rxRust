@@ -102,6 +102,7 @@ where
 }
 
 /// Observer wrapper for OnComplete that executes the callback on completion
+#[derive(Clone)]
 pub struct OnCompleteObserver<O, F> {
   observer: O,
   callback: F,

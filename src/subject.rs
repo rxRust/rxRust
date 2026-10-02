@@ -103,13 +103,19 @@
 //! # }
 //! ```
 
+pub mod async_subject;
 pub mod behavior_subject;
+pub mod multicast_subject;
+pub mod replay_subject;
 pub mod subject_core;
 pub mod subject_subscription;
 pub mod subscribers;
 
 // Re-export the main types for convenience
+pub use async_subject::*;
 pub use behavior_subject::*;
+pub use multicast_subject::*;
+pub use replay_subject::*;
 pub use subject_core::*;
 pub use subject_subscription::*;
 pub use subscribers::*;

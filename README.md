@@ -106,6 +106,26 @@ For a deeper dive into core concepts, advanced architecture, and cookbooks, chec
 *   [Core Concepts](guide/core_concepts/context.md)
 *   [Advanced Architecture](guide/advanced/architecture_deep_dive.md)
 
+## 🧪 Examples
+
+Runnable programs under `examples/` that show rxRust in real systems; each carries its own tests (`cargo test --examples`).
+
+| Example | Shows |
+| :--- | :--- |
+| `cargo run --example tcp_line_pipeline` | A TCP metrics collector read at the pipeline's pace with `from_stream`, `filter_map`, `buffer_count` |
+| `cargo run --example debounced_search` | Type-ahead search with `debounce`, `distinct_until_changed`, and `switch_map` cancelling stale requests |
+| `cargo run --example retry_backoff_poller` | Polling a flaky service with a custom exponential-backoff `RetryPolicy`, `timeout`, and `catch_error` |
+| `cargo run --example state_store` | A Redux-style store built from `scan`, `share_replay(1)`, and `distinct_until_changed` selectors |
+| `cargo run --example event_sourcing` | Rebuilding per-account balances from an event log with `group_by`, `scan`, `publish`/`connect`, and a `materialize` audit trail |
+| `cargo run --example custom_scheduler` | Injecting a custom scheduler |
+
+## 🍃 Leptos
+
+Bridges to Leptos 0.8 signals live in their own crate and repository,
+[Dev916/rx-leptos](https://github.com/Dev916/rx-leptos): `from_signal`,
+`to_signal`, `use_subject`, `from_event`, `animation_frames`, `from_fetch`, and
+runnable CSR and SSR example apps.
+
 ## 🌙 Nightly (Experimental)
 
 rxRust targets **stable Rust** by default.

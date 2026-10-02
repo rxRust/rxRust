@@ -55,8 +55,12 @@ wasm-bindgen-test = "0.3.56"
 
 # Common dev dependencies for tokio (enabled for testing)
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
-tokio = {version = "1.48", features = ["rt", "rt-multi-thread", "macros", "time", "sync"]}
+tokio = {version = "1.48", features = ["rt", "rt-multi-thread", "macros", "time", "sync", "net", "io-util"]}
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
 console_error_panic_hook = "0.1.7"
 wasm-bindgen = "0.2"
+
+[[bench]]
+name = "operators"
+harness = false

@@ -531,3 +531,97 @@ fn test_combine_latest_reentrancy_path() {
 
   s1.next(2);
 }
+
+#[rxrust_macro::test]
+fn test_materialize_round_trip_with_race_and_end_with() {
+  let result = Rc::new(RefCell::new(Vec::new()));
+  let result_clone = result.clone();
+
+  Local::from_iter(vec![1, 2])
+    .race(Local::from_iter(vec![9]))
+    .end_with(vec![3])
+    .materialize()
+    .dematerialize()
+    .subscribe(move |v| result_clone.borrow_mut().push(v));
+
+  assert_eq!(*result.borrow(), vec![1, 2, 3]);
+}
+
+#[rxrust_macro::test]
+fn test_fork_join_feeds_every() {
+  let result = Rc::new(RefCell::new(Vec::new()));
+  let result_clone = result.clone();
+
+  Local::fork_join_observables([Local::from_iter(vec![1, 2, 3]), Local::from_iter(vec![4, 5])])
+    .map(|last_values: Vec<i32>| last_values.into_iter().sum::<i32>())
+    .every(|sum| *sum == 8)
+    .subscribe(move |v| result_clone.borrow_mut().push(v));
+
+  assert_eq!(*result.borrow(), vec![true]);
+}
+
+#[rxrust_macro::test]
+fn test_share_replay_feeds_two_subscribers() {
+  let a = Rc::new(RefCell::new(Vec::new()));
+  let b = Rc::new(RefCell::new(Vec::new()));
+  let a_c = a.clone();
+  let b_c = b.clone();
+
+  let shared = Local::from_iter(vec![1, 2, 3]).share_replay(1);
+  shared
+    .clone()
+    .subscribe(move |v| a_c.borrow_mut().push(v));
+  shared.subscribe(move |v| b_c.borrow_mut().push(v));
+
+  assert_eq!(*a.borrow(), vec![1, 2, 3]);
+  assert_eq!(*b.borrow(), vec![3]);
+}
+
+#[rxrust_macro::test]
+fn test_catch_error_after_throw_if_empty() {
+  let result = Rc::new(RefCell::new(Vec::new()));
+  let result_c = result.clone();
+
+  Local::from_iter(Vec::<i32>::new())
+    .map_err(|_: Infallible| String::new())
+    .throw_if_empty(|| "empty".to_string())
+    .catch_error(|e: String| Local::from_iter(vec![e.len() as i32]))
+    .subscribe(move |v| result_c.borrow_mut().push(v));
+
+  assert_eq!(*result.borrow(), vec![5]);
+}
+
+#[rxrust_macro::test]
+fn test_partition_then_sequence_equal() {
+  let result = Rc::new(RefCell::new(Vec::new()));
+  let result_c = result.clone();
+
+  let (evens, _odds) = Local::from_iter(vec![1, 2, 3, 4]).partition(|v| v % 2 == 0);
+  evens
+    .sequence_equal(Local::generate(2, |v| *v <= 4, |v| v + 2))
+    .subscribe(move |v| result_c.borrow_mut().push(v));
+
+  assert_eq!(*result.borrow(), vec![true]);
+}
+
+#[rxrust_macro::test]
+fn test_window_count_then_merge_scan() {
+  let sums = Rc::new(RefCell::new(Vec::new()));
+  let totals = Rc::new(RefCell::new(Vec::new()));
+  let sums_c = sums.clone();
+  let totals_c = totals.clone();
+
+  Local::from_iter(vec![1, 2, 3, 4])
+    .window_count(2)
+    .subscribe(move |w: Local<_>| {
+      let sink = sums_c.clone();
+      w.collect::<Vec<i32>>()
+        .subscribe(move |items| sink.borrow_mut().push(items.iter().sum::<i32>()));
+    });
+  assert_eq!(*sums.borrow(), vec![3, 7]);
+
+  Local::from_iter(sums.borrow().clone())
+    .merge_scan(0, |acc, v| Local::of(acc + v))
+    .subscribe(move |v| totals_c.borrow_mut().push(v));
+  assert_eq!(*totals.borrow(), vec![3, 10]);
+}

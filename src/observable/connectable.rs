@@ -36,13 +36,12 @@ use crate::{
   observable::{CoreObservable, ObservableType},
   observer::Observer,
   ops::ref_count::RefCount,
-  subject::Subject,
 };
 
 /// ConnectableObservable: A special Observable that requires manual connection
 ///
 /// **⚠️ Important**: This is NOT a regular Observable. It is an auxiliary
-/// object that bridges a source Observable with a Subject to enable
+/// object that bridges a source Observable with a subject to enable
 /// multicasting.
 ///
 /// **How it differs from a regular Observable**:
@@ -52,18 +51,19 @@ use crate::{
 /// - **Subscription**: Use `fork()` to create Observable instances, then
 ///   subscribe normally
 ///
-/// It holds a source and a subject. Subscribers listen to the subject,
-/// and `connect()` subscribes the subject to the source.
+/// It holds a source and a subject of any kind (`Subject`, `BehaviorSubject`,
+/// `ReplaySubject`, `AsyncSubject`). Subscribers listen to the subject, and
+/// `connect()` subscribes the subject to the source.
 #[derive(Clone)]
-pub struct ConnectableObservable<S, P> {
+pub struct ConnectableObservable<S, Sub> {
   pub(crate) source: S,
-  pub(crate) subject: Subject<P>,
+  pub(crate) subject: Sub,
 }
 
-// Observer implementation: Delegates to the internal Subject
-impl<Item, Err, S, P> Observer<Item, Err> for ConnectableObservable<S, P>
+// Observer implementation: Delegates to the internal subject
+impl<Item, Err, S, Sub> Observer<Item, Err> for ConnectableObservable<S, Sub>
 where
-  Subject<P>: Observer<Item, Err>,
+  Sub: Observer<Item, Err>,
 {
   #[inline]
   fn next(&mut self, value: Item) { self.subject.next(value); }
@@ -78,7 +78,7 @@ where
   fn is_closed(&self) -> bool { self.subject.is_closed() }
 }
 
-impl<S, P> ObservableType for ConnectableObservable<S, P>
+impl<S, Sub> ObservableType for ConnectableObservable<S, Sub>
 where
   S: ObservableType,
 {
@@ -89,22 +89,24 @@ where
   type Err = S::Err;
 }
 
-impl<C, S, P> CoreObservable<C> for ConnectableObservable<S, P>
+impl<C, S, Sub> CoreObservable<C> for ConnectableObservable<S, Sub>
 where
   S: ObservableType,
-  Subject<P>: CoreObservable<C>,
+  Sub: CoreObservable<C>,
 {
-  type Unsub = <Subject<P> as CoreObservable<C>>::Unsub;
+  type Unsub = <Sub as CoreObservable<C>>::Unsub;
 
   fn subscribe(self, observer: C) -> Self::Unsub { self.subject.subscribe(observer) }
 }
 
-impl<S, P: Clone> ConnectableObservable<S, P> {
-  pub fn fork(&self) -> Subject<P> { self.subject.clone() }
+impl<S, Sub: Clone> ConnectableObservable<S, Sub> {
+  /// Creates a new handle on the underlying subject for subscribers.
+  pub fn fork(&self) -> Sub { self.subject.clone() }
 
+  /// Subscribes the subject to the source, starting emissions.
   pub fn connect<C: Context>(self) -> S::Unsub
   where
-    S: CoreObservable<C::With<Subject<P>>>,
+    S: CoreObservable<C::With<Sub>>,
   {
     self.source.subscribe(C::lift(self.subject))
   }
@@ -114,9 +116,9 @@ impl<S, P: Clone> ConnectableObservable<S, P> {
 ///
 /// Provides `fork`, `connect`, and `ref_count` methods integrated with
 /// `Context`.
-pub trait Connectable<S, P: Clone>: Context<Inner = ConnectableObservable<S, P>>
+pub trait Connectable<S, Sub: Clone>: Context<Inner = ConnectableObservable<S, Sub>>
 where
-  S: CoreObservable<Self::With<Subject<P>>>,
+  S: CoreObservable<Self::With<Sub>>,
 {
   /// Connects the source to the subject, starting emissions.
   ///
@@ -126,23 +128,23 @@ where
   /// Creates a new `Observable` subscribed to the underlying subject.
   ///
   /// All forks share the same source connection.
-  fn fork(&self) -> Self::With<Subject<P>> { self.wrap(self.inner().fork()) }
+  fn fork(&self) -> Self::With<Sub> { self.wrap(self.inner().fork()) }
 
   /// Returns an Observable that automatically connects when the first
   /// observer subscribes and disconnects when the last one unsubscribes.
   #[allow(clippy::type_complexity)]
-  fn ref_count(self) -> Self::With<RefCount<S, P, Self::RcMut<Option<S::Unsub>>>> {
+  fn ref_count(self) -> Self::With<RefCount<S, Sub, Self::RcMut<Option<S::Unsub>>>> {
     let connectable = self.into_inner();
     let connection = Self::RcMut::from(None);
     Self::lift(RefCount { connectable, connection })
   }
 }
 
-impl<C, S, P> Connectable<S, P> for C
+impl<C, S, Sub> Connectable<S, Sub> for C
 where
-  C: Context<Inner = ConnectableObservable<S, P>>,
-  P: Clone,
-  S: CoreObservable<C::With<Subject<P>>>,
+  C: Context<Inner = ConnectableObservable<S, Sub>>,
+  Sub: Clone,
+  S: CoreObservable<C::With<Sub>>,
 {
 }
 
@@ -258,5 +260,23 @@ mod tests {
     connectable.connect();
 
     assert_eq!(*vals.borrow(), vec![42]);
+  }
+
+  #[rxrust_macro::test]
+  fn test_publish_last_emits_only_final_value() {
+    let (results, capture) = create_value_capture();
+    let connectable = Local::from_iter(vec![1, 2, 3]).publish_last();
+    connectable.fork().subscribe(capture);
+    connectable.connect();
+    assert_eq!(*results.borrow(), vec![3]);
+  }
+
+  #[rxrust_macro::test]
+  fn test_publish_behavior_seeds_subscribers() {
+    let (results, capture) = create_value_capture();
+    let connectable = Local::from_iter(vec![1, 2]).publish_behavior(0);
+    connectable.fork().subscribe(capture);
+    connectable.connect();
+    assert_eq!(*results.borrow(), vec![0, 1, 2]);
   }
 }
