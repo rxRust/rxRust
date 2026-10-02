@@ -39,6 +39,7 @@ pub use trivial::*;
 
 // Internal imports (avoid circular dependency with prelude)
 use crate::context::Context;
+use crate::ops::CatchError;
 use crate::ops::{
   average::{Average, Averageable},
   buffer::Buffer, // Restored
@@ -1488,6 +1489,13 @@ pub trait Observable: Context {
     self, default_value: Self::Item<'a>,
   ) -> Self::With<DefaultIfEmpty<Self::Inner, Self::Item<'a>>> {
     self.transform(|source| DefaultIfEmpty::new(source, default_value))
+  }
+
+  fn catch_error<F, SubstObservable>(self, func: F) -> Self::With<CatchError<Self::Inner, F>>
+  where
+    F: FnOnce(Self::Err) -> SubstObservable,
+  {
+    self.transform(|source| CatchError { source, func })
   }
 
   /// Collect all emitted items into a collection
