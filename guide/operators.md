@@ -114,3 +114,50 @@ Operators for observing, timing, and error handling.
 | `map_err` | Transforms the error type. |
 | `on_error` | Performs a side effect if an error occurs. |
 | `on_complete` | Performs a side effect if the Observable completes. |
+
+### Connectable (Multicasting) Operators
+
+Operators that turn a cold Observable into one shared source execution feeding
+many observers. See [`ConnectableObservable`] for the underlying type.
+
+| Operator | Description |
+| :--- | :--- |
+| `multicast` | Wraps the source with a supplied `Subject`, producing a `ConnectableObservable`. |
+| `publish` | `multicast` with a default `Subject`. |
+| `connect` | Subscribes the subject to the source, starting emissions. Returns a handle to disconnect. |
+| `fork` | Creates an Observable subscribed to the shared subject. |
+| `ref_count` | Connects on the first subscriber, disconnects when the last one leaves. |
+| `ref_count_grace` | `ref_count` with a grace period before disconnecting. A subscriber arriving inside the window cancels the pending disconnect and joins the live connection. Mirrors RxJava's `refCount(timeout, unit)` and RxJS 7's `share({ resetOnRefCountZero: () => timer(d) })`. |
+| `ref_count_grace_with` | `ref_count_grace` with an explicit scheduler instead of the context's. |
+
+```rust
+use std::convert::Infallible;
+
+use rxrust::prelude::*;
+
+#[tokio::main(flavor = "local")]
+async fn main() {
+    let mut source = Local::subject::<i32, Infallible>();
+
+    // One source execution, torn down 200ms after the last subscriber leaves.
+    let shared = source
+        .clone()
+        .publish()
+        .ref_count_grace(Duration::from_millis(200));
+
+    let sub = shared.clone().subscribe(|v| println!("A: {}", v));
+    source.next(1);
+    sub.unsubscribe();
+
+    // Within the window: rejoins the same connection, no resubscribe.
+    let _sub = shared.subscribe(|v| println!("B: {}", v));
+    source.next(2);
+}
+```
+
+Without the grace period, a momentary gap in subscribers — a component
+unmounting and its replacement mounting, a poller being swapped — tears the
+source down and starts it again. `ref_count_grace` keeps the connection alive
+across that gap.
+
+[`ConnectableObservable`]: https://docs.rs/rxrust/latest/rxrust/observable/connectable/struct.ConnectableObservable.html

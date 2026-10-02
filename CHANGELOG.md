@@ -24,6 +24,11 @@ Welcome to rxRust v1.0! This release represents a complete reimplementation of t
 
 ### ✨ New Features
 
+*   **Timed ref-count reset**: `ref_count_grace(duration)` and `ref_count_grace_with(duration, scheduler)`
+    on `Connectable` keep a multicast source connected for a grace period after the last subscriber
+    leaves. A subscriber arriving inside the window cancels the pending disconnect and joins the live
+    connection. This mirrors RxJava's `refCount(timeout, unit)` / `refCount(timeout, unit, scheduler)`,
+    and RxJS 7's `share({ resetOnRefCountZero: () => timer(d) })`.
 *   **Async Interoperability**:
     *   `from_future` / `into_future`: Convert between Rust Futures and Observables.
     *   `from_stream` / `into_stream`: Seamlessly bridge Rust `Stream` (Tokio/Async-std) with Rx operators.

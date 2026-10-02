@@ -159,6 +159,9 @@ Specialty Observables that have more precisely-controlled subscription dynamics
 - [x] Connect — instruct a connectable Observable to begin emitting items to its subscribers
 - [x] Publish — convert an ordinary Observable into a connectable Observable
 - [x] RefCount — make a Connectable Observable behave like an ordinary Observable
+  - `ref_count_grace(d)` / `ref_count_grace_with(d, scheduler)` wait `d` before disconnecting
+    once the last subscriber leaves, matching RxJava's `refCount(timeout, unit)` and
+    `refCount(timeout, unit, scheduler)`. `ref_count()` is the immediate form.
 - [ ] Replay — ensure that all observers see the same sequence of emitted items, even if they subscribe after the Observable has begun emitting items
 
 ### Operators to Convert Observables

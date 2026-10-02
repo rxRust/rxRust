@@ -35,7 +35,8 @@ use crate::{
   context::Context,
   observable::{CoreObservable, ObservableType},
   observer::Observer,
-  ops::ref_count::RefCount,
+  ops::ref_count::{GraceState, RefCount, RefCountGrace},
+  scheduler::Duration,
   subject::Subject,
 };
 
@@ -135,6 +136,65 @@ where
     let connectable = self.into_inner();
     let connection = Self::RcMut::from(None);
     Self::lift(RefCount { connectable, connection })
+  }
+
+  /// Like [`ref_count`](Connectable::ref_count), but waits `grace` before
+  /// disconnecting the source once the last subscriber leaves.
+  ///
+  /// A subscriber arriving inside the window cancels the pending disconnect and
+  /// joins the running connection, so a brief gap between subscribers does not
+  /// restart the source. The wait uses the context's scheduler.
+  ///
+  /// Equivalent to RxJava's `refCount(timeout, unit)`. [`Duration::ZERO`] is
+  /// equivalent to [`ref_count`](Connectable::ref_count).
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// # #[cfg(not(target_arch = "wasm32"))]
+  /// # {
+  /// use std::convert::Infallible;
+  ///
+  /// use rxrust::prelude::*;
+  ///
+  /// # #[tokio::main(flavor = "local")]
+  /// # async fn main() {
+  /// let mut source = Local::subject::<i32, Infallible>();
+  /// let shared = source
+  ///   .clone()
+  ///   .publish()
+  ///   .ref_count_grace(Duration::from_millis(50));
+  ///
+  /// let sub = shared.clone().subscribe(|v| println!("A: {}", v));
+  /// sub.unsubscribe();
+  ///
+  /// // Within the window, so this reuses the running connection.
+  /// let _sub = shared.subscribe(|v| println!("B: {}", v));
+  /// // Prints "B: 1".
+  /// source.next(1);
+  /// # }
+  /// # main();
+  /// # }
+  /// ```
+  #[allow(clippy::type_complexity)]
+  fn ref_count_grace(
+    self, grace: Duration,
+  ) -> Self::With<RefCountGrace<S, P, Self::RcMut<GraceState<S::Unsub>>, Self::Scheduler>> {
+    let scheduler = self.scheduler().clone();
+    self.ref_count_grace_with(grace, scheduler)
+  }
+
+  /// [`ref_count_grace`](Connectable::ref_count_grace) with an explicit
+  /// scheduler, overriding the context's.
+  ///
+  /// The scheduler decides when the pending disconnect runs, so a virtual-time
+  /// scheduler gives deterministic tests.
+  #[allow(clippy::type_complexity)]
+  fn ref_count_grace_with<Sch>(
+    self, grace: Duration, scheduler: Sch,
+  ) -> Self::With<RefCountGrace<S, P, Self::RcMut<GraceState<S::Unsub>>, Sch>> {
+    let state = Self::RcMut::from(GraceState::new());
+    self.transform(|connectable| RefCountGrace { connectable, state, grace, scheduler })
   }
 }
 
