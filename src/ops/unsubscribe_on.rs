@@ -82,17 +82,19 @@ where
     if self
       .delivery
       .compare_exchange(Delivery::Active, Delivery::Cancelled)
-      .is_ok()
+      .is_err()
     {
-      let task = Task::new(Some(self.upstream), |upstream| {
-        if let Some(upstream) = upstream.take() {
-          upstream.unsubscribe();
-        }
-        TaskState::Finished
-      });
-      // Dropping a TaskHandle does not cancel the scheduled operation.
-      self.scheduler.schedule(task, Some(self.delay));
+      return;
     }
+
+    let task = Task::new(Some(self.upstream), |upstream| {
+      if let Some(upstream) = upstream.take() {
+        upstream.unsubscribe();
+      }
+      TaskState::Finished
+    });
+    // Dropping a TaskHandle does not cancel the scheduled operation.
+    self.scheduler.schedule(task, Some(self.delay));
   }
   fn is_closed(&self) -> bool {
     self.delivery.get() != Delivery::Active || self.upstream.is_closed()
@@ -205,20 +207,20 @@ mod tests {
   #[rxrust_macro::test]
   fn synchronous_take_cancellation_waits_for_installation() {
     TestScheduler::init();
-    let calls = Rc::new(Cell::new(0));
-    let c = calls.clone();
-    let sub = TestCtx::create(move |e| {
-      e.next(1);
-      ClosureSubscription(move || c.set(c.get() + 1))
+    let cancellations = Rc::new(Cell::new(0));
+    let on_cancel = cancellations.clone();
+    let sub = TestCtx::create(move |emitter| {
+      emitter.next(1);
+      ClosureSubscription(move || on_cancel.set(on_cancel.get() + 1))
     })
     .unsubscribe_on(Duration::from_millis(10))
     .take(1)
     .subscribe(|_| {});
     sub.unsubscribe();
     assert_eq!(TestScheduler::pending_count(), 1);
-    assert_eq!(calls.get(), 0);
+    assert_eq!(cancellations.get(), 0);
     TestScheduler::advance_by(Duration::from_millis(10));
-    assert_eq!(calls.get(), 1);
+    assert_eq!(cancellations.get(), 1);
   }
 
   #[rxrust_macro::test]
@@ -321,19 +323,19 @@ mod tests {
   #[rxrust_macro::test]
   fn multisource_short_circuit_preserves_each_cancellation_policy() {
     TestScheduler::init();
-    let a = Manual::default();
-    let b = Manual::default();
-    TestCtx::new(a.clone())
+    let delayed = Manual::default();
+    let immediate = Manual::default();
+    TestCtx::new(delayed.clone())
       .unsubscribe_on(Duration::from_millis(10))
-      .merge(TestCtx::new(b.clone()))
+      .merge(TestCtx::new(immediate.clone()))
       .take(1)
       .on_error(|_| {})
       .subscribe(|_| {});
-    a.next(0, 1);
-    assert_eq!(a.cancellations(0), 0);
-    assert_eq!(b.cancellations(0), 1);
+    delayed.next(0, 1);
+    assert_eq!(delayed.cancellations(0), 0);
+    assert_eq!(immediate.cancellations(0), 1);
     TestScheduler::advance_by(Duration::from_millis(10));
-    assert_eq!(a.cancellations(0), 1);
+    assert_eq!(delayed.cancellations(0), 1);
   }
 
   #[rxrust_macro::test]
@@ -364,50 +366,53 @@ mod tests {
   #[rxrust_macro::test]
   fn interval_advances_through_gap_without_replay_then_restarts_after_disconnect() {
     TestScheduler::init();
-    let starts = Rc::new(Cell::new(0));
-    let s = starts.clone();
-    let ticks = Rc::new(Cell::new(0));
-    let t = ticks.clone();
+    let connections = Rc::new(Cell::new(0));
+    let on_connect = connections.clone();
+    let produced = Rc::new(Cell::new(0));
+    let on_tick = produced.clone();
     let shared = TestCtx::defer(move || {
-      s.set(s.get() + 1);
-      let t = t.clone();
-      TestCtx::interval(Duration::from_millis(10)).tap(move |_| t.set(t.get() + 1))
+      on_connect.set(on_connect.get() + 1);
+      let on_tick = on_tick.clone();
+      TestCtx::interval(Duration::from_millis(10)).tap(move |_| on_tick.set(on_tick.get() + 1))
     })
     .publish()
     .ref_count()
     .unsubscribe_on(Duration::from_millis(100));
     let old_values = Rc::new(RefCell::new(vec![]));
-    let v = old_values.clone();
+    let received = old_values.clone();
     let old = shared
       .clone()
-      .subscribe(move |x| v.borrow_mut().push(x));
+      .subscribe(move |value| received.borrow_mut().push(value));
     TestScheduler::advance_by(Duration::from_millis(25));
     assert_eq!(*old_values.borrow(), vec![0, 1]);
     old.unsubscribe();
     TestScheduler::advance_by(Duration::from_millis(30));
-    let before_join = ticks.get();
-    assert!(before_join >= 5);
+    // The original consumer is gone, but the shared interval keeps advancing.
+    let produced_before_join = produced.get();
+    assert!(produced_before_join >= 5);
     let values = Rc::new(RefCell::new(vec![]));
-    let v = values.clone();
-    let new = shared
+    let received = values.clone();
+    let replacement = shared
       .clone()
-      .subscribe(move |x| v.borrow_mut().push(x));
+      .subscribe(move |value| received.borrow_mut().push(value));
     assert!(values.borrow().is_empty());
-    assert_eq!(starts.get(), 1);
+    assert_eq!(connections.get(), 1);
     TestScheduler::advance_by(Duration::from_millis(10));
-    assert_eq!(values.borrow()[0], before_join);
+    assert_eq!(values.borrow()[0], produced_before_join);
     assert_eq!(*old_values.borrow(), vec![0, 1]);
+    // Reach the old consumer's deadline while its replacement is still active.
     TestScheduler::advance_by(Duration::from_millis(60));
-    assert_eq!(starts.get(), 1);
-    new.unsubscribe();
+    assert_eq!(connections.get(), 1);
+    replacement.unsubscribe();
     TestScheduler::advance_by(Duration::from_millis(101));
-    let stopped = ticks.get();
+    let produced_at_disconnect = produced.get();
     TestScheduler::advance_by(Duration::from_millis(30));
-    assert_eq!(ticks.get(), stopped);
+    assert_eq!(produced.get(), produced_at_disconnect);
+    // After the last reference expires, a fresh connection starts at tick zero.
     let fresh_values = Rc::new(RefCell::new(vec![]));
-    let v = fresh_values.clone();
-    let fresh = shared.subscribe(move |x| v.borrow_mut().push(x));
-    assert_eq!(starts.get(), 2);
+    let received = fresh_values.clone();
+    let fresh = shared.subscribe(move |value| received.borrow_mut().push(value));
+    assert_eq!(connections.get(), 2);
     TestScheduler::advance_by(Duration::from_millis(10));
     assert_eq!(*fresh_values.borrow(), vec![0]);
     fresh.unsubscribe();
