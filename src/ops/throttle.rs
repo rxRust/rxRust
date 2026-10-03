@@ -21,7 +21,7 @@ use crate::{
   subscription::{IntoBoxedSubscription, SingleAssignment, Subscription, single_assignment::State},
 };
 
-// ===== ThrottleEdge =====·
+// ===== ThrottleEdge =====
 
 /// Controls when values are emitted.
 ///
@@ -274,7 +274,7 @@ where
     }
   }
 
-  fn notifier_error<Err>(self, err: Err)
+  fn terminate_with_error<Err>(self, err: Err)
   where
     O: Observer<Item, Err> + Clone,
   {
@@ -326,7 +326,7 @@ where
     }
     self.0.start_window(value, false);
   }
-  fn error(self, err: Err) { self.0.notifier_error(err); }
+  fn error(self, err: Err) { self.0.terminate_with_error(err); }
   fn complete(self) {
     let state = {
       let mut guard = self.0.state.rc_deref_mut();
@@ -418,7 +418,7 @@ where
       if !completed {
         self.subscriber.source.clone().unsubscribe();
       }
-      self.subscriber.notifier_error(err);
+      self.subscriber.terminate_with_error(err);
     }
   }
   fn complete(self) { self.subscriber.close_window(self.generation); }

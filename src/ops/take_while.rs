@@ -62,20 +62,19 @@ where
   P: FnMut(&Item) -> bool,
 {
   fn next(&mut self, v: Item) {
-    if let Some(ref mut observer) = self.observer {
-      if (self.predicate)(&v) {
-        observer.next(v);
-      } else {
-        // Predicate returned false
-        if self.inclusive {
-          observer.next(v);
-        }
-        // Complete and stop further emissions
-        if let Some(observer) = self.observer.take() {
-          observer.complete();
-          self.upstream.clone().unsubscribe();
-        }
-      }
+    let Some(observer) = self.observer.as_mut() else {
+      return;
+    };
+    if (self.predicate)(&v) {
+      observer.next(v);
+      return;
+    }
+    if self.inclusive {
+      observer.next(v);
+    }
+    if let Some(observer) = self.observer.take() {
+      observer.complete();
+      self.upstream.clone().unsubscribe();
     }
   }
 

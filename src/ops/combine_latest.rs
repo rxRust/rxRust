@@ -46,7 +46,8 @@ where
 
 /// Shared state between A and B observers
 pub struct CombineLatestState<O, ItemA, ItemB, F, E> {
-  terminal: Option<Result<(), E>>,
+  // A terminal received while next holds the observer is delivered on restore.
+  pending_terminal: Option<Result<(), E>>,
   terminated: bool,
   observer: Option<O>,
   last_a: Option<ItemA>,
@@ -63,7 +64,7 @@ where
   fn new(observer: O, binary_op: F) -> Self {
     Self {
       observer: Some(observer),
-      terminal: None,
+      pending_terminal: None,
       terminated: false,
       last_a: None,
       last_b: None,
@@ -86,12 +87,12 @@ where
     if let Some(observer) = self.observer.take() {
       Some((observer, terminal))
     } else {
-      self.terminal = Some(terminal);
+      self.pending_terminal = Some(terminal);
       None
     }
   }
   fn restore(&mut self, observer: O) -> Option<(O, Result<(), E>)> {
-    if let Some(terminal) = self.terminal.take() {
+    if let Some(terminal) = self.pending_terminal.take() {
       Some((observer, terminal))
     } else {
       self.observer = Some(observer);

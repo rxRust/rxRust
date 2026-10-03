@@ -39,6 +39,20 @@ impl<H> Default for RefCountState<H> {
     Self { references: 0, generation: 0, connecting: false, terminated: false, connection: None }
   }
 }
+impl<H> RefCountState<H> {
+  fn is_active(&self, generation: usize) -> bool {
+    self.generation == generation && self.references > 0 && !self.terminated
+  }
+
+  fn terminate(&mut self, generation: usize) -> bool {
+    if !self.is_active(generation) {
+      return false;
+    }
+    self.terminated = true;
+    true
+  }
+}
+
 pub type Connection<C, U> =
   <C as Context>::RcMut<RefCountState<SingleAssignment<<C as Context>::RcMut<State<U>>>>>;
 pub struct RefCountConnect<S, P, C, Sch> {
@@ -59,58 +73,57 @@ where
   C: RcDerefMut<Target = RefCountState<H>>,
 {
   fn next(&mut self, v: I) {
-    let current = {
-      let state = self.connection.rc_deref();
-      state.generation == self.generation && state.references > 0 && !state.terminated
-    };
+    let current = self
+      .connection
+      .rc_deref()
+      .is_active(self.generation);
     if current {
+      // Recheck under the Subject broadcast guard: the connection can change
+      // after the first check, which also avoids entering Subject for stale
+      // input.
       self.subject.next_if(v, || {
-        let state = self.connection.rc_deref();
-        state.generation == self.generation && state.references > 0 && !state.terminated
+        self
+          .connection
+          .rc_deref()
+          .is_active(self.generation)
       });
     }
   }
   fn error(self, e: E) {
-    let current = {
-      let state = self.connection.rc_deref();
-      state.generation == self.generation && state.references > 0 && !state.terminated
-    };
+    let current = self
+      .connection
+      .rc_deref()
+      .is_active(self.generation);
     if !current {
       return;
     }
     self.subject.error_if(e, || {
-      let mut state = self.connection.rc_deref_mut();
-      if state.generation != self.generation || state.references == 0 || state.terminated {
-        false
-      } else {
-        state.terminated = true;
-        true
-      }
+      self
+        .connection
+        .rc_deref_mut()
+        .terminate(self.generation)
     });
   }
   fn complete(self) {
-    let current = {
-      let state = self.connection.rc_deref();
-      state.generation == self.generation && state.references > 0 && !state.terminated
-    };
+    let current = self
+      .connection
+      .rc_deref()
+      .is_active(self.generation);
     if !current {
       return;
     }
     self.subject.complete_if(|| {
-      let mut state = self.connection.rc_deref_mut();
-      if state.generation != self.generation || state.references == 0 || state.terminated {
-        false
-      } else {
-        state.terminated = true;
-        true
-      }
+      self
+        .connection
+        .rc_deref_mut()
+        .terminate(self.generation)
     });
   }
   fn is_closed(&self) -> bool {
-    let current = {
-      let state = self.connection.rc_deref();
-      state.generation == self.generation && state.references > 0 && !state.terminated
-    };
+    let current = self
+      .connection
+      .rc_deref()
+      .is_active(self.generation);
     !current || self.subject.is_closed()
   }
 }

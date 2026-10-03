@@ -40,6 +40,19 @@ pub struct MergeAllInputs<U> {
   finished_pending: BTreeSet<usize>,
   inner: DynamicSubscriptions<Option<U>>,
 }
+impl<U> MergeAllInputs<U> {
+  // Return the retired handle so its captures are dropped outside the inputs
+  // lock.
+  fn retire(&mut self, id: usize) -> Option<Option<U>> {
+    let retired = self.inner.remove(id);
+    if matches!(retired, Some(None)) {
+      // A synchronous terminal arrived before subscribe returned its handle.
+      self.finished_pending.insert(id);
+    }
+    retired
+  }
+}
+
 pub struct MergeAllOuterObserver<P, D, H> {
   state: P,
   inputs: D,
@@ -157,13 +170,11 @@ where
     if self.inputs.rc_deref().cancelled {
       return;
     }
-    {
-      self
-        .state
-        .rc_deref_mut()
-        .queue
-        .push_back(inner.into_parts());
-    }
+    self
+      .state
+      .rc_deref_mut()
+      .queue
+      .push_back(inner.into_parts());
     advance::<I, O, P, D, H, U>(self.state.clone(), self.inputs.clone(), self.outer.clone());
   }
   fn error(self, e: E) {
@@ -269,14 +280,7 @@ where
     }
   }
   fn error(self, e: E) {
-    let retired = {
-      let mut inputs = self.inputs.rc_deref_mut();
-      let retired = inputs.inner.remove(self.id);
-      if matches!(retired, Some(None)) {
-        inputs.finished_pending.insert(self.id);
-      }
-      retired
-    };
+    let retired = { self.inputs.rc_deref_mut().retire(self.id) };
     drop(retired);
     let observer = {
       let mut state = self.state.rc_deref_mut();
@@ -289,14 +293,7 @@ where
     }
   }
   fn complete(self) {
-    let retired = {
-      let mut inputs = self.inputs.rc_deref_mut();
-      let retired = inputs.inner.remove(self.id);
-      if matches!(retired, Some(None)) {
-        inputs.finished_pending.insert(self.id);
-      }
-      retired
-    };
+    let retired = { self.inputs.rc_deref_mut().retire(self.id) };
     drop(retired);
     if self.inputs.rc_deref().cancelled {
       return;
