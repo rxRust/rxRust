@@ -98,3 +98,46 @@ that feedback flow.
 Subscription contexts retain their scheduler instance through transformations,
 subscription, and connection management. Factories and explicit context
 conversions may still select a default scheduler as documented by their APIs.
+
+## Delayed cancellation and connection grace periods
+
+`unsubscribe_on(delay)` captures the current Context scheduler instance.
+`unsubscribe_on_with(delay, scheduler)` uses the supplied instance. Both stop
+accepting downstream notifications as soon as cancellation reaches the operator,
+then schedule one upstream `unsubscribe()` call after the delay. A callback
+already in progress can finish. Zero delay still uses the scheduler. Natural
+completion/error and ordinary Drop do not schedule cancellation; an
+`unsubscribe_when_dropped()` guard follows the explicit cancellation path.
+
+The scheduler must keep running until the task executes. Built-in schedulers
+require the upstream handle to be `'static`; a shared scheduler also requires it
+to be `Send`. Cancellation during synchronous subscription may first wait for a
+late upstream handle to be installed. The delay starts when the request actually
+reaches this operator, so stacked delays accumulate. Existing `is_closed()`
+propagation is preserved: delaying the cancellation method does not guarantee
+that every source continues producing until the deadline.
+
+For a connection that survives brief gaps between consumers, compose as below.
+`defer` provides the cloneable source factory needed for reconnection:
+
+```rust,no_run
+use rxrust::prelude::*;
+
+let grace = Duration::from_millis(100);
+let shared = Local::defer(|| Local::interval(Duration::from_millis(10)))
+    .publish()
+    .ref_count()
+    .unsubscribe_on_with(grace, LocalScheduler::default());
+
+let old = shared.clone().subscribe(|value| println!("{value}"));
+old.unsubscribe();
+let replacement = shared.subscribe(|value| println!("{value}"));
+replacement.unsubscribe();
+```
+
+The old subscription retains its reference through the grace period, allowing a
+new subscriber to reuse the active connection. Its timer releases only that old
+reference; disconnection occurs when the last reference is released. An interval
+can therefore advance during the gap, but values from the gap are not replayed.
+Subscribing after disconnection starts a new connection. This composition adds no
+timer or delay parameter to `ref_count`.
