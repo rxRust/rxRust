@@ -6,6 +6,7 @@
 pub mod boxed;
 pub mod dynamic;
 pub mod either;
+pub mod single_assignment;
 pub mod source_with_dynamic;
 pub mod source_with_handle;
 pub mod tuple;
@@ -13,6 +14,7 @@ pub mod tuple;
 pub use boxed::{BoxedSubscription, BoxedSubscriptionSend, IntoBoxedSubscription};
 pub use dynamic::DynamicSubscriptions;
 pub use either::EitherSubscription;
+pub use single_assignment::SingleAssignment;
 pub use source_with_dynamic::SourceWithDynamicSubs;
 pub use source_with_handle::SourceWithHandle;
 pub use tuple::TupleSubscription;
