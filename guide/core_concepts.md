@@ -50,3 +50,51 @@ To adapt Reactive Programming to Rust's compile-time guarantees, rxRust introduc
 *   **[Context](core_concepts/context.md)**: Solves the *Thread-Safety vs Performance* dilemma by splitting the world into `Local` and `Shared`.
 *   **[Scheduler](core_concepts/scheduler.md)**: Tightly integrated with Context to manage *Time* without boilerplate.
 *   **[Type Erasure](core_concepts/type_erasure.md)**: Techniques (`box_it`, `impl Observable`) to manage Rust's complex iterator types.
+
+## Cancellation and terminal notifications
+
+`complete` and `error` end notification delivery. They do not implicitly invoke
+`unsubscribe()` on the source that sent the terminal notification. A combining
+operator cancels other active inputs when it no longer needs them. For example,
+`zip` completes when a completed input's buffer runs out, while `combine_latest`
+can keep using the last value of a completed input. An input that completes
+without a value makes `combine_latest` complete immediately.
+
+Short-circuiting operators such as `take`, `take_while`, and `contains` explicitly
+cancel their upstream. `take(0)` completes without subscribing to its source.
+Because a source can emit synchronously before returning its subscription,
+cancellation may be recorded first and applied as soon as that handle arrives.
+Operators cannot invoke a cancellation handle before the source returns it;
+synchronous sources should also check `Observer::is_closed()`.
+
+Operator subscription handles implement `Subscription`; their concrete types may
+include shared cancellation state. A scheduled source's `TaskHandle` can be
+awaited directly, but that does not make every operator subscription a future.
+Use completion notifications to observe a composed stream's natural termination.
+
+Subject owns the logical subscription count. Accepting a subscription increments
+it immediately; explicit cancellation or natural termination releases that
+subscription once. Deferred insertion and removal only update observer storage.
+Queries do not borrow the observer list, so they are safe inside callbacks.
+An observer reporting `is_closed()` does not itself release its subscription.
+
+`publish().ref_count()` uses this count to manage the source connection. It
+subscribes to the Subject, reserves one connection if needed, and disconnects
+when cancellation leaves the Subject empty. Source subscription and cancellation
+run outside the connection lock. Natural termination does not cancel the source
+that sent it. Notifications follow the source and Subject contracts, without
+connection-generation filtering. Dropping an ordinary handle does not release
+membership; use explicit cancellation or `unsubscribe_when_dropped()`.
+
+`ref_count` follows Subject's existing re-entrancy policy. Subscription changes
+inside a Subject callback update membership immediately, while storage changes
+may take effect later; `ref_count` does not wait for
+registration or defer connection startup. Cancelling inside a callback is
+supported. If releasing the last reference and resubscribing in that callback
+starts a source that emits synchronously, Subject rejects the re-entrant
+emission. Schedule the resubscription explicitly after the callback to support
+that feedback flow.
+
+Subscription contexts retain their scheduler instance through transformations,
+subscription, and connection management. Factories and explicit context
+conversions may still select a default scheduler as documented by their APIs.

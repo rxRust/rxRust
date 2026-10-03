@@ -5,10 +5,13 @@
 //! from the other source.
 
 use crate::{
-  context::{Context, RcDerefMut},
+  context::{Context, RcDeref, RcDerefMut},
   observable::{CoreObservable, ObservableType},
   observer::Observer,
-  subscription::{IntoBoxedSubscription, Subscription, TupleSubscription},
+  subscription::{
+    IntoBoxedSubscription, SingleAssignment, Subscription, TupleSubscription,
+    single_assignment::State,
+  },
 };
 
 // ==================== CombineLatest Operator ====================
@@ -42,7 +45,10 @@ where
 // ==================== Shared State ====================
 
 /// Shared state between A and B observers
-pub struct CombineLatestState<O, ItemA, ItemB, F> {
+pub struct CombineLatestState<O, ItemA, ItemB, F, E> {
+  // A terminal received while next holds the observer is delivered on restore.
+  pending_terminal: Option<Result<(), E>>,
+  terminated: bool,
   observer: Option<O>,
   last_a: Option<ItemA>,
   last_b: Option<ItemB>,
@@ -51,13 +57,15 @@ pub struct CombineLatestState<O, ItemA, ItemB, F> {
   binary_op: F,
 }
 
-impl<O, ItemA, ItemB, F, Output> CombineLatestState<O, ItemA, ItemB, F>
+impl<O, ItemA, ItemB, F, Output, E> CombineLatestState<O, ItemA, ItemB, F, E>
 where
   F: FnMut(ItemA, ItemB) -> Output,
 {
   fn new(observer: O, binary_op: F) -> Self {
     Self {
       observer: Some(observer),
+      pending_terminal: None,
+      terminated: false,
       last_a: None,
       last_b: None,
       completed_a: false,
@@ -66,17 +74,29 @@ where
     }
   }
 
-  /// Check and trigger completion if conditions are met
-  fn check_complete<E>(&mut self)
-  where
-    O: Observer<Output, E>,
-  {
-    // Complete only when BOTH sources complete
-    if self.completed_a
-      && self.completed_b
-      && let Some(observer) = self.observer.take()
-    {
-      observer.complete();
+  fn should_complete(&self) -> bool {
+    (self.completed_a && self.last_a.is_none())
+      || (self.completed_b && self.last_b.is_none())
+      || (self.completed_a && self.completed_b)
+  }
+  fn finish(&mut self, terminal: Result<(), E>) -> Option<(O, Result<(), E>)> {
+    if self.terminated {
+      return None;
+    }
+    self.terminated = true;
+    if let Some(observer) = self.observer.take() {
+      Some((observer, terminal))
+    } else {
+      self.pending_terminal = Some(terminal);
+      None
+    }
+  }
+  fn restore(&mut self, observer: O) -> Option<(O, Result<(), E>)> {
+    if let Some(terminal) = self.pending_terminal.take() {
+      Some((observer, terminal))
+    } else {
+      self.observer = Some(observer);
+      None
     }
   }
 }
@@ -103,11 +123,13 @@ type SharedState<'a, C, A, B, F> = <C as Context>::RcMut<
     <A as ObservableType>::Item<'a>,
     <B as ObservableType>::Item<'a>,
     F,
+    <A as ObservableType>::Err,
   >,
 >;
 
-type SubProxy<C, U> = <C as Context>::RcMut<Option<U>>;
-type BoxedSubProxy<C> = <C as Context>::RcMut<Option<<C as Context>::BoxedSubscription>>;
+type SubProxy<C, U> = SingleAssignment<<C as Context>::RcMut<State<U>>>;
+type BoxedSubProxy<C> =
+  SingleAssignment<<C as Context>::RcMut<State<<C as Context>::BoxedSubscription>>>;
 type ClaCtx<'a, C, A, B, F, BUnsub> =
   <C as Context>::With<CombineLatestAObserver<SharedState<'a, C, A, B, F>, SubProxy<C, BUnsub>>>;
 type ClbCtx<'a, C, A, B, F> =
@@ -121,6 +143,7 @@ where
   A: for<'a> CoreObservable<ClaCtx<'a, C, A, B, F, BUnsub>, Unsub = AUnsub>,
   B: for<'a> CoreObservable<ClbCtx<'a, C, A, B, F>, Unsub = BUnsub, Err = A::Err>,
   F: FnMut(A::Item<'_>, B::Item<'_>) -> OutputItem + Clone,
+  BUnsub: Subscription,
   AUnsub: IntoBoxedSubscription<C::BoxedSubscription>,
   SubProxy<C, BUnsub>: Subscription,
   BoxedSubProxy<C>: Subscription,
@@ -130,22 +153,25 @@ where
   fn subscribe(self, context: C) -> Self::Unsub {
     let CombineLatest { source_a, source_b, binary_op } = self;
 
-    let downstream = context.into_inner();
+    let (downstream, scheduler) = context.into_parts();
     let state = C::RcMut::from(CombineLatestState::new(downstream, binary_op));
 
-    let a_proxy: BoxedSubProxy<C> = C::RcMut::from(None);
+    let a_proxy: BoxedSubProxy<C> = SingleAssignment::new();
 
     // Subscribe B
     let b_observer = CombineLatestBObserver { state: state.clone(), a_proxy: a_proxy.clone() };
-    let b_ctx = C::lift(b_observer);
+    let b_ctx = C::With::from_parts(b_observer, scheduler.clone());
     let b_unsub = source_b.subscribe(b_ctx);
-    let b_proxy: SubProxy<C, BUnsub> = C::RcMut::from(Some(b_unsub));
+    let b_proxy: SubProxy<C, BUnsub> = SingleAssignment::new();
+    b_proxy.set(b_unsub);
 
     // Subscribe A
-    let a_observer = CombineLatestAObserver { state, b_proxy: b_proxy.clone() };
-    let a_ctx = C::lift(a_observer);
-    let a_unsub = source_a.subscribe(a_ctx);
-    *a_proxy.rc_deref_mut() = Some(a_unsub.into_boxed());
+    if state.rc_deref().observer.is_some() {
+      let a_observer = CombineLatestAObserver { state, b_proxy: b_proxy.clone() };
+      let a_ctx = C::With::from_parts(a_observer, scheduler);
+      let a_unsub = source_a.subscribe(a_ctx);
+      a_proxy.set(a_unsub.into_boxed());
+    }
 
     TupleSubscription::new(a_proxy, b_proxy)
   }
@@ -156,7 +182,7 @@ where
 impl<ItemA, ItemB, Err, O, StateRc, BProxy, F, OutputItem> Observer<ItemA, Err>
   for CombineLatestAObserver<StateRc, BProxy>
 where
-  StateRc: RcDerefMut<Target = CombineLatestState<O, ItemA, ItemB, F>>,
+  StateRc: RcDerefMut<Target = CombineLatestState<O, ItemA, ItemB, F, Err>>,
   BProxy: Subscription,
   O: Observer<OutputItem, Err>,
   F: FnMut(ItemA, ItemB) -> OutputItem,
@@ -164,37 +190,61 @@ where
   ItemB: Clone,
 {
   fn next(&mut self, value: ItemA) {
-    let (output, mut downstream) = {
+    let (output, observer) = {
       let mut state = self.state.rc_deref_mut();
+      if state.terminated {
+        return;
+      }
       state.last_a = Some(value.clone());
-
       let output = state
         .last_b
         .clone()
-        .map(|b| (state.binary_op)(value, b));
+        .map(|other| (state.binary_op)(value, other));
       (output, state.observer.take())
-    }; // Guard dropped, releasing mutable borrow
-
-    if let (Some(val), Some(ref mut obs)) = (output, downstream.as_mut()) {
-      obs.next(val);
-    }
-
-    if let Some(obs) = downstream {
-      self.state.rc_deref_mut().observer = Some(obs);
+    };
+    if let Some(mut observer) = observer {
+      if let Some(output) = output {
+        observer.next(output);
+      }
+      let terminal = { self.state.rc_deref_mut().restore(observer) };
+      if let Some((observer, terminal)) = terminal {
+        match terminal {
+          Ok(()) => observer.complete(),
+          Err(e) => observer.error(e),
+        }
+      }
     }
   }
-
   fn error(self, err: Err) {
-    self.b_proxy.unsubscribe();
-    if let Some(observer) = self.state.rc_deref_mut().observer.take() {
+    let (terminal, cancel_peer) = {
+      let mut state = self.state.rc_deref_mut();
+      let cancel_peer = !state.terminated && !state.completed_b;
+      (state.finish(Err(err)), cancel_peer)
+    };
+    if cancel_peer {
+      self.b_proxy.unsubscribe();
+    }
+    if let Some((observer, Err(err))) = terminal {
       observer.error(err);
     }
   }
-
   fn complete(self) {
-    let mut state = self.state.rc_deref_mut();
-    state.completed_a = true;
-    state.check_complete::<Err>();
+    let (terminal, cancel_peer) = {
+      let mut state = self.state.rc_deref_mut();
+      state.completed_a = true;
+      if state.should_complete() && !state.terminated {
+        let cancel_peer = !state.completed_b;
+        (state.finish(Ok(())), cancel_peer)
+      } else {
+        (None, false)
+      }
+    };
+    if cancel_peer {
+      self.b_proxy.unsubscribe();
+    }
+    if let Some((observer, Ok(()))) = terminal {
+      observer.complete();
+    }
   }
 
   fn is_closed(&self) -> bool { self.state.rc_deref().observer.is_closed() }
@@ -203,7 +253,7 @@ where
 impl<ItemA, ItemB, Err, O, StateRc, AProxy, F, OutputItem> Observer<ItemB, Err>
   for CombineLatestBObserver<StateRc, AProxy>
 where
-  StateRc: RcDerefMut<Target = CombineLatestState<O, ItemA, ItemB, F>>,
+  StateRc: RcDerefMut<Target = CombineLatestState<O, ItemA, ItemB, F, Err>>,
   AProxy: Subscription,
   O: Observer<OutputItem, Err>,
   F: FnMut(ItemA, ItemB) -> OutputItem,
@@ -211,37 +261,61 @@ where
   ItemB: Clone,
 {
   fn next(&mut self, value: ItemB) {
-    let (output, mut downstream) = {
+    let (output, observer) = {
       let mut state = self.state.rc_deref_mut();
+      if state.terminated {
+        return;
+      }
       state.last_b = Some(value.clone());
-
       let output = state
         .last_a
         .clone()
-        .map(|a| (state.binary_op)(a, value));
+        .map(|other| (state.binary_op)(other, value));
       (output, state.observer.take())
-    }; // Guard dropped, releasing mutable borrow
-
-    if let (Some(val), Some(ref mut obs)) = (output, downstream.as_mut()) {
-      obs.next(val);
-    }
-
-    if let Some(obs) = downstream {
-      self.state.rc_deref_mut().observer = Some(obs);
+    };
+    if let Some(mut observer) = observer {
+      if let Some(output) = output {
+        observer.next(output);
+      }
+      let terminal = { self.state.rc_deref_mut().restore(observer) };
+      if let Some((observer, terminal)) = terminal {
+        match terminal {
+          Ok(()) => observer.complete(),
+          Err(e) => observer.error(e),
+        }
+      }
     }
   }
-
   fn error(self, err: Err) {
-    self.a_proxy.unsubscribe();
-    if let Some(observer) = self.state.rc_deref_mut().observer.take() {
+    let (terminal, cancel_peer) = {
+      let mut state = self.state.rc_deref_mut();
+      let cancel_peer = !state.terminated && !state.completed_a;
+      (state.finish(Err(err)), cancel_peer)
+    };
+    if cancel_peer {
+      self.a_proxy.unsubscribe();
+    }
+    if let Some((observer, Err(err))) = terminal {
       observer.error(err);
     }
   }
-
   fn complete(self) {
-    let mut state = self.state.rc_deref_mut();
-    state.completed_b = true;
-    state.check_complete::<Err>();
+    let (terminal, cancel_peer) = {
+      let mut state = self.state.rc_deref_mut();
+      state.completed_b = true;
+      if state.should_complete() && !state.terminated {
+        let cancel_peer = !state.completed_a;
+        (state.finish(Ok(())), cancel_peer)
+      } else {
+        (None, false)
+      }
+    };
+    if cancel_peer {
+      self.a_proxy.unsubscribe();
+    }
+    if let Some((observer, Ok(()))) = terminal {
+      observer.complete();
+    }
   }
 
   fn is_closed(&self) -> bool { self.state.rc_deref().observer.is_closed() }
@@ -251,6 +325,44 @@ where
 
 #[cfg(test)]
 mod tests {
+  #[rxrust_macro::test(local)]
+  async fn reentrant_error_is_delivered_after_in_flight_next() {
+    use std::{cell::Cell, rc::Rc};
+    let mut a = Local::subject::<i32, &str>();
+    let mut b = Local::subject::<i32, &str>();
+    let fail = a.clone();
+    let errors = Rc::new(Cell::new(0));
+    let e = errors.clone();
+    let values = Rc::new(Cell::new(0));
+    let v = values.clone();
+    a.clone()
+      .combine_latest(b.clone(), |a, b| a + b)
+      .on_error(move |_| e.set(e.get() + 1))
+      .subscribe(move |_| {
+        v.set(v.get() + 1);
+        fail.clone().error("failed during next");
+      });
+    a.next(1);
+    b.next(2);
+    b.next(3);
+    assert_eq!(values.get(), 1);
+    assert_eq!(errors.get(), 1);
+  }
+
+  #[rxrust_macro::test(local)]
+  async fn empty_side_completes_and_cancels_active_peer() {
+    let a = Local::subject::<i32, std::convert::Infallible>();
+    let b = Local::subject::<i32, std::convert::Infallible>();
+    let done = std::rc::Rc::new(std::cell::Cell::new(false));
+    let c = done.clone();
+    a.clone()
+      .combine_latest(b.clone(), |a, b| a + b)
+      .on_complete(move || c.set(true))
+      .subscribe(|_| {});
+    a.complete();
+    assert!(done.get());
+    assert_eq!(b.inner().subscriber_count(), 0);
+  }
   use std::{
     sync::{Arc, Mutex},
     time::Duration,

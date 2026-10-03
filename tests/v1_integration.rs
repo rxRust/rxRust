@@ -337,8 +337,8 @@ fn test_collect_operator() {
   assert_eq!(*result.borrow(), Some(vec![1, 2, 3, 4, 5]));
 }
 
-#[rxrust_macro::test]
-fn test_take_until() {
+#[rxrust_macro::test(local)]
+async fn test_take_until() {
   // Test take_until operator
   let results = Rc::new(RefCell::new(Vec::new()));
   let results_clone = results.clone();

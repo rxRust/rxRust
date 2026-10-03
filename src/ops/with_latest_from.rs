@@ -7,10 +7,13 @@
 use std::marker::PhantomData;
 
 use crate::{
-  context::{Context, RcDerefMut},
+  context::{Context, RcDeref, RcDerefMut},
   observable::{CoreObservable, ObservableType},
   observer::Observer,
-  subscription::{IntoBoxedSubscription, Subscription, TupleSubscription},
+  subscription::{
+    IntoBoxedSubscription, SingleAssignment, Subscription, TupleSubscription,
+    single_assignment::State,
+  },
 };
 
 // ==================== WithLatestFrom Operator ====================
@@ -43,10 +46,13 @@ where
 pub struct WithLatestFromState<O, ItemB> {
   observer: Option<O>,
   last_b: Option<ItemB>,
+  completed_b: bool,
 }
 
 impl<O, ItemB> WithLatestFromState<O, ItemB> {
-  fn new(observer: O) -> Self { Self { observer: Some(observer), last_b: None } }
+  fn new(observer: O) -> Self {
+    Self { observer: Some(observer), last_b: None, completed_b: false }
+  }
 }
 
 // ==================== Observer Structs ====================
@@ -71,8 +77,9 @@ type SharedState<'a, C, B> = <C as Context>::RcMut<
   WithLatestFromState<<C as Context>::Inner, <B as ObservableType>::Item<'a>>,
 >;
 
-type SubProxy<C, U> = <C as Context>::RcMut<Option<U>>;
-type BoxedSubProxy<C> = <C as Context>::RcMut<Option<<C as Context>::BoxedSubscription>>;
+type SubProxy<C, U> = SingleAssignment<<C as Context>::RcMut<State<U>>>;
+type BoxedSubProxy<C> =
+  SingleAssignment<<C as Context>::RcMut<State<<C as Context>::BoxedSubscription>>>;
 
 type WlfACtx<'a, C, B, BUnsub> =
   <C as Context>::With<WithLatestFromAObserver<SharedState<'a, C, B>, SubProxy<C, BUnsub>>>;
@@ -87,6 +94,7 @@ where
   C: Context,
   A: for<'a> CoreObservable<WlfACtx<'a, C, B, BUnsub>, Unsub = AUnsub>,
   B: for<'a> CoreObservable<WlfBCtx<'a, C, A, B>, Unsub = BUnsub, Err = A::Err>,
+  BUnsub: Subscription,
   AUnsub: IntoBoxedSubscription<C::BoxedSubscription>,
   SubProxy<C, BUnsub>: Subscription,
   BoxedSubProxy<C>: Subscription,
@@ -96,10 +104,10 @@ where
   fn subscribe(self, context: C) -> Self::Unsub {
     let WithLatestFrom { source_a, source_b } = self;
 
-    let downstream = context.into_inner();
+    let (downstream, scheduler) = context.into_parts();
     let state = C::RcMut::from(WithLatestFromState::new(downstream));
 
-    let a_proxy: BoxedSubProxy<C> = C::RcMut::from(None);
+    let a_proxy: BoxedSubProxy<C> = SingleAssignment::new();
 
     // Subscribe B first
     let b_observer = WithLatestFromBObserver {
@@ -107,15 +115,18 @@ where
       a_proxy: a_proxy.clone(),
       _marker: PhantomData,
     };
-    let b_ctx = C::lift(b_observer);
+    let b_ctx = C::With::from_parts(b_observer, scheduler.clone());
     let b_unsub = source_b.subscribe(b_ctx);
-    let b_proxy: SubProxy<C, BUnsub> = C::RcMut::from(Some(b_unsub));
+    let b_proxy: SubProxy<C, BUnsub> = SingleAssignment::new();
+    b_proxy.set(b_unsub);
 
     // Subscribe A
-    let a_observer = WithLatestFromAObserver { state, b_proxy: b_proxy.clone() };
-    let a_ctx = C::lift(a_observer);
-    let a_unsub = source_a.subscribe(a_ctx);
-    *a_proxy.rc_deref_mut() = Some(a_unsub.into_boxed());
+    if state.rc_deref().observer.is_some() {
+      let a_observer = WithLatestFromAObserver { state, b_proxy: b_proxy.clone() };
+      let a_ctx = C::With::from_parts(a_observer, scheduler);
+      let a_unsub = source_a.subscribe(a_ctx);
+      a_proxy.set(a_unsub.into_boxed());
+    }
 
     TupleSubscription::new(a_proxy, b_proxy)
   }
@@ -142,15 +153,27 @@ where
   }
 
   fn error(self, err: Err) {
-    self.b_proxy.unsubscribe();
-    if let Some(observer) = self.state.rc_deref_mut().observer.take() {
+    if self.state.rc_deref().observer.is_none() {
+      return;
+    }
+    if !self.state.rc_deref().completed_b {
+      self.b_proxy.unsubscribe();
+    }
+    let observer = { self.state.rc_deref_mut().observer.take() };
+    if let Some(observer) = observer {
       observer.error(err);
     }
   }
 
   fn complete(self) {
-    self.b_proxy.unsubscribe();
-    if let Some(observer) = self.state.rc_deref_mut().observer.take() {
+    if self.state.rc_deref().observer.is_none() {
+      return;
+    }
+    if !self.state.rc_deref().completed_b {
+      self.b_proxy.unsubscribe();
+    }
+    let observer = { self.state.rc_deref_mut().observer.take() };
+    if let Some(observer) = observer {
       observer.complete();
     }
   }
@@ -169,13 +192,21 @@ where
   fn next(&mut self, value: ItemB) { self.state.rc_deref_mut().last_b = Some(value); }
 
   fn error(self, err: Err) {
+    if self.state.rc_deref().observer.is_none() {
+      return;
+    }
     self.a_proxy.unsubscribe();
-    if let Some(observer) = self.state.rc_deref_mut().observer.take() {
+    let observer = { self.state.rc_deref_mut().observer.take() };
+    if let Some(observer) = observer {
       observer.error(err);
     }
   }
 
   fn complete(self) {
+    if self.state.rc_deref().observer.is_none() {
+      return;
+    }
+    self.state.rc_deref_mut().completed_b = true;
     // Secondary completion does NOT complete downstream
   }
 
@@ -186,6 +217,24 @@ where
 
 #[cfg(test)]
 mod tests {
+
+  #[rxrust_macro::test(local)]
+  async fn secondary_completion_keeps_value_without_cancelling_it() {
+    use crate::subscription::ClosureSubscription;
+    let calls = std::rc::Rc::new(std::cell::Cell::new(0));
+    let c = calls.clone();
+    let b = Local::create(move |e| {
+      e.next(10);
+      e.complete();
+      ClosureSubscription(move || c.set(c.get() + 1))
+    });
+    let mut values = vec![];
+    Local::from_iter([1, 2])
+      .with_latest_from(b)
+      .subscribe(|v| values.push(v));
+    assert_eq!(values, vec![(1, 10), (2, 10)]);
+    assert_eq!(calls.get(), 0);
+  }
   use std::sync::{Arc, Mutex};
 
   use crate::prelude::*;

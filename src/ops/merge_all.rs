@@ -1,93 +1,21 @@
-//! Flattens Higher-Order Observables by merging inner observable emissions.
-
-use std::collections::VecDeque;
+//! Flattens inner observables with bounded concurrency and explicit
+//! cancellation.
+use std::collections::{BTreeSet, VecDeque};
 
 use crate::{
   context::{Context, RcDerefMut},
   observable::{CoreObservable, ObservableType},
   observer::Observer,
-  subscription::{DynamicSubscriptions, IntoBoxedSubscription},
+  subscription::{
+    DynamicSubscriptions, IntoBoxedSubscription, SingleAssignment, Subscription,
+    single_assignment::State,
+  },
 };
-/// Flattens a Higher-Order Observable (an observable that emits observables).
-///
-/// Subscribes to inner observables as they arrive, up to `concurrent` limit.
-/// Excess observables are queued and subscribed when slots become available.
-///
-/// # Examples
-///
-/// ```
-/// use rxrust::prelude::*;
-///
-/// // Basic usage - flatten nested observables
-/// let mut result = Vec::new();
-/// Local::from_iter([Local::from_iter([1, 2]), Local::from_iter([3, 4])])
-///   .merge_all(usize::MAX)
-///   .subscribe(|v| result.push(v));
-/// assert_eq!(result, vec![1, 2, 3, 4]);
-/// ```
-///
-/// # Concurrency Control
-///
-/// Use `concurrent` to limit simultaneous inner subscriptions:
-/// - `usize::MAX`: Unlimited concurrency (subscribe to all immediately)
-/// - `1`: Sequential processing (`concat_all` behavior)
-/// - `n`: At most `n` concurrent inner subscriptions
 #[derive(Clone)]
 pub struct MergeAll<S> {
   pub source: S,
   pub concurrent: usize,
 }
-
-/// Shared state for MergeAll observers
-#[doc(hidden)]
-pub struct MergeAllState<O, InnerObs> {
-  observer: Option<O>,
-  /// Queue of pending inner observables when at concurrent limit
-  pending_observables: VecDeque<InnerObs>,
-  /// Number of currently active inner subscriptions
-  subscribed: usize,
-  /// Maximum concurrent inner subscriptions
-  concurrent: usize,
-  /// Whether the outer observable has completed
-  outer_completed: bool,
-}
-
-impl<O, InnerObs> MergeAllState<O, InnerObs> {
-  /// Checks if the observer is closed.
-  /// Used by both inner and outer observers' `is_closed` implementation.
-  fn observer_is_closed<Item, Err>(&self) -> bool
-  where
-    O: Observer<Item, Err>,
-  {
-    self.observer.as_ref().is_none_or(O::is_closed)
-  }
-}
-
-#[doc(hidden)]
-#[derive(Clone)]
-pub struct MergeAllOuterObserver<P, SubState> {
-  state: P,
-  sub_state: SubState,
-}
-
-#[doc(hidden)]
-#[derive(Clone)]
-pub struct MergeAllInnerObserver<P, SubState> {
-  state: P,
-  sub_state: SubState,
-  /// ID of this observer's subscription in DynamicSubscriptions
-  subscription_id: usize,
-  /// Function pointer to subscribe to queued inner observables
-  subscribe_fn: fn(P, SubState),
-}
-
-/// Subscription handle returned by `merge_all`.
-///
-/// Unsubscribing cancels both the outer subscription and all active inner
-/// subscriptions.
-pub type MergeAllSubscription<SrcUnsub, SubState> =
-  crate::subscription::SourceWithDynamicSubs<SrcUnsub, SubState>;
-
 impl<S> ObservableType for MergeAll<S>
 where
   S: ObservableType,
@@ -99,194 +27,345 @@ where
     Self: 'a;
   type Err = S::Err;
 }
+pub struct MergeAllState<O, I, Sch> {
+  observer: Option<O>,
+  queue: VecDeque<(I, Sch)>,
+  active: usize,
+  limit: usize,
+  outer_done: bool,
+}
+pub struct MergeAllInputs<U> {
+  cancelled: bool,
+  outer_done: bool,
+  finished_pending: BTreeSet<usize>,
+  inner: DynamicSubscriptions<Option<U>>,
+}
+impl<U> MergeAllInputs<U> {
+  // Return the retired handle so its captures are dropped outside the inputs
+  // lock.
+  fn retire(&mut self, id: usize) -> Option<Option<U>> {
+    let retired = self.inner.remove(id);
+    if matches!(retired, Some(None)) {
+      // A synchronous terminal arrived before subscribe returned its handle.
+      self.finished_pending.insert(id);
+    }
+    retired
+  }
+}
 
-/// Type alias for subscription state (using DynamicSubscriptions)
-type RcSubscriptions<C> =
-  <C as Context>::RcMut<DynamicSubscriptions<<C as Context>::BoxedSubscription>>;
-
-/// CoreObservable implementation for MergeAll
-///
-/// Inner observables must be Context-wrapped (like `Local<FromIter<...>>`).
-/// The Context is stripped via `into_inner()` when subscribing to ensure
-/// all inner subscriptions use the outer Context's execution environment.
-impl<S, C, InnerObs> CoreObservable<C> for MergeAll<S>
+pub struct MergeAllOuterObserver<P, D, H> {
+  state: P,
+  inputs: D,
+  outer: H,
+}
+pub struct MergeAllInnerObserver<P, D, H> {
+  state: P,
+  inputs: D,
+  outer: H,
+  id: usize,
+  advance: fn(P, D, H),
+}
+pub struct MergeAllSubscription<H, D> {
+  outer: H,
+  inputs: D,
+}
+impl<H, D, U> Subscription for MergeAllSubscription<H, D>
+where
+  H: Subscription,
+  D: RcDerefMut<Target = MergeAllInputs<U>>,
+  U: Subscription,
+{
+  fn unsubscribe(self) {
+    let handles = {
+      let mut inputs = self.inputs.rc_deref_mut();
+      inputs.cancelled = true;
+      inputs.inner.drain().collect::<Vec<_>>()
+    };
+    self.outer.unsubscribe();
+    for handle in handles {
+      handle.unsubscribe();
+    }
+  }
+  fn is_closed(&self) -> bool {
+    let inputs = self.inputs.rc_deref();
+    inputs.cancelled
+      || (self.outer.is_closed()
+        && inputs
+          .inner
+          .iter()
+          .all(|u| u.as_ref().is_some_and(Subscription::is_closed)))
+  }
+}
+type Handle<C, U> = SingleAssignment<<C as Context>::RcMut<State<U>>>;
+type Data<C, I, Sch> = <C as Context>::RcMut<MergeAllState<<C as Context>::Inner, I, Sch>>;
+type Inputs<C> = <C as Context>::RcMut<MergeAllInputs<<C as Context>::BoxedSubscription>>;
+type OuterCtx<C, I, Sch, H> =
+  <C as Context>::With<MergeAllOuterObserver<Data<C, I, Sch>, Inputs<C>, H>>;
+impl<S, C, I, Sch, U> CoreObservable<C> for MergeAll<S>
 where
   C: Context,
+  I: ObservableType,
+  U: Subscription,
   S: for<'a> CoreObservable<
-      C::With<
-        MergeAllOuterObserver<
-          C::RcMut<MergeAllState<C::Inner, InnerObs>>,
-          C::RcMut<DynamicSubscriptions<C::BoxedSubscription>>,
-        >,
-      >,
-      Item<'a>: Context<Inner = InnerObs>,
-    >,
-  InnerObs: ObservableType,
+      OuterCtx<C, I, Sch, ()>,
+      Unsub = U,
+      Item<'a>: Context<Inner = I, Scheduler = Sch>,
+    > + CoreObservable<OuterCtx<C, I, Sch, Handle<C, U>>, Unsub = U>,
 {
-  type Unsub = MergeAllSubscription<S::Unsub, RcSubscriptions<C>>;
-
+  type Unsub = MergeAllSubscription<Handle<C, U>, Inputs<C>>;
   fn subscribe(self, context: C) -> Self::Unsub {
-    let rc_sub_state: RcSubscriptions<C> = C::RcMut::from(DynamicSubscriptions::default());
-
-    let ctx = context.transform(|observer| {
-      let state = C::RcMut::from(MergeAllState {
-        observer: Some(observer),
-        pending_observables: VecDeque::new(),
-        subscribed: 0,
-        concurrent: self.concurrent,
-        outer_completed: false,
-      });
-      MergeAllOuterObserver { state, sub_state: rc_sub_state.clone() }
+    assert!(self.concurrent > 0, "merge_all concurrency must be positive");
+    let outer = Handle::<C, U>::new();
+    let inputs = C::RcMut::from(MergeAllInputs {
+      cancelled: false,
+      outer_done: false,
+      finished_pending: BTreeSet::new(),
+      inner: DynamicSubscriptions::new(),
     });
-
-    let src_unsub = self.source.subscribe(ctx);
-    crate::subscription::SourceWithDynamicSubs::new(src_unsub, rc_sub_state)
+    let wrapped = context.transform(|observer| MergeAllOuterObserver {
+      state: C::RcMut::from(MergeAllState {
+        observer: Some(observer),
+        queue: VecDeque::new(),
+        active: 0,
+        limit: self.concurrent,
+        outer_done: false,
+      }),
+      inputs: inputs.clone(),
+      outer: outer.clone(),
+    });
+    outer.set(self.source.subscribe(wrapped));
+    MergeAllSubscription { outer, inputs }
   }
 }
-
-impl<Item, Err, O, InnerObs, RcState, RcUnsubs, DynUnsub> Observer<Item, Err>
-  for MergeAllInnerObserver<RcState, RcUnsubs>
+fn cancel_inputs<D, H, U>(inputs: &D, outer: H)
 where
-  O: Observer<Item, Err>,
-  RcState: RcDerefMut<Target = MergeAllState<O, InnerObs>> + Clone,
-  RcUnsubs: RcDerefMut<Target = DynamicSubscriptions<DynUnsub>> + Clone,
+  D: RcDerefMut<Target = MergeAllInputs<U>>,
+  H: Subscription,
+  U: Subscription,
 {
-  fn next(&mut self, value: Item) {
-    let mut state = self.state.rc_deref_mut();
-    if let Some(ref mut observer) = state.observer {
-      observer.next(value);
-    }
+  let (handles, outer_done) = {
+    let mut inputs = inputs.rc_deref_mut();
+    inputs.cancelled = true;
+    (inputs.inner.drain().collect::<Vec<_>>(), inputs.outer_done)
+  };
+  if !outer_done {
+    outer.unsubscribe();
   }
-
-  fn error(self, err: Err) {
-    let mut state = self.state.rc_deref_mut();
-    if let Some(observer) = state.observer.take() {
-      observer.error(err);
-    }
+  for handle in handles {
+    handle.unsubscribe();
   }
-
-  fn complete(self) {
-    // Remove this subscription from the collection
-    self
-      .sub_state
-      .rc_deref_mut()
-      .remove(self.subscription_id);
-
-    let mut state = self.state.rc_deref_mut();
-    // Subscribe to next queued observable if available
-    if !state.pending_observables.is_empty() {
-      drop(state);
-      (self.subscribe_fn)(self.state.clone(), self.sub_state.clone());
-    } else {
-      state.subscribed = state.subscribed.saturating_sub(1);
-      // Complete downstream if outer completed and no more active subscriptions
-      if state.subscribed == 0
-        && state.outer_completed
-        && let Some(observer) = state.observer.take()
-      {
-        observer.complete();
-      }
+}
+impl<I, E, O, P, D, H, U> Observer<I, E> for MergeAllOuterObserver<P, D, H>
+where
+  I: Context<
+    Inner: CoreObservable<I::With<MergeAllInnerObserver<P, D, H>>, Unsub: IntoBoxedSubscription<U>>,
+  >,
+  O: for<'a> Observer<<I::Inner as ObservableType>::Item<'a>, E>,
+  P: RcDerefMut<Target = MergeAllState<O, I::Inner, I::Scheduler>>,
+  D: RcDerefMut<Target = MergeAllInputs<U>>,
+  H: Subscription + Clone,
+  U: Subscription,
+{
+  fn next(&mut self, inner: I) {
+    if self.inputs.rc_deref().cancelled {
+      return;
     }
-  }
-
-  fn is_closed(&self) -> bool {
     self
       .state
-      .rc_deref()
-      .observer_is_closed::<Item, Err>()
+      .rc_deref_mut()
+      .queue
+      .push_back(inner.into_parts());
+    advance::<I, O, P, D, H, U>(self.state.clone(), self.inputs.clone(), self.outer.clone());
   }
-}
-
-/// Observer implementation for outer observable
-///
-/// Receives Context-wrapped inner observables and strips the Context via
-/// `into_inner()` before storing them. This ensures all inner subscriptions
-/// use the outer Context's execution environment.
-impl<Ctx, Err, O, RcState, RcUnsubs> Observer<Ctx, Err> for MergeAllOuterObserver<RcState, RcUnsubs>
-where
-  Ctx: Context<
-    Inner: CoreObservable<
-      Ctx::With<MergeAllInnerObserver<RcState, RcUnsubs>>,
-      Unsub: IntoBoxedSubscription<Ctx::BoxedSubscription>,
-    >,
-  >,
-  O: for<'a> Observer<<Ctx::Inner as ObservableType>::Item<'a>, Err>,
-  RcState: RcDerefMut<Target = MergeAllState<O, Ctx::Inner>> + Clone,
-  RcUnsubs: RcDerefMut<Target = DynamicSubscriptions<Ctx::BoxedSubscription>> + Clone,
-{
-  fn next(&mut self, inner_ctx_obs: Ctx) {
-    // Strip the Context to get the raw CoreObservable
-    let inner_obs = inner_ctx_obs.into_inner();
-    let mut state = self.state.rc_deref_mut();
-    state.pending_observables.push_back(inner_obs);
-    if state.subscribed < state.concurrent {
-      state.subscribed += 1;
-      drop(state);
-      Self::do_next_subscribe::<Ctx, _, _>(self.state.clone(), self.sub_state.clone());
+  fn error(self, e: E) {
+    self.inputs.rc_deref_mut().outer_done = true;
+    let observer = {
+      let mut state = self.state.rc_deref_mut();
+      state.queue.clear();
+      state.observer.take()
+    };
+    cancel_inputs(&self.inputs, self.outer);
+    if let Some(observer) = observer {
+      observer.error(e);
     }
   }
-
-  fn error(self, err: Err) {
-    let mut state = self.state.rc_deref_mut();
-    if let Some(observer) = state.observer.take() {
-      observer.error(err);
-    }
-  }
-
   fn complete(self) {
-    let mut state = self.state.rc_deref_mut();
-    state.outer_completed = true;
-    // Complete downstream if no active subscriptions and no pending observables
-    if state.subscribed == 0
-      && state.pending_observables.is_empty()
-      && let Some(observer) = state.observer.take()
-    {
+    self.inputs.rc_deref_mut().outer_done = true;
+    let observer = {
+      let mut state = self.state.rc_deref_mut();
+      state.outer_done = true;
+      if state.active == 0 && state.queue.is_empty() { state.observer.take() } else { None }
+    };
+    if let Some(observer) = observer {
       observer.complete();
     }
   }
-
-  fn is_closed(&self) -> bool { self.state.rc_deref().observer_is_closed() }
+  fn is_closed(&self) -> bool {
+    self.inputs.rc_deref().cancelled || self.state.rc_deref().observer.is_closed()
+  }
 }
-
-impl<RcState, RcUnsubs> MergeAllOuterObserver<RcState, RcUnsubs> {
-  fn do_next_subscribe<Ctx, O, InnerObs>(state: RcState, sub_state: RcUnsubs)
-  where
-    Ctx: Context,
-    RcState: RcDerefMut<Target = MergeAllState<O, InnerObs>> + Clone,
-    RcUnsubs: RcDerefMut<Target = DynamicSubscriptions<Ctx::BoxedSubscription>> + Clone,
-    InnerObs: CoreObservable<
-        Ctx::With<MergeAllInnerObserver<RcState, RcUnsubs>>,
-        Unsub: IntoBoxedSubscription<Ctx::BoxedSubscription>,
-      >,
-  {
-    let inner_obs = state
-      .rc_deref_mut()
-      .pending_observables
-      .pop_front();
-    if let Some(inner_obs) = inner_obs {
-      // Pre-allocate ID before creating observer
-      let subscription_id = sub_state.rc_deref_mut().reserve_id();
-
-      let inner_observer = MergeAllInnerObserver {
-        state: state.clone(),
-        sub_state: sub_state.clone(),
-        subscription_id,
-        subscribe_fn: Self::do_next_subscribe::<Ctx, _, _>,
-      };
-
-      let unsub = inner_obs.subscribe(Ctx::lift(inner_observer));
-      let boxed_unsub = unsub.into_boxed();
-
-      // Insert subscription with pre-allocated ID
-      sub_state
-        .rc_deref_mut()
-        .insert(subscription_id, boxed_unsub);
+fn advance<I, O, P, D, H, U>(state: P, inputs: D, outer: H)
+where
+  I: Context<
+    Inner: CoreObservable<I::With<MergeAllInnerObserver<P, D, H>>, Unsub: IntoBoxedSubscription<U>>,
+  >,
+  P: RcDerefMut<Target = MergeAllState<O, I::Inner, I::Scheduler>>,
+  D: RcDerefMut<Target = MergeAllInputs<U>>,
+  H: Subscription + Clone,
+  U: Subscription,
+{
+  let next = {
+    let mut state = state.rc_deref_mut();
+    if inputs.rc_deref().cancelled || state.observer.is_none() || state.active >= state.limit {
+      return;
     }
+    let next = state.queue.pop_front();
+    if next.is_some() {
+      state.active += 1;
+    }
+    next
+  };
+  if let Some((core, scheduler)) = next {
+    let id = {
+      let mut inputs = inputs.rc_deref_mut();
+      if inputs.cancelled {
+        return;
+      }
+      inputs.inner.add(None)
+    };
+    let ctx = I::With::from_parts(
+      MergeAllInnerObserver {
+        state: state.clone(),
+        inputs: inputs.clone(),
+        outer,
+        id,
+        advance: advance::<I, O, P, D, H, U>,
+      },
+      scheduler,
+    );
+    let mut handle = Some(core.subscribe(ctx).into_boxed());
+    let cancel = {
+      let mut inputs = inputs.rc_deref_mut();
+      if inputs.finished_pending.remove(&id) {
+        false
+      } else if inputs.cancelled {
+        true
+      } else {
+        if inputs.inner.contains(id) {
+          inputs.inner.remove(id);
+          inputs.inner.insert(id, handle.take());
+        }
+        false
+      }
+    };
+    if cancel {
+      handle.unsubscribe();
+    }
+  }
+}
+impl<V, E, O, I, Sch, P, D, H, U> Observer<V, E> for MergeAllInnerObserver<P, D, H>
+where
+  O: Observer<V, E>,
+  P: RcDerefMut<Target = MergeAllState<O, I, Sch>>,
+  D: RcDerefMut<Target = MergeAllInputs<U>>,
+  H: Subscription + Clone,
+  U: Subscription,
+{
+  fn next(&mut self, v: V) {
+    if self.inputs.rc_deref().cancelled {
+      return;
+    }
+    if let Some(o) = self.state.rc_deref_mut().observer.as_mut() {
+      o.next(v);
+    }
+  }
+  fn error(self, e: E) {
+    let retired = { self.inputs.rc_deref_mut().retire(self.id) };
+    drop(retired);
+    let observer = {
+      let mut state = self.state.rc_deref_mut();
+      state.queue.clear();
+      state.observer.take()
+    };
+    cancel_inputs(&self.inputs, self.outer);
+    if let Some(o) = observer {
+      o.error(e);
+    }
+  }
+  fn complete(self) {
+    let retired = { self.inputs.rc_deref_mut().retire(self.id) };
+    drop(retired);
+    if self.inputs.rc_deref().cancelled {
+      return;
+    }
+    let observer = {
+      let mut state = self.state.rc_deref_mut();
+      state.active -= 1;
+      if state.outer_done && state.active == 0 && state.queue.is_empty() {
+        state.observer.take()
+      } else {
+        None
+      }
+    };
+    if let Some(o) = observer {
+      o.complete();
+    }
+    (self.advance)(self.state, self.inputs, self.outer);
+  }
+  fn is_closed(&self) -> bool {
+    self.inputs.rc_deref().cancelled || self.state.rc_deref().observer.is_closed()
   }
 }
 
 #[cfg(test)]
 mod tests {
+
+  #[rxrust_macro::test]
+  fn synchronous_inner_completion_does_not_retain_or_cancel_late_handle() {
+    use crate::subscription::ClosureSubscription;
+    let cancelled = Rc::new(std::cell::Cell::new(0));
+    let c = cancelled.clone();
+    let inner = Local::create(move |e| {
+      e.next(1);
+      e.complete();
+      ClosureSubscription(move || c.set(c.get() + 1))
+    });
+    let sub = Local::of(inner).merge_all(1).subscribe(|_| {});
+    sub.unsubscribe();
+    assert_eq!(cancelled.get(), 0);
+  }
+  #[rxrust_macro::test]
+  fn cancellation_from_callback_never_starts_queued_inner() {
+    use crate::{subscription::BoxedSubscription, test_support::Manual};
+    let first = Manual::default();
+    let second = Manual::default();
+    let holder = Rc::new(RefCell::new(None::<BoxedSubscription>));
+    let h = holder.clone();
+    let sub = Local::from_iter([Local::new(first.clone()), Local::new(second.clone())])
+      .map_err(|never| -> &'static str { match never {} })
+      .merge_all(1)
+      .on_error(|_| {})
+      .subscribe(move |_| h.borrow_mut().take().unwrap().unsubscribe());
+    *holder.borrow_mut() = Some(BoxedSubscription::new(sub));
+    first.next(0, 1);
+    first.complete(0);
+    assert_eq!(second.subscriptions(), 0);
+    assert_eq!(first.cancellations(0), 1);
+  }
+  #[rxrust_macro::test]
+  fn inner_error_cancels_peers_but_not_naturally_terminated_input() {
+    use crate::test_support::Manual;
+    let first = Manual::default();
+    let second = Manual::default();
+    Local::from_iter([Local::new(first.clone()), Local::new(second.clone())])
+      .map_err(|never| -> &'static str { match never {} })
+      .merge_all(2)
+      .on_error(|_| {})
+      .subscribe(|_| {});
+    first.error(0);
+    assert_eq!(first.cancellations(0), 0);
+    assert_eq!(second.cancellations(0), 1);
+  }
   use std::{cell::RefCell, rc::Rc};
 
   use crate::prelude::*;

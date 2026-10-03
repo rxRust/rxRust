@@ -7,7 +7,7 @@ use crate::{
   context::{Context, SharedCell},
   observable::{CoreObservable, ObservableType},
   observer::Observer,
-  subscription::{Subscription, TupleSubscription},
+  subscription::{SingleAssignment, Subscription, TupleSubscription, single_assignment::State},
 };
 
 /// SkipUntil operator
@@ -26,13 +26,16 @@ pub struct SkipUntilObserver<O, SkipState, NProxy> {
   observer: O,
   skip_state: SkipState,
   notifier_proxy: NProxy,
+  notifier_done: SkipState,
 }
 
 /// Observer for the notifier observable
 ///
 /// When the notifier emits, it sets the skip state to false, allowing
 /// values from the source to pass through.
-pub struct SkipUntilNotifierObserver<SkipState> {
+pub struct SkipUntilNotifierObserver<SkipState, H> {
+  upstream: H,
+  done: SkipState,
   skip_state: SkipState,
 }
 
@@ -47,40 +50,38 @@ where
   type Err = S::Err;
 }
 
-impl<S, N, C> CoreObservable<C> for SkipUntil<S, N>
+type Handle<C, U> = SingleAssignment<<C as Context>::RcMut<State<U>>>;
+impl<S, N, C, V> CoreObservable<C> for SkipUntil<S, N>
 where
   C: Context,
-  S: CoreObservable<
-    C::With<SkipUntilObserver<C::Inner, C::RcCell<bool>, C::RcMut<Option<N::Unsub>>>>,
-  >,
-  N: CoreObservable<C::With<SkipUntilNotifierObserver<C::RcCell<bool>>>>,
-  C::RcMut<Option<N::Unsub>>: Subscription,
+  V: Subscription,
+  N: CoreObservable<C::With<SkipUntilNotifierObserver<C::RcCell<bool>, ()>>, Unsub = V>
+    + CoreObservable<C::With<SkipUntilNotifierObserver<C::RcCell<bool>, Handle<C, V>>>, Unsub = V>,
+  S: CoreObservable<C::With<SkipUntilObserver<C::Inner, C::RcCell<bool>, Handle<C, V>>>>,
 {
-  type Unsub = TupleSubscription<S::Unsub, C::RcMut<Option<N::Unsub>>>;
-
+  type Unsub = TupleSubscription<S::Unsub, Handle<C, V>>;
   fn subscribe(self, context: C) -> Self::Unsub {
-    let SkipUntil { source, notifier } = self;
-
-    let downstream = context.into_inner();
-    let skip_state: C::RcCell<bool> = C::RcCell::from(true);
-
-    // Subscribe to notifier - when it emits, stop skipping
-    let notifier_observer = SkipUntilNotifierObserver { skip_state: skip_state.clone() };
-    let notifier_ctx = C::lift(notifier_observer);
-    let notifier_unsub = notifier.subscribe(notifier_ctx);
-    let notifier_proxy: C::RcMut<Option<N::Unsub>> = C::RcMut::from(Some(notifier_unsub));
-
-    // Subscribe to source
-    let source_observer = SkipUntilObserver {
-      observer: downstream,
-      skip_state,
-      notifier_proxy: notifier_proxy.clone(),
-    };
-    let source_ctx = C::lift(source_observer);
-    let source_unsub = source.subscribe(source_ctx);
-
-    // Return tuple subscription with source and notifier subscriptions
-    TupleSubscription::new(source_unsub, notifier_proxy)
+    let skip_state = C::RcCell::from(true);
+    let notifier_done = C::RcCell::from(false);
+    let notifier = Handle::<C, V>::new();
+    notifier.set(
+      self
+        .notifier
+        .subscribe(context.wrap(SkipUntilNotifierObserver {
+          skip_state: skip_state.clone(),
+          done: notifier_done.clone(),
+          upstream: notifier.clone(),
+        })),
+    );
+    let source = self
+      .source
+      .subscribe(context.transform(|observer| SkipUntilObserver {
+        observer,
+        skip_state,
+        notifier_done,
+        notifier_proxy: notifier.clone(),
+      }));
+    TupleSubscription::new(source, notifier)
   }
 }
 
@@ -101,33 +102,42 @@ where
 
   fn error(self, err: Err) {
     self.observer.error(err);
-    self.notifier_proxy.unsubscribe();
+    if !self.notifier_done.get() {
+      self.notifier_proxy.unsubscribe();
+    }
   }
 
   fn complete(self) {
     self.observer.complete();
-    self.notifier_proxy.unsubscribe();
+    if !self.notifier_done.get() {
+      self.notifier_proxy.unsubscribe();
+    }
   }
 
   fn is_closed(&self) -> bool { self.observer.is_closed() }
 }
 
 // Implement Observer for Notifier
-impl<NotifyItem, NotifyErr, SkipState> Observer<NotifyItem, NotifyErr>
-  for SkipUntilNotifierObserver<SkipState>
+impl<NotifyItem, NotifyErr, SkipState, H> Observer<NotifyItem, NotifyErr>
+  for SkipUntilNotifierObserver<SkipState, H>
 where
   SkipState: SharedCell<bool>,
+  H: Subscription + Clone,
 {
   fn next(&mut self, _value: NotifyItem) {
     // Stop skipping when notifier emits
     self.skip_state.set(false);
+    self.done.set(true);
+    self.upstream.clone().unsubscribe();
   }
 
   fn error(self, _err: NotifyErr) {
+    self.done.set(true);
     // Ignore errors from notifier as per legacy behavior
   }
 
   fn complete(self) {
+    self.done.set(true);
     // When notifier completes without emitting, also stop skipping
     // (as per legacy behavior where complete triggers stop_skipping)
     self.skip_state.set(false);
@@ -141,12 +151,29 @@ where
 
 #[cfg(test)]
 mod tests {
+
+  #[rxrust_macro::test]
+  fn synchronous_notifier_cancels_late_handle() {
+    use crate::subscription::ClosureSubscription;
+    let calls = Rc::new(std::cell::Cell::new(0));
+    let c = calls.clone();
+    let notifier = Local::create::<(), Infallible, _, _>(move |e| {
+      e.next(());
+      ClosureSubscription(move || c.set(c.get() + 1))
+    });
+    let mut values = vec![];
+    Local::of(1)
+      .skip_until(notifier)
+      .subscribe(|v| values.push(v));
+    assert_eq!(values, vec![1]);
+    assert_eq!(calls.get(), 1);
+  }
   use std::{cell::RefCell, convert::Infallible, rc::Rc};
 
   use crate::prelude::*;
 
-  #[rxrust_macro::test]
-  fn test_skip_until_skips_before_notifier_emits() {
+  #[rxrust_macro::test(local)]
+  async fn test_skip_until_skips_before_notifier_emits() {
     let result = Rc::new(RefCell::new(Vec::new()));
     let result_clone = result.clone();
 
@@ -169,8 +196,8 @@ mod tests {
     assert_eq!(*result.borrow(), vec![3, 4]);
   }
 
-  #[rxrust_macro::test]
-  fn test_skip_until_with_from_iter_and_tap() {
+  #[rxrust_macro::test(local)]
+  async fn test_skip_until_with_from_iter_and_tap() {
     let completed = Rc::new(RefCell::new(false));
     let items = Rc::new(RefCell::new(Vec::new()));
     let completed_clone = completed.clone();
@@ -196,8 +223,8 @@ mod tests {
     assert!(*completed.borrow());
   }
 
-  #[rxrust_macro::test]
-  fn test_skip_until_complete() {
+  #[rxrust_macro::test(local)]
+  async fn test_skip_until_complete() {
     let completed = Rc::new(RefCell::new(false));
     let completed_clone = completed.clone();
 
@@ -216,8 +243,8 @@ mod tests {
     assert!(*completed.borrow());
   }
 
-  #[rxrust_macro::test]
-  fn test_skip_until_notifier_complete_opens_gate() {
+  #[rxrust_macro::test(local)]
+  async fn test_skip_until_notifier_complete_opens_gate() {
     let result = Rc::new(RefCell::new(Vec::new()));
     let result_clone = result.clone();
 
@@ -236,8 +263,8 @@ mod tests {
     assert_eq!(*result.borrow(), vec![2]);
   }
 
-  #[rxrust_macro::test]
-  fn test_skip_until_support_fork() {
+  #[rxrust_macro::test(local)]
+  async fn test_skip_until_support_fork() {
     let items1 = Rc::new(RefCell::new(Vec::new()));
     let items2 = Rc::new(RefCell::new(Vec::new()));
     let items1_clone = items1.clone();

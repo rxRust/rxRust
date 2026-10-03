@@ -65,7 +65,8 @@
 //!   `next`/`error`/`complete` on the same Subject from within one of its own
 //!   callbacks will **panic**.
 //! - **Subscription mutations are allowed** (`subscribe`/`unsubscribe`) inside
-//!   callbacks. They may be applied after the current emission finishes.
+//!   callbacks. Logical membership changes immediately; physical insertion and
+//!   removal may be deferred until after the current emission.
 //!
 //! If you intentionally need feedback loops (emitting values from within a
 //! callback), insert an explicit async boundary using `delay`:

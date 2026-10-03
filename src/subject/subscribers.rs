@@ -1,3 +1,8 @@
+use std::sync::{
+  Arc, Mutex,
+  atomic::{AtomicBool, Ordering},
+};
+
 use crate::{observer::Observer, subscription::DynamicSubscriptions};
 
 /// Subscribers container using DynamicSubscriptions for ID-based management.
@@ -17,25 +22,45 @@ use crate::{observer::Observer, subscription::DynamicSubscriptions};
 ///
 /// - `Ob`: The observer type stored in this container.
 pub struct Subscribers<Ob> {
-  pub(crate) inner: DynamicSubscriptions<Ob>,
+  inner: DynamicSubscriptions<Subscriber<Ob>>,
+  pub(crate) count: Arc<Mutex<usize>>,
 }
 
 impl<Ob> Default for Subscribers<Ob> {
-  fn default() -> Self { Self { inner: DynamicSubscriptions::default() } }
+  fn default() -> Self { Self { inner: DynamicSubscriptions::default(), count: Arc::default() } }
 }
 
 impl<Ob> Subscribers<Ob> {
   /// Add an observer and return its unique ID.
   #[inline]
-  pub fn add(&mut self, observer: Ob) -> usize { self.inner.add(observer) }
+  pub fn add(&mut self, observer: Ob) -> usize {
+    let membership = Membership::new(self.count.clone());
+    self.add_registered(observer, membership)
+  }
+
+  pub(crate) fn add_registered(&mut self, observer: Ob, membership: Arc<Membership>) -> usize {
+    self
+      .inner
+      .add(Subscriber { observer, membership })
+  }
 
   /// Insert an observer with a pre-allocated ID.
   #[inline]
-  pub fn insert(&mut self, id: usize, observer: Ob) { self.inner.insert(id, observer); }
+  pub fn insert(&mut self, id: usize, observer: Ob) {
+    let membership = Membership::new(self.count.clone());
+    self
+      .inner
+      .insert(id, Subscriber { observer, membership });
+  }
 
   /// Remove an observer by ID.
   #[inline]
-  pub fn remove(&mut self, id: usize) -> Option<Ob> { self.inner.remove(id) }
+  pub fn remove(&mut self, id: usize) -> Option<Ob> {
+    self.inner.remove(id).map(|entry| {
+      entry.membership.close();
+      entry.observer
+    })
+  }
 
   /// Check if an ID exists.
   #[inline]
@@ -148,6 +173,84 @@ impl<Ob> Subscribers<Ob> {
   {
     for observer in self.inner.drain() {
       observer.complete();
+    }
+  }
+}
+
+/// Logical membership is independent of deferred observer storage changes.
+/// Neither dropping this token nor a subscription handle cancels membership.
+pub(crate) struct Membership {
+  closed: AtomicBool,
+  count: Arc<Mutex<usize>>,
+}
+
+impl Membership {
+  pub(crate) fn new(count: Arc<Mutex<usize>>) -> Arc<Self> {
+    *count.lock().unwrap() += 1;
+    Arc::new(Self { closed: AtomicBool::new(false), count })
+  }
+
+  pub(crate) fn is_closed(&self) -> bool { self.closed.load(Ordering::SeqCst) }
+
+  pub(crate) fn close(&self) -> bool {
+    // Concurrent terminal delivery and cancellation must both return with the
+    // count updated. No observer code runs under this short-lived lock.
+    let mut count = self.count.lock().unwrap();
+    if self.closed.swap(true, Ordering::SeqCst) {
+      return false;
+    }
+    *count -= 1;
+    true
+  }
+}
+
+struct Subscriber<O> {
+  observer: O,
+  membership: Arc<Membership>,
+}
+
+impl<I, E, O: Observer<I, E>> Observer<I, E> for Subscriber<O> {
+  fn next(&mut self, value: I) {
+    if !self.membership.is_closed() {
+      self.observer.next(value);
+    }
+  }
+  fn error(self, err: E) {
+    if self.membership.close() {
+      self.observer.error(err);
+    }
+  }
+  fn complete(self) {
+    if self.membership.close() {
+      self.observer.complete();
+    }
+  }
+  fn is_closed(&self) -> bool { self.membership.is_closed() || self.observer.is_closed() }
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn cancellation_and_termination_release_membership_once() {
+    use std::sync::Barrier;
+    for _ in 0..64 {
+      let count = Arc::new(Mutex::new(0));
+      let membership = Membership::new(count.clone());
+      let other = membership.clone();
+      let barrier = Arc::new(Barrier::new(2));
+      let ready = barrier.clone();
+      let thread = std::thread::spawn(move || {
+        ready.wait();
+        other.close()
+      });
+      barrier.wait();
+      let closed = membership.close();
+      assert_ne!(closed, thread.join().unwrap());
+      assert_eq!(*count.lock().unwrap(), 0);
+      assert!(!membership.close());
+      assert_eq!(*count.lock().unwrap(), 0);
     }
   }
 }

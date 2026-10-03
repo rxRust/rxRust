@@ -8,6 +8,7 @@ use crate::{
   context::Context,
   observable::{CoreObservable, ObservableType},
   observer::Observer,
+  subscription::{SingleAssignment, Subscription, single_assignment::State},
 };
 
 /// TakeWhile operator: Emits values while a predicate returns true
@@ -47,31 +48,33 @@ impl<S: ObservableType, P> ObservableType for TakeWhile<S, P> {
 /// This observer wraps another observer and emits values as long as
 /// the predicate returns true. When predicate returns false, it
 /// completes and stops further emissions.
-pub struct TakeWhileObserver<O, P> {
+pub struct TakeWhileObserver<O, P, U> {
+  upstream: U,
   observer: Option<O>,
   predicate: P,
   inclusive: bool,
 }
 
-impl<O, P, Item, Err> Observer<Item, Err> for TakeWhileObserver<O, P>
+impl<O, P, U, Item, Err> Observer<Item, Err> for TakeWhileObserver<O, P, U>
 where
+  U: Subscription + Clone,
   O: Observer<Item, Err>,
   P: FnMut(&Item) -> bool,
 {
   fn next(&mut self, v: Item) {
-    if let Some(ref mut observer) = self.observer {
-      if (self.predicate)(&v) {
-        observer.next(v);
-      } else {
-        // Predicate returned false
-        if self.inclusive {
-          observer.next(v);
-        }
-        // Complete and stop further emissions
-        if let Some(observer) = self.observer.take() {
-          observer.complete();
-        }
-      }
+    let Some(observer) = self.observer.as_mut() else {
+      return;
+    };
+    if (self.predicate)(&v) {
+      observer.next(v);
+      return;
+    }
+    if self.inclusive {
+      observer.next(v);
+    }
+    if let Some(observer) = self.observer.take() {
+      observer.complete();
+      self.upstream.clone().unsubscribe();
     }
   }
 
@@ -95,26 +98,49 @@ where
   }
 }
 
-impl<S, P, C> CoreObservable<C> for TakeWhile<S, P>
+// The scheduler can cross threads even when selected from a Local context.
+// A mutex-backed slot remains usable with borrowed and non-Send subscriptions.
+type Handle<U> = SingleAssignment<crate::rc::MutArc<State<U>>>;
+
+impl<S, P, C, U> CoreObservable<C> for TakeWhile<S, P>
 where
   C: Context,
-  S: CoreObservable<C::With<TakeWhileObserver<C::Inner, P>>>,
+  U: Subscription,
+  S: CoreObservable<C::With<TakeWhileObserver<C::Inner, P, ()>>, Unsub = U>
+    + CoreObservable<C::With<TakeWhileObserver<C::Inner, P, Handle<U>>>, Unsub = U>,
 {
-  type Unsub = S::Unsub;
-
+  type Unsub = Handle<U>;
   fn subscribe(self, context: C) -> Self::Unsub {
-    let TakeWhile { source, predicate, inclusive } = self;
+    let upstream = Handle::<U>::new();
     let wrapped = context.transform(|observer| TakeWhileObserver {
       observer: Some(observer),
-      predicate,
-      inclusive,
+      predicate: self.predicate,
+      inclusive: self.inclusive,
+      upstream: upstream.clone(),
     });
-    source.subscribe(wrapped)
+    upstream.set(self.source.subscribe(wrapped));
+    upstream
   }
 }
 
 #[cfg(test)]
 mod tests {
+
+  #[rxrust_macro::test]
+  fn short_circuit_cancels_late_handle() {
+    use crate::subscription::ClosureSubscription;
+    let calls = Rc::new(std::cell::Cell::new(0));
+    for inclusive in [false, true] {
+      let c = calls.clone();
+      Local::create(move |e| {
+        e.next(1);
+        ClosureSubscription(move || c.set(c.get() + 1))
+      })
+      .transform(|source| super::TakeWhile { source, predicate: |_: &i32| false, inclusive })
+      .subscribe(|_| {});
+    }
+    assert_eq!(calls.get(), 2);
+  }
   use std::{cell::RefCell, rc::Rc};
 
   use crate::prelude::*;
