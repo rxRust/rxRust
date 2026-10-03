@@ -1,151 +1,142 @@
-//! TakeUntil operator implementation
-//!
-//! This module contains the TakeUntil operator, which emits values from the
-//! source Observable until a second Observable (the notifier) emits a value.
-
+//! Emits source values until the notifier emits. Notifier errors and completion
+//! are ignored; source termination releases an active notifier.
 use crate::{
-  context::{Context, RcDeref},
+  context::{Context, RcDeref, SharedCell},
   observable::{CoreObservable, ObservableType},
   observer::Observer,
-  subscription::{Subscription, TupleSubscription},
+  subscription::{SingleAssignment, Subscription, TupleSubscription, single_assignment::State},
 };
-
-/// TakeUntil operator
-///
-/// Emits the values emitted by the source Observable until a `notifier`
-/// Observable emits a value.
 #[derive(Clone)]
 pub struct TakeUntil<S, N> {
   pub source: S,
   pub notifier: N,
 }
-
-/// Observer for the source observable
-pub struct TakeUntilObserver<ObserverRc, NProxy> {
-  observer_rc: ObserverRc,
-  notifier_proxy: NProxy,
-}
-
-/// Observer for the notifier observable
-///
-/// Uses a function pointer to erase Item/Err type dependencies while
-/// maintaining the ability to call complete() on the underlying Observer.
-pub struct TakeUntilNotifierObserver<ObserverRc> {
-  observer_rc: ObserverRc,
-  complete_fn: fn(ObserverRc),
-}
-
-impl<ObserverRc: Clone> TakeUntilNotifierObserver<ObserverRc> {
-  /// Creates a new TakeUntilNotifierObserver
-  ///
-  /// The Item and Err type parameters are used to satisfy Observer bounds
-  /// during construction, but are erased via function pointers.
-  pub fn new<Item, Err>(observer_rc: ObserverRc) -> Self
-  where
-    ObserverRc: Observer<Item, Err>,
-  {
-    Self { observer_rc, complete_fn: |o| o.complete() }
-  }
-}
-
-impl<S, N> ObservableType for TakeUntil<S, N>
-where
-  S: ObservableType,
-{
+impl<S: ObservableType, N> ObservableType for TakeUntil<S, N> {
   type Item<'a>
     = S::Item<'a>
   where
     Self: 'a;
   type Err = S::Err;
 }
-
-impl<S, N, C> CoreObservable<C> for TakeUntil<S, N>
+pub struct TakeUntilObserver<O, H, F> {
+  observer: O,
+  notifier: H,
+  notifier_done: F,
+}
+pub struct TakeUntilNotifierObserver<O, H, N, F> {
+  observer: O,
+  source: H,
+  notifier: N,
+  done: F,
+  complete: fn(O),
+}
+type Handle<C, U> = SingleAssignment<<C as Context>::RcMut<State<U>>>;
+type Down<C> = <C as Context>::RcMut<Option<<C as Context>::Inner>>;
+impl<S, N, C, U, V> CoreObservable<C> for TakeUntil<S, N>
 where
   C: Context,
-  S: CoreObservable<
-    C::With<TakeUntilObserver<C::RcMut<Option<C::Inner>>, C::RcMut<Option<N::Unsub>>>>,
-  >,
-  N: CoreObservable<C::With<TakeUntilNotifierObserver<C::RcMut<Option<C::Inner>>>>>,
-  C::RcMut<Option<N::Unsub>>: Subscription,
-  for<'a> C::RcMut<Option<C::Inner>>: Observer<S::Item<'a>, S::Err>,
+  U: Subscription,
+  V: Subscription,
+  S: CoreObservable<C::With<TakeUntilObserver<Down<C>, (), C::RcCell<bool>>>, Unsub = U>
+    + CoreObservable<C::With<TakeUntilObserver<Down<C>, Handle<C, V>, C::RcCell<bool>>>, Unsub = U>,
+  N: CoreObservable<C::With<TakeUntilNotifierObserver<Down<C>, (), (), C::RcCell<bool>>>, Unsub = V>
+    + CoreObservable<
+      C::With<TakeUntilNotifierObserver<Down<C>, Handle<C, U>, Handle<C, V>, C::RcCell<bool>>>,
+      Unsub = V,
+    >,
+  for<'a> Down<C>: Observer<S::Item<'a>, S::Err>,
 {
-  type Unsub = TupleSubscription<S::Unsub, C::RcMut<Option<N::Unsub>>>;
-
+  type Unsub = TupleSubscription<Handle<C, U>, Handle<C, V>>;
   fn subscribe(self, context: C) -> Self::Unsub {
-    let TakeUntil { source, notifier } = self;
-
-    // Create shared state holding the downstream observer
-    let downstream = context.into_inner();
-    let observer_rc = C::RcMut::from(Some(downstream));
-
-    // Subscribe to notifier - use ::new to erase Item/Err type dependencies
-    let notifier_observer =
-      TakeUntilNotifierObserver::new::<S::Item<'_>, S::Err>(observer_rc.clone());
-    let notifier_ctx = C::lift(notifier_observer);
-    let notifier_unsub = notifier.subscribe(notifier_ctx);
-    let notifier_proxy: C::RcMut<Option<N::Unsub>> = C::RcMut::from(Some(notifier_unsub));
-
-    // Subscribe to source
-    let source_observer = TakeUntilObserver { observer_rc, notifier_proxy: notifier_proxy.clone() };
-    // Create context for source using original scheduler
-    let source_ctx = C::lift(source_observer);
-    let source_unsub = source.subscribe(source_ctx);
-
-    // Return tuple subscription with direct source subscription and notifier
-    // subscription
-    TupleSubscription::new(source_unsub, notifier_proxy)
+    let (downstream, scheduler) = context.into_parts();
+    let observer = C::RcMut::from(Some(downstream));
+    let source = Handle::<C, U>::new();
+    let notifier = Handle::<C, V>::new();
+    let done = C::RcCell::from(false);
+    let n = TakeUntilNotifierObserver {
+      observer: observer.clone(),
+      source: source.clone(),
+      notifier: notifier.clone(),
+      done: done.clone(),
+      complete: |o| o.complete(),
+    };
+    notifier.set(
+      self
+        .notifier
+        .subscribe(C::With::from_parts(n, scheduler.clone())),
+    );
+    if observer.rc_deref().is_some() {
+      source.set(self.source.subscribe(C::With::from_parts(
+        TakeUntilObserver { observer, notifier: notifier.clone(), notifier_done: done },
+        scheduler,
+      )));
+    }
+    TupleSubscription::new(source, notifier)
   }
 }
-
-// Implement Observer for Source
-impl<Item, Err, ObserverRc, NProxy> Observer<Item, Err> for TakeUntilObserver<ObserverRc, NProxy>
+impl<I, E, O, H, F> Observer<I, E> for TakeUntilObserver<O, H, F>
 where
-  ObserverRc: Observer<Item, Err> + Clone,
-  NProxy: Subscription,
+  O: Observer<I, E> + Clone,
+  H: Subscription,
+  F: SharedCell<bool>,
 {
-  fn next(&mut self, value: Item) { self.observer_rc.clone().next(value); }
-
-  fn error(self, err: Err) {
-    self.observer_rc.clone().error(err);
-    self.notifier_proxy.unsubscribe();
+  fn next(&mut self, v: I) { self.observer.clone().next(v); }
+  fn error(self, e: E) {
+    self.observer.error(e);
+    if !self.notifier_done.get() {
+      self.notifier.unsubscribe();
+    }
   }
-
   fn complete(self) {
-    self.observer_rc.clone().complete();
-    self.notifier_proxy.unsubscribe();
+    self.observer.complete();
+    if !self.notifier_done.get() {
+      self.notifier.unsubscribe();
+    }
   }
-
-  fn is_closed(&self) -> bool { self.observer_rc.is_closed() }
+  fn is_closed(&self) -> bool { self.observer.is_closed() }
 }
-
-// Implement Observer for Notifier - no longer needs Item/Err bounds
-// Uses RcDeref to check Option::is_none() for is_closed
-impl<NotifyItem, NotifyErr, ObserverRc, O> Observer<NotifyItem, NotifyErr>
-  for TakeUntilNotifierObserver<ObserverRc>
+impl<I, E, O, H, N, F, T> Observer<I, E> for TakeUntilNotifierObserver<O, H, N, F>
 where
-  ObserverRc: Clone + RcDeref<Target = Option<O>>,
+  O: RcDeref<Target = Option<T>>,
+  H: Subscription + Clone,
+  N: Subscription + Clone,
+  F: SharedCell<bool>,
 {
-  fn next(&mut self, _value: NotifyItem) { (self.complete_fn)(self.observer_rc.clone()); }
-
-  fn error(self, _err: NotifyErr) {
-    // Ignore errors from notifier as per legacy behavior
+  fn next(&mut self, _: I) {
+    if !self.done.get() {
+      self.done.set(true);
+      (self.complete)(self.observer.clone());
+      self.source.clone().unsubscribe();
+      self.notifier.clone().unsubscribe();
+    }
   }
-
-  fn complete(self) {
-    // Ignore completion from notifier
-  }
-
-  fn is_closed(&self) -> bool { self.observer_rc.rc_deref().is_none() }
+  fn error(self, _: E) { self.done.set(true); }
+  fn complete(self) { self.done.set(true); }
+  fn is_closed(&self) -> bool { self.done.get() || self.observer.rc_deref().is_none() }
 }
-
 #[cfg(test)]
 mod tests {
+
+  #[rxrust_macro::test]
+  fn synchronous_notifier_cancels_itself_without_starting_source() {
+    use crate::subscription::ClosureSubscription;
+    let calls = Rc::new(std::cell::Cell::new(0));
+    let c = calls.clone();
+    let notifier = Local::create::<(), Infallible, _, _>(move |e| {
+      e.next(());
+      ClosureSubscription(move || c.set(c.get() + 1))
+    });
+    Local::create::<i32, Infallible, _, ()>(|_| panic!("source started"))
+      .take_until(notifier)
+      .subscribe(|_| {});
+    assert_eq!(calls.get(), 1);
+  }
   use std::{cell::RefCell, convert::Infallible, rc::Rc};
 
   use crate::prelude::*;
 
-  #[rxrust_macro::test]
-  fn test_take_until_emits_until_notifier_emits() {
+  #[rxrust_macro::test(local)]
+  async fn test_take_until_emits_until_notifier_emits() {
     let result = Rc::new(RefCell::new(Vec::new()));
     let result_clone = result.clone();
 
@@ -167,8 +158,8 @@ mod tests {
     assert_eq!(*result.borrow(), vec![1, 2]);
   }
 
-  #[rxrust_macro::test]
-  fn test_take_until_complete() {
+  #[rxrust_macro::test(local)]
+  async fn test_take_until_complete() {
     let completed = Rc::new(RefCell::new(false));
     let completed_clone = completed.clone();
 
@@ -187,8 +178,8 @@ mod tests {
     assert!(*completed.borrow());
   }
 
-  #[rxrust_macro::test]
-  fn test_take_until_source_complete() {
+  #[rxrust_macro::test(local)]
+  async fn test_take_until_source_complete() {
     let completed = Rc::new(RefCell::new(false));
     let completed_clone = completed.clone();
 
@@ -207,8 +198,8 @@ mod tests {
     assert!(*completed.borrow());
   }
 
-  #[rxrust_macro::test]
-  fn test_take_until_notifier_complete_does_nothing() {
+  #[rxrust_macro::test(local)]
+  async fn test_take_until_notifier_complete_does_nothing() {
     let result = Rc::new(RefCell::new(Vec::new()));
     let result_clone = result.clone();
 
