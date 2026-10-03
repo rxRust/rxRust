@@ -121,7 +121,12 @@ where
   /// Connects the source to the subject, starting emissions.
   ///
   /// Returns a subscription handle to disconnect the source.
-  fn connect(self) -> S::Unsub { self.into_inner().connect::<Self>() }
+  fn connect(self) -> S::Unsub {
+    let (connectable, scheduler) = self.into_parts();
+    connectable
+      .source
+      .subscribe(Self::With::from_parts(connectable.subject, scheduler))
+  }
 
   /// Creates a new `Observable` subscribed to the underlying subject.
   ///
@@ -131,10 +136,13 @@ where
   /// Returns an Observable that automatically connects when the first
   /// observer subscribes and disconnects when the last one unsubscribes.
   #[allow(clippy::type_complexity)]
-  fn ref_count(self) -> Self::With<RefCount<S, P, Self::RcMut<Option<S::Unsub>>>> {
-    let connectable = self.into_inner();
-    let connection = Self::RcMut::from(None);
-    Self::lift(RefCount { connectable, connection })
+  fn ref_count(
+    self,
+  ) -> Self::With<RefCount<S, P, crate::ops::ref_count::Connection<Self, S::Unsub>>> {
+    self.transform(|connectable| RefCount {
+      connectable,
+      connection: Self::RcMut::from(Default::default()),
+    })
   }
 }
 

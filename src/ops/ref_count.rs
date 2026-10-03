@@ -1,41 +1,22 @@
-//! RefCount operator - auto-manages ConnectableObservable connection.
-//!
-//! Connects on first subscription, disconnects when all subscribers leave.
-//!
-//! # Example
-//!
-//! ```rust
-//! use rxrust::prelude::*;
-//!
-//! let shared = Local::from_iter([1, 2]).publish().ref_count();
-//!
-//! let sub = shared.subscribe(|v| println!("Got: {}", v));
-//! sub.unsubscribe();
-//! ```
-
+//! Reference-counted connections. Registration, reference ownership and source
+//! connection generations are coordinated independently of Subject's list.
 use crate::{
-  context::{Context, RcDeref, RcDerefMut},
+  context::{Context, RcDerefMut},
   observable::{CoreObservable, ObservableType, connectable::ConnectableObservable},
-  subject::{Subject, subscribers::Subscribers},
-  subscription::Subscription,
+  observer::Observer,
+  subject::{GuardedSubject, Subject, subject_subscription::OnRegistered},
+  subscription::{SingleAssignment, Subscription, single_assignment::State},
 };
-
-/// Wraps a `ConnectableObservable` and manages connection based on subscriber
-/// count.
-///
-/// Uses the Subject's internal subscriber list instead of a separate counter.
-pub struct RefCount<S, P, ConnPtr> {
+pub struct RefCount<S, P, C> {
   pub(crate) connectable: ConnectableObservable<S, P>,
-  pub(crate) connection: ConnPtr,
+  pub(crate) connection: C,
 }
-
-impl<S: Clone, P: Clone, ConnPtr: Clone> Clone for RefCount<S, P, ConnPtr> {
+impl<S: Clone, P: Clone, C: Clone> Clone for RefCount<S, P, C> {
   fn clone(&self) -> Self {
     Self { connectable: self.connectable.clone(), connection: self.connection.clone() }
   }
 }
-
-impl<S, P, ConnPtr> ObservableType for RefCount<S, P, ConnPtr>
+impl<S, P, C> ObservableType for RefCount<S, P, C>
 where
   Subject<P>: ObservableType,
 {
@@ -45,54 +26,290 @@ where
     Self: 'a;
   type Err = <Subject<P> as ObservableType>::Err;
 }
-
-impl<Ctx, O, S, P, ConnPtr> CoreObservable<Ctx> for RefCount<S, P, ConnPtr>
-where
-  Ctx: Context,
-  S: Clone + CoreObservable<Ctx::With<Subject<P>>>,
-  Subject<P>: CoreObservable<Ctx>,
-  P: Clone + RcDeref<Target = Subscribers<O>>,
-  ConnPtr: Clone + RcDerefMut<Target = Option<S::Unsub>> + Subscription,
-{
-  type Unsub = RefCountSubscription<P, <Subject<P> as CoreObservable<Ctx>>::Unsub, ConnPtr>;
-
-  fn subscribe(self, observer: Ctx) -> Self::Unsub {
-    let subject = self.connectable.fork();
-    let inner_sub = subject.clone().subscribe(observer);
-
-    if subject.subscriber_count() == 1 && self.connection.rc_deref().is_none() {
-      *self.connection.rc_deref_mut() = Some(self.connectable.connect::<Ctx>());
-    }
-
-    RefCountSubscription { subject, inner: inner_sub, connection: self.connection }
+/// State for a connection generation. User callbacks never run under this lock.
+pub struct RefCountState<H> {
+  references: usize,
+  generation: usize,
+  connecting: bool,
+  terminated: bool,
+  connection: Option<H>,
+}
+impl<H> Default for RefCountState<H> {
+  fn default() -> Self {
+    Self { references: 0, generation: 0, connecting: false, terminated: false, connection: None }
   }
 }
-
-/// Subscription for RefCount. Disconnects source when last subscriber leaves.
-pub struct RefCountSubscription<P, InnerSub, ConnPtr> {
+pub type Connection<C, U> =
+  <C as Context>::RcMut<RefCountState<SingleAssignment<<C as Context>::RcMut<State<U>>>>>;
+pub struct RefCountConnect<S, P, C, Sch> {
+  source: S,
   subject: Subject<P>,
-  inner: InnerSub,
-  connection: ConnPtr,
+  connection: C,
+  generation: usize,
+  scheduler: Sch,
 }
-
-impl<P, InnerSub, ConnPtr, O> Subscription for RefCountSubscription<P, InnerSub, ConnPtr>
+pub struct ConnectionObserver<P, C> {
+  subject: Subject<P>,
+  connection: C,
+  generation: usize,
+}
+impl<I, E, P, C, H> Observer<I, E> for ConnectionObserver<P, C>
 where
-  P: RcDeref<Target = Subscribers<O>>,
-  InnerSub: Subscription,
-  ConnPtr: Subscription,
+  Subject<P>: GuardedSubject<I, E>,
+  C: RcDerefMut<Target = RefCountState<H>>,
+{
+  fn next(&mut self, v: I) {
+    let current = {
+      let state = self.connection.rc_deref();
+      state.generation == self.generation && state.references > 0 && !state.terminated
+    };
+    if current {
+      self.subject.next_if(v, || {
+        let state = self.connection.rc_deref();
+        state.generation == self.generation && state.references > 0 && !state.terminated
+      });
+    }
+  }
+  fn error(self, e: E) {
+    let current = {
+      let state = self.connection.rc_deref();
+      state.generation == self.generation && state.references > 0 && !state.terminated
+    };
+    if !current {
+      return;
+    }
+    self.subject.error_if(e, || {
+      let mut state = self.connection.rc_deref_mut();
+      if state.generation != self.generation || state.references == 0 || state.terminated {
+        false
+      } else {
+        state.terminated = true;
+        true
+      }
+    });
+  }
+  fn complete(self) {
+    let current = {
+      let state = self.connection.rc_deref();
+      state.generation == self.generation && state.references > 0 && !state.terminated
+    };
+    if !current {
+      return;
+    }
+    self.subject.complete_if(|| {
+      let mut state = self.connection.rc_deref_mut();
+      if state.generation != self.generation || state.references == 0 || state.terminated {
+        false
+      } else {
+        state.terminated = true;
+        true
+      }
+    });
+  }
+  fn is_closed(&self) -> bool {
+    let current = {
+      let state = self.connection.rc_deref();
+      state.generation == self.generation && state.references > 0 && !state.terminated
+    };
+    !current || self.subject.is_closed()
+  }
+}
+impl<Ctx, S, P, C, U, Q> CoreObservable<Ctx> for RefCount<S, P, C>
+where
+  Ctx: Context,
+  P: Clone,
+  C: RcDerefMut<Target = RefCountState<SingleAssignment<Q>>>,
+  Q: From<State<U>> + RcDerefMut<Target = State<U>>,
+  U: Subscription,
+  S: Clone + CoreObservable<Ctx::With<ConnectionObserver<P, C>>, Unsub = U>,
+  Subject<P>: CoreObservable<Ctx>,
+  <Subject<P> as CoreObservable<Ctx>>::Unsub:
+    OnRegistered<RefCountConnect<S, P, C, Ctx::Scheduler>>,
+{
+  type Unsub = RefCountSubscription<<Subject<P> as CoreObservable<Ctx>>::Unsub, C>;
+  fn subscribe(self, context: Ctx) -> Self::Unsub {
+    let generation = {
+      let mut state = self.connection.rc_deref_mut();
+      if state.references == 0 {
+        state.generation += 1;
+        state.connecting = false;
+        state.terminated = false;
+        state.connection = Some(SingleAssignment::<Q>::new());
+      }
+      state.references += 1;
+      state.generation
+    };
+    let scheduler = context.scheduler().clone();
+    let subject = self.connectable.subject;
+    let inner = subject.clone().subscribe(context);
+    inner.on_registered(
+      RefCountConnect {
+        source: self.connectable.source,
+        subject,
+        connection: self.connection.clone(),
+        generation,
+        scheduler,
+      },
+      |task| {
+        let slot = {
+          let mut state = task.connection.rc_deref_mut();
+          if state.generation != task.generation || state.references == 0 || state.connecting {
+            return;
+          }
+          state.connecting = true;
+          state
+            .connection
+            .as_ref()
+            .expect("reserved connection missing")
+            .clone()
+        };
+        let observer = ConnectionObserver {
+          subject: task.subject,
+          connection: task.connection,
+          generation: task.generation,
+        };
+        slot.set(
+          task
+            .source
+            .subscribe(Ctx::With::from_parts(observer, task.scheduler)),
+        );
+      },
+    );
+    RefCountSubscription { inner, connection: self.connection, generation }
+  }
+}
+pub struct RefCountSubscription<U, C> {
+  inner: U,
+  connection: C,
+  generation: usize,
+}
+impl<U, C, H> Subscription for RefCountSubscription<U, C>
+where
+  U: Subscription,
+  C: RcDerefMut<Target = RefCountState<H>>,
+  H: Subscription,
 {
   fn unsubscribe(self) {
     self.inner.unsubscribe();
-    if self.subject.is_empty() {
-      self.connection.unsubscribe();
+    let (connection, terminated) = {
+      let mut state = self.connection.rc_deref_mut();
+      if state.generation != self.generation {
+        return;
+      }
+      assert!(state.references > 0, "ref_count reference released twice");
+      state.references -= 1;
+      if state.references == 0 {
+        (state.connection.take(), state.terminated)
+      } else {
+        (None, false)
+      }
+    };
+    if !terminated {
+      connection.unsubscribe();
     }
   }
-
   fn is_closed(&self) -> bool { self.inner.is_closed() }
 }
 
 #[cfg(test)]
 mod tests {
+  #[rxrust_macro::test]
+  fn stale_generation_and_natural_termination_do_not_cancel_new_connection() {
+    use crate::test_support::Manual;
+    let source = Manual::default();
+    let shared = Local::new(source.clone()).publish().ref_count();
+    let old = shared.clone().on_error(|_| {}).subscribe(|_| {});
+    old.unsubscribe();
+    let values = Rc::new(RefCell::new(vec![]));
+    let v = values.clone();
+    let new = shared
+      .clone()
+      .on_error(|_| {})
+      .subscribe(move |x| v.borrow_mut().push(x));
+    source.next(0, 99);
+    source.complete(0);
+    source.next(1, 2);
+    assert_eq!(*values.borrow(), vec![2]);
+    assert_eq!(source.cancellations(1), 0);
+    source.complete(1);
+    new.unsubscribe();
+    assert_eq!(source.cancellations(1), 0);
+  }
+
+  #[rxrust_macro::test]
+  fn callback_resubscription_registers_before_new_connection() {
+    use crate::{context::TestCtx, subscription::BoxedSubscription, test_support::Manual};
+    TestScheduler::init();
+    let mut source = Manual::default();
+    source.initial = Some(1);
+    let shared = TestCtx::new(source.clone()).publish().ref_count();
+    let holder = Rc::new(RefCell::new(None::<BoxedSubscription>));
+    let h = holder.clone();
+    let values = Rc::new(RefCell::new(vec![]));
+    let v = values.clone();
+    let again = shared.clone();
+    let sub = shared.on_error(|_| {}).subscribe(move |x| {
+      if x == 2 {
+        h.borrow_mut().take().unwrap().unsubscribe();
+        let v = v.clone();
+        *h.borrow_mut() = Some(BoxedSubscription::new(
+          again
+            .clone()
+            .on_error(|_| {})
+            .subscribe(move |x| v.borrow_mut().push(x)),
+        ));
+      }
+    });
+    *holder.borrow_mut() = Some(BoxedSubscription::new(sub));
+    source.next(0, 2);
+    assert_eq!(source.subscriptions(), 1);
+    TestScheduler::flush();
+    assert_eq!(source.subscriptions(), 2);
+    assert_eq!(*values.borrow(), vec![1]);
+    holder.borrow_mut().take().unwrap().unsubscribe();
+    assert_eq!(source.cancellations(0), 1);
+    assert_eq!(source.cancellations(1), 1);
+  }
+
+  #[cfg(not(target_arch = "wasm32"))]
+  #[test]
+  fn concurrent_subscribers_reserve_one_connection() {
+    use std::sync::{
+      Arc, Barrier,
+      atomic::{AtomicUsize, Ordering},
+      mpsc,
+    };
+
+    use crate::subscription::ClosureSubscription;
+    let starts = Arc::new(AtomicUsize::new(0));
+    let stops = Arc::new(AtomicUsize::new(0));
+    let gate = Arc::new(Barrier::new(2));
+    let wait = gate.clone();
+    let (started, ready) = mpsc::channel();
+    let start = starts.clone();
+    let stop = stops.clone();
+    let source = Shared::create::<i32, std::convert::Infallible, _, _>(move |_| {
+      start.fetch_add(1, Ordering::SeqCst);
+      started.send(()).unwrap();
+      wait.wait();
+      ClosureSubscription(move || {
+        stop.fetch_add(1, Ordering::SeqCst);
+      })
+    })
+    .publish()
+    .ref_count();
+    let first = source.clone();
+    let thread = std::thread::spawn(move || first.subscribe(|_| {}));
+    ready
+      .recv_timeout(std::time::Duration::from_secs(5))
+      .unwrap();
+    let second = source.subscribe(|_| {});
+    assert_eq!(starts.load(Ordering::SeqCst), 1);
+    second.unsubscribe();
+    gate.wait();
+    thread.join().unwrap().unsubscribe();
+    assert_eq!(stops.load(Ordering::SeqCst), 1);
+  }
   use std::{cell::RefCell, rc::Rc};
 
   use crate::{observable::Observable, prelude::*};

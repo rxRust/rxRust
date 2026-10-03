@@ -106,3 +106,51 @@ where
 
   fn is_closed(&self) -> bool { self.state.get() == SubscriptionState::Cancelled }
 }
+
+/// Internal hook used by connection managers after Subject registration.
+#[doc(hidden)]
+pub trait OnRegistered<T> {
+  fn on_registered(&self, value: T, ready: fn(T));
+}
+
+#[doc(hidden)]
+pub struct RegistrationTask<Cell, T> {
+  state: Cell,
+  value: Option<T>,
+  ready: fn(T),
+}
+
+impl<P, Sch, Cell, T> OnRegistered<T> for SubjectSubscription<P, Sch, Cell>
+where
+  Cell: SharedCell<SubscriptionState>,
+  Sch: Scheduler<Task<RegistrationTask<Cell, T>>>,
+{
+  fn on_registered(&self, value: T, ready: fn(T)) {
+    match self.state.get() {
+      SubscriptionState::Ready(_) => ready(value),
+      SubscriptionState::Cancelled => {}
+      SubscriptionState::Pending => {
+        let task = Task::new(
+          RegistrationTask { state: self.state.clone(), value: Some(value), ready },
+          |task| match task.state.get() {
+            SubscriptionState::Pending => TaskState::Yield,
+            SubscriptionState::Cancelled => {
+              task.value.take();
+              TaskState::Finished
+            }
+            SubscriptionState::Ready(_) => {
+              (task.ready)(
+                task
+                  .value
+                  .take()
+                  .expect("registration callback executed twice"),
+              );
+              TaskState::Finished
+            }
+          },
+        );
+        self.scheduler.schedule(task, None);
+      }
+    }
+  }
+}

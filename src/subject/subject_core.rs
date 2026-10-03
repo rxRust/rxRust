@@ -609,6 +609,42 @@ impl_core_observable_for_subject!(MutArc, BoxedObserverMutRefSend, &'m mut Item)
 // Tests
 // ============================================================================
 
+/// Internal generation gate evaluated after acquiring the broadcast guard.
+/// This makes connection replacement and subscription registration agree on
+/// which generation may notify an observer, without scanning closed observers.
+#[doc(hidden)]
+pub trait GuardedSubject<Item, Err>: Observer<Item, Err> {
+  fn next_if(&mut self, value: Item, current: impl FnOnce() -> bool);
+  fn error_if(self, err: Err, current: impl FnOnce() -> bool);
+  fn complete_if(self, current: impl FnOnce() -> bool);
+}
+
+macro_rules! impl_guarded_subject {
+  ($ptr:ident, $obs:ident, $item:ty, $broadcast:ident $(, $clone:ident)?) => {
+    #[allow(coherence_leak_check)]
+    impl<'a, Item, Err> GuardedSubject<$item, Err>
+      for Subject<$ptr<Subscribers<$obs<'a, Item, Err>>>>
+    where Err: Clone, $(Item: $clone,)? {
+      fn next_if(&mut self, value: $item, current: impl FnOnce() -> bool) {
+        let mut guard = self.observers.try_rc_deref_mut().expect("re-entrant Subject emission");
+        if current() { guard.$broadcast(value); }
+      }
+      fn error_if(self, err: Err, current: impl FnOnce() -> bool) {
+        let mut guard = self.observers.try_rc_deref_mut().expect("re-entrant Subject emission");
+        if current() { guard.broadcast_error(err); }
+      }
+      fn complete_if(self, current: impl FnOnce() -> bool) {
+        let mut guard = self.observers.try_rc_deref_mut().expect("re-entrant Subject emission");
+        if current() { guard.broadcast_complete(); }
+      }
+    }
+  };
+}
+impl_guarded_subject!(MutRc, BoxedObserver, Item, broadcast_value, Clone);
+impl_guarded_subject!(MutArc, BoxedObserverSend, Item, broadcast_value, Clone);
+impl_guarded_subject!(MutRc, BoxedObserverMutRef, &mut Item, broadcast_mut_ref);
+impl_guarded_subject!(MutArc, BoxedObserverMutRefSend, &mut Item, broadcast_mut_ref);
+
 #[cfg(test)]
 mod tests {
   use std::{
