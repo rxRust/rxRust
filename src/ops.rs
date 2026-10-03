@@ -77,6 +77,7 @@ pub mod take_until;
 pub mod take_while;
 pub mod tap;
 pub mod throttle;
+pub mod unsubscribe_on;
 pub mod with_latest_from;
 pub mod zip;
 
@@ -129,6 +130,7 @@ pub use take_until::*;
 pub use take_while::*;
 pub use tap::*;
 pub use throttle::*;
+pub use unsubscribe_on::*;
 pub use with_latest_from::*;
 pub use zip::*;
 
