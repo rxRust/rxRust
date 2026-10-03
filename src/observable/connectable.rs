@@ -135,6 +135,11 @@ where
 
   /// Returns an Observable that automatically connects when the first
   /// observer subscribes and disconnects when the last one unsubscribes.
+  ///
+  /// Subject's re-entrancy rules still apply: this does not wait for deferred
+  /// registration or schedule connection startup. Cancellation inside callbacks
+  /// is supported. To disconnect and reconnect a synchronously emitting source
+  /// from a callback, explicitly schedule resubscription after that callback.
   #[allow(clippy::type_complexity)]
   fn ref_count(
     self,

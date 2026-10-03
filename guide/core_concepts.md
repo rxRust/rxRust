@@ -73,11 +73,19 @@ awaited directly, but that does not make every operator subscription a future.
 Use completion notifications to observe a composed stream's natural termination.
 
 `publish().ref_count()` owns a separate count of explicit subscription references.
-It reserves a connection before subscribing the source, starts it after Subject
-registration, and disconnects when the last reference is explicitly released.
+It subscribes to the Subject, then reserves and starts a source connection if
+needed. It disconnects when the last reference is explicitly released.
 Connection generations prevent a disconnected source from notifying a later
 connection's subscribers. Dropping an ordinary handle does not release its
 reference; use explicit cancellation or `unsubscribe_when_dropped()`.
+
+`ref_count` follows Subject's existing re-entrancy policy. Subscription changes
+inside a Subject callback may take effect later; `ref_count` does not wait for
+registration or defer connection startup. Cancelling inside a callback is
+supported. If releasing the last reference and resubscribing in that callback
+starts a source that emits synchronously, Subject rejects the re-entrant
+emission. Schedule the resubscription explicitly after the callback to support
+that feedback flow.
 
 Subscription contexts retain their scheduler instance through transformations,
 subscription, and connection management. Factories and explicit context

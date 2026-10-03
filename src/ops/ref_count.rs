@@ -1,10 +1,11 @@
-//! Reference-counted connections. Registration, reference ownership and source
-//! connection generations are coordinated independently of Subject's list.
+//! Reference-counted connections. Reference ownership and source connection
+//! generations are coordinated independently of Subject's list.
+//! Subject registration and emission retain their existing re-entrancy rules.
 use crate::{
   context::{Context, RcDerefMut},
   observable::{CoreObservable, ObservableType, connectable::ConnectableObservable},
   observer::Observer,
-  subject::{GuardedSubject, Subject, subject_subscription::OnRegistered},
+  subject::{GuardedSubject, Subject},
   subscription::{SingleAssignment, Subscription, single_assignment::State},
 };
 pub struct RefCount<S, P, C> {
@@ -55,13 +56,6 @@ impl<H> RefCountState<H> {
 
 pub type Connection<C, U> =
   <C as Context>::RcMut<RefCountState<SingleAssignment<<C as Context>::RcMut<State<U>>>>>;
-pub struct RefCountConnect<S, P, C, Sch> {
-  source: S,
-  subject: Subject<P>,
-  connection: C,
-  generation: usize,
-  scheduler: Sch,
-}
 pub struct ConnectionObserver<P, C> {
   subject: Subject<P>,
   connection: C,
@@ -136,8 +130,6 @@ where
   U: Subscription,
   S: Clone + CoreObservable<Ctx::With<ConnectionObserver<P, C>>, Unsub = U>,
   Subject<P>: CoreObservable<Ctx>,
-  <Subject<P> as CoreObservable<Ctx>>::Unsub:
-    OnRegistered<RefCountConnect<S, P, C, Ctx::Scheduler>>,
 {
   type Unsub = RefCountSubscription<<Subject<P> as CoreObservable<Ctx>>::Unsub, C>;
   fn subscribe(self, context: Ctx) -> Self::Unsub {
@@ -155,39 +147,31 @@ where
     let scheduler = context.scheduler().clone();
     let subject = self.connectable.subject;
     let inner = subject.clone().subscribe(context);
-    inner.on_registered(
-      RefCountConnect {
-        source: self.connectable.source,
-        subject,
-        connection: self.connection.clone(),
-        generation,
-        scheduler,
-      },
-      |task| {
-        let slot = {
-          let mut state = task.connection.rc_deref_mut();
-          if state.generation != task.generation || state.references == 0 || state.connecting {
-            return;
-          }
-          state.connecting = true;
+    let slot = {
+      let mut state = self.connection.rc_deref_mut();
+      if state.generation != generation || state.references == 0 || state.connecting {
+        None
+      } else {
+        state.connecting = true;
+        Some(
           state
             .connection
             .as_ref()
             .expect("reserved connection missing")
-            .clone()
-        };
-        let observer = ConnectionObserver {
-          subject: task.subject,
-          connection: task.connection,
-          generation: task.generation,
-        };
-        slot.set(
-          task
-            .source
-            .subscribe(Ctx::With::from_parts(observer, task.scheduler)),
-        );
-      },
-    );
+            .clone(),
+        )
+      }
+    };
+    if let Some(slot) = slot {
+      let observer =
+        ConnectionObserver { subject, connection: self.connection.clone(), generation };
+      slot.set(
+        self
+          .connectable
+          .source
+          .subscribe(Ctx::With::from_parts(observer, scheduler)),
+      );
+    }
     RefCountSubscription { inner, connection: self.connection, generation }
   }
 }
@@ -250,7 +234,7 @@ mod tests {
   }
 
   #[rxrust_macro::test]
-  fn callback_resubscription_registers_before_new_connection() {
+  fn callback_cancellation_and_explicitly_scheduled_reconnection() {
     use crate::{context::TestCtx, subscription::BoxedSubscription, test_support::Manual};
     TestScheduler::init();
     let mut source = Manual::default();
@@ -264,24 +248,56 @@ mod tests {
     let sub = shared.on_error(|_| {}).subscribe(move |x| {
       if x == 2 {
         h.borrow_mut().take().unwrap().unsubscribe();
-        let v = v.clone();
-        *h.borrow_mut() = Some(BoxedSubscription::new(
-          again
-            .clone()
-            .on_error(|_| {})
-            .subscribe(move |x| v.borrow_mut().push(x)),
-        ));
+        let again = again.clone();
+        let holder = h.clone();
+        let values = v.clone();
+        TestScheduler.schedule(
+          async move {
+            *holder.borrow_mut() = Some(BoxedSubscription::new(
+              again
+                .on_error(|_| {})
+                .subscribe(move |value| values.borrow_mut().push(value)),
+            ));
+          },
+          None,
+        );
       }
     });
     *holder.borrow_mut() = Some(BoxedSubscription::new(sub));
     source.next(0, 2);
     assert_eq!(source.subscriptions(), 1);
+    assert_eq!(source.cancellations(0), 1);
     TestScheduler::flush();
     assert_eq!(source.subscriptions(), 2);
     assert_eq!(*values.borrow(), vec![1]);
     holder.borrow_mut().take().unwrap().unsubscribe();
     assert_eq!(source.cancellations(0), 1);
     assert_eq!(source.cancellations(1), 1);
+  }
+
+  #[rxrust_macro::test]
+  #[should_panic(expected = "re-entrant Subject emission")]
+  fn synchronous_callback_reconnection_obeys_subject_reentrancy_policy() {
+    use crate::{context::TestCtx, subscription::BoxedSubscription, test_support::Manual};
+    TestScheduler::init();
+    let mut source = Manual::default();
+    source.initial = Some(1);
+    let shared = TestCtx::new(source.clone()).publish().ref_count();
+    let holder = Rc::new(RefCell::new(None::<BoxedSubscription>));
+    let subscription = holder.clone();
+    let again = shared.clone();
+    let sub = shared.on_error(|_| {}).subscribe(move |value| {
+      if value == 2 {
+        subscription
+          .borrow_mut()
+          .take()
+          .unwrap()
+          .unsubscribe();
+        again.clone().on_error(|_| {}).subscribe(|_| {});
+      }
+    });
+    *holder.borrow_mut() = Some(BoxedSubscription::new(sub));
+    source.next(0, 2);
   }
 
   #[cfg(not(target_arch = "wasm32"))]
