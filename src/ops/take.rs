@@ -7,6 +7,7 @@ use crate::{
   context::Context,
   observable::{CoreObservable, ObservableType},
   observer::Observer,
+  subscription::{SingleAssignment, Subscription, single_assignment::State},
 };
 
 /// Take operator: Emits only the first `count` values from the source
@@ -45,14 +46,16 @@ impl<S: ObservableType> ObservableType for Take<S> {
 /// This observer wraps another observer and only allows the first `count`
 /// values to be emitted. After `count` values have been emitted, it calls
 /// complete and prevents further values from being emitted.
-pub struct TakeObserver<O> {
+pub struct TakeObserver<O, U> {
+  upstream: U,
   observer: Option<O>,
   remaining: usize,
 }
 
-impl<O, Item, Err> Observer<Item, Err> for TakeObserver<O>
+impl<O, U, Item, Err> Observer<Item, Err> for TakeObserver<O, U>
 where
   O: Observer<Item, Err>,
+  U: Subscription + Clone,
 {
   fn next(&mut self, v: Item) {
     let should_complete = if self.remaining > 0
@@ -67,6 +70,7 @@ where
 
     if should_complete && let Some(observer) = self.observer.take() {
       observer.complete();
+      self.upstream.clone().unsubscribe();
     }
   }
 
@@ -90,19 +94,37 @@ where
   }
 }
 
-impl<S, C> CoreObservable<C> for Take<S>
+// The scheduler can cross threads even when selected from a Local context.
+// A mutex-backed slot remains usable with borrowed and non-Send subscriptions.
+type Handle<U> = SingleAssignment<crate::rc::MutArc<State<U>>>;
+
+impl<'a, S: 'a, C, U> CoreObservable<C> for Take<S>
 where
   C: Context,
-  S: CoreObservable<C::With<TakeObserver<C::Inner>>>,
+  U: Subscription,
+  // Infer U from an observer-independent witness before using it in the real
+  // observer type. Without this bound Rust rejects U as unconstrained (E0207).
+  S: CoreObservable<C::With<TakeObserver<C::Inner, ()>>, Unsub = U>,
+  S: CoreObservable<C::With<TakeObserver<C::Inner, Handle<U>>>, Unsub = U>,
+  C::Inner: Observer<S::Item<'a>, S::Err>,
 {
-  type Unsub = S::Unsub;
+  type Unsub = Handle<U>;
 
   fn subscribe(self, context: C) -> Self::Unsub {
     let Take { source, count } = self;
-    // Use transform to preserve scheduler automatically
-    let wrapped =
-      context.transform(|observer| TakeObserver { observer: Some(observer), remaining: count });
-    source.subscribe(wrapped)
+    let upstream = Handle::<U>::new();
+    if count == 0 {
+      context.into_inner().complete();
+      upstream.clone().unsubscribe();
+      return upstream;
+    }
+    let wrapped = context.transform(|observer| TakeObserver {
+      observer: Some(observer),
+      remaining: count,
+      upstream: upstream.clone(),
+    });
+    upstream.set(source.subscribe(wrapped));
+    upstream
   }
 }
 
@@ -111,6 +133,61 @@ mod tests {
   use std::{cell::RefCell, rc::Rc};
 
   use crate::prelude::*;
+
+  #[rxrust_macro::test]
+  fn cancels_synchronous_late_handle_without_static_or_clone_items() {
+    use crate::subscription::ClosureSubscription;
+    let cancelled = std::cell::Cell::new(0);
+    struct NonClone;
+    let mut seen = 0;
+    Local::create(|emitter| {
+      emitter.next(NonClone);
+      emitter.next(NonClone);
+      ClosureSubscription(|| cancelled.set(cancelled.get() + 1))
+    })
+    .take(1)
+    .subscribe_with(crate::observer::FnMutObserver(|_| seen += 1));
+    assert_eq!(seen, 1);
+    assert_eq!(cancelled.get(), 1);
+  }
+
+  #[rxrust_macro::test]
+  fn zero_completes_without_subscribing() {
+    let mut completed = false;
+    Local::create::<i32, std::convert::Infallible, _, ()>(|_| panic!("source started"))
+      .take(0)
+      .on_complete(|| completed = true)
+      .subscribe_with(crate::observer::FnMutObserver(|_| {}));
+    assert!(completed);
+  }
+
+  #[rxrust_macro::test]
+  fn natural_termination_does_not_cancel() {
+    use crate::subscription::ClosureSubscription;
+    let cancelled = std::cell::Cell::new(0);
+    Local::create(|emitter| {
+      emitter.next(1);
+      emitter.complete();
+      ClosureSubscription(|| cancelled.set(cancelled.get() + 1))
+    })
+    .take(2)
+    .subscribe_with(crate::observer::FnMutObserver(|_| {}));
+    assert_eq!(cancelled.get(), 0);
+  }
+
+  #[rxrust_macro::test(local)]
+  async fn first_and_first_or_cancel_active_source() {
+    use crate::subscription::ClosureSubscription;
+    let cancelled = Rc::new(std::cell::Cell::new(0));
+    let c = cancelled.clone();
+    let source = Local::create(move |emitter| {
+      emitter.next(1);
+      ClosureSubscription(move || c.set(c.get() + 1))
+    });
+    source.clone().first().subscribe(|_| {});
+    source.first_or(0).subscribe(|_| {});
+    assert_eq!(cancelled.get(), 2);
+  }
 
   #[rxrust_macro::test(local)]
   async fn test_take_emits_specified_count() {
