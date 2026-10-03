@@ -1,4 +1,6 @@
-use super::subscribers::Subscribers;
+use std::sync::Arc;
+
+use super::subscribers::{Membership, Subscribers};
 use crate::{
   context::{RcDerefMut, SharedCell},
   scheduler::{Scheduler, Task, TaskState},
@@ -19,8 +21,8 @@ pub enum SubscriptionState {
 /// Subscription handle for a Subject.
 ///
 /// This struct represents an active subscription to a Subject. When this handle
-/// is dropped or unsubscribed, the corresponding observer is removed from the
-/// Subject.
+/// is explicitly unsubscribed, its logical membership ends immediately.
+/// Observer removal may be deferred. Ordinary Drop does not unsubscribe.
 ///
 /// # Design
 ///
@@ -41,12 +43,15 @@ pub enum SubscriptionState {
 pub struct SubjectSubscription<P, Sch, Cell> {
   pub(crate) observers: P,
   pub(crate) state: Cell,
+  pub(crate) membership: Arc<Membership>,
   pub(crate) scheduler: Sch,
 }
 
 impl<P, Sch, Cell> SubjectSubscription<P, Sch, Cell> {
-  pub(crate) fn new(observers: P, state: Cell, scheduler: Sch) -> Self {
-    Self { observers, state, scheduler }
+  pub(crate) fn new(
+    observers: P, state: Cell, membership: Arc<Membership>, scheduler: Sch,
+  ) -> Self {
+    Self { observers, state, membership, scheduler }
   }
 }
 
@@ -62,6 +67,9 @@ where
   Cell: SharedCell<SubscriptionState>,
 {
   fn unsubscribe(self) {
+    if !self.membership.close() {
+      return;
+    }
     // Attempt to transition to Cancelled state.
     // We loop because compare_exchange can fail spuriously or due to state
     // change.
@@ -104,5 +112,5 @@ where
     }
   }
 
-  fn is_closed(&self) -> bool { self.state.get() == SubscriptionState::Cancelled }
+  fn is_closed(&self) -> bool { self.membership.is_closed() }
 }

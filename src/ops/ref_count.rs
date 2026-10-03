@@ -1,11 +1,15 @@
-//! Reference-counted connections. Reference ownership and source connection
-//! generations are coordinated independently of Subject's list.
-//! Subject registration and emission retain their existing re-entrancy rules.
+//! Reference-counted connections use Subject's logical subscription count.
+//! Source callbacks and cancellation always run outside the connection lock.
+use std::sync::{
+  Arc,
+  atomic::{AtomicBool, Ordering},
+};
+
 use crate::{
   context::{Context, RcDerefMut},
   observable::{CoreObservable, ObservableType, connectable::ConnectableObservable},
   observer::Observer,
-  subject::{GuardedSubject, Subject},
+  subject::Subject,
   subscription::{SingleAssignment, Subscription, single_assignment::State},
 };
 pub struct RefCount<S, P, C> {
@@ -27,182 +31,102 @@ where
     Self: 'a;
   type Err = <Subject<P> as ObservableType>::Err;
 }
-/// State for a connection generation. User callbacks never run under this lock.
-pub struct RefCountState<H> {
-  references: usize,
-  generation: usize,
-  connecting: bool,
-  terminated: bool,
-  connection: Option<H>,
-}
-impl<H> Default for RefCountState<H> {
-  fn default() -> Self {
-    Self { references: 0, generation: 0, connecting: false, terminated: false, connection: None }
-  }
-}
-impl<H> RefCountState<H> {
-  fn is_active(&self, generation: usize) -> bool {
-    self.generation == generation && self.references > 0 && !self.terminated
-  }
 
-  fn terminate(&mut self, generation: usize) -> bool {
-    if !self.is_active(generation) {
-      return false;
-    }
-    self.terminated = true;
-    true
-  }
+/// An occupied slot reserves a connection even before subscribe returns.
+pub struct SourceConnection<H> {
+  handle: H,
+  terminated: Arc<AtomicBool>,
 }
 
-pub type Connection<C, U> =
-  <C as Context>::RcMut<RefCountState<SingleAssignment<<C as Context>::RcMut<State<U>>>>>;
-pub struct ConnectionObserver<P, C> {
+pub type Connection<C, U> = <C as Context>::RcMut<
+  Option<SourceConnection<SingleAssignment<<C as Context>::RcMut<State<U>>>>>,
+>;
+
+pub struct ConnectionObserver<P> {
   subject: Subject<P>,
-  connection: C,
-  generation: usize,
+  terminated: Arc<AtomicBool>,
 }
-impl<I, E, P, C, H> Observer<I, E> for ConnectionObserver<P, C>
+impl<I, E, P> Observer<I, E> for ConnectionObserver<P>
 where
-  Subject<P>: GuardedSubject<I, E>,
-  C: RcDerefMut<Target = RefCountState<H>>,
+  Subject<P>: Observer<I, E>,
 {
-  fn next(&mut self, v: I) {
-    let current = self
-      .connection
-      .rc_deref()
-      .is_active(self.generation);
-    if current {
-      // Recheck under the Subject broadcast guard: the connection can change
-      // after the first check, which also avoids entering Subject for stale
-      // input.
-      self.subject.next_if(v, || {
-        self
-          .connection
-          .rc_deref()
-          .is_active(self.generation)
-      });
-    }
-  }
-  fn error(self, e: E) {
-    let current = self
-      .connection
-      .rc_deref()
-      .is_active(self.generation);
-    if !current {
-      return;
-    }
-    self.subject.error_if(e, || {
-      self
-        .connection
-        .rc_deref_mut()
-        .terminate(self.generation)
-    });
+  fn next(&mut self, value: I) { self.subject.next(value); }
+  fn error(self, err: E) {
+    self.terminated.store(true, Ordering::SeqCst);
+    self.subject.error(err);
   }
   fn complete(self) {
-    let current = self
-      .connection
-      .rc_deref()
-      .is_active(self.generation);
-    if !current {
-      return;
-    }
-    self.subject.complete_if(|| {
-      self
-        .connection
-        .rc_deref_mut()
-        .terminate(self.generation)
-    });
+    self.terminated.store(true, Ordering::SeqCst);
+    self.subject.complete();
   }
-  fn is_closed(&self) -> bool {
-    let current = self
-      .connection
-      .rc_deref()
-      .is_active(self.generation);
-    !current || self.subject.is_closed()
-  }
+  fn is_closed(&self) -> bool { self.subject.is_closed() }
 }
 impl<Ctx, S, P, C, U, Q> CoreObservable<Ctx> for RefCount<S, P, C>
 where
   Ctx: Context,
   P: Clone,
-  C: RcDerefMut<Target = RefCountState<SingleAssignment<Q>>>,
+  C: RcDerefMut<Target = Option<SourceConnection<SingleAssignment<Q>>>>,
   Q: From<State<U>> + RcDerefMut<Target = State<U>>,
   U: Subscription,
-  S: Clone + CoreObservable<Ctx::With<ConnectionObserver<P, C>>, Unsub = U>,
+  S: Clone + CoreObservable<Ctx::With<ConnectionObserver<P>>, Unsub = U>,
   Subject<P>: CoreObservable<Ctx>,
 {
-  type Unsub = RefCountSubscription<<Subject<P> as CoreObservable<Ctx>>::Unsub, C>;
+  type Unsub = RefCountSubscription<<Subject<P> as CoreObservable<Ctx>>::Unsub, P, C>;
   fn subscribe(self, context: Ctx) -> Self::Unsub {
-    let generation = {
-      let mut state = self.connection.rc_deref_mut();
-      if state.references == 0 {
-        state.generation += 1;
-        state.connecting = false;
-        state.terminated = false;
-        state.connection = Some(SingleAssignment::<Q>::new());
-      }
-      state.references += 1;
-      state.generation
-    };
     let scheduler = context.scheduler().clone();
     let subject = self.connectable.subject;
     let inner = subject.clone().subscribe(context);
-    let slot = {
-      let mut state = self.connection.rc_deref_mut();
-      if state.generation != generation || state.references == 0 || state.connecting {
-        None
+    let (start, previous) = {
+      let mut connection = self.connection.rc_deref_mut();
+      if !subject.is_empty()
+        && connection
+          .as_ref()
+          .is_none_or(|c| c.terminated.load(Ordering::SeqCst))
+      {
+        let handle = SingleAssignment::<Q>::new();
+        let terminated = Arc::new(AtomicBool::new(false));
+        let previous = connection
+          .replace(SourceConnection { handle: handle.clone(), terminated: terminated.clone() });
+        (Some((handle, terminated)), previous)
       } else {
-        state.connecting = true;
-        Some(
-          state
-            .connection
-            .as_ref()
-            .expect("reserved connection missing")
-            .clone(),
-        )
+        (None, None)
       }
     };
-    if let Some(slot) = slot {
-      let observer =
-        ConnectionObserver { subject, connection: self.connection.clone(), generation };
-      slot.set(
+    // Even dropping a naturally terminated source's handle can run user code.
+    drop(previous);
+    if let Some((handle, terminated)) = start {
+      let observer = ConnectionObserver { subject: subject.clone(), terminated };
+      handle.set(
         self
           .connectable
           .source
           .subscribe(Ctx::With::from_parts(observer, scheduler)),
       );
     }
-    RefCountSubscription { inner, connection: self.connection, generation }
+    RefCountSubscription { inner, subject, connection: self.connection }
   }
 }
-pub struct RefCountSubscription<U, C> {
+pub struct RefCountSubscription<U, P, C> {
   inner: U,
+  subject: Subject<P>,
   connection: C,
-  generation: usize,
 }
-impl<U, C, H> Subscription for RefCountSubscription<U, C>
+impl<U, P, C, H> Subscription for RefCountSubscription<U, P, C>
 where
   U: Subscription,
-  C: RcDerefMut<Target = RefCountState<H>>,
+  C: RcDerefMut<Target = Option<SourceConnection<H>>>,
   H: Subscription,
 {
   fn unsubscribe(self) {
     self.inner.unsubscribe();
-    let (connection, terminated) = {
-      let mut state = self.connection.rc_deref_mut();
-      if state.generation != self.generation {
-        return;
-      }
-      assert!(state.references > 0, "ref_count reference released twice");
-      state.references -= 1;
-      if state.references == 0 {
-        (state.connection.take(), state.terminated)
-      } else {
-        (None, false)
-      }
+    let connection = {
+      let mut connection = self.connection.rc_deref_mut();
+      if self.subject.is_empty() { connection.take() } else { None }
     };
-    if !terminated {
-      connection.unsubscribe();
+    if let Some(connection) = connection
+      && !connection.terminated.load(Ordering::SeqCst)
+    {
+      connection.handle.unsubscribe();
     }
   }
   fn is_closed(&self) -> bool { self.inner.is_closed() }
@@ -211,26 +135,110 @@ where
 #[cfg(test)]
 mod tests {
   #[rxrust_macro::test]
-  fn stale_generation_and_natural_termination_do_not_cancel_new_connection() {
+  fn cancellation_can_reconnect_without_reusing_the_detached_handle() {
+    use crate::subscription::{BoxedSubscription, ClosureSubscription};
+    let on_cancel = Rc::new(RefCell::new(None::<Box<dyn FnOnce()>>));
+    let starts = Rc::new(std::cell::Cell::new(0));
+    let stops = Rc::new(std::cell::Cell::new(0));
+    let callback = on_cancel.clone();
+    let subscribed = starts.clone();
+    let cancelled = stops.clone();
+    let shared = Local::create::<i32, std::convert::Infallible, _, _>(move |_| {
+      subscribed.set(subscribed.get() + 1);
+      let callback = callback.clone();
+      let cancelled = cancelled.clone();
+      ClosureSubscription(move || {
+        cancelled.set(cancelled.get() + 1);
+        let callback = callback.borrow_mut().take();
+        if let Some(callback) = callback {
+          callback();
+        }
+      })
+    })
+    .publish()
+    .ref_count();
+    let old = shared.clone().subscribe(|_| {});
+    let holder = Rc::new(RefCell::new(None));
+    let new = holder.clone();
+    *on_cancel.borrow_mut() = Some(Box::new(move || {
+      *new.borrow_mut() = Some(BoxedSubscription::new(shared.subscribe(|_| {})));
+    }));
+    old.unsubscribe();
+    assert_eq!(starts.get(), 2);
+    assert_eq!(stops.get(), 1);
+    holder.borrow_mut().take().unwrap().unsubscribe();
+    assert_eq!(stops.get(), 2);
+  }
+
+  #[rxrust_macro::test]
+  fn synchronous_termination_does_not_cancel_late_handle() {
+    use crate::subscription::ClosureSubscription;
+    let starts = Rc::new(std::cell::Cell::new(0));
+    let stops = Rc::new(std::cell::Cell::new(0));
+    let subscribed = starts.clone();
+    let cancelled = stops.clone();
+    let shared = Local::create::<i32, std::convert::Infallible, _, _>(move |observer| {
+      subscribed.set(subscribed.get() + 1);
+      observer.complete();
+      let cancelled = cancelled.clone();
+      ClosureSubscription(move || cancelled.set(cancelled.get() + 1))
+    })
+    .publish()
+    .ref_count();
+    let first = shared.clone().subscribe(|_| {});
+    let second = shared.subscribe(|_| {});
+    assert!(first.is_closed());
+    assert!(second.is_closed());
+    first.unsubscribe();
+    second.unsubscribe();
+    assert_eq!(starts.get(), 2);
+    assert_eq!(stops.get(), 0);
+  }
+
+  #[rxrust_macro::test]
+  fn in_flight_values_follow_subject_membership() {
     use crate::test_support::Manual;
     let source = Manual::default();
     let shared = Local::new(source.clone()).publish().ref_count();
-    let old = shared.clone().on_error(|_| {}).subscribe(|_| {});
-    old.unsubscribe();
+    shared
+      .clone()
+      .on_error(|_| {})
+      .subscribe(|_| {})
+      .unsubscribe();
     let values = Rc::new(RefCell::new(vec![]));
     let v = values.clone();
     let new = shared
-      .clone()
       .on_error(|_| {})
       .subscribe(move |x| v.borrow_mut().push(x));
     source.next(0, 99);
-    source.complete(0);
     source.next(1, 2);
-    assert_eq!(*values.borrow(), vec![2]);
-    assert_eq!(source.cancellations(1), 0);
-    source.complete(1);
+    assert_eq!(*values.borrow(), vec![99, 2]);
     new.unsubscribe();
-    assert_eq!(source.cancellations(1), 0);
+    assert_eq!(source.cancellations(0), 1);
+    assert_eq!(source.cancellations(1), 1);
+  }
+
+  #[rxrust_macro::test]
+  fn natural_termination_and_old_handles_do_not_cancel_new_connection() {
+    use crate::test_support::Manual;
+    for error in [false, true] {
+      let source = Manual::default();
+      let shared = Local::new(source.clone()).publish().ref_count();
+      let old = shared.clone().on_error(|_| {}).subscribe(|_| {});
+      if error {
+        source.error(0);
+      } else {
+        source.complete(0);
+      }
+      assert!(old.is_closed());
+      let new = shared.on_error(|_| {}).subscribe(|_| {});
+      old.unsubscribe();
+      assert_eq!(source.subscriptions(), 2);
+      assert_eq!(source.cancellations(0), 0);
+      assert_eq!(source.cancellations(1), 0);
+      new.unsubscribe();
+      assert_eq!(source.cancellations(1), 1);
+    }
   }
 
   #[rxrust_macro::test]

@@ -72,15 +72,23 @@ include shared cancellation state. A scheduled source's `TaskHandle` can be
 awaited directly, but that does not make every operator subscription a future.
 Use completion notifications to observe a composed stream's natural termination.
 
-`publish().ref_count()` owns a separate count of explicit subscription references.
-It subscribes to the Subject, then reserves and starts a source connection if
-needed. It disconnects when the last reference is explicitly released.
-Connection generations prevent a disconnected source from notifying a later
-connection's subscribers. Dropping an ordinary handle does not release its
-reference; use explicit cancellation or `unsubscribe_when_dropped()`.
+Subject owns the logical subscription count. Accepting a subscription increments
+it immediately; explicit cancellation or natural termination releases that
+subscription once. Deferred insertion and removal only update observer storage.
+Queries do not borrow the observer list, so they are safe inside callbacks.
+An observer reporting `is_closed()` does not itself release its subscription.
+
+`publish().ref_count()` uses this count to manage the source connection. It
+subscribes to the Subject, reserves one connection if needed, and disconnects
+when cancellation leaves the Subject empty. Source subscription and cancellation
+run outside the connection lock. Natural termination does not cancel the source
+that sent it. Notifications follow the source and Subject contracts, without
+connection-generation filtering. Dropping an ordinary handle does not release
+membership; use explicit cancellation or `unsubscribe_when_dropped()`.
 
 `ref_count` follows Subject's existing re-entrancy policy. Subscription changes
-inside a Subject callback may take effect later; `ref_count` does not wait for
+inside a Subject callback update membership immediately, while storage changes
+may take effect later; `ref_count` does not wait for
 registration or defer connection startup. Cancelling inside a callback is
 supported. If releasing the last reference and resubscribing in that callback
 starts a source that emits synchronously, Subject rejects the re-entrant

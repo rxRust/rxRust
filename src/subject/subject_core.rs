@@ -1,6 +1,8 @@
+use std::sync::{Arc, Mutex};
+
 use super::{
   subject_subscription::{RemoveState, SubjectSubscription, SubscriptionState},
-  subscribers::Subscribers,
+  subscribers::{Membership, Subscribers},
 };
 use crate::{
   context::{Context, MutArc, MutRc, RcDeref, RcDerefMut, SharedCell},
@@ -250,11 +252,13 @@ pub type SharedSubjectMutRef<'a, Item, Err> = Shared<InnerSubjectMutRefSend<'a, 
 ///   `next`/`error`/`complete` on the same `Subject` from within a callback of
 ///   that `Subject` will **panic**.
 /// - **Subscription mutations are allowed** (`subscribe`/`unsubscribe`) inside
-///   callbacks. They may be applied after the current emission finishes.
+///   callbacks. Logical membership changes immediately; physical insertion and
+///   removal may be deferred until after the current emission.
 ///
 /// ### Subscription mutation semantics (simplified)
 ///
-/// For `subscribe`/`unsubscribe`, `Subject` uses a single rule:
+/// Logical membership changes immediately on subscribe/unsubscribe. Physical
+/// storage changes follow this rule:
 ///
 /// - If the internal subscribers container is not currently borrowed/locked,
 ///   the mutation is applied **synchronously**.
@@ -268,11 +272,12 @@ pub type SharedSubjectMutRef<'a, Item, Err> = Shared<InnerSubjectMutRefSend<'a, 
 ///   - The new subscriber **will not** receive the *currently in-progress*
 ///     emission.
 ///   - It becomes active **after** the current emission finishes and the
-///     scheduler runs the deferred add.
+///     scheduler runs the deferred add. It is counted immediately.
 /// - `unsubscribe()` called from inside one of the subject’s callbacks:
 ///   - The unsubscribing observer may still receive the *currently in-progress*
 ///     emission (because it’s already being invoked).
-///   - It will not receive subsequent emissions once the deferred removal runs.
+///   - It stops receiving notifications immediately, except an invocation
+///     already in progress. Deferred removal only cleans up storage.
 /// - `unsubscribe()` on a subscription returned by a deferred `subscribe()`
 ///   (i.e. before activation) **cancels** the pending add, so the observer
 ///   never becomes active.
@@ -335,7 +340,8 @@ pub type SharedSubjectMutRef<'a, Item, Err> = Shared<InnerSubjectMutRefSend<'a, 
 /// # }
 /// ```
 pub struct Subject<P> {
-  pub observers: P,
+  observers: P,
+  count: Arc<Mutex<usize>>,
 }
 
 // ============================================================================
@@ -375,15 +381,14 @@ impl<'a, Item: 'a, Err> Subject<MutArc<Subscribers<BoxedObserverMutRefSend<'a, I
   }
 }
 
-impl<P, O> Subject<P>
-where
-  P: RcDeref<Target = Subscribers<O>>,
-{
-  /// Get the number of current subscribers.
-  pub fn subscriber_count(&self) -> usize { self.observers.rc_deref().inner.len() }
+impl<P> Subject<P> {
+  /// Count logical subscriptions, including pending registration and excluding
+  /// cancelled entries. This does not borrow the observer list and is safe
+  /// inside callbacks.
+  pub fn subscriber_count(&self) -> usize { *self.count.lock().unwrap() }
 
   /// Check if there are no subscribers.
-  pub fn is_empty(&self) -> bool { self.observers.rc_deref().inner.is_empty() }
+  pub fn is_empty(&self) -> bool { self.subscriber_count() == 0 }
 }
 
 // ============================================================================
@@ -391,14 +396,17 @@ where
 // ============================================================================
 
 impl<P: Clone> Clone for Subject<P> {
-  fn clone(&self) -> Self { Self { observers: self.observers.clone() } }
+  fn clone(&self) -> Self { Self { observers: self.observers.clone(), count: self.count.clone() } }
 }
 
-impl<P> Default for Subject<P>
+impl<P, O> Default for Subject<P>
 where
-  P: RcDeref<Target: Default> + From<P::Target>,
+  P: RcDeref<Target = Subscribers<O>> + From<Subscribers<O>>,
 {
-  fn default() -> Self { Self { observers: P::from(P::Target::default()) } }
+  fn default() -> Self {
+    let observers = Subscribers::default();
+    Self { count: observers.count.clone(), observers: P::from(observers) }
+  }
 }
 
 // ============================================================================
@@ -449,7 +457,7 @@ macro_rules! impl_observer_for_subject {
         );
       }
 
-      fn is_closed(&self) -> bool { self.observers.rc_deref().inner.is_empty() }
+      fn is_closed(&self) -> bool { self.subscriber_count() == 0 }
     }
   };
 
@@ -493,7 +501,7 @@ macro_rules! impl_observer_for_subject {
         );
       }
 
-      fn is_closed(&self) -> bool { self.observers.rc_deref().inner.is_empty() }
+      fn is_closed(&self) -> bool { self.subscriber_count() == 0 }
     }
   };
 }
@@ -546,46 +554,53 @@ macro_rules! impl_core_observable_for_subject {
         let scheduler = observer.scheduler().clone();
         let boxed = observer.into_inner().into_boxed();
         let observers_ptr = self.observers.clone();
+        let membership = Membership::new(self.count.clone());
         let state = C::RcCell::<SubscriptionState>::from(SubscriptionState::Pending);
 
         if let Some(mut guard) = self.observers.try_rc_deref_mut() {
-          let id = guard.add(boxed);
+          let id = guard.add_registered(boxed, membership.clone());
           state.set(SubscriptionState::Ready(id));
-          return SubjectSubscription::new(observers_ptr, state, scheduler);
+          return SubjectSubscription::new(observers_ptr, state, membership, scheduler);
         }
 
-        let sub = SubjectSubscription::new(observers_ptr, state.clone(), scheduler.clone());
+        let sub = SubjectSubscription::new(
+          observers_ptr,
+          state.clone(),
+          membership.clone(),
+          scheduler.clone(),
+        );
         let observers = self.observers;
 
-        let task = Task::new(AddState { observers, boxed: Some(boxed), state }, |task_state| {
-          let current_state = task_state.state.get();
-          // If cancelled, do nothing.
-          if current_state == SubscriptionState::Cancelled {
-            return TaskState::Finished;
-          }
+        let task =
+          Task::new(AddState { observers, boxed: Some(boxed), state, membership }, |task_state| {
+            let current_state = task_state.state.get();
+            // If cancelled, do nothing.
+            if current_state == SubscriptionState::Cancelled {
+              return TaskState::Finished;
+            }
 
-          let boxed = task_state
-            .boxed
-            .take()
-            .expect("add executed twice");
+            let boxed = task_state
+              .boxed
+              .take()
+              .expect("add executed twice");
 
-          // Insert and get ID.
-          let mut guard = task_state.observers.rc_deref_mut();
-          let id = guard.add(boxed);
+            // Insert and get ID.
+            let mut guard = task_state.observers.rc_deref_mut();
+            let id = guard.add_registered(boxed, task_state.membership.clone());
 
-          // Attempt to transition to Ready(id).
-          // If state changed to Cancelled during insertion, we must rollback.
-          if task_state
-            .state
-            .compare_exchange(SubscriptionState::Pending, SubscriptionState::Ready(id))
-            .is_err()
-          {
-            // Must have been cancelled.
-            let _ = guard.remove(id);
-          }
+            // Attempt to transition to Ready(id).
+            // If state changed to Cancelled during insertion, we must rollback.
+            if task_state
+              .state
+              .compare_exchange(SubscriptionState::Pending, SubscriptionState::Ready(id))
+              .is_err()
+            {
+              // Must have been cancelled.
+              let _ = guard.remove(id);
+            }
 
-          TaskState::Finished
-        });
+            TaskState::Finished
+          });
         let _handle = scheduler.schedule(task, None);
         sub
       }
@@ -594,6 +609,7 @@ macro_rules! impl_core_observable_for_subject {
 }
 
 struct AddState<P, Ob, Cell> {
+  membership: Arc<Membership>,
   observers: P,
   boxed: Option<Ob>,
   state: Cell,
@@ -609,42 +625,6 @@ impl_core_observable_for_subject!(MutArc, BoxedObserverMutRefSend, &'m mut Item)
 // Tests
 // ============================================================================
 
-/// Internal generation gate evaluated after acquiring the broadcast guard.
-/// This makes connection replacement and subscription registration agree on
-/// which generation may notify an observer, without scanning closed observers.
-#[doc(hidden)]
-pub trait GuardedSubject<Item, Err>: Observer<Item, Err> {
-  fn next_if(&mut self, value: Item, current: impl FnOnce() -> bool);
-  fn error_if(self, err: Err, current: impl FnOnce() -> bool);
-  fn complete_if(self, current: impl FnOnce() -> bool);
-}
-
-macro_rules! impl_guarded_subject {
-  ($ptr:ident, $obs:ident, $item:ty, $broadcast:ident $(, $clone:ident)?) => {
-    #[allow(coherence_leak_check)]
-    impl<'a, Item, Err> GuardedSubject<$item, Err>
-      for Subject<$ptr<Subscribers<$obs<'a, Item, Err>>>>
-    where Err: Clone, $(Item: $clone,)? {
-      fn next_if(&mut self, value: $item, current: impl FnOnce() -> bool) {
-        let mut guard = self.observers.try_rc_deref_mut().expect("re-entrant Subject emission");
-        if current() { guard.$broadcast(value); }
-      }
-      fn error_if(self, err: Err, current: impl FnOnce() -> bool) {
-        let mut guard = self.observers.try_rc_deref_mut().expect("re-entrant Subject emission");
-        if current() { guard.broadcast_error(err); }
-      }
-      fn complete_if(self, current: impl FnOnce() -> bool) {
-        let mut guard = self.observers.try_rc_deref_mut().expect("re-entrant Subject emission");
-        if current() { guard.broadcast_complete(); }
-      }
-    }
-  };
-}
-impl_guarded_subject!(MutRc, BoxedObserver, Item, broadcast_value, Clone);
-impl_guarded_subject!(MutArc, BoxedObserverSend, Item, broadcast_value, Clone);
-impl_guarded_subject!(MutRc, BoxedObserverMutRef, &mut Item, broadcast_mut_ref);
-impl_guarded_subject!(MutArc, BoxedObserverMutRefSend, &mut Item, broadcast_mut_ref);
-
 #[cfg(test)]
 mod tests {
   use std::{
@@ -655,6 +635,111 @@ mod tests {
   };
 
   use crate::{observable::connectable::Connectable, prelude::*};
+
+  #[rxrust_macro::test]
+  fn logical_count_and_delivery_change_before_deferred_removal() {
+    use crate::{context::TestCtx, subscription::BoxedSubscription};
+    TestScheduler::init();
+    let subject = TestCtx::subject::<i32, Infallible>();
+    let holder = Rc::new(RefCell::new(None::<BoxedSubscription>));
+    let other = holder.clone();
+    let counts = subject.clone();
+    let first = subject.clone().subscribe(move |_| {
+      if let Some(sub) = other.borrow_mut().take() {
+        sub.unsubscribe();
+        assert_eq!(counts.inner().subscriber_count(), 1);
+        assert!(!counts.is_closed());
+      }
+    });
+    *holder.borrow_mut() = Some(BoxedSubscription::new(subject.clone().subscribe(|_| {
+      panic!("a cancelled observer must not be called while removal is pending");
+    })));
+    assert_eq!(subject.inner().subscriber_count(), 2);
+    subject.clone().next(1);
+    subject.clone().next(2);
+    assert_eq!(subject.inner().subscriber_count(), 1);
+    TestScheduler::flush();
+    assert_eq!(subject.inner().subscriber_count(), 1);
+    first.unsubscribe();
+    assert!(subject.inner().is_empty());
+  }
+
+  #[rxrust_macro::test]
+  fn pending_membership_is_counted_and_cancelled_once() {
+    use crate::context::TestCtx;
+    TestScheduler::init();
+    let subject = TestCtx::subject::<i32, Infallible>();
+    let counts = subject.clone();
+    let first = subject.clone().subscribe(move |_| {
+      let pending = counts
+        .clone()
+        .subscribe(|_| panic!("pending add was cancelled"));
+      assert_eq!(counts.inner().subscriber_count(), 2);
+      pending.unsubscribe();
+      assert_eq!(counts.inner().subscriber_count(), 1);
+    });
+    subject.clone().next(1);
+    TestScheduler::flush();
+    assert_eq!(subject.inner().subscriber_count(), 1);
+    first.unsubscribe();
+    assert!(subject.is_closed());
+  }
+
+  #[rxrust_macro::test]
+  fn natural_termination_releases_only_affected_memberships() {
+    use crate::context::TestCtx;
+    for error in [false, true] {
+      TestScheduler::init();
+      let subject = TestCtx::subject::<i32, ()>();
+      let again = subject.clone();
+      let terminal = move || {
+        assert!(again.inner().is_empty());
+        // Registration is deferred, but membership is immediate. Dropping the
+        // returned handle must not remove this new subscription.
+        drop(again.clone().on_error(|_| {}).subscribe(|_| {}));
+        assert_eq!(again.inner().subscriber_count(), 1);
+      };
+      let on_error = terminal.clone();
+      let old = subject
+        .clone()
+        .on_complete(terminal)
+        .on_error(move |_| on_error())
+        .subscribe(|_| {});
+      if error {
+        subject.clone().error(());
+      } else {
+        subject.clone().complete();
+      }
+      assert!(old.is_closed());
+      old.unsubscribe();
+      assert_eq!(subject.inner().subscriber_count(), 1);
+      TestScheduler::flush();
+      assert_eq!(subject.inner().subscriber_count(), 1);
+      subject.clone().complete();
+      assert!(subject.inner().is_empty());
+    }
+  }
+
+  #[rxrust_macro::test]
+  fn closed_observer_does_not_release_subscription_membership() {
+    use crate::{context::TestCtx, observable::CoreObservable};
+    struct Closed;
+    impl Observer<i32, Infallible> for Closed {
+      fn next(&mut self, _: i32) {}
+      fn error(self, _: Infallible) {}
+      fn complete(self) {}
+      fn is_closed(&self) -> bool { true }
+    }
+    let subject = TestCtx::subject::<i32, Infallible>();
+    let sub = subject
+      .inner()
+      .clone()
+      .subscribe(TestCtx::new(Closed));
+    assert_eq!(subject.inner().subscriber_count(), 1);
+    assert!(!subject.is_closed());
+    sub.unsubscribe();
+    assert!(subject.inner().is_empty());
+  }
 
   #[rxrust_macro::test]
   fn test_local_subject() {
