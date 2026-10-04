@@ -413,11 +413,10 @@ impl TaskHandle {
   /// This is used by schedulers to signal that a task has completed execution.
   /// After calling this method, `is_closed()` will return `true`.
   pub(crate) fn mark_finished(&self) {
-    self.inner.finished.store(true, Ordering::Relaxed);
-    if let Ok(mut waker) = self.inner.waker.lock()
-      && let Some(w) = waker.take()
-    {
-      w.wake();
+    self.inner.finished.store(true, Ordering::Release);
+    let waker = self.inner.waker.lock().unwrap().take();
+    if let Some(waker) = waker {
+      waker.wake();
     }
   }
 }
@@ -427,16 +426,15 @@ impl Subscription for TaskHandle {
     self
       .inner
       .keep_running
-      .store(false, Ordering::Relaxed);
-    if let Ok(mut waker) = self.inner.waker.lock()
-      && let Some(w) = waker.take()
-    {
-      w.wake();
+      .store(false, Ordering::Release);
+    let waker = self.inner.waker.lock().unwrap().take();
+    if let Some(waker) = waker {
+      waker.wake();
     }
   }
 
   fn is_closed(&self) -> bool {
-    !self.inner.keep_running.load(Ordering::Relaxed) || self.inner.finished.load(Ordering::Relaxed)
+    !self.inner.keep_running.load(Ordering::Acquire) || self.inner.finished.load(Ordering::Acquire)
   }
 }
 
@@ -444,15 +442,15 @@ impl Future for TaskHandle {
   type Output = ();
 
   fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-    if self.inner.finished.load(Ordering::Relaxed)
-      || !self.inner.keep_running.load(Ordering::Relaxed)
-    {
+    let waker = cx.waker().clone();
+    let mut slot = self.inner.waker.lock().unwrap();
+    // Finish/cancel uses this same lock to take the waker. Checking while it is
+    // held prevents completion from slipping between the check and
+    // registration.
+    if self.is_closed() {
       return Poll::Ready(());
     }
-
-    if let Ok(mut waker) = self.inner.waker.lock() {
-      *waker = Some(cx.waker().clone());
-    }
+    *slot = Some(waker);
     Poll::Pending
   }
 }
@@ -756,6 +754,41 @@ mod tests {
 
   mod scheduler_tests {
     use super::*;
+
+    #[rxrust_macro::test]
+    fn task_handle_notifies_waiter_outside_lock() {
+      use std::{sync::atomic::AtomicUsize, task::Wake};
+      struct Waiter {
+        handle: TaskHandle,
+        wakes: AtomicUsize,
+      }
+      impl Wake for Waiter {
+        fn wake(self: Arc<Self>) {
+          assert!(self.handle.inner.waker.try_lock().is_ok());
+          self.wakes.fetch_add(1, Ordering::SeqCst);
+        }
+      }
+      for cancel in [false, true] {
+        let mut handle = TaskHandle::new();
+        let waiter = Arc::new(Waiter { handle: handle.clone(), wakes: AtomicUsize::new(0) });
+        let waker = Waker::from(waiter.clone());
+        let mut cx = Context::from_waker(&waker);
+        assert!(Pin::new(&mut handle).poll(&mut cx).is_pending());
+        if cancel {
+          handle.clone().unsubscribe();
+        } else {
+          handle.mark_finished();
+        }
+        assert_eq!(waiter.wakes.load(Ordering::SeqCst), 1);
+        assert!(Pin::new(&mut handle).poll(&mut cx).is_ready());
+        // A waiter arriving after completion needs no additional wake.
+        assert!(
+          Pin::new(&mut handle.clone())
+            .poll(&mut cx)
+            .is_ready()
+        );
+      }
+    }
 
     #[rxrust_macro::test]
     fn test_task_handle_finished_is_closed() {
