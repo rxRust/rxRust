@@ -7,6 +7,7 @@ use crate::{
   context::Context,
   observable::{CoreObservable, ObservableType},
   observer::Observer,
+  subscription::{SingleAssignment, Subscription, single_assignment::State},
 };
 
 /// Contains operator: Checks if the source observable emits a specific value
@@ -58,13 +59,15 @@ where
 }
 
 /// ContainsObserver wrapper for checking if an item exists
-pub struct ContainsObserver<O, Item> {
+pub struct ContainsObserver<O, Item, U> {
+  upstream: U,
   observer: Option<O>,
   target: Item,
 }
 
-impl<O, Item, Err> Observer<Item, Err> for ContainsObserver<O, Item>
+impl<O, U, Item, Err> Observer<Item, Err> for ContainsObserver<O, Item, U>
 where
+  U: Subscription + Clone,
   O: Observer<bool, Err>,
   Item: PartialEq,
 {
@@ -74,6 +77,7 @@ where
     {
       observer.next(true);
       observer.complete();
+      self.upstream.clone().unsubscribe();
     }
   }
 
@@ -98,24 +102,47 @@ where
   }
 }
 
-impl<S, C, Item> CoreObservable<C> for Contains<S, Item>
+// The scheduler can cross threads even when selected from a Local context.
+// A mutex-backed slot remains usable with borrowed and non-Send subscriptions.
+type Handle<U> = SingleAssignment<crate::rc::MutArc<State<U>>>;
+
+impl<S, C, Item, U> CoreObservable<C> for Contains<S, Item>
 where
   C: Context,
-  S: CoreObservable<C::With<ContainsObserver<C::Inner, Item>>>,
+  U: Subscription,
   Item: PartialEq,
+  S: CoreObservable<C::With<ContainsObserver<C::Inner, Item, ()>>, Unsub = U>
+    + CoreObservable<C::With<ContainsObserver<C::Inner, Item, Handle<U>>>, Unsub = U>,
 {
-  type Unsub = S::Unsub;
-
+  type Unsub = Handle<U>;
   fn subscribe(self, context: C) -> Self::Unsub {
-    let Contains { source, target } = self;
-    let wrapped =
-      context.transform(|observer| ContainsObserver { observer: Some(observer), target });
-    source.subscribe(wrapped)
+    let upstream = Handle::<U>::new();
+    let wrapped = context.transform(|observer| ContainsObserver {
+      observer: Some(observer),
+      target: self.target,
+      upstream: upstream.clone(),
+    });
+    upstream.set(self.source.subscribe(wrapped));
+    upstream
   }
 }
 
 #[cfg(test)]
 mod tests {
+
+  #[rxrust_macro::test]
+  fn matching_value_cancels_late_handle() {
+    use crate::subscription::ClosureSubscription;
+    let calls = Rc::new(std::cell::Cell::new(0));
+    let c = calls.clone();
+    Local::create(move |e| {
+      e.next(1);
+      ClosureSubscription(move || c.set(c.get() + 1))
+    })
+    .contains(1)
+    .subscribe(|v| assert!(v));
+    assert_eq!(calls.get(), 1);
+  }
   use std::{cell::RefCell, rc::Rc};
 
   use crate::prelude::*;
