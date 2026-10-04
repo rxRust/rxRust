@@ -8,7 +8,7 @@ use crate::{
   context::{Context, RcDeref, RcDerefMut},
   observable::{CoreObservable, ObservableType},
   observer::Observer,
-  subscription::{Subscription, TupleSubscription},
+  subscription::{SingleAssignment, Subscription, TupleSubscription, single_assignment::State},
 };
 
 // ==================== Sample Operator ====================
@@ -104,7 +104,8 @@ pub struct SampleSourceObserver<StateRc, NProxy> {
 }
 
 /// Observer for the sampler (notifier) observable
-pub struct SampleSamplerObserver<StateRc> {
+pub struct SampleSamplerObserver<StateRc, H> {
+  source: H,
   state: StateRc,
 }
 
@@ -114,60 +115,36 @@ pub struct SampleSamplerObserver<StateRc> {
 type SharedState<'a, C, S> =
   <C as Context>::RcMut<SampleState<<C as Context>::Inner, <S as ObservableType>::Item<'a>>>;
 
-/// Helper type alias for the Sample source observable context
-type SampleSourceCtx<'a, C, S, U> = <C as Context>::With<
-  SampleSourceObserver<SharedState<'a, C, S>, <C as Context>::RcMut<Option<U>>>,
->;
-
-/// Helper type alias for the Sample sampler observable context
-type SampleSamplerCtx<'a, C, S> =
-  <C as Context>::With<SampleSamplerObserver<SharedState<'a, C, S>>>;
-
-// ==================== CoreObservable Implementation ====================
-
-impl<S, N, C, SrcUnsub, NotifyUnsub> CoreObservable<C> for Sample<S, N>
+type Handle<C, U> = SingleAssignment<<C as Context>::RcMut<State<U>>>;
+type SourceCtx<'a, C, S, H> = <C as Context>::With<SampleSourceObserver<SharedState<'a, C, S>, H>>;
+type SamplerCtx<'a, C, S, H> =
+  <C as Context>::With<SampleSamplerObserver<SharedState<'a, C, S>, H>>;
+impl<S, N, C, U, V> CoreObservable<C> for Sample<S, N>
 where
   C: Context,
-  S: for<'a> CoreObservable<SampleSourceCtx<'a, C, S, NotifyUnsub>, Unsub = SrcUnsub>,
-  N: for<'a> CoreObservable<SampleSamplerCtx<'a, C, S>, Unsub = NotifyUnsub>,
-  SrcUnsub: Subscription,
-  NotifyUnsub: Subscription,
-  C::RcMut<Option<NotifyUnsub>>: Subscription,
-  for<'a> C::Inner: Observer<S::Item<'a>, S::Err>,
+  U: Subscription,
+  V: Subscription,
+  S: for<'a> CoreObservable<SourceCtx<'a, C, S, ()>, Unsub = U>
+    + for<'a> CoreObservable<SourceCtx<'a, C, S, Handle<C, V>>, Unsub = U>,
+  N: for<'a> CoreObservable<SamplerCtx<'a, C, S, Handle<C, U>>, Unsub = V>,
 {
-  type Unsub = TupleSubscription<SrcUnsub, C::RcMut<Option<NotifyUnsub>>>;
-
+  type Unsub = TupleSubscription<Handle<C, U>, Handle<C, V>>;
   fn subscribe(self, context: C) -> Self::Unsub {
-    let Sample { source, sampler } = self;
-
-    // Create shared state wrapped in RcMut
-    let downstream = context.into_inner();
-    let state: SharedState<C, S> = C::RcMut::from(SampleState::new(downstream));
-
-    // Initialize notifier proxy (empty initially)
-    let notifier_proxy: C::RcMut<Option<N::Unsub>> = C::RcMut::from(None);
-
-    // Subscribe to source first
-    let source_observer =
-      SampleSourceObserver { state: state.clone(), notifier_proxy: notifier_proxy.clone() };
-    let source_ctx = C::lift(source_observer);
-    let source_unsub = source.subscribe(source_ctx);
-
-    // Subscribe to sampler second
-    let sampler_observer = SampleSamplerObserver { state: state.clone() };
-    let sampler_ctx = C::lift(sampler_observer);
-    let sampler_unsub = sampler.subscribe(sampler_ctx);
-
-    // If downstream is not closed, store the sampler subscription in the proxy.
-    // Otherwise, unsubscribe the sampler immediately (as source already
-    // completed/errored).
-    if !state.rc_deref().is_closed::<S::Err>() {
-      *notifier_proxy.rc_deref_mut() = Some(sampler_unsub);
-    } else {
-      sampler_unsub.unsubscribe();
+    let (observer, scheduler) = context.into_parts();
+    let state = C::RcMut::from(SampleState::new(observer));
+    let source = Handle::<C, U>::new();
+    let sampler = Handle::<C, V>::new();
+    source.set(self.source.subscribe(C::With::from_parts(
+      SampleSourceObserver { state: state.clone(), notifier_proxy: sampler.clone() },
+      scheduler.clone(),
+    )));
+    if state.rc_deref().observer.is_some() {
+      sampler.set(self.sampler.subscribe(C::With::from_parts(
+        SampleSamplerObserver { state, source: source.clone() },
+        scheduler,
+      )));
     }
-
-    TupleSubscription::new(source_unsub, notifier_proxy)
+    TupleSubscription::new(source, sampler)
   }
 }
 
@@ -182,32 +159,65 @@ where
   fn next(&mut self, value: Item) { self.state.rc_deref_mut().store(value); }
 
   fn error(self, err: Err) {
+    if self.state.rc_deref().observer.is_none() {
+      return;
+    }
     self.notifier_proxy.unsubscribe();
-    self.state.rc_deref_mut().error(err);
+    let observer = { self.state.rc_deref_mut().observer.take() };
+    if let Some(observer) = observer {
+      observer.error(err);
+    }
   }
 
   fn complete(self) {
+    if self.state.rc_deref().observer.is_none() {
+      return;
+    }
     self.notifier_proxy.unsubscribe();
-    self.state.rc_deref_mut().complete::<Err>();
+    let observer = { self.state.rc_deref_mut().observer.take() };
+    if let Some(observer) = observer {
+      observer.complete();
+    }
   }
 
   fn is_closed(&self) -> bool { self.state.rc_deref().is_closed::<Err>() }
 }
 
-impl<Item, Err, SamplerItem, O, StateRc> Observer<SamplerItem, Err>
-  for SampleSamplerObserver<StateRc>
+impl<Item, Err, SamplerItem, O, StateRc, H> Observer<SamplerItem, Err>
+  for SampleSamplerObserver<StateRc, H>
 where
+  H: Subscription,
   StateRc: RcDerefMut<Target = SampleState<O, Item>>,
   O: Observer<Item, Err>,
 {
   fn next(&mut self, _: SamplerItem) { self.state.rc_deref_mut().emit_if_present::<Err>(); }
 
-  fn error(self, err: Err) { self.state.rc_deref_mut().error(err); }
+  fn error(self, err: Err) {
+    if self.state.rc_deref().observer.is_none() {
+      return;
+    }
+    let observer = { self.state.rc_deref_mut().observer.take() };
+    if let Some(observer) = observer {
+      observer.error(err);
+    }
+    self.source.unsubscribe();
+  }
 
   fn complete(self) {
-    let mut state = self.state.rc_deref_mut();
-    state.emit_if_present::<Err>();
-    state.complete::<Err>();
+    if self.state.rc_deref().observer.is_none() {
+      return;
+    }
+    let (observer, value) = {
+      let mut state = self.state.rc_deref_mut();
+      (state.observer.take(), state.value.take())
+    };
+    if let Some(mut observer) = observer {
+      if let Some(value) = value {
+        observer.next(value);
+      }
+      observer.complete();
+    }
+    self.source.unsubscribe();
   }
 
   fn is_closed(&self) -> bool { self.state.rc_deref().is_closed::<Err>() }
@@ -217,6 +227,22 @@ where
 
 #[cfg(test)]
 mod tests {
+
+  #[rxrust_macro::test(local)]
+  async fn sampler_completion_cancels_source() {
+    let mut source = Local::subject::<i32, Infallible>();
+    let sampler = Local::subject::<(), Infallible>();
+    let result = Rc::new(RefCell::new(vec![]));
+    let r = result.clone();
+    source
+      .clone()
+      .sample(sampler.clone())
+      .subscribe(move |v| r.borrow_mut().push(v));
+    source.next(4);
+    sampler.complete();
+    assert_eq!(*result.borrow(), vec![4]);
+    assert_eq!(source.inner().subscriber_count(), 0);
+  }
   use std::{cell::RefCell, convert::Infallible, rc::Rc};
 
   use crate::prelude::*;
