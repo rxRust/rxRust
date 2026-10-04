@@ -18,10 +18,10 @@ use crate::{
   observable::{CoreObservable, ObservableType},
   observer::Observer,
   scheduler::Duration,
-  subscription::{IntoBoxedSubscription, Subscription},
+  subscription::{IntoBoxedSubscription, SingleAssignment, Subscription, single_assignment::State},
 };
 
-// ===== ThrottleEdge =====·
+// ===== ThrottleEdge =====
 
 /// Controls when values are emitted.
 ///
@@ -139,6 +139,7 @@ pub struct ThrottleState<Item, O, Param, BoxedSub> {
   observer: Option<O>,
   // Active throttle-window subscription.
   window: Option<BoxedSub>,
+  generation: usize,
   // Pending value for trailing mode.
   pending: Option<Item>,
   // Source has completed while a window is active.
@@ -149,125 +150,133 @@ pub struct ThrottleState<Item, O, Param, BoxedSub> {
   edge: ThrottleEdge,
 }
 
-pub struct ThrottleSubscriber<P, Item> {
+pub struct ThrottleSubscriber<P, Item, H> {
+  source: H,
   state: P,
-  start_window_fn: fn(&Self, &Item),
+  start_window_fn: fn(&Self, Item, bool),
 }
 
-impl<P, Item> Clone for ThrottleSubscriber<P, Item>
+impl<P, Item, H: Clone> Clone for ThrottleSubscriber<P, Item, H>
 where
   P: Clone,
 {
   fn clone(&self) -> Self {
-    Self { state: self.state.clone(), start_window_fn: self.start_window_fn }
+    Self {
+      source: self.source.clone(),
+      state: self.state.clone(),
+      start_window_fn: self.start_window_fn,
+    }
   }
 }
 
-impl<P, Item, O, Param, BoxedSub, Notifier> ThrottleSubscriber<P, Item>
+impl<P, Item, O, Param, BoxedSub, Notifier, H: Subscription + Clone> ThrottleSubscriber<P, Item, H>
 where
   P: RcDerefMut<Target = Option<ThrottleState<Item, O, Param, BoxedSub>>> + Clone,
   Param: ThrottleParam<Item, Notifier = Notifier>,
   BoxedSub: Subscription,
   Notifier: Observable<
     Inner: CoreObservable<
-      Notifier::With<ThrottleNotifyObserver<P, Item>>,
-      Unsub: IntoBoxedSubscription<BoxedSub>,
+      Notifier::With<ThrottleNotifyObserver<P, Item, WindowSlot<Notifier>, H>>,
+      Unsub: IntoBoxedSubscription<Notifier::BoxedSubscription>,
     >,
   >,
+  WindowSlot<Notifier>: IntoBoxedSubscription<BoxedSub>,
+  O: Observer<Item, Notifier::Err> + Clone,
 {
-  fn new(state: P) -> Self { Self { state, start_window_fn: Self::start_window_impl } }
+  fn new(state: P, source: H) -> Self {
+    Self { state, source, start_window_fn: Self::start_window_impl }
+  }
 
-  fn start_window_impl(&self, value: &Item) {
-    // Do not hold the mutable borrow of `state` across `subscribe()`.
-    // The notifier may synchronously call back into this operator
-    // (re-entrancy), which would otherwise cause a runtime borrow panic.
-    let notifier = {
+  fn start_window_impl(&self, value: Item, trailing_emission: bool) {
+    let slot = WindowSlot::<Notifier>::new();
+    let (notifier, previous, generation, emit) = {
       let mut guard = self.state.rc_deref_mut();
-      let Some(inner) = guard.as_mut() else { return };
-      let prev = inner.window.take();
-      if let Some(prev) = prev {
-        prev.unsubscribe();
+      let Some(inner) = guard.as_mut() else {
+        return;
+      };
+      inner.generation += 1;
+      let previous = inner.window.replace(slot.clone().into_boxed());
+      let notifier = inner.param.notify_observable(&value);
+      let emit = if trailing_emission || inner.edge.leading {
+        Some(value)
+      } else {
+        if inner.edge.trailing {
+          inner.pending = Some(value);
+        }
+        None
+      };
+      (notifier, previous, inner.generation, emit)
+    };
+    previous.unsubscribe();
+    let (core, ctx) = notifier.swap(ThrottleNotifyObserver {
+      subscriber: self.clone(),
+      slot: slot.clone(),
+      generation,
+    });
+    slot.set(core.subscribe(ctx).into_boxed());
+    if let Some(value) = emit {
+      let observer = {
+        self
+          .state
+          .rc_deref()
+          .as_ref()
+          .and_then(|s| s.observer.clone())
+      };
+      if let Some(mut observer) = observer {
+        observer.next(value);
       }
-      inner.param.notify_observable(value)
-    };
-
-    // Always cancel the previous window before starting a new one.
-
-    let (core, ctx) = notifier.swap(ThrottleNotifyObserver(self.clone()));
-    let window = core.subscribe(ctx).into_boxed();
-
-    // If the notifier completes synchronously, don't keep a closed window.
-    // Otherwise `window.is_some()` would incorrectly suppress subsequent values
-    // and could also make `complete()` think a window is still active.
-    if window.is_closed() {
-      window.unsubscribe();
-      return;
     }
-
-    let mut guard = self.state.rc_deref_mut();
-    let Some(inner) = guard.as_mut() else {
-      window.unsubscribe();
-      return;
-    };
-
-    inner.window = Some(window);
   }
 }
 
-impl<P, Item> ThrottleSubscriber<P, Item> {
-  fn start_window(&self, value: &Item) { (self.start_window_fn)(self, value); }
+impl<P, Item, H> ThrottleSubscriber<P, Item, H> {
+  fn start_window(&self, value: Item, trailing_emission: bool) {
+    (self.start_window_fn)(self, value, trailing_emission);
+  }
 }
 
-impl<P, Item, O, Param, BoxedSub> ThrottleSubscriber<P, Item>
+impl<P, Item, O, Param, BoxedSub, H: Subscription + Clone> ThrottleSubscriber<P, Item, H>
 where
   P: RcDerefMut<Target = Option<ThrottleState<Item, O, Param, BoxedSub>>>,
   BoxedSub: Subscription,
 {
-  fn close_window<Err>(&self)
+  fn close_window<Err>(&self, generation: usize)
   where
-    O: Observer<Item, Err>,
+    O: Observer<Item, Err> + Clone,
   {
-    let mut guard = self.state.rc_deref_mut();
-    let Some(inner) = guard.as_mut() else { return };
-
-    if let Some(w) = inner.window.take() {
-      w.unsubscribe();
-    }
-
-    let pending = inner.pending.take();
-
-    // Spacing guarantee: if we will emit a trailing value and the source has
-    // not completed, that trailing emission starts the next window.
-    match (pending, inner.completed) {
-      (Some(pending), false) => {
-        // Start the next window before emitting, so spacing is guaranteed.
-        drop(guard);
-        self.start_window(&pending);
-
-        let mut guard = self.state.rc_deref_mut();
-        let Some(inner) = guard.as_mut() else { return };
-        if let Some(observer) = inner.observer.as_mut() {
-          observer.next(pending);
-        }
+    let (retired, pending, completed, mut observer) = {
+      let mut guard = self.state.rc_deref_mut();
+      let Some(inner) = guard.as_mut() else {
+        return;
+      };
+      if inner.generation != generation || inner.window.is_none() {
+        return;
       }
-      (pending, true) => {
-        if let (Some(p), Some(observer)) = (pending, inner.observer.as_mut()) {
-          observer.next(p);
-        }
-
-        if let Some(observer) = inner.observer.take() {
-          observer.complete();
-        }
-
+      let result =
+        (inner.window.take(), inner.pending.take(), inner.completed, inner.observer.clone());
+      if inner.completed {
         *guard = None;
       }
-      (None, false) => {}
+      result
+    };
+    drop(retired);
+    if let Some(pending) = pending {
+      if completed {
+        if let Some(observer) = observer.as_mut() {
+          observer.next(pending);
+        }
+      } else {
+        self.start_window(pending, true);
+      }
+    }
+    if completed && let Some(observer) = observer {
+      observer.complete();
     }
   }
 
-  fn notifier_error<Err>(self, err: Err)
+  fn terminate_with_error<Err>(self, err: Err)
   where
-    O: Observer<Item, Err>,
+    O: Observer<Item, Err> + Clone,
   {
     let Some(mut inner) = self.state.rc_deref_mut().take() else { return };
 
@@ -281,69 +290,66 @@ where
   }
 }
 
-pub struct ThrottleNotifyObserver<P, Item>(ThrottleSubscriber<P, Item>);
+type WindowSlot<C> =
+  SingleAssignment<<C as Context>::RcMut<State<<C as Context>::BoxedSubscription>>>;
+pub struct ThrottleNotifyObserver<P, Item, W, H> {
+  subscriber: ThrottleSubscriber<P, Item, H>,
+  slot: W,
+  generation: usize,
+}
 
-pub struct ThrottleObserver<State, Item>(ThrottleSubscriber<State, Item>);
+pub struct ThrottleObserver<State, Item, H>(ThrottleSubscriber<State, Item, H>);
 
-impl<State, Item, Err, O, Param, BoxedSub> Observer<Item, Err> for ThrottleObserver<State, Item>
+impl<State, Item, Err, O, Param, BoxedSub, H: Subscription + Clone> Observer<Item, Err>
+  for ThrottleObserver<State, Item, H>
 where
   State: RcDerefMut<Target = Option<ThrottleState<Item, O, Param, BoxedSub>>>,
   Param: ThrottleParam<Item>,
-  O: Observer<Item, Err>,
+  O: Observer<Item, Err> + Clone,
   BoxedSub: Subscription,
 {
   fn next(&mut self, value: Item) {
-    let mut guard = self.0.state.rc_deref_mut();
-    let Some(state) = guard.as_mut() else { return };
-
-    if state.observer.is_closed() {
-      return;
-    }
-
-    if state.window.is_none() {
-      drop(guard);
-      self.0.start_window(&value);
-
-      let mut guard = self.0.state.rc_deref_mut();
-      let Some(state) = guard.as_mut() else { return };
-
-      let edge = state.edge;
-      if edge.leading {
-        if let Some(observer) = state.observer.as_mut() {
-          observer.next(value);
-        }
-      } else if edge.trailing {
-        state.pending = Some(value);
-      }
-    } else if state.edge.trailing {
-      state.pending = Some(value);
-    }
-  }
-
-  fn error(self, err: Err) { self.0.notifier_error(err); }
-
-  fn complete(self) {
-    let mut guard = self.0.state.rc_deref_mut();
-    let Some(state) = guard.as_mut() else { return };
-
-    if state.window.is_some() && state.edge.trailing && state.pending.is_some() {
-      state.completed = true;
-      return;
-    }
-
-    if let Some(w) = state.window.take() {
-      w.unsubscribe();
-    }
-    if state.edge.trailing
-      && let (Some(pending), Some(observer)) = (state.pending.take(), state.observer.as_mut())
     {
-      observer.next(pending);
+      let mut guard = self.0.state.rc_deref_mut();
+      let Some(state) = guard.as_mut() else {
+        return;
+      };
+      if state.observer.is_closed() {
+        return;
+      }
+      if state.window.is_some() {
+        if state.edge.trailing {
+          state.pending = Some(value);
+        }
+        return;
+      }
     }
-    if let Some(observer) = state.observer.take() {
-      observer.complete();
+    self.0.start_window(value, false);
+  }
+  fn error(self, err: Err) { self.0.terminate_with_error(err); }
+  fn complete(self) {
+    let state = {
+      let mut guard = self.0.state.rc_deref_mut();
+      let Some(state) = guard.as_mut() else {
+        return;
+      };
+      if state.window.is_some() && state.edge.trailing && state.pending.is_some() {
+        state.completed = true;
+        return;
+      }
+      guard.take()
+    };
+    if let Some(mut state) = state {
+      state.window.unsubscribe();
+      if state.edge.trailing
+        && let (Some(pending), Some(observer)) = (state.pending.take(), state.observer.as_mut())
+      {
+        observer.next(pending);
+      }
+      if let Some(observer) = state.observer {
+        observer.complete();
+      }
     }
-
-    *guard = None;
   }
 
   fn is_closed(&self) -> bool {
@@ -372,77 +378,139 @@ where
   fn is_closed(&self) -> bool { self.observer.is_none() }
 }
 
-impl<NotifyItem, P, Item, Err, O, Param, BoxedSub> Observer<NotifyItem, Err>
-  for ThrottleNotifyObserver<P, Item>
+impl<NotifyItem, P, Item, Err, O, Param, BoxedSub, W, H> Observer<NotifyItem, Err>
+  for ThrottleNotifyObserver<P, Item, W, H>
 where
   P: RcDerefMut<Target = Option<ThrottleState<Item, O, Param, BoxedSub>>>,
-  O: Observer<Item, Err>,
+  O: Observer<Item, Err> + Clone,
   BoxedSub: Subscription,
+  H: Subscription + Clone,
+  W: Subscription + Clone,
 {
-  fn next(&mut self, _value: NotifyItem) { self.0.close_window(); }
-
-  fn error(self, err: Err) { self.0.notifier_error(err); }
-
-  fn complete(self) { self.0.close_window(); }
-
-  fn is_closed(&self) -> bool { self.0.state.rc_deref().is_none() }
+  fn next(&mut self, _: NotifyItem) {
+    self.subscriber.close_window(self.generation);
+    self.slot.clone().unsubscribe();
+  }
+  fn error(self, err: Err) {
+    let current = self
+      .subscriber
+      .state
+      .rc_deref()
+      .as_ref()
+      .is_some_and(|s| s.generation == self.generation && s.window.is_some());
+    if current {
+      // Natural terminal notification retires this window without cancellation.
+      let retired = {
+        self
+          .subscriber
+          .state
+          .rc_deref_mut()
+          .as_mut()
+          .and_then(|s| s.window.take())
+      };
+      drop(retired);
+      let completed = self
+        .subscriber
+        .state
+        .rc_deref()
+        .as_ref()
+        .is_none_or(|s| s.completed);
+      if !completed {
+        self.subscriber.source.clone().unsubscribe();
+      }
+      self.subscriber.terminate_with_error(err);
+    }
+  }
+  fn complete(self) { self.subscriber.close_window(self.generation); }
+  fn is_closed(&self) -> bool {
+    self
+      .subscriber
+      .state
+      .rc_deref()
+      .as_ref()
+      .is_none_or(|s| s.generation != self.generation || s.window.is_none())
+  }
 }
 
 // ==================== CoreObservable Implementation ====================
 
 /// Shared state handle type used by the throttle operator.
 type RcThrottleState<C, Item, Param> = <C as Context>::RcMut<
-  Option<ThrottleState<Item, <C as Context>::Inner, Param, <C as Context>::BoxedSubscription>>,
+  Option<
+    ThrottleState<
+      Item,
+      <C as Context>::RcMut<Option<<C as Context>::Inner>>,
+      Param,
+      <C as Context>::BoxedSubscription,
+    >,
+  >,
 >;
 
-type ThrottleSourceObserverCtx<C, Param, Item> =
-  <C as Context>::With<ThrottleObserver<RcThrottleState<C, Item, Param>, Item>>;
+type ThrottleSourceObserverCtx<C, Param, Item, H> =
+  <C as Context>::With<ThrottleObserver<RcThrottleState<C, Item, Param>, Item, H>>;
+type SourceSlot<C, U> = SingleAssignment<<C as Context>::RcMut<State<U>>>;
 
-type NotifierObserver<C, Param, Item> =
-  ThrottleNotifyObserver<RcThrottleState<C, Item, Param>, Item>;
+type NotifierObserver<C, Param, Item, N, H> =
+  ThrottleNotifyObserver<RcThrottleState<C, Item, Param>, Item, WindowSlot<N>, H>;
 
 impl<S, Param, C, Unsub, Notifier> CoreObservable<C> for Throttle<S, Param>
 where
   C: Context,
   Param: for<'a> ThrottleParam<<S as ObservableType>::Item<'a>, Notifier = Notifier>,
   S: for<'a> CoreObservable<
-      ThrottleSourceObserverCtx<C, Param, <S as ObservableType>::Item<'a>>,
+      ThrottleSourceObserverCtx<C, Param, <S as ObservableType>::Item<'a>, ()>,
+      Unsub = Unsub,
+    >,
+  S: for<'a> CoreObservable<
+      ThrottleSourceObserverCtx<C, Param, <S as ObservableType>::Item<'a>, SourceSlot<C, Unsub>>,
       Unsub = Unsub,
     >,
   Notifier: for<'a> Observable<
       Inner: CoreObservable<
-        Notifier::With<NotifierObserver<C, Param, <S as ObservableType>::Item<'a>>>,
-        Unsub: IntoBoxedSubscription<C::BoxedSubscription>,
+        Notifier::With<
+          NotifierObserver<
+            C,
+            Param,
+            <S as ObservableType>::Item<'a>,
+            Notifier,
+            SourceSlot<C, Unsub>,
+          >,
+        >,
+        Unsub: IntoBoxedSubscription<Notifier::BoxedSubscription>,
       >,
       Err = <S as ObservableType>::Err,
     >,
   for<'a> RcThrottleState<C, <S as ObservableType>::Item<'a>, Param>:
     IntoBoxedSubscription<C::BoxedSubscription>,
+  WindowSlot<Notifier>: IntoBoxedSubscription<C::BoxedSubscription>,
+  for<'a> C::RcMut<Option<C::Inner>>: Observer<S::Item<'a>, S::Err>,
   Unsub: Subscription,
 {
-  type Unsub = ThrottleSubscription<Unsub, C::BoxedSubscription>;
+  type Unsub = ThrottleSubscription<SourceSlot<C, Unsub>, C::BoxedSubscription>;
 
   fn subscribe(self, context: C) -> Self::Unsub {
     let Throttle { source, param, edge } = self;
+    let source_slot = SourceSlot::<C, Unsub>::new();
     let state = C::RcMut::from(None);
     let state_handle = state.clone().into_boxed();
 
     let wrapped = context.transform(|observer| {
       *state.rc_deref_mut() = Some(ThrottleState {
-        observer: Some(observer),
+        observer: Some(C::RcMut::from(Some(observer))),
         window: None,
+        generation: 0,
         pending: None,
         completed: false,
         param,
         edge,
       });
 
-      let subscriber = ThrottleSubscriber::new(state.clone());
+      let subscriber = ThrottleSubscriber::new(state.clone(), source_slot.clone());
       ThrottleObserver(subscriber)
     });
 
-    let source_unsub = source.subscribe(wrapped);
-    ThrottleSubscription::new(source_unsub, state_handle)
+    source_slot.set(source.subscribe(wrapped));
+    ThrottleSubscription::new(source_slot, state_handle)
   }
 }
 
@@ -450,6 +518,95 @@ where
 
 #[cfg(test)]
 mod tests {
+
+  #[rxrust_macro::test]
+  fn synchronous_window_completion_emits_trailing_value() {
+    use std::{cell::RefCell, rc::Rc};
+    let values = Rc::new(RefCell::new(vec![]));
+    let v = values.clone();
+    Local::from_iter([1, 2])
+      .throttle(|_: &i32| Local::empty(), ThrottleEdge::trailing())
+      .subscribe(move |x| v.borrow_mut().push(x));
+    assert_eq!(*values.borrow(), vec![1, 2]);
+  }
+  #[rxrust_macro::test]
+  fn old_notifier_cannot_close_replacement_window() {
+    use std::{cell::RefCell, rc::Rc};
+
+    use crate::test_support::Manual;
+    let source = Manual::default();
+    let notifier = Manual::default();
+    let n = notifier.clone();
+    let values = Rc::new(RefCell::new(vec![]));
+    let v = values.clone();
+    Local::new(source.clone())
+      .throttle(move |_: &i32| Local::new(n.clone()), ThrottleEdge::leading())
+      .on_error(|_| {})
+      .subscribe(move |x| v.borrow_mut().push(x));
+    source.next(0, 1);
+    notifier.next(0, 0);
+    source.next(0, 2);
+    notifier.complete(0);
+    source.next(0, 3);
+    assert_eq!(*values.borrow(), vec![1, 2]);
+    notifier.complete(1);
+    source.next(0, 4);
+    assert_eq!(*values.borrow(), vec![1, 2, 4]);
+  }
+  #[rxrust_macro::test]
+  fn synchronous_notifier_completion_does_not_cancel_its_late_handle() {
+    use std::{cell::Cell, rc::Rc};
+
+    use crate::subscription::ClosureSubscription;
+    let count = Rc::new(Cell::new(0));
+    let c = count.clone();
+    let values = Rc::new(std::cell::RefCell::new(vec![]));
+    let v = values.clone();
+    Local::from_iter([1, 2])
+      .throttle(
+        move |_: &i32| {
+          let c = c.clone();
+          Local::create::<(), std::convert::Infallible, _, _>(move |e| {
+            e.complete();
+            ClosureSubscription(move || c.set(c.get() + 1))
+          })
+        },
+        ThrottleEdge::leading(),
+      )
+      .subscribe(move |x| v.borrow_mut().push(x));
+    assert_eq!(*values.borrow(), vec![1, 2]);
+    assert_eq!(count.get(), 0);
+  }
+  #[rxrust_macro::test]
+  fn notifier_error_cancels_source_and_callback_can_cancel() {
+    use std::{cell::RefCell, rc::Rc};
+
+    use crate::{subscription::BoxedSubscription, test_support::Manual};
+    let source = Manual::default();
+    let notifier = Manual::default();
+    let n = notifier.clone();
+    Local::new(source.clone())
+      .throttle(move |_: &i32| Local::new(n.clone()), ThrottleEdge::leading())
+      .on_error(|_| {})
+      .subscribe(|_| {});
+    source.next(0, 1);
+    notifier.error(0);
+    assert_eq!(source.cancellations(0), 1);
+    assert_eq!(notifier.cancellations(0), 0);
+    let source = Manual::default();
+    let notifier = Manual::default();
+    let n = notifier.clone();
+    let holder = Rc::new(RefCell::new(None::<BoxedSubscription>));
+    let h = holder.clone();
+    let sub = Local::new(source.clone())
+      .throttle(move |_: &i32| Local::new(n.clone()), ThrottleEdge::leading())
+      .on_error(|_| {})
+      .subscribe(move |_| h.borrow_mut().take().unwrap().unsubscribe());
+    *holder.borrow_mut() = Some(BoxedSubscription::new(sub));
+    source.next(0, 1);
+    assert_eq!(source.cancellations(0), 1);
+    assert_eq!(notifier.cancellations(0), 1);
+  }
   use super::*;
   use crate::prelude::*;
 
