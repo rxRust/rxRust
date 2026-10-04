@@ -621,6 +621,46 @@ mod tests {
   use crate::{observable::connectable::Connectable, prelude::*};
 
   #[rxrust_macro::test]
+  fn unsubscribe_handle_finishes_after_removal() {
+    use futures::FutureExt;
+
+    use crate::context::TestCtx;
+    TestScheduler::init();
+    let subject = TestCtx::subject::<i32, Infallible>();
+    let values = Rc::new(RefCell::new(vec![]));
+    let received = values.clone();
+    let sub = subject
+      .clone()
+      .subscribe(move |value| received.borrow_mut().push(value));
+    let holder = Rc::new(RefCell::new(Some(sub)));
+    let removal = Rc::new(RefCell::new(None));
+    let completed = removal.clone();
+    let trigger = subject.clone().subscribe(move |_| {
+      if let Some(sub) = holder.borrow_mut().take() {
+        *completed.borrow_mut() = Some(sub.unsubscribe_inner());
+      }
+    });
+    subject.clone().next(1);
+    let removal = removal.borrow_mut().take().unwrap();
+    assert!(removal.clone().now_or_never().is_none());
+    assert_eq!(subject.inner().subscriber_count(), 2);
+    subject.clone().next(2);
+    assert_eq!(*values.borrow(), vec![1, 2]);
+    TestScheduler::flush();
+    assert!(removal.now_or_never().is_some());
+    assert_eq!(subject.inner().subscriber_count(), 1);
+    subject.clone().next(3);
+    assert_eq!(*values.borrow(), vec![1, 2]);
+    assert!(
+      trigger
+        .unsubscribe_inner()
+        .now_or_never()
+        .is_some()
+    );
+    assert!(subject.inner().is_empty());
+  }
+
+  #[rxrust_macro::test]
   fn test_local_subject() {
     let subject = Local::subject();
     let results = Rc::new(RefCell::new(vec![]));
