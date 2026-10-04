@@ -1,41 +1,38 @@
-//! RefCount operator - auto-manages ConnectableObservable connection.
-//!
-//! Connects on first subscription, disconnects when all subscribers leave.
-//!
-//! # Example
-//!
-//! ```rust
-//! use rxrust::prelude::*;
-//!
-//! let shared = Local::from_iter([1, 2]).publish().ref_count();
-//!
-//! let sub = shared.subscribe(|v| println!("Got: {}", v));
-//! sub.unsubscribe();
-//! ```
-
-use crate::{
-  context::{Context, RcDeref, RcDerefMut},
-  observable::{CoreObservable, ObservableType, connectable::ConnectableObservable},
-  subject::{Subject, subscribers::Subscribers},
-  subscription::Subscription,
+//! Reference-counted connections follow Subject's subscriber list.
+//! Source callbacks and cancellation always run outside the connection lock.
+use std::{
+  future::Future,
+  pin::Pin,
+  sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+  },
+  task::{Context as TaskContext, Poll, ready},
 };
 
-/// Wraps a `ConnectableObservable` and manages connection based on subscriber
-/// count.
-///
-/// Uses the Subject's internal subscriber list instead of a separate counter.
-pub struct RefCount<S, P, ConnPtr> {
-  pub(crate) connectable: ConnectableObservable<S, P>,
-  pub(crate) connection: ConnPtr,
-}
+use pin_project_lite::pin_project;
 
-impl<S: Clone, P: Clone, ConnPtr: Clone> Clone for RefCount<S, P, ConnPtr> {
+use crate::{
+  context::{Context, RcDerefMut, SharedCell},
+  observable::{CoreObservable, ObservableType, connectable::ConnectableObservable},
+  observer::Observer,
+  scheduler::{Scheduler, Task, TaskHandle},
+  subject::{
+    Subject, SubjectSubscription, SubscriptionState, subject_subscription::RemoveState,
+    subscribers::Subscribers,
+  },
+  subscription::{SingleAssignment, Subscription, single_assignment::State},
+};
+pub struct RefCount<S, P, C> {
+  pub(crate) connectable: ConnectableObservable<S, P>,
+  pub(crate) connection: C,
+}
+impl<S: Clone, P: Clone, C: Clone> Clone for RefCount<S, P, C> {
   fn clone(&self) -> Self {
     Self { connectable: self.connectable.clone(), connection: self.connection.clone() }
   }
 }
-
-impl<S, P, ConnPtr> ObservableType for RefCount<S, P, ConnPtr>
+impl<S, P, C> ObservableType for RefCount<S, P, C>
 where
   Subject<P>: ObservableType,
 {
@@ -46,53 +43,344 @@ where
   type Err = <Subject<P> as ObservableType>::Err;
 }
 
-impl<Ctx, O, S, P, ConnPtr> CoreObservable<Ctx> for RefCount<S, P, ConnPtr>
+/// An occupied slot reserves a connection even before subscribe returns.
+pub struct SourceConnection<H> {
+  handle: H,
+  terminated: Arc<AtomicBool>,
+}
+
+pub type Connection<C, U> = <C as Context>::RcMut<
+  Option<SourceConnection<SingleAssignment<<C as Context>::RcMut<State<U>>>>>,
+>;
+
+pub struct ConnectionObserver<P> {
+  subject: Subject<P>,
+  terminated: Arc<AtomicBool>,
+}
+impl<I, E, P> Observer<I, E> for ConnectionObserver<P>
+where
+  Subject<P>: Observer<I, E>,
+{
+  fn next(&mut self, value: I) { self.subject.next(value); }
+  fn error(self, err: E) {
+    self.terminated.store(true, Ordering::SeqCst);
+    self.subject.error(err);
+  }
+  fn complete(self) {
+    self.terminated.store(true, Ordering::SeqCst);
+    self.subject.complete();
+  }
+  fn is_closed(&self) -> bool { self.subject.is_closed() }
+}
+impl<Ctx, S, P, C, U, Q, O> CoreObservable<Ctx> for RefCount<S, P, C>
 where
   Ctx: Context,
-  S: Clone + CoreObservable<Ctx::With<Subject<P>>>,
-  Subject<P>: CoreObservable<Ctx>,
-  P: Clone + RcDeref<Target = Subscribers<O>>,
-  ConnPtr: Clone + RcDerefMut<Target = Option<S::Unsub>> + Subscription,
+  P: RcDerefMut<Target = Subscribers<O>>,
+  C: RcDerefMut<Target = Option<SourceConnection<SingleAssignment<Q>>>>,
+  Q: From<State<U>> + RcDerefMut<Target = State<U>>,
+  U: Subscription,
+  S: Clone + CoreObservable<Ctx::With<ConnectionObserver<P>>, Unsub = U>,
+  Subject<P>: CoreObservable<
+      Ctx,
+      Unsub = SubjectSubscription<P, Ctx::Scheduler, Ctx::RcCell<SubscriptionState>>,
+    >,
+  Ctx::Scheduler: Scheduler<Task<RemoveState<P>>> + Scheduler<Disconnect<P, C>>,
 {
-  type Unsub = RefCountSubscription<P, <Subject<P> as CoreObservable<Ctx>>::Unsub, ConnPtr>;
-
-  fn subscribe(self, observer: Ctx) -> Self::Unsub {
-    let subject = self.connectable.fork();
-    let inner_sub = subject.clone().subscribe(observer);
-
-    if subject.subscriber_count() == 1 && self.connection.rc_deref().is_none() {
-      *self.connection.rc_deref_mut() = Some(self.connectable.connect::<Ctx>());
+  type Unsub = RefCountSubscription<P, Ctx::Scheduler, Ctx::RcCell<SubscriptionState>, C>;
+  fn subscribe(self, context: Ctx) -> Self::Unsub {
+    let scheduler = context.scheduler().clone();
+    let subject = self.connectable.subject;
+    let inner = subject.clone().subscribe(context);
+    let (start, previous) = {
+      let mut connection = self.connection.rc_deref_mut();
+      if connection
+        .as_ref()
+        .is_none_or(|c| c.terminated.load(Ordering::SeqCst))
+      {
+        let handle = SingleAssignment::<Q>::new();
+        let terminated = Arc::new(AtomicBool::new(false));
+        let previous = connection
+          .replace(SourceConnection { handle: handle.clone(), terminated: terminated.clone() });
+        (Some((handle, terminated)), previous)
+      } else {
+        (None, None)
+      }
+    };
+    // Even dropping a naturally terminated source's handle can run user code.
+    drop(previous);
+    if let Some((handle, terminated)) = start {
+      let observer = ConnectionObserver { subject: subject.clone(), terminated };
+      handle.set(
+        self
+          .connectable
+          .source
+          .subscribe(Ctx::With::from_parts(observer, scheduler)),
+      );
     }
-
-    RefCountSubscription { subject, inner: inner_sub, connection: self.connection }
+    RefCountSubscription { inner, subject, connection: self.connection }
   }
 }
-
-/// Subscription for RefCount. Disconnects source when last subscriber leaves.
-pub struct RefCountSubscription<P, InnerSub, ConnPtr> {
+pub struct RefCountSubscription<P, Sch, Cell, C> {
+  inner: SubjectSubscription<P, Sch, Cell>,
   subject: Subject<P>,
-  inner: InnerSub,
-  connection: ConnPtr,
+  connection: C,
 }
-
-impl<P, InnerSub, ConnPtr, O> Subscription for RefCountSubscription<P, InnerSub, ConnPtr>
+impl<P, Sch, Cell, C, O, H> Subscription for RefCountSubscription<P, Sch, Cell, C>
 where
-  P: RcDeref<Target = Subscribers<O>>,
-  InnerSub: Subscription,
-  ConnPtr: Subscription,
+  P: RcDerefMut<Target = Subscribers<O>>,
+  Sch: Scheduler<Task<RemoveState<P>>> + Scheduler<Disconnect<P, C>>,
+  Cell: SharedCell<SubscriptionState>,
+  C: RcDerefMut<Target = Option<SourceConnection<H>>>,
+  H: Subscription,
 {
   fn unsubscribe(self) {
-    self.inner.unsubscribe();
-    if self.subject.is_empty() {
-      self.connection.unsubscribe();
+    let scheduler = self.inner.scheduler.clone();
+    let removal = self.inner.unsubscribe_inner();
+    if removal.is_closed() && disconnect_if_empty(&self.subject, &self.connection) {
+      return;
+    }
+    scheduler
+      .schedule(Disconnect { removal, subject: self.subject, connection: self.connection }, None);
+  }
+  fn is_closed(&self) -> bool { self.inner.is_closed() }
+}
+
+/// Returns false only when a broadcast still owns the list. Inspect the list
+/// before locking the connection, and release both before running user cleanup.
+fn disconnect_if_empty<P, C, O, H>(subject: &Subject<P>, connection: &C) -> bool
+where
+  P: RcDerefMut<Target = Subscribers<O>>,
+  C: RcDerefMut<Target = Option<SourceConnection<H>>>,
+  H: Subscription,
+{
+  let Some(observers) = subject.observers.try_rc_deref_mut() else {
+    return false;
+  };
+  let connection = if observers.inner.is_empty() { connection.rc_deref_mut().take() } else { None };
+  drop(observers);
+  if let Some(connection) = connection
+    && !connection.terminated.load(Ordering::SeqCst)
+  {
+    connection.handle.unsubscribe();
+  }
+  true
+}
+
+pin_project! {
+  pub(crate) struct Disconnect<P, C> {
+    #[pin]
+    removal: TaskHandle,
+    subject: Subject<P>,
+    connection: C,
+  }
+}
+
+impl<P, C, O, H> Future for Disconnect<P, C>
+where
+  P: RcDerefMut<Target = Subscribers<O>>,
+  C: RcDerefMut<Target = Option<SourceConnection<H>>>,
+  H: Subscription,
+{
+  type Output = ();
+  fn poll(self: Pin<&mut Self>, cx: &mut TaskContext<'_>) -> Poll<()> {
+    let this = self.project();
+    ready!(this.removal.poll(cx));
+    if disconnect_if_empty(this.subject, this.connection) {
+      Poll::Ready(())
+    } else {
+      cx.waker().wake_by_ref();
+      Poll::Pending
     }
   }
-
-  fn is_closed(&self) -> bool { self.inner.is_closed() }
 }
 
 #[cfg(test)]
 mod tests {
+  #[rxrust_macro::test]
+  fn cancellation_can_reconnect_without_reusing_the_detached_handle() {
+    use crate::subscription::{BoxedSubscription, ClosureSubscription};
+    let on_cancel = Rc::new(RefCell::new(None::<Box<dyn FnOnce()>>));
+    let starts = Rc::new(std::cell::Cell::new(0));
+    let stops = Rc::new(std::cell::Cell::new(0));
+    let callback = on_cancel.clone();
+    let subscribed = starts.clone();
+    let cancelled = stops.clone();
+    let shared = Local::create::<i32, std::convert::Infallible, _, _>(move |_| {
+      subscribed.set(subscribed.get() + 1);
+      let callback = callback.clone();
+      let cancelled = cancelled.clone();
+      ClosureSubscription(move || {
+        cancelled.set(cancelled.get() + 1);
+        let callback = callback.borrow_mut().take();
+        if let Some(callback) = callback {
+          callback();
+        }
+      })
+    })
+    .publish()
+    .ref_count();
+    let old = shared.clone().subscribe(|_| {});
+    let holder = Rc::new(RefCell::new(None));
+    let new = holder.clone();
+    *on_cancel.borrow_mut() = Some(Box::new(move || {
+      *new.borrow_mut() = Some(BoxedSubscription::new(shared.subscribe(|_| {})));
+    }));
+    old.unsubscribe();
+    assert_eq!(starts.get(), 2);
+    assert_eq!(stops.get(), 1);
+    holder.borrow_mut().take().unwrap().unsubscribe();
+    assert_eq!(stops.get(), 2);
+  }
+
+  #[rxrust_macro::test]
+  fn synchronous_termination_does_not_cancel_late_handle() {
+    use crate::subscription::ClosureSubscription;
+    let starts = Rc::new(std::cell::Cell::new(0));
+    let stops = Rc::new(std::cell::Cell::new(0));
+    let subscribed = starts.clone();
+    let cancelled = stops.clone();
+    let shared = Local::create::<i32, std::convert::Infallible, _, _>(move |observer| {
+      subscribed.set(subscribed.get() + 1);
+      observer.complete();
+      let cancelled = cancelled.clone();
+      ClosureSubscription(move || cancelled.set(cancelled.get() + 1))
+    })
+    .publish()
+    .ref_count();
+    let first = shared.clone().subscribe(|_| {});
+    let second = shared.subscribe(|_| {});
+    first.unsubscribe();
+    second.unsubscribe();
+    assert_eq!(starts.get(), 2);
+    assert_eq!(stops.get(), 0);
+  }
+
+  #[rxrust_macro::test]
+  fn in_flight_values_follow_subject_membership() {
+    use crate::test_support::Manual;
+    let source = Manual::default();
+    let shared = Local::new(source.clone()).publish().ref_count();
+    shared
+      .clone()
+      .on_error(|_| {})
+      .subscribe(|_| {})
+      .unsubscribe();
+    let values = Rc::new(RefCell::new(vec![]));
+    let v = values.clone();
+    let new = shared
+      .on_error(|_| {})
+      .subscribe(move |x| v.borrow_mut().push(x));
+    source.next(0, 99);
+    source.next(1, 2);
+    assert_eq!(*values.borrow(), vec![99, 2]);
+    new.unsubscribe();
+    assert_eq!(source.cancellations(0), 1);
+    assert_eq!(source.cancellations(1), 1);
+  }
+
+  #[rxrust_macro::test]
+  fn natural_termination_and_old_handles_do_not_cancel_new_connection() {
+    use crate::test_support::Manual;
+    for error in [false, true] {
+      let source = Manual::default();
+      let shared = Local::new(source.clone()).publish().ref_count();
+      let old = shared.clone().on_error(|_| {}).subscribe(|_| {});
+      if error {
+        source.error(0);
+      } else {
+        source.complete(0);
+      }
+      let new = shared.on_error(|_| {}).subscribe(|_| {});
+      old.unsubscribe();
+      assert_eq!(source.subscriptions(), 2);
+      assert_eq!(source.cancellations(0), 0);
+      assert_eq!(source.cancellations(1), 0);
+      new.unsubscribe();
+      assert_eq!(source.cancellations(1), 1);
+    }
+  }
+
+  #[rxrust_macro::test]
+  fn callback_cancellation_and_explicitly_scheduled_reconnection() {
+    use crate::{context::TestCtx, subscription::BoxedSubscription, test_support::Manual};
+    TestScheduler::init();
+    let mut source = Manual::default();
+    source.initial = Some(1);
+    let shared = TestCtx::new(source.clone()).publish().ref_count();
+    let holder = Rc::new(RefCell::new(None::<BoxedSubscription>));
+    let h = holder.clone();
+    let values = Rc::new(RefCell::new(vec![]));
+    let v = values.clone();
+    let again = shared.clone();
+    let sub = shared.on_error(|_| {}).subscribe(move |x| {
+      if x == 2 {
+        h.borrow_mut().take().unwrap().unsubscribe();
+        let again = again.clone();
+        let holder = h.clone();
+        let values = v.clone();
+        TestScheduler.schedule(
+          async move {
+            *holder.borrow_mut() = Some(BoxedSubscription::new(
+              again
+                .on_error(|_| {})
+                .subscribe(move |value| values.borrow_mut().push(value)),
+            ));
+          },
+          None,
+        );
+      }
+    });
+    *holder.borrow_mut() = Some(BoxedSubscription::new(sub));
+    source.next(0, 2);
+    assert_eq!(source.subscriptions(), 1);
+    assert_eq!(source.cancellations(0), 0);
+    TestScheduler::flush();
+    assert_eq!(source.subscriptions(), 2);
+    assert_eq!(*values.borrow(), vec![1]);
+    holder.borrow_mut().take().unwrap().unsubscribe();
+    assert_eq!(source.cancellations(0), 1);
+    assert_eq!(source.cancellations(1), 1);
+  }
+
+  #[cfg(not(target_arch = "wasm32"))]
+  #[test]
+  fn concurrent_subscribers_reserve_one_connection() {
+    use std::sync::{
+      Arc, Barrier,
+      atomic::{AtomicUsize, Ordering},
+      mpsc,
+    };
+
+    use crate::subscription::ClosureSubscription;
+    let starts = Arc::new(AtomicUsize::new(0));
+    let stops = Arc::new(AtomicUsize::new(0));
+    let gate = Arc::new(Barrier::new(2));
+    let wait = gate.clone();
+    let (started, ready) = mpsc::channel();
+    let start = starts.clone();
+    let stop = stops.clone();
+    let source = Shared::create::<i32, std::convert::Infallible, _, _>(move |_| {
+      start.fetch_add(1, Ordering::SeqCst);
+      started.send(()).unwrap();
+      wait.wait();
+      ClosureSubscription(move || {
+        stop.fetch_add(1, Ordering::SeqCst);
+      })
+    })
+    .publish()
+    .ref_count();
+    let first = source.clone();
+    let thread = std::thread::spawn(move || first.subscribe(|_| {}));
+    ready
+      .recv_timeout(std::time::Duration::from_secs(5))
+      .unwrap();
+    let second = source.subscribe(|_| {});
+    assert_eq!(starts.load(Ordering::SeqCst), 1);
+    second.unsubscribe();
+    gate.wait();
+    thread.join().unwrap().unsubscribe();
+    assert_eq!(stops.load(Ordering::SeqCst), 1);
+  }
   use std::{cell::RefCell, rc::Rc};
 
   use crate::{observable::Observable, prelude::*};

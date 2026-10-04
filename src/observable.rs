@@ -145,8 +145,8 @@ pub trait Observable: Context {
     F: for<'a> FnMut(Self::Item<'a>),
     Self::Inner: CoreObservable<Self::With<FnMutObserver<F>>, Unsub = U>,
   {
-    let wrapped = Self::lift(FnMutObserver(f));
-    self.into_inner().subscribe(wrapped)
+    let (source, wrapped) = self.swap(FnMutObserver(f));
+    source.subscribe(wrapped)
   }
 
   /// Subscribe with a full Observer implementation.

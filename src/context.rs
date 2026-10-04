@@ -647,3 +647,86 @@ mod context_conversion_tests {
     let _: Local<i32> = local_from_shared;
   }
 }
+
+#[cfg(test)]
+mod scheduler_instance_tests {
+  use std::convert::Infallible;
+
+  use super::*;
+  use crate::{
+    observable::{CoreObservable, ObservableType},
+    prelude::*,
+    scheduler::{Schedulable, Scheduler, TaskHandle},
+  };
+
+  #[derive(Clone, Default)]
+  struct InstanceScheduler(usize);
+  impl<S> Scheduler<S> for InstanceScheduler
+  where
+    S: Schedulable<TestScheduler> + 'static,
+    S::Future: 'static,
+  {
+    fn schedule(&self, task: S, delay: Option<Duration>) -> TaskHandle {
+      assert_eq!(self.0, 7, "scheduler instance was replaced with Default");
+      TestScheduler.schedule(task, delay)
+    }
+  }
+  #[derive(Clone)]
+  struct Probe;
+  impl ObservableType for Probe {
+    type Item<'a> = i32;
+    type Err = Infallible;
+  }
+  impl<O: Observer<i32, Infallible>> CoreObservable<LocalCtx<O, InstanceScheduler>> for Probe {
+    type Unsub = ();
+    fn subscribe(self, context: LocalCtx<O, InstanceScheduler>) {
+      assert_eq!(context.scheduler.0, 7, "source received the wrong scheduler instance");
+      let mut observer = context.inner;
+      observer.next(1);
+      observer.complete();
+    }
+  }
+  #[rxrust_macro::test]
+  fn subscribe_and_connection_operators_preserve_scheduler_instance() {
+    TestScheduler::init();
+    let source = LocalCtx::from_parts(Probe, InstanceScheduler(7));
+    source.clone().subscribe(|_| {});
+    source
+      .clone()
+      .merge(source.clone())
+      .subscribe(|_| {});
+    source
+      .clone()
+      .zip(source.clone())
+      .subscribe(|_| {});
+    source
+      .clone()
+      .combine_latest(source.clone(), |a, b| a + b)
+      .subscribe(|_| {});
+    source
+      .clone()
+      .with_latest_from(source.clone())
+      .subscribe(|_| {});
+    source
+      .clone()
+      .sample(source.clone())
+      .subscribe(|_| {});
+    source
+      .clone()
+      .buffer(source.clone())
+      .subscribe(|_| {});
+    source
+      .clone()
+      .take_until(source.clone())
+      .subscribe(|_| {});
+    source
+      .clone()
+      .skip_until(source.clone())
+      .subscribe(|_| {});
+    let connected = source.clone().publish();
+    connected.fork().subscribe(|_| {});
+    connected.connect();
+    source.publish().ref_count().subscribe(|_| {});
+    TestScheduler::flush();
+  }
+}

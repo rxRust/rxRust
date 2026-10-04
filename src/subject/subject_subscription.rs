@@ -1,7 +1,7 @@
 use super::subscribers::Subscribers;
 use crate::{
   context::{RcDerefMut, SharedCell},
-  scheduler::{Scheduler, Task, TaskState},
+  scheduler::{Scheduler, Task, TaskHandle, TaskState},
   subscription::Subscription,
 };
 
@@ -19,8 +19,8 @@ pub enum SubscriptionState {
 /// Subscription handle for a Subject.
 ///
 /// This struct represents an active subscription to a Subject. When this handle
-/// is dropped or unsubscribed, the corresponding observer is removed from the
-/// Subject.
+/// is explicitly unsubscribed, the corresponding observer is removed from the
+/// Subject, possibly by a scheduled task. Ordinary Drop does not unsubscribe.
 ///
 /// # Design
 ///
@@ -55,54 +55,57 @@ pub(crate) struct RemoveState<P> {
   id: usize,
 }
 
+impl<P, Sch, Cell> SubjectSubscription<P, Sch, Cell> {
+  /// Requests cancellation and returns the removal task for internal callers
+  /// that need to wait. The returned handle must not be cancelled.
+  pub(crate) fn unsubscribe_inner<O>(self) -> TaskHandle
+  where
+    P: RcDerefMut<Target = Subscribers<O>>,
+    Sch: Scheduler<Task<RemoveState<P>>>,
+    Cell: SharedCell<SubscriptionState>,
+  {
+    loop {
+      let current = self.state.get();
+      if current == SubscriptionState::Cancelled {
+        return TaskHandle::finished();
+      }
+      if self
+        .state
+        .compare_exchange(current, SubscriptionState::Cancelled)
+        .is_err()
+      {
+        continue;
+      }
+      let SubscriptionState::Ready(id) = current else {
+        // A pending add will skip insertion or roll it back under the list
+        // lock.
+        return TaskHandle::finished();
+      };
+      if let Some(mut guard) = self.observers.try_rc_deref_mut() {
+        let observer = guard.remove(id);
+        drop(guard);
+        drop(observer);
+        return TaskHandle::finished();
+      }
+      return self.scheduler.schedule(
+        Task::new(RemoveState { observers: self.observers, id }, |state| {
+          let observer = { state.observers.rc_deref_mut().remove(state.id) };
+          drop(observer);
+          TaskState::Finished
+        }),
+        None,
+      );
+    }
+  }
+}
+
 impl<P, O, Sch, Cell> Subscription for SubjectSubscription<P, Sch, Cell>
 where
   P: RcDerefMut<Target = Subscribers<O>>,
   Sch: Scheduler<Task<RemoveState<P>>>,
   Cell: SharedCell<SubscriptionState>,
 {
-  fn unsubscribe(self) {
-    // Attempt to transition to Cancelled state.
-    // We loop because compare_exchange can fail spuriously or due to state
-    // change.
-    loop {
-      let current = self.state.get();
-      match current {
-        SubscriptionState::Cancelled => return, // Already cancelled
-        SubscriptionState::Pending => {
-          // If pending, try to cancel. If successful, the deferred task will
-          // see Cancelled and abort.
-          if self
-            .state
-            .compare_exchange(SubscriptionState::Pending, SubscriptionState::Cancelled)
-            .is_ok()
-          {
-            return;
-          }
-        }
-        SubscriptionState::Ready(id) => {
-          // If ready, try to cancel. If successful, we must remove from list.
-          if self
-            .state
-            .compare_exchange(SubscriptionState::Ready(id), SubscriptionState::Cancelled)
-            .is_ok()
-          {
-            if let Some(mut guard) = self.observers.try_rc_deref_mut() {
-              let _ob = guard.remove(id);
-              return;
-            }
-
-            let task = Task::new(RemoveState { observers: self.observers, id }, |state| {
-              let _ob = { state.observers.rc_deref_mut().remove(state.id) };
-              TaskState::Finished
-            });
-            let _handle = self.scheduler.schedule(task, None);
-            return;
-          }
-        }
-      }
-    }
-  }
+  fn unsubscribe(self) { self.unsubscribe_inner(); }
 
   fn is_closed(&self) -> bool { self.state.get() == SubscriptionState::Cancelled }
 }
