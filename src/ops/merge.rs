@@ -5,10 +5,10 @@
 //! demonstrates multiple subscription management and completion state tracking.
 
 use crate::{
-  context::{Context, RcDerefMut},
+  context::{Context, RcDeref, RcDerefMut},
   observable::{CoreObservable, ObservableType},
   observer::Observer,
-  subscription::TupleSubscription,
+  subscription::{SingleAssignment, Subscription, TupleSubscription, single_assignment::State},
 };
 
 /// Merge operator: Combines two observable streams
@@ -41,85 +41,110 @@ impl<S1: ObservableType, S2> ObservableType for Merge<S1, S2> {
   type Err = S1::Err;
 }
 
-#[derive(Clone)]
-pub struct MergeObserver<P>(P);
-
+pub struct MergeObserver<P, H> {
+  state: P,
+  peer: H,
+  index: usize,
+}
 pub struct MergeObserverInner<O> {
   observer: Option<O>,
-  completed_one: bool,
+  completed: [bool; 2],
 }
-
-impl<O, P, Item, Err> Observer<Item, Err> for MergeObserver<P>
+impl<O, P, H, I, E> Observer<I, E> for MergeObserver<P, H>
 where
   P: RcDerefMut<Target = MergeObserverInner<O>>,
-  O: Observer<Item, Err>,
+  H: Subscription,
+  O: Observer<I, E>,
 {
-  fn next(&mut self, value: Item) {
-    let mut inner = self.0.rc_deref_mut();
-    if let Some(ref mut observer) = inner.observer {
-      observer.next(value);
+  fn next(&mut self, v: I) {
+    if let Some(o) = self.state.rc_deref_mut().observer.as_mut() {
+      o.next(v);
     }
   }
-
-  fn error(self, err: Err) {
-    let mut inner = self.0.rc_deref_mut();
-    if let Some(observer) = inner.observer.take() {
-      observer.error(err);
+  fn error(self, e: E) {
+    let (observer, peer_active) = {
+      let mut state = self.state.rc_deref_mut();
+      state.completed[self.index] = true;
+      (state.observer.take(), !state.completed[1 - self.index])
+    };
+    if let Some(o) = observer {
+      o.error(e);
+    }
+    if peer_active {
+      self.peer.unsubscribe();
     }
   }
-
   fn complete(self) {
-    let mut inner = self.0.rc_deref_mut();
-    if !inner.completed_one {
-      inner.completed_one = true;
-    } else if let Some(o) = inner.observer.take() {
-      o.complete()
+    let observer = {
+      let mut state = self.state.rc_deref_mut();
+      state.completed[self.index] = true;
+      if state.completed[1 - self.index] { state.observer.take() } else { None }
+    };
+    if let Some(o) = observer {
+      o.complete();
     }
   }
-
-  fn is_closed(&self) -> bool {
-    // If we can't inspect (e.g. inner is borrowed), we assume it's open (false)
-    // or rely on recursive calls not happening in a way that blocks this.
-    // For standard MutRc/MutArc, rc_deref() blocks if mutably borrowed.
-    // But is_closed is called by upstream before emission, so it should be
-    // fine.
-    self
-      .0
-      .rc_deref()
-      .observer
-      .as_ref()
-      .is_none_or(|o| o.is_closed())
-  }
+  fn is_closed(&self) -> bool { self.state.rc_deref().observer.is_closed() }
 }
-
-type MergeObserverCtx<C> = <C as Context>::With<
-  MergeObserver<<C as Context>::RcMut<MergeObserverInner<<C as Context>::Inner>>>,
->;
-
-impl<S1, S2, C> CoreObservable<C> for Merge<S1, S2>
+type Handle<C, U> = SingleAssignment<<C as Context>::RcMut<State<U>>>;
+type Down<C> = <C as Context>::RcMut<MergeObserverInner<<C as Context>::Inner>>;
+impl<S1, S2, C, U, V> CoreObservable<C> for Merge<S1, S2>
 where
   C: Context,
-  S1: CoreObservable<MergeObserverCtx<C>>,
-  S2: CoreObservable<MergeObserverCtx<C>>,
+  U: Subscription,
+  V: Subscription,
+  S1: CoreObservable<C::With<MergeObserver<Down<C>, ()>>, Unsub = U>
+    + CoreObservable<C::With<MergeObserver<Down<C>, Handle<C, V>>>, Unsub = U>,
+  S2: CoreObservable<C::With<MergeObserver<Down<C>, Handle<C, U>>>, Unsub = V>,
 {
-  type Unsub = TupleSubscription<S1::Unsub, S2::Unsub>;
-
+  type Unsub = TupleSubscription<Handle<C, U>, Handle<C, V>>;
   fn subscribe(self, context: C) -> Self::Unsub {
-    let Merge { source1, source2 } = self;
-    let ctx = context.transform(|o| {
-      let inner = MergeObserverInner { observer: Some(o), completed_one: false };
-      MergeObserver(C::RcMut::from(inner))
-    });
-    let ctx2 = C::lift(ctx.inner().clone());
-
-    let unsub1 = source1.subscribe(ctx);
-    let unsub2 = source2.subscribe(ctx2);
-    TupleSubscription::new(unsub1, unsub2)
+    let (observer, scheduler) = context.into_parts();
+    let state =
+      C::RcMut::from(MergeObserverInner { observer: Some(observer), completed: [false; 2] });
+    let a = Handle::<C, U>::new();
+    let b = Handle::<C, V>::new();
+    a.set(self.source1.subscribe(C::With::from_parts(
+      MergeObserver { state: state.clone(), peer: b.clone(), index: 0 },
+      scheduler.clone(),
+    )));
+    if state.rc_deref().observer.is_some() {
+      b.set(self.source2.subscribe(C::With::from_parts(
+        MergeObserver { state, peer: a.clone(), index: 1 },
+        scheduler,
+      )));
+    }
+    TupleSubscription::new(a, b)
   }
 }
 
 #[cfg(test)]
 mod tests {
+
+  #[rxrust_macro::test(local)]
+  async fn waits_for_both_and_error_cancels_only_active_peer() {
+    let a = Local::subject::<i32, &str>();
+    let b = Local::subject::<i32, &str>();
+    let completed = Rc::new(std::cell::Cell::new(false));
+    let c = completed.clone();
+    a.clone()
+      .merge(b.clone())
+      .on_error(|_| {})
+      .on_complete(move || c.set(true))
+      .subscribe(|_| {});
+    a.complete();
+    assert!(!completed.get());
+    b.complete();
+    assert!(completed.get());
+    let a = Local::subject::<i32, &str>();
+    let b = Local::subject::<i32, &str>();
+    a.clone()
+      .merge(b.clone())
+      .on_error(|_| {})
+      .subscribe(|_| {});
+    a.error("failed");
+    assert_eq!(b.inner().subscriber_count(), 0);
+  }
   use std::{cell::RefCell, rc::Rc};
 
   use crate::prelude::*;

@@ -1,10 +1,13 @@
 //! Buffer operator implementation.
 
 use crate::{
-  context::{Context, RcDerefMut},
+  context::{Context, RcDeref, RcDerefMut},
   observable::{CoreObservable, ObservableType},
   observer::Observer,
-  subscription::{IntoBoxedSubscription, Subscription, TupleSubscription},
+  subscription::{
+    IntoBoxedSubscription, SingleAssignment, Subscription, TupleSubscription,
+    single_assignment::State,
+  },
 };
 
 /// Buffer operator.
@@ -55,17 +58,26 @@ where
   fn next(&mut self, v: Item) { self.state.rc_deref_mut().buffer.push(v); }
 
   fn error(self, e: Err) {
+    if self.state.rc_deref().observer.is_none() {
+      return;
+    }
     self.notifier_unsub.unsubscribe();
-    if let Some(observer) = self.state.rc_deref_mut().observer.take() {
+    let observer = { self.state.rc_deref_mut().observer.take() };
+    if let Some(observer) = observer {
       observer.error(e);
     }
   }
 
   fn complete(self) {
+    if self.state.rc_deref().observer.is_none() {
+      return;
+    }
     self.notifier_unsub.unsubscribe();
     let mut state = self.state.rc_deref_mut();
     let buffer = std::mem::take(&mut state.buffer);
-    if let Some(mut observer) = state.observer.take() {
+    let observer = state.observer.take();
+    drop(state);
+    if let Some(mut observer) = observer {
       observer.next(buffer);
       observer.complete();
     }
@@ -96,17 +108,26 @@ where
   }
 
   fn error(self, e: Err) {
+    if self.state.rc_deref().observer.is_none() {
+      return;
+    }
     self.source_unsub.unsubscribe();
-    if let Some(observer) = self.state.rc_deref_mut().observer.take() {
+    let observer = { self.state.rc_deref_mut().observer.take() };
+    if let Some(observer) = observer {
       observer.error(e);
     }
   }
 
   fn complete(self) {
+    if self.state.rc_deref().observer.is_none() {
+      return;
+    }
     self.source_unsub.unsubscribe();
     let mut state = self.state.rc_deref_mut();
     let buffer = std::mem::take(&mut state.buffer);
-    if let Some(mut observer) = state.observer.take() {
+    let observer = state.observer.take();
+    drop(state);
+    if let Some(mut observer) = observer {
       observer.next(buffer);
       observer.complete();
     }
@@ -118,12 +139,12 @@ where
 // Define type aliases to simplify the generics
 pub type SourceObserver<'a, C, S> = BufferSourceObserver<
   <C as Context>::RcMut<BufferState<<C as Context>::Inner, <S as ObservableType>::Item<'a>>>,
-  <C as Context>::RcMut<Option<<C as Context>::BoxedSubscription>>,
+  SingleAssignment<<C as Context>::RcMut<State<<C as Context>::BoxedSubscription>>>,
 >;
 
 pub type NotifyObserver<'a, C, S, SourceUnsub> = BufferNotifierObserver<
   <C as Context>::RcMut<BufferState<<C as Context>::Inner, <S as ObservableType>::Item<'a>>>,
-  <C as Context>::RcMut<Option<SourceUnsub>>,
+  SingleAssignment<<C as Context>::RcMut<State<SourceUnsub>>>,
 >;
 
 impl<S, N, C, SourceUnsub, NotifierUnsub> CoreObservable<C> for Buffer<S, N>
@@ -134,29 +155,36 @@ where
   N: for<'a> CoreObservable<C::With<NotifyObserver<'a, C, S, SourceUnsub>>, Unsub = NotifierUnsub>,
   SourceUnsub: Subscription,
   NotifierUnsub: IntoBoxedSubscription<C::BoxedSubscription>,
-  C::RcMut<Option<SourceUnsub>>: Subscription,
-  C::RcMut<Option<C::BoxedSubscription>>: Subscription,
+  SingleAssignment<C::RcMut<State<SourceUnsub>>>: Subscription,
+  SingleAssignment<C::RcMut<State<C::BoxedSubscription>>>: Subscription,
 {
-  type Unsub =
-    TupleSubscription<C::RcMut<Option<SourceUnsub>>, C::RcMut<Option<C::BoxedSubscription>>>;
+  type Unsub = TupleSubscription<
+    SingleAssignment<C::RcMut<State<SourceUnsub>>>,
+    SingleAssignment<C::RcMut<State<C::BoxedSubscription>>>,
+  >;
 
   fn subscribe(self, context: C) -> Self::Unsub {
     let Buffer { source, notifier } = self;
 
-    let state = C::RcMut::from(BufferState::new(context.into_inner()));
+    let (downstream, scheduler) = context.into_parts();
+    let state = C::RcMut::from(BufferState::new(downstream));
 
-    let source_unsub_proxy: C::RcMut<Option<SourceUnsub>> = C::RcMut::from(None);
-    let notifier_unsub_proxy: C::RcMut<Option<C::BoxedSubscription>> = C::RcMut::from(None);
+    let source_unsub_proxy: SingleAssignment<C::RcMut<State<SourceUnsub>>> =
+      SingleAssignment::new();
+    let notifier_unsub_proxy: SingleAssignment<C::RcMut<State<C::BoxedSubscription>>> =
+      SingleAssignment::new();
 
     let source_observer =
       BufferSourceObserver { state: state.clone(), notifier_unsub: notifier_unsub_proxy.clone() };
-    let source_sub = source.subscribe(C::lift(source_observer));
-    *source_unsub_proxy.rc_deref_mut() = Some(source_sub);
+    let source_sub = source.subscribe(C::With::from_parts(source_observer, scheduler.clone()));
+    source_unsub_proxy.set(source_sub);
 
-    let notifier_observer =
-      BufferNotifierObserver { state: state.clone(), source_unsub: source_unsub_proxy.clone() };
-    let notifier_sub = notifier.subscribe(C::lift(notifier_observer));
-    *notifier_unsub_proxy.rc_deref_mut() = Some(notifier_sub.into_boxed());
+    if state.rc_deref().observer.is_some() {
+      let notifier_observer =
+        BufferNotifierObserver { state: state.clone(), source_unsub: source_unsub_proxy.clone() };
+      let notifier_sub = notifier.subscribe(C::With::from_parts(notifier_observer, scheduler));
+      notifier_unsub_proxy.set(notifier_sub.into_boxed());
+    }
 
     TupleSubscription::new(source_unsub_proxy, notifier_unsub_proxy)
   }
@@ -166,6 +194,17 @@ where
 
 #[cfg(test)]
 mod tests {
+
+  #[rxrust_macro::test]
+  fn synchronous_source_completion_does_not_start_notifier() {
+    use std::convert::Infallible;
+    let notifier = Local::create::<(), Infallible, _, ()>(|_| panic!("notifier started"));
+    let mut values = vec![];
+    Local::of(1)
+      .buffer(notifier)
+      .subscribe(|v| values.push(v));
+    assert_eq!(values, vec![vec![1]]);
+  }
   use std::{cell::RefCell, rc::Rc};
 
   use crate::prelude::*;
