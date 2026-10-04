@@ -38,7 +38,10 @@ use crate::{
   context::{Context, RcDeref, RcDerefMut, Scope},
   observable::{CoreObservable, ObservableType},
   observer::Observer,
-  subscription::{IntoBoxedSubscription, Subscription, TupleSubscription},
+  subscription::{
+    IntoBoxedSubscription, SingleAssignment, Subscription, TupleSubscription,
+    single_assignment::State,
+  },
 };
 
 /// SwitchMap operator implementation.
@@ -65,73 +68,33 @@ pub struct SwitchMap<S, F> {
   pub func: F,
 }
 
-#[doc(hidden)]
-pub struct SwitchMapState<O, InnerSub> {
+pub struct SwitchMapState<O, H> {
   observer: O,
   outer_completed: bool,
-  inner_sub: Option<InnerSub>,
+  inner_sub: Option<H>,
+  generation: usize,
 }
-
-impl<O, InnerSub> Subscription for SwitchMapState<O, InnerSub>
-where
-  InnerSub: Subscription,
-{
-  fn unsubscribe(mut self) {
-    if let Some(inner) = self.inner_sub.take() {
-      inner.unsubscribe();
-    }
-  }
-
+impl<O, H: Subscription> Subscription for SwitchMapState<O, H> {
+  fn unsubscribe(self) { self.inner_sub.unsubscribe(); }
   fn is_closed(&self) -> bool { false }
 }
-
-#[doc(hidden)]
-#[derive(Clone)]
-pub struct SwitchMapOuterObserver<Sc: Scope, O, F, InnerObs> {
+type InnerSlot<Sc> =
+  SingleAssignment<<Sc as Scope>::RcMut<State<<Sc as Scope>::BoxedSubscription>>>;
+type SwitchState<Sc, O> =
+  <Sc as Scope>::RcMut<Option<SwitchMapState<<Sc as Scope>::RcMut<Option<O>>, InnerSlot<Sc>>>>;
+type SourceSlot<C, U> = SingleAssignment<<C as Context>::RcMut<State<U>>>;
+pub struct SwitchMapOuterObserver<Sc: Scope, O, F, I, H> {
   state: SwitchState<Sc, O>,
   func: F,
-  _inner: PhantomData<fn() -> InnerObs>,
+  outer: H,
+  _inner: PhantomData<fn() -> I>,
 }
-
-#[doc(hidden)]
-#[derive(Clone)]
-pub struct SwitchMapInnerObserver<State>(State);
-
-/// Subscription type returned by the `switch_map` operator.
-///
-/// This subscription manages both the outer (source) subscription and the
-/// current inner subscription. When unsubscribed, it will cancel both
-/// subscriptions to ensure proper cleanup of resources.
-///
-/// # Type Parameters
-///
-/// * `SrcSub` - The subscription type for the source Observable
-/// * `InnerSub` - The subscription type for managing the inner Observable state
-///
-/// # Behavior
-///
-/// - When `unsubscribe()` is called, both the outer and current inner
-///   subscriptions are canceled
-/// - The inner subscription can be None (when no inner Observable is active)
-/// - Proper cleanup is guaranteed even if inner Observables are switched
-///   rapidly
-///
-/// # Example
-///
-/// ```rust
-/// use rxrust::prelude::*;
-///
-/// let mut source = Local::subject();
-/// let subscription = source
-///   .switch_map(|x: i32| Local::of(x))
-///   .subscribe(|_| {});
-///
-/// // The subscription type here is SwitchMapSubscription
-/// // Unsubscribing will cancel both the source and any active inner subscriptions
-/// subscription.unsubscribe();
-/// ```
-pub type SwitchMapSubscription<SrcSub, InnerSub> = TupleSubscription<SrcSub, InnerSub>;
-
+pub struct SwitchMapInnerObserver<P, H> {
+  state: P,
+  outer: H,
+  generation: usize,
+}
+pub type SwitchMapSubscription<U, P> = TupleSubscription<U, P>;
 impl<S, F, Out> ObservableType for SwitchMap<S, F>
 where
   S: ObservableType,
@@ -144,152 +107,257 @@ where
     Self: 'a;
   type Err = S::Err;
 }
-
-type SwitchState<Sc, O> =
-  <Sc as Scope>::RcMut<Option<SwitchMapState<O, <Sc as Scope>::BoxedSubscription>>>;
-type InnerObserverCtx<C> = <C as Context>::With<
-  SwitchMapInnerObserver<SwitchState<<C as Context>::Scope, <C as Context>::Inner>>,
->;
-
-impl<S, F, C, Out, InnerObs> CoreObservable<C> for SwitchMap<S, F>
+impl<S, F, C, Out, I, U> CoreObservable<C> for SwitchMap<S, F>
 where
   C: Context,
-  S: CoreObservable<C::With<SwitchMapOuterObserver<C::Scope, C::Inner, F, InnerObs>>>,
+  U: Subscription,
+  S: CoreObservable<C::With<SwitchMapOuterObserver<C::Scope, C::Inner, F, I, ()>>, Unsub = U>
+    + CoreObservable<
+      C::With<SwitchMapOuterObserver<C::Scope, C::Inner, F, I, SourceSlot<C, U>>>,
+      Unsub = U,
+    >,
   F: for<'a> FnMut(S::Item<'a>) -> Out,
-  Out: Context<Inner = InnerObs>,
-  InnerObs: CoreObservable<InnerObserverCtx<C>, Err = S::Err> + 'static,
-  InnerObs::Unsub: IntoBoxedSubscription<C::BoxedSubscription>,
+  Out: Context<Inner = I>,
+  I: ObservableType<Err = S::Err> + 'static,
   SwitchState<C::Scope, C::Inner>: Subscription,
 {
-  type Unsub = SwitchMapSubscription<S::Unsub, SwitchState<C::Scope, C::Inner>>;
-
+  type Unsub = SwitchMapSubscription<SourceSlot<C, U>, SwitchState<C::Scope, C::Inner>>;
   fn subscribe(self, context: C) -> Self::Unsub {
-    let SwitchMap { source, func } = self;
-    let state: SwitchState<C::Scope, C::Inner> = <C::Scope as Scope>::RcMut::from(None);
-
+    let state = <C::Scope as Scope>::RcMut::from(None);
+    let outer = SourceSlot::<C, U>::new();
     let wrapped = context.transform(|observer| {
-      *state.rc_deref_mut() =
-        Some(SwitchMapState { observer, outer_completed: false, inner_sub: None });
-      SwitchMapOuterObserver { state: state.clone(), func, _inner: PhantomData }
+      *state.rc_deref_mut() = Some(SwitchMapState {
+        observer: <C::Scope as Scope>::RcMut::from(Some(observer)),
+        outer_completed: false,
+        inner_sub: None,
+        generation: 0,
+      });
+      SwitchMapOuterObserver {
+        state: state.clone(),
+        func: self.func,
+        outer: outer.clone(),
+        _inner: PhantomData,
+      }
     });
-
-    let source_unsub = source.subscribe(wrapped);
-
-    TupleSubscription::new(source_unsub, state)
+    outer.set(self.source.subscribe(wrapped));
+    TupleSubscription::new(outer, state)
   }
 }
-
-impl<Sc, O, InnerObs, Item, Err, F, Out> Observer<Item, Err>
-  for SwitchMapOuterObserver<Sc, O, F, InnerObs>
+impl<Sc, O, I, V, E, F, Out, H> Observer<V, E> for SwitchMapOuterObserver<Sc, O, F, I, H>
 where
   Sc: Scope,
-  O: for<'a> Observer<InnerObs::Item<'a>, Err>,
-  F: FnMut(Item) -> Out,
-  Out: Context<Inner = InnerObs, Scope = Sc>,
-  InnerObs: CoreObservable<
-      Out::With<SwitchMapInnerObserver<SwitchState<Sc, O>>>,
+  O: for<'a> Observer<I::Item<'a>, E>,
+  F: FnMut(V) -> Out,
+  H: Subscription + Clone,
+  Out: Context<Inner = I, Scope = Sc>,
+  I: CoreObservable<
+      Out::With<SwitchMapInnerObserver<SwitchState<Sc, O>, H>>,
       Unsub: IntoBoxedSubscription<Sc::BoxedSubscription>,
     >,
 {
-  fn next(&mut self, value: Item) {
-    if self.is_closed() {
+  fn next(&mut self, v: V) {
+    let slot = InnerSlot::<Sc>::new();
+    let (previous, generation) = {
+      let mut guard = self.state.rc_deref_mut();
+      let Some(state) = guard.as_mut() else {
+        return;
+      };
+      state.generation += 1;
+      (state.inner_sub.replace(slot.clone()), state.generation)
+    };
+    previous.unsubscribe();
+    if self
+      .state
+      .rc_deref()
+      .as_ref()
+      .is_none_or(|s| s.generation != generation)
+    {
       return;
     }
-
-    {
-      let mut guard = self.state.rc_deref_mut();
-      // Take the inner state before unsubscribing to avoid the shared state
-      // being dropped while performing the unsubscribe.
-      if let Some(mut st) = guard.take() {
-        if let Some(prev) = st.inner_sub.take() {
-          prev.unsubscribe();
-        }
-        *guard = Some(st);
-      }
-    }
-    let inner_ctx = (self.func)(value);
-    let inner_obs = inner_ctx.into_inner();
-
-    let inner_observer = SwitchMapInnerObserver(self.state.clone());
-
-    let inner_unsub = inner_obs.subscribe(Out::lift(inner_observer));
-    if let Some(st) = self.state.rc_deref_mut().as_mut() {
-      st.inner_sub = Some(inner_unsub.into_boxed());
-    }
+    let (core, ctx) = (self.func)(v).swap(SwitchMapInnerObserver {
+      state: self.state.clone(),
+      outer: self.outer.clone(),
+      generation,
+    });
+    slot.set(core.subscribe(ctx).into_boxed());
   }
-
-  fn error(self, err: Err) {
-    if let Some(mut st) = self.state.rc_deref_mut().take() {
-      st.observer.error(err);
-      if let Some(inner) = st.inner_sub.take() {
-        inner.unsubscribe();
+  fn error(self, e: E) {
+    let state = { self.state.rc_deref_mut().take() };
+    if let Some(state) = state {
+      state.inner_sub.unsubscribe();
+      let observer = { state.observer.rc_deref_mut().take() };
+      if let Some(observer) = observer {
+        observer.error(e);
       }
     }
   }
-
   fn complete(self) {
-    let mut guard = self.state.rc_deref_mut();
-    let Some(st) = guard.as_mut() else { return };
-    st.outer_completed = true;
-
-    // If no active inner subscription, we can complete immediately.
-    if st.inner_sub.is_none() {
-      let st = guard.take().unwrap();
-      st.observer.complete();
+    let state = {
+      let mut guard = self.state.rc_deref_mut();
+      let Some(state) = guard.as_mut() else {
+        return;
+      };
+      state.outer_completed = true;
+      if state.inner_sub.is_none() { guard.take() } else { None }
+    };
+    if let Some(state) = state {
+      let observer = { state.observer.rc_deref_mut().take() };
+      if let Some(observer) = observer {
+        observer.complete();
+      }
     }
   }
-
   fn is_closed(&self) -> bool {
     self
       .state
       .rc_deref()
       .as_ref()
-      .is_none_or(|st| O::is_closed(&st.observer))
+      .is_none_or(|s| s.observer.rc_deref().is_closed())
   }
 }
-
-impl<Item, Err, O, State, InnerSubState> Observer<Item, Err> for SwitchMapInnerObserver<State>
+impl<V, E, O, OP, P, H, W> Observer<V, E> for SwitchMapInnerObserver<P, H>
 where
-  O: Observer<Item, Err>,
-  State: RcDerefMut<Target = Option<SwitchMapState<O, InnerSubState>>> + Clone,
+  O: Observer<V, E>,
+  OP: RcDerefMut<Target = Option<O>>,
+  P: RcDerefMut<Target = Option<SwitchMapState<OP, W>>>,
+  H: Subscription,
 {
-  fn next(&mut self, value: Item) {
-    if let Some(st) = self.0.rc_deref_mut().as_mut() {
-      st.observer.next(value);
+  fn next(&mut self, v: V) {
+    let observer = {
+      self
+        .state
+        .rc_deref()
+        .as_ref()
+        .filter(|s| s.generation == self.generation && s.inner_sub.is_some())
+        .map(|s| s.observer.clone())
+    };
+    if let Some(observer) = observer
+      && let Some(o) = observer.rc_deref_mut().as_mut()
+    {
+      o.next(v);
     }
   }
-
-  fn error(self, err: Err) {
-    if let Some(mut st) = self.0.rc_deref_mut().take() {
-      let _ = st.inner_sub.take();
-      st.observer.error(err);
+  fn error(self, e: E) {
+    let state = {
+      let mut guard = self.state.rc_deref_mut();
+      if guard
+        .as_ref()
+        .is_some_and(|s| s.generation == self.generation && s.inner_sub.is_some())
+      {
+        guard.take()
+      } else {
+        None
+      }
+    };
+    if let Some(state) = state {
+      if !state.outer_completed {
+        self.outer.unsubscribe();
+      }
+      let observer = { state.observer.rc_deref_mut().take() };
+      if let Some(observer) = observer {
+        observer.error(e);
+      }
     }
   }
-
   fn complete(self) {
-    let mut guard = self.0.rc_deref_mut();
-    let Some(st) = guard.as_mut() else { return };
-
-    // Mark inner as completed.
-    let _ = st.inner_sub.take();
-
-    if st.outer_completed {
-      let st = guard.take().unwrap();
-      st.observer.complete();
+    let (retired, state) = {
+      let mut guard = self.state.rc_deref_mut();
+      let Some(state) = guard.as_mut() else {
+        return;
+      };
+      if state.generation != self.generation {
+        return;
+      }
+      let retired = state.inner_sub.take();
+      let state = if state.outer_completed { guard.take() } else { None };
+      (retired, state)
+    };
+    drop(retired);
+    if let Some(state) = state {
+      let observer = { state.observer.rc_deref_mut().take() };
+      if let Some(observer) = observer {
+        observer.complete();
+      }
     }
   }
-
   fn is_closed(&self) -> bool {
-    self
-      .0
-      .rc_deref()
-      .as_ref()
-      .is_none_or(|st| O::is_closed(&st.observer))
+    self.state.rc_deref().as_ref().is_none_or(|s| {
+      s.generation != self.generation || s.inner_sub.is_none() || s.observer.rc_deref().is_closed()
+    })
   }
 }
 
 #[cfg(test)]
 mod tests {
+
+  #[rxrust_macro::test]
+  fn old_generation_notifications_cannot_finish_new_inner() {
+    use crate::test_support::Manual;
+    let outer = Manual::default();
+    let inner = Manual::default();
+    let i = inner.clone();
+    let values = Rc::new(RefCell::new(vec![]));
+    let v = values.clone();
+    let done = Rc::new(std::cell::Cell::new(false));
+    let d = done.clone();
+    Local::new(outer.clone())
+      .switch_map(move |_| Local::new(i.clone()))
+      .on_error(|_| {})
+      .on_complete(move || d.set(true))
+      .subscribe(move |x| v.borrow_mut().push(x));
+    outer.next(0, 1);
+    outer.next(0, 2);
+    inner.next(0, 99);
+    inner.complete(0);
+    inner.next(1, 2);
+    outer.complete(0);
+    assert!(!done.get());
+    inner.complete(1);
+    assert!(done.get());
+    assert_eq!(*values.borrow(), vec![2]);
+    assert_eq!(inner.cancellations(0), 1);
+    assert_eq!(inner.cancellations(1), 0);
+  }
+  #[rxrust_macro::test]
+  fn synchronous_inner_completion_retires_late_handle() {
+    use crate::subscription::ClosureSubscription;
+    let count = Rc::new(std::cell::Cell::new(0));
+    let c = count.clone();
+    let done = Rc::new(std::cell::Cell::new(false));
+    let d = done.clone();
+    let sub = Local::of(1)
+      .switch_map(move |_| {
+        let c = c.clone();
+        Local::create(move |e| {
+          e.next(1);
+          e.complete();
+          ClosureSubscription(move || c.set(c.get() + 1))
+        })
+      })
+      .on_complete(move || d.set(true))
+      .subscribe(|_| {});
+    assert!(done.get());
+    sub.unsubscribe();
+    assert_eq!(count.get(), 0);
+  }
+  #[rxrust_macro::test]
+  fn cancellation_inside_inner_callback_is_reentrant() {
+    use crate::{subscription::BoxedSubscription, test_support::Manual};
+    let source = Manual::default();
+    let inner = Manual::default();
+    let i = inner.clone();
+    let holder = Rc::new(RefCell::new(None::<BoxedSubscription>));
+    let h = holder.clone();
+    let sub = Local::new(source.clone())
+      .switch_map(move |_| Local::new(i.clone()))
+      .on_error(|_| {})
+      .subscribe(move |_| h.borrow_mut().take().unwrap().unsubscribe());
+    *holder.borrow_mut() = Some(BoxedSubscription::new(sub));
+    source.next(0, 1);
+    inner.next(0, 1);
+    assert_eq!(source.cancellations(0), 1);
+    assert_eq!(inner.cancellations(0), 1);
+  }
   use std::{cell::RefCell, convert::Infallible, rc::Rc};
 
   use crate::prelude::*;

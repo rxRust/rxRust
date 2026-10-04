@@ -163,3 +163,6 @@ mod __markdown_doctests {
     #![doc = include_str!("../guide/contributing.md")]
   }
 }
+
+#[cfg(test)]
+mod test_support;
