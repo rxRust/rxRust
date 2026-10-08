@@ -91,26 +91,25 @@ where
     let scheduler = context.scheduler().clone();
     let subject = self.connectable.subject;
     let inner = subject.clone().subscribe(context);
-    let (start, previous) = {
-      let mut connection = self.connection.rc_deref_mut();
-      if connection
+    let (new_connection, previous_connection) = {
+      let mut slot = self.connection.rc_deref_mut();
+      if slot
         .as_ref()
-        .is_none_or(|c| c.terminated.load(Ordering::SeqCst))
+        .is_none_or(|connection| connection.terminated.load(Ordering::SeqCst))
       {
-        let handle = SingleAssignment::<Q>::new();
+        let (install, [handle]) = SingleAssignment::<Q>::channel();
         let terminated = Arc::new(AtomicBool::new(false));
-        let previous = connection
-          .replace(SourceConnection { handle: handle.clone(), terminated: terminated.clone() });
-        (Some((handle, terminated)), previous)
+        let previous = slot.replace(SourceConnection { handle, terminated: terminated.clone() });
+        (Some((install, terminated)), previous)
       } else {
         (None, None)
       }
     };
     // Even dropping a naturally terminated source's handle can run user code.
-    drop(previous);
-    if let Some((handle, terminated)) = start {
+    drop(previous_connection);
+    if let Some((install, terminated)) = new_connection {
       let observer = ConnectionObserver { subject: subject.clone(), terminated };
-      handle.set(
+      install(
         self
           .connectable
           .source
@@ -135,8 +134,8 @@ where
 {
   fn unsubscribe(self) {
     let scheduler = self.inner.scheduler.clone();
-    let removal = self.inner.unsubscribe_inner();
-    if removal.is_closed() && disconnect_if_empty(&self.subject, &self.connection) {
+    let removal = self.inner.unsubscribe_with_handle();
+    if removal.is_closed() && try_disconnect_if_empty(&self.subject, &self.connection) {
       return;
     }
     scheduler
@@ -145,9 +144,10 @@ where
   fn is_closed(&self) -> bool { self.inner.is_closed() }
 }
 
-/// Returns false only when a broadcast still owns the list. Inspect the list
-/// before locking the connection, and release both before running user cleanup.
-fn disconnect_if_empty<P, C, O, H>(subject: &Subject<P>, connection: &C) -> bool
+/// Returns whether the list could be checked, even if no disconnection was
+/// needed. A borrowed list must be retried. Lock the list before the
+/// connection, and release both before running user cleanup.
+fn try_disconnect_if_empty<P, C, O, H>(subject: &Subject<P>, connection: &C) -> bool
 where
   P: RcDerefMut<Target = Subscribers<O>>,
   C: RcDerefMut<Target = Option<SourceConnection<H>>>,
@@ -156,9 +156,9 @@ where
   let Some(observers) = subject.observers.try_rc_deref_mut() else {
     return false;
   };
-  let connection = if observers.inner.is_empty() { connection.rc_deref_mut().take() } else { None };
+  let detached = if observers.inner.is_empty() { connection.rc_deref_mut().take() } else { None };
   drop(observers);
-  if let Some(connection) = connection
+  if let Some(connection) = detached
     && !connection.terminated.load(Ordering::SeqCst)
   {
     connection.handle.unsubscribe();
@@ -185,7 +185,7 @@ where
   fn poll(self: Pin<&mut Self>, cx: &mut TaskContext<'_>) -> Poll<()> {
     let this = self.project();
     ready!(this.removal.poll(cx));
-    if disconnect_if_empty(this.subject, this.connection) {
+    if try_disconnect_if_empty(this.subject, this.connection) {
       Poll::Ready(())
     } else {
       cx.waker().wake_by_ref();
@@ -256,7 +256,7 @@ mod tests {
   }
 
   #[rxrust_macro::test]
-  fn in_flight_values_follow_subject_membership() {
+  fn late_values_after_reconnection_follow_subject_membership() {
     use crate::test_support::Manual;
     let source = Manual::default();
     let shared = Local::new(source.clone()).publish().ref_count();

@@ -83,6 +83,7 @@ type InnerSlot<Sc> =
 type SwitchState<Sc, O> =
   <Sc as Scope>::RcMut<Option<SwitchMapState<<Sc as Scope>::RcMut<Option<O>>, InnerSlot<Sc>>>>;
 type SourceSlot<C, U> = SingleAssignment<<C as Context>::RcMut<State<U>>>;
+type SharedSource<C, U> = <C as Context>::RcMut<Option<SourceSlot<C, U>>>;
 pub struct SwitchMapOuterObserver<Sc: Scope, O, F, I, H> {
   state: SwitchState<Sc, O>,
   func: F,
@@ -111,9 +112,10 @@ impl<S, F, C, Out, I, U> CoreObservable<C> for SwitchMap<S, F>
 where
   C: Context,
   U: Subscription,
+  SharedSource<C, U>: Subscription,
   S: CoreObservable<C::With<SwitchMapOuterObserver<C::Scope, C::Inner, F, I, ()>>, Unsub = U>
     + CoreObservable<
-      C::With<SwitchMapOuterObserver<C::Scope, C::Inner, F, I, SourceSlot<C, U>>>,
+      C::With<SwitchMapOuterObserver<C::Scope, C::Inner, F, I, SharedSource<C, U>>>,
       Unsub = U,
     >,
   F: for<'a> FnMut(S::Item<'a>) -> Out,
@@ -124,7 +126,8 @@ where
   type Unsub = SwitchMapSubscription<SourceSlot<C, U>, SwitchState<C::Scope, C::Inner>>;
   fn subscribe(self, context: C) -> Self::Unsub {
     let state = <C::Scope as Scope>::RcMut::from(None);
-    let outer = SourceSlot::<C, U>::new();
+    let (install_outer, [outer, subscription]) = SourceSlot::<C, U>::channel();
+    let outer = C::RcMut::from(Some(outer));
     let wrapped = context.transform(|observer| {
       *state.rc_deref_mut() = Some(SwitchMapState {
         observer: <C::Scope as Scope>::RcMut::from(Some(observer)),
@@ -132,15 +135,10 @@ where
         inner_sub: None,
         generation: 0,
       });
-      SwitchMapOuterObserver {
-        state: state.clone(),
-        func: self.func,
-        outer: outer.clone(),
-        _inner: PhantomData,
-      }
+      SwitchMapOuterObserver { state: state.clone(), func: self.func, outer, _inner: PhantomData }
     });
-    outer.set(self.source.subscribe(wrapped));
-    TupleSubscription::new(outer, state)
+    install_outer(self.source.subscribe(wrapped));
+    TupleSubscription::new(subscription, state)
   }
 }
 impl<Sc, O, I, V, E, F, Out, H> Observer<V, E> for SwitchMapOuterObserver<Sc, O, F, I, H>
@@ -156,14 +154,14 @@ where
     >,
 {
   fn next(&mut self, v: V) {
-    let slot = InnerSlot::<Sc>::new();
+    let (install_slot, [subscription]) = InnerSlot::<Sc>::channel();
     let (previous, generation) = {
       let mut guard = self.state.rc_deref_mut();
       let Some(state) = guard.as_mut() else {
         return;
       };
       state.generation += 1;
-      (state.inner_sub.replace(slot.clone()), state.generation)
+      (state.inner_sub.replace(subscription), state.generation)
     };
     previous.unsubscribe();
     if self
@@ -179,7 +177,7 @@ where
       outer: self.outer.clone(),
       generation,
     });
-    slot.set(core.subscribe(ctx).into_boxed());
+    install_slot(core.subscribe(ctx).into_boxed());
   }
   fn error(self, e: E) {
     let state = { self.state.rc_deref_mut().take() };

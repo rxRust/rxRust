@@ -44,11 +44,10 @@ impl<S1: ObservableType, S2> ObservableType for Merge<S1, S2> {
 pub struct MergeObserver<P, H> {
   state: P,
   peer: H,
-  index: usize,
 }
 pub struct MergeObserverInner<O> {
   observer: Option<O>,
-  completed: [bool; 2],
+  has_terminated_input: bool,
 }
 impl<O, P, H, I, E> Observer<I, E> for MergeObserver<P, H>
 where
@@ -64,8 +63,9 @@ where
   fn error(self, e: E) {
     let (observer, peer_active) = {
       let mut state = self.state.rc_deref_mut();
-      state.completed[self.index] = true;
-      (state.observer.take(), !state.completed[1 - self.index])
+      let peer_active = !state.has_terminated_input;
+      state.has_terminated_input = true;
+      (state.observer.take(), peer_active)
     };
     if let Some(o) = observer {
       o.error(e);
@@ -77,8 +77,12 @@ where
   fn complete(self) {
     let observer = {
       let mut state = self.state.rc_deref_mut();
-      state.completed[self.index] = true;
-      if state.completed[1 - self.index] { state.observer.take() } else { None }
+      if state.has_terminated_input {
+        state.observer.take()
+      } else {
+        state.has_terminated_input = true;
+        None
+      }
     };
     if let Some(o) = observer {
       o.complete();
@@ -101,25 +105,60 @@ where
   fn subscribe(self, context: C) -> Self::Unsub {
     let (observer, scheduler) = context.into_parts();
     let state =
-      C::RcMut::from(MergeObserverInner { observer: Some(observer), completed: [false; 2] });
-    let a = Handle::<C, U>::new();
-    let b = Handle::<C, V>::new();
-    a.set(self.source1.subscribe(C::With::from_parts(
-      MergeObserver { state: state.clone(), peer: b.clone(), index: 0 },
+      C::RcMut::from(MergeObserverInner { observer: Some(observer), has_terminated_input: false });
+    let (install_a, [a, a_subscription]) = Handle::<C, U>::channel();
+    let (install_b, [b, b_subscription]) = Handle::<C, V>::channel();
+    install_a(self.source1.subscribe(C::With::from_parts(
+      MergeObserver { state: state.clone(), peer: b },
       scheduler.clone(),
     )));
     if state.rc_deref().observer.is_some() {
-      b.set(self.source2.subscribe(C::With::from_parts(
-        MergeObserver { state, peer: a.clone(), index: 1 },
-        scheduler,
-      )));
+      install_b(
+        self
+          .source2
+          .subscribe(C::With::from_parts(MergeObserver { state, peer: a }, scheduler)),
+      );
     }
-    TupleSubscription::new(a, b)
+    TupleSubscription::new(a_subscription, b_subscription)
   }
 }
 
 #[cfg(test)]
 mod tests {
+
+  #[rxrust_macro::test]
+  fn terminal_notifications_do_not_cancel_already_terminated_inputs() {
+    use std::cell::Cell;
+
+    use crate::test_support::Manual;
+
+    for first_input in [0, 1] {
+      for first_errors in [false, true] {
+        let sources = [Manual::default(), Manual::default()];
+        let errors = Rc::new(Cell::new(0));
+        let reported = errors.clone();
+        Local::new(sources[0].clone())
+          .merge(Local::new(sources[1].clone()))
+          .on_error(move |_| reported.set(reported.get() + 1))
+          .on_complete(|| panic!("merge completed after an error"))
+          .subscribe(|_| {});
+
+        if first_errors {
+          sources[first_input].error(0);
+        } else {
+          sources[first_input].complete(0);
+        }
+        let peer = 1 - first_input;
+        assert_eq!(errors.get(), usize::from(first_errors));
+        assert_eq!(sources[peer].cancellations(0), usize::from(first_errors));
+
+        sources[peer].error(0);
+        assert_eq!(errors.get(), 1);
+        assert_eq!(sources[first_input].cancellations(0), 0);
+        assert_eq!(sources[peer].cancellations(0), usize::from(first_errors));
+      }
+    }
+  }
 
   #[rxrust_macro::test(local)]
   async fn waits_for_both_and_error_cancels_only_active_peer() {

@@ -156,24 +156,24 @@ where
     let (downstream, scheduler) = context.into_parts();
     let state = C::RcMut::from(CombineLatestState::new(downstream, binary_op));
 
-    let a_proxy: BoxedSubProxy<C> = SingleAssignment::new();
+    let (install_a, [a_proxy, a_subscription]) = BoxedSubProxy::<C>::channel();
 
     // Subscribe B
-    let b_observer = CombineLatestBObserver { state: state.clone(), a_proxy: a_proxy.clone() };
+    let b_observer = CombineLatestBObserver { state: state.clone(), a_proxy };
     let b_ctx = C::With::from_parts(b_observer, scheduler.clone());
     let b_unsub = source_b.subscribe(b_ctx);
-    let b_proxy: SubProxy<C, BUnsub> = SingleAssignment::new();
-    b_proxy.set(b_unsub);
+    let (install_b, [b_proxy, b_subscription]) = SubProxy::<C, BUnsub>::channel();
+    install_b(b_unsub);
 
     // Subscribe A
     if state.rc_deref().observer.is_some() {
-      let a_observer = CombineLatestAObserver { state, b_proxy: b_proxy.clone() };
+      let a_observer = CombineLatestAObserver { state, b_proxy };
       let a_ctx = C::With::from_parts(a_observer, scheduler);
       let a_unsub = source_a.subscribe(a_ctx);
-      a_proxy.set(a_unsub.into_boxed());
+      install_a(a_unsub.into_boxed());
     }
 
-    TupleSubscription::new(a_proxy, b_proxy)
+    TupleSubscription::new(a_subscription, b_subscription)
   }
 }
 

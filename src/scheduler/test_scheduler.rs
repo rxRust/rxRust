@@ -238,7 +238,7 @@ impl TestScheduler {
         let mut state = state.borrow_mut();
         match result {
           TaskState::Finished => {
-            scheduled_task.handle.mark_finished();
+            scheduled_task.handle.close();
           }
           TaskState::Yield => {
             Self::reschedule_task(&mut state, scheduled_task, Duration::ZERO);

@@ -122,6 +122,7 @@ use std::{
 
 // External crate imports
 use pin_project_lite::pin_project;
+use smallvec::SmallVec;
 #[cfg(target_arch = "wasm32")]
 pub use web_time::{Duration, Instant};
 
@@ -325,9 +326,8 @@ where
 
 /// Internal shared state for coordinating task handles
 struct SharedState {
-  keep_running: AtomicBool,
-  finished: AtomicBool,
-  waker: Mutex<Option<Waker>>,
+  closed: AtomicBool,
+  wakers: Mutex<SmallVec<[Waker; 1]>>,
 }
 
 /// A unified handle for scheduled tasks that serves dual purposes.
@@ -341,7 +341,8 @@ struct SharedState {
 /// # Thread Safety
 ///
 /// TaskHandle is `Clone + Send + Sync`, allowing it to be shared across threads
-/// and async contexts safely.
+/// and async contexts safely. All tasks awaiting its clones are notified when
+/// the task finishes or is cancelled.
 ///
 /// # Example
 ///
@@ -382,9 +383,8 @@ impl TaskHandle {
   pub(crate) fn new() -> Self {
     Self {
       inner: Arc::new(SharedState {
-        keep_running: AtomicBool::new(true),
-        finished: AtomicBool::new(false),
-        waker: Mutex::new(None),
+        closed: AtomicBool::new(false),
+        wakers: Mutex::new(SmallVec::new()),
       }),
     }
   }
@@ -401,41 +401,29 @@ impl TaskHandle {
   pub fn finished() -> Self {
     Self {
       inner: Arc::new(SharedState {
-        keep_running: AtomicBool::new(false),
-        finished: AtomicBool::new(true),
-        waker: Mutex::new(None),
+        closed: AtomicBool::new(true),
+        wakers: Mutex::new(SmallVec::new()),
       }),
     }
   }
 
-  /// Mark this task handle as finished.
+  /// Mark this task handle as closed and notify its waiters.
   ///
-  /// This is used by schedulers to signal that a task has completed execution.
+  /// This is used when a task completes or is cancelled.
   /// After calling this method, `is_closed()` will return `true`.
-  pub(crate) fn mark_finished(&self) {
-    self.inner.finished.store(true, Ordering::Release);
-    let waker = self.inner.waker.lock().unwrap().take();
-    if let Some(waker) = waker {
+  pub(crate) fn close(&self) {
+    self.inner.closed.store(true, Ordering::Release);
+    let wakers = std::mem::take(&mut *self.inner.wakers.lock().unwrap());
+    for waker in wakers {
       waker.wake();
     }
   }
 }
 
 impl Subscription for TaskHandle {
-  fn unsubscribe(self) {
-    self
-      .inner
-      .keep_running
-      .store(false, Ordering::Release);
-    let waker = self.inner.waker.lock().unwrap().take();
-    if let Some(waker) = waker {
-      waker.wake();
-    }
-  }
+  fn unsubscribe(self) { self.close(); }
 
-  fn is_closed(&self) -> bool {
-    !self.inner.keep_running.load(Ordering::Acquire) || self.inner.finished.load(Ordering::Acquire)
-  }
+  fn is_closed(&self) -> bool { self.inner.closed.load(Ordering::Acquire) }
 }
 
 impl Future for TaskHandle {
@@ -443,14 +431,19 @@ impl Future for TaskHandle {
 
   fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
     let waker = cx.waker().clone();
-    let mut slot = self.inner.waker.lock().unwrap();
-    // Finish/cancel uses this same lock to take the waker. Checking while it is
-    // held prevents completion from slipping between the check and
+    let mut waiters = self.inner.wakers.lock().unwrap();
+    // Finish/cancel uses this same lock to take the wakers. Checking while it
+    // is held prevents completion from slipping between the check and
     // registration.
     if self.is_closed() {
       return Poll::Ready(());
     }
-    *slot = Some(waker);
+    if !waiters
+      .iter()
+      .any(|registered| registered.will_wake(&waker))
+    {
+      waiters.push(waker);
+    }
     Poll::Pending
   }
 }
@@ -501,20 +494,14 @@ impl<Fut: Future<Output = ()>> Future for Remote<Fut> {
   fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
     let this = self.project();
 
-    // Check if cancelled
-    if !this
-      .handle
-      .inner
-      .keep_running
-      .load(Ordering::Relaxed)
-    {
+    if this.handle.is_closed() {
       return Poll::Ready(());
     }
 
     match this.future.poll(cx) {
       Poll::Ready(_result) => {
         // Mark as finished regardless of success or panic
-        this.handle.mark_finished();
+        this.handle.close();
         Poll::Ready(())
       }
       Poll::Pending => Poll::Pending,
@@ -755,8 +742,41 @@ mod tests {
   mod scheduler_tests {
     use super::*;
 
+    fn assert_waiters_woken(signal: impl FnOnce(&TaskHandle)) {
+      use std::{cell::Cell, rc::Rc};
+
+      use futures::{executor::LocalPool, task::LocalSpawnExt};
+
+      let mut pool = LocalPool::new();
+      let handle = TaskHandle::new();
+      let completed = Rc::new(Cell::new(0));
+      for _ in 0..2 {
+        let waiter = handle.clone();
+        let completed = completed.clone();
+        pool
+          .spawner()
+          .spawn_local(async move {
+            waiter.await;
+            completed.set(completed.get() + 1);
+          })
+          .unwrap();
+      }
+      pool.run_until_stalled();
+      assert_eq!(completed.get(), 0);
+      signal(&handle);
+      pool.run_until_stalled();
+      assert_eq!(completed.get(), 2);
+    }
+
     #[rxrust_macro::test]
-    fn task_handle_notifies_waiter_outside_lock() {
+    fn task_completion_wakes_all_pending_waiters() { assert_waiters_woken(TaskHandle::close); }
+
+    #[rxrust_macro::test]
+    fn task_cancellation_wakes_all_pending_waiters() {
+      assert_waiters_woken(|handle| handle.clone().unsubscribe());
+    }
+
+    fn assert_notification_outside_lock(signal: impl FnOnce(&TaskHandle)) {
       use std::{sync::atomic::AtomicUsize, task::Wake};
       struct Waiter {
         handle: TaskHandle,
@@ -764,30 +784,35 @@ mod tests {
       }
       impl Wake for Waiter {
         fn wake(self: Arc<Self>) {
-          assert!(self.handle.inner.waker.try_lock().is_ok());
+          assert!(self.handle.inner.wakers.try_lock().is_ok());
           self.wakes.fetch_add(1, Ordering::SeqCst);
         }
       }
-      for cancel in [false, true] {
-        let mut handle = TaskHandle::new();
-        let waiter = Arc::new(Waiter { handle: handle.clone(), wakes: AtomicUsize::new(0) });
-        let waker = Waker::from(waiter.clone());
-        let mut cx = Context::from_waker(&waker);
-        assert!(Pin::new(&mut handle).poll(&mut cx).is_pending());
-        if cancel {
-          handle.clone().unsubscribe();
-        } else {
-          handle.mark_finished();
-        }
-        assert_eq!(waiter.wakes.load(Ordering::SeqCst), 1);
-        assert!(Pin::new(&mut handle).poll(&mut cx).is_ready());
-        // A waiter arriving after completion needs no additional wake.
-        assert!(
-          Pin::new(&mut handle.clone())
-            .poll(&mut cx)
-            .is_ready()
-        );
-      }
+      let mut handle = TaskHandle::new();
+      let waiter = Arc::new(Waiter { handle: handle.clone(), wakes: AtomicUsize::new(0) });
+      let waker = Waker::from(waiter.clone());
+      let mut cx = Context::from_waker(&waker);
+      assert!(Pin::new(&mut handle).poll(&mut cx).is_pending());
+      assert!(Pin::new(&mut handle).poll(&mut cx).is_pending());
+      signal(&handle);
+      assert_eq!(waiter.wakes.load(Ordering::SeqCst), 1);
+      assert!(Pin::new(&mut handle).poll(&mut cx).is_ready());
+      // A waiter arriving after completion needs no additional wake.
+      assert!(
+        Pin::new(&mut handle.clone())
+          .poll(&mut cx)
+          .is_ready()
+      );
+    }
+
+    #[rxrust_macro::test]
+    fn task_completion_deduplicates_waiters_and_wakes_outside_lock() {
+      assert_notification_outside_lock(TaskHandle::close);
+    }
+
+    #[rxrust_macro::test]
+    fn task_cancellation_deduplicates_waiters_and_wakes_outside_lock() {
+      assert_notification_outside_lock(|handle| handle.clone().unsubscribe());
     }
 
     #[rxrust_macro::test]

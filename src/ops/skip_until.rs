@@ -34,7 +34,7 @@ pub struct SkipUntilObserver<O, SkipState, NProxy> {
 /// When the notifier emits, it sets the skip state to false, allowing
 /// values from the source to pass through.
 pub struct SkipUntilNotifierObserver<SkipState, H> {
-  upstream: H,
+  upstream: Option<H>,
   done: SkipState,
   skip_state: SkipState,
 }
@@ -63,14 +63,15 @@ where
   fn subscribe(self, context: C) -> Self::Unsub {
     let skip_state = C::RcCell::from(true);
     let notifier_done = C::RcCell::from(false);
-    let notifier = Handle::<C, V>::new();
-    notifier.set(
+    let (install_notifier, [notifier, source_notifier, notifier_subscription]) =
+      Handle::<C, V>::channel();
+    install_notifier(
       self
         .notifier
         .subscribe(context.wrap(SkipUntilNotifierObserver {
           skip_state: skip_state.clone(),
           done: notifier_done.clone(),
-          upstream: notifier.clone(),
+          upstream: Some(notifier),
         })),
     );
     let source = self
@@ -79,9 +80,9 @@ where
         observer,
         skip_state,
         notifier_done,
-        notifier_proxy: notifier.clone(),
+        notifier_proxy: source_notifier,
       }));
-    TupleSubscription::new(source, notifier)
+    TupleSubscription::new(source, notifier_subscription)
   }
 }
 
@@ -122,13 +123,13 @@ impl<NotifyItem, NotifyErr, SkipState, H> Observer<NotifyItem, NotifyErr>
   for SkipUntilNotifierObserver<SkipState, H>
 where
   SkipState: SharedCell<bool>,
-  H: Subscription + Clone,
+  H: Subscription,
 {
   fn next(&mut self, _value: NotifyItem) {
     // Stop skipping when notifier emits
     self.skip_state.set(false);
     self.done.set(true);
-    self.upstream.clone().unsubscribe();
+    self.upstream.take().unsubscribe();
   }
 
   fn error(self, _err: NotifyErr) {

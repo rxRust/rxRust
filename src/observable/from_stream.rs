@@ -455,18 +455,14 @@ mod tests {
     let completed = Arc::new(Mutex::new(false));
     let completed_clone = completed.clone();
 
-    let (done_tx, done_rx) = futures::channel::oneshot::channel();
-    Local::from_stream(stream::iter(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10]))
+    let handle = Local::from_stream(stream::iter(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10]))
       .map(|v| v * 2)
       .filter(|v| *v > 5)
       .take(4)
-      .on_complete(move || {
-        *completed_clone.lock().unwrap() = true;
-        done_tx.send(()).unwrap();
-      })
+      .on_complete(move || *completed_clone.lock().unwrap() = true)
       .subscribe(move |v| result_clone.lock().unwrap().push(v));
 
-    done_rx.await.unwrap();
+    handle.await;
 
     assert_eq!(*result.lock().unwrap(), vec![6, 8, 10, 12]);
     assert!(*completed.lock().unwrap());

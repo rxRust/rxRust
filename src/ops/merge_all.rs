@@ -1,6 +1,17 @@
 //! Flattens inner observables with bounded concurrency and explicit
 //! cancellation.
-use std::collections::{BTreeSet, VecDeque};
+//!
+//! The shared state is split by locking rule:
+//! - the downstream observer is locked while it receives events;
+//! - `MergeAllControl` tracks the running upstreams, the queue and whether the
+//!   operator is closed. It is never held while calling user code, so
+//!   unsubscribing from inside a callback is safe.
+//!
+//! Every upstream (the outer source and each inner) gets a `SingleAssignment`
+//! slot before it is subscribed. A cancelled slot unsubscribes whatever is
+//! installed into it later, so cancelling cannot miss an upstream that is
+//! still subscribing.
+use std::collections::VecDeque;
 
 use crate::{
   context::{Context, RcDerefMut},
@@ -11,11 +22,37 @@ use crate::{
     single_assignment::State,
   },
 };
+
+/// Flattens a Higher-Order Observable (an observable that emits observables).
+///
+/// Subscribes to inner observables as they arrive, up to `concurrent` limit.
+/// Excess observables are queued and subscribed as running ones complete.
+///
+/// # Examples
+///
+/// ```
+/// use rxrust::prelude::*;
+///
+/// // Basic usage - flatten nested observables
+/// let mut result = Vec::new();
+/// Local::from_iter([Local::from_iter([1, 2]), Local::from_iter([3, 4])])
+///   .merge_all(usize::MAX)
+///   .subscribe(|v| result.push(v));
+/// assert_eq!(result, vec![1, 2, 3, 4]);
+/// ```
+///
+/// # Concurrency Control
+///
+/// Use `concurrent` to limit simultaneous inner subscriptions:
+/// - `usize::MAX`: Unlimited concurrency (subscribe to all immediately)
+/// - `1`: Sequential processing (`concat_all` behavior)
+/// - `n`: At most `n` concurrent inner subscriptions
 #[derive(Clone)]
 pub struct MergeAll<S> {
   pub source: S,
   pub concurrent: usize,
 }
+
 impl<S> ObservableType for MergeAll<S>
 where
   S: ObservableType,
@@ -27,80 +64,296 @@ where
     Self: 'a;
   type Err = S::Err;
 }
-pub struct MergeAllState<O, I, Sch> {
-  observer: Option<O>,
-  queue: VecDeque<(I, Sch)>,
-  active: usize,
+
+// ==================== Control ====================
+
+/// Lifecycle bookkeeping of one subscription.
+///
+/// - `Q`: a queued inner observable
+/// - `H`: slot of the outer source
+/// - `S`: slot of a running inner
+#[doc(hidden)]
+pub struct MergeAllControl<Q, H, S> {
+  closed: bool,
   limit: usize,
-  outer_done: bool,
+  /// Inner observables waiting for a free slot.
+  queue: VecDeque<Q>,
+  /// `None` once the outer source has terminated.
+  outer: Option<H>,
+  inners: DynamicSubscriptions<S>,
 }
-pub struct MergeAllInputs<U> {
-  cancelled: bool,
-  outer_done: bool,
-  finished_pending: BTreeSet<usize>,
-  inner: DynamicSubscriptions<Option<U>>,
-}
-impl<U> MergeAllInputs<U> {
-  // Return the retired handle so its captures are dropped outside the inputs
-  // lock.
-  fn retire(&mut self, id: usize) -> Option<Option<U>> {
-    let retired = self.inner.remove(id);
-    if matches!(retired, Some(None)) {
-      // A synchronous terminal arrived before subscribe returned its handle.
-      self.finished_pending.insert(id);
+
+impl<Q, H, S> MergeAllControl<Q, H, S> {
+  fn new(limit: usize, outer: H) -> Self {
+    Self {
+      closed: false,
+      limit,
+      queue: VecDeque::new(),
+      outer: Some(outer),
+      inners: DynamicSubscriptions::new(),
     }
-    retired
+  }
+
+  /// Nothing is running or waiting, and nothing more can arrive.
+  fn is_drained(&self) -> bool {
+    self.outer.is_none() && self.inners.is_empty() && self.queue.is_empty()
+  }
+
+  /// Only the first call closes. It returns the outer slot and the inner
+  /// slots, to be cancelled after the lock is released.
+  fn close(&mut self) -> Option<(Option<H>, Vec<S>)> {
+    if self.closed {
+      return None;
+    }
+    self.closed = true;
+    self.queue.clear();
+    Some((self.outer.take(), self.inners.drain().collect()))
   }
 }
 
-pub struct MergeAllOuterObserver<P, D, H> {
-  state: P,
-  inputs: D,
-  outer: H,
-}
-pub struct MergeAllInnerObserver<P, D, H> {
-  state: P,
-  inputs: D,
-  outer: H,
-  id: usize,
-  advance: fn(P, D, H),
-}
-pub struct MergeAllSubscription<H, D> {
-  outer: H,
-  inputs: D,
-}
-impl<H, D, U> Subscription for MergeAllSubscription<H, D>
+fn close_and_cancel<C, Q, H, S>(control: &C) -> bool
 where
+  C: RcDerefMut<Target = MergeAllControl<Q, H, S>>,
   H: Subscription,
-  D: RcDerefMut<Target = MergeAllInputs<U>>,
-  U: Subscription,
+  S: Subscription,
 {
-  fn unsubscribe(self) {
-    let handles = {
-      let mut inputs = self.inputs.rc_deref_mut();
-      inputs.cancelled = true;
-      inputs.inner.drain().collect::<Vec<_>>()
-    };
-    self.outer.unsubscribe();
-    for handle in handles {
-      handle.unsubscribe();
+  let closed = { control.rc_deref_mut().close() };
+  let Some((outer, inners)) = closed else {
+    return false;
+  };
+  if let Some(outer) = outer {
+    outer.unsubscribe();
+  }
+  for inner in inners {
+    inner.unsubscribe();
+  }
+  true
+}
+
+// ==================== Shared ====================
+
+/// The downstream observer (`D`) and the control (`C`) with the operations
+/// that observers perform on them.
+#[doc(hidden)]
+#[derive(Clone)]
+pub struct MergeAllShared<D, C> {
+  downstream: D,
+  control: C,
+}
+
+impl<D, C, O, Q, H, S> MergeAllShared<D, C>
+where
+  D: RcDerefMut<Target = Option<O>>,
+  C: RcDerefMut<Target = MergeAllControl<Q, H, S>>,
+  H: Subscription,
+  S: Subscription,
+{
+  fn is_open(&self) -> bool { !self.control.rc_deref().closed }
+
+  /// Delivers an event to the downstream observer, holding only its lock.
+  fn emit(&self, deliver: impl FnOnce(&mut O)) {
+    if self.is_open()
+      && let Some(observer) = self.downstream.rc_deref_mut().as_mut()
+    {
+      deliver(observer);
     }
   }
-  fn is_closed(&self) -> bool {
-    let inputs = self.inputs.rc_deref();
-    inputs.cancelled
-      || (self.outer.is_closed()
-        && inputs
-          .inner
-          .iter()
-          .all(|u| u.as_ref().is_some_and(Subscription::is_closed)))
+
+  fn enqueue(&self, item: Q) {
+    let rejected = {
+      let mut control = self.control.rc_deref_mut();
+      if control.closed {
+        Some(item)
+      } else {
+        control.queue.push_back(item);
+        None
+      }
+    };
+    drop(rejected);
+  }
+
+  /// Forgets a finished inner. Dropping its slot does not cancel it.
+  fn retire(&self, id: usize) {
+    let slot = { self.control.rc_deref_mut().inners.remove(id) };
+    drop(slot);
+  }
+
+  /// The outer source terminated by itself, so it must not be cancelled.
+  fn outer_terminated(&self) {
+    let slot = { self.control.rc_deref_mut().outer.take() };
+    drop(slot);
+  }
+
+  /// Cancels every upstream, then hands the observer to `finish`. Only the
+  /// first terminal event or unsubscription gets through.
+  fn terminate(&self, finish: impl FnOnce(O)) {
+    if !close_and_cancel(&self.control) {
+      return;
+    }
+    let observer = { self.downstream.rc_deref_mut().take() };
+    if let Some(observer) = observer {
+      finish(observer);
+    }
+  }
+
+  fn terminate_if_drained(&self, finish: impl FnOnce(O)) {
+    let drained = { self.control.rc_deref().is_drained() };
+    if drained {
+      self.terminate(finish);
+    }
   }
 }
-type Handle<C, U> = SingleAssignment<<C as Context>::RcMut<State<U>>>;
-type Data<C, I, Sch> = <C as Context>::RcMut<MergeAllState<<C as Context>::Inner, I, Sch>>;
-type Inputs<C> = <C as Context>::RcMut<MergeAllInputs<<C as Context>::BoxedSubscription>>;
-type OuterCtx<C, I, Sch, H> =
-  <C as Context>::With<MergeAllOuterObserver<Data<C, I, Sch>, Inputs<C>, H>>;
+
+// ==================== Subscription ====================
+
+pub struct MergeAllSubscription<C>(C);
+
+impl<C, Q, H, S> Subscription for MergeAllSubscription<C>
+where
+  C: RcDerefMut<Target = MergeAllControl<Q, H, S>>,
+  H: Subscription,
+  S: Subscription,
+{
+  fn unsubscribe(self) { close_and_cancel(&self.0); }
+
+  fn is_closed(&self) -> bool {
+    let control = self.0.rc_deref();
+    control.closed
+      || (control
+        .outer
+        .as_ref()
+        .is_none_or(Subscription::is_closed)
+        && control.inners.iter().all(Subscription::is_closed))
+  }
+}
+
+// ==================== Observers ====================
+
+#[doc(hidden)]
+pub struct MergeAllOuterObserver<D, C> {
+  shared: MergeAllShared<D, C>,
+}
+
+#[doc(hidden)]
+pub struct MergeAllInnerObserver<D, C> {
+  shared: MergeAllShared<D, C>,
+  /// Key of this inner's slot in `MergeAllControl::inners`.
+  id: usize,
+  /// Starts the next queued inner; a function pointer because this impl does
+  /// not carry the bounds needed to subscribe.
+  advance: fn(MergeAllShared<D, C>),
+}
+
+impl<I, E, O, D, C, H, R, U> Observer<I, E> for MergeAllOuterObserver<D, C>
+where
+  I: Context<
+    Inner: CoreObservable<I::With<MergeAllInnerObserver<D, C>>, Unsub: IntoBoxedSubscription<U>>,
+  >,
+  O: for<'a> Observer<<I::Inner as ObservableType>::Item<'a>, E>,
+  D: RcDerefMut<Target = Option<O>> + Clone,
+  C: RcDerefMut<Target = MergeAllControl<(I::Inner, I::Scheduler), H, SingleAssignment<R>>> + Clone,
+  H: Subscription,
+  R: From<State<U>> + RcDerefMut<Target = State<U>>,
+  U: Subscription,
+{
+  fn next(&mut self, inner: I) {
+    self.shared.enqueue(inner.into_parts());
+    advance::<I, O, D, C, H, R, U>(self.shared.clone());
+  }
+
+  fn error(self, e: E) {
+    self.shared.outer_terminated();
+    self
+      .shared
+      .terminate(|observer| observer.error(e));
+  }
+
+  fn complete(self) {
+    self.shared.outer_terminated();
+    self
+      .shared
+      .terminate_if_drained(|observer| observer.complete());
+  }
+
+  fn is_closed(&self) -> bool {
+    !self.shared.is_open() || self.shared.downstream.rc_deref().is_closed()
+  }
+}
+
+impl<V, E, O, D, C, Q, H, S> Observer<V, E> for MergeAllInnerObserver<D, C>
+where
+  O: Observer<V, E>,
+  D: RcDerefMut<Target = Option<O>>,
+  C: RcDerefMut<Target = MergeAllControl<Q, H, S>>,
+  H: Subscription,
+  S: Subscription,
+{
+  fn next(&mut self, v: V) { self.shared.emit(|observer| observer.next(v)); }
+
+  fn error(self, e: E) {
+    self.shared.retire(self.id);
+    self
+      .shared
+      .terminate(|observer| observer.error(e));
+  }
+
+  fn complete(self) {
+    self.shared.retire(self.id);
+    self
+      .shared
+      .terminate_if_drained(|observer| observer.complete());
+    (self.advance)(self.shared);
+  }
+
+  fn is_closed(&self) -> bool {
+    !self.shared.is_open() || self.shared.downstream.rc_deref().is_closed()
+  }
+}
+
+// ==================== Subscribing ====================
+
+/// Starts the next queued inner if there is room.
+fn advance<I, O, D, C, H, R, U>(shared: MergeAllShared<D, C>)
+where
+  I: Context<
+    Inner: CoreObservable<I::With<MergeAllInnerObserver<D, C>>, Unsub: IntoBoxedSubscription<U>>,
+  >,
+  D: RcDerefMut<Target = Option<O>> + Clone,
+  C: RcDerefMut<Target = MergeAllControl<(I::Inner, I::Scheduler), H, SingleAssignment<R>>> + Clone,
+  H: Subscription,
+  R: From<State<U>> + RcDerefMut<Target = State<U>>,
+  U: Subscription,
+{
+  let ((core, scheduler), install, id) = {
+    let mut control = shared.control.rc_deref_mut();
+    if control.closed || control.inners.len() >= control.limit {
+      return;
+    }
+    let Some(item) = control.queue.pop_front() else {
+      return;
+    };
+    let (install, [slot]) = SingleAssignment::<R>::channel();
+    let id = control.inners.add(slot);
+    (item, install, id)
+  };
+  let observer =
+    MergeAllInnerObserver { shared: shared.clone(), id, advance: advance::<I, O, D, C, H, R, U> };
+  install(
+    core
+      .subscribe(I::With::from_parts(observer, scheduler))
+      .into_boxed(),
+  );
+}
+
+type OuterSlot<C, U> = SingleAssignment<<C as Context>::RcMut<State<U>>>;
+type InnerSlot<C> =
+  SingleAssignment<<C as Context>::RcMut<State<<C as Context>::BoxedSubscription>>>;
+type Downstream<C> = <C as Context>::RcMut<Option<<C as Context>::Inner>>;
+type Control<C, I, Sch, U> =
+  <C as Context>::RcMut<MergeAllControl<(I, Sch), OuterSlot<C, U>, InnerSlot<C>>>;
+type OuterCtx<C, I, Sch, U> =
+  <C as Context>::With<MergeAllOuterObserver<Downstream<C>, Control<C, I, Sch, U>>>;
+
 impl<S, C, I, Sch, U> CoreObservable<C> for MergeAll<S>
 where
   C: Context,
@@ -110,215 +363,108 @@ where
       OuterCtx<C, I, Sch, ()>,
       Unsub = U,
       Item<'a>: Context<Inner = I, Scheduler = Sch>,
-    > + CoreObservable<OuterCtx<C, I, Sch, Handle<C, U>>, Unsub = U>,
+    > + CoreObservable<OuterCtx<C, I, Sch, U>, Unsub = U>,
 {
-  type Unsub = MergeAllSubscription<Handle<C, U>, Inputs<C>>;
+  type Unsub = MergeAllSubscription<Control<C, I, Sch, U>>;
+
   fn subscribe(self, context: C) -> Self::Unsub {
     assert!(self.concurrent > 0, "merge_all concurrency must be positive");
-    let outer = Handle::<C, U>::new();
-    let inputs = C::RcMut::from(MergeAllInputs {
-      cancelled: false,
-      outer_done: false,
-      finished_pending: BTreeSet::new(),
-      inner: DynamicSubscriptions::new(),
-    });
+    let (install_outer, [outer]) = OuterSlot::<C, U>::channel();
+    let control: Control<C, I, Sch, U> =
+      C::RcMut::from(MergeAllControl::new(self.concurrent, outer));
     let wrapped = context.transform(|observer| MergeAllOuterObserver {
-      state: C::RcMut::from(MergeAllState {
-        observer: Some(observer),
-        queue: VecDeque::new(),
-        active: 0,
-        limit: self.concurrent,
-        outer_done: false,
-      }),
-      inputs: inputs.clone(),
-      outer: outer.clone(),
-    });
-    outer.set(self.source.subscribe(wrapped));
-    MergeAllSubscription { outer, inputs }
-  }
-}
-fn cancel_inputs<D, H, U>(inputs: &D, outer: H)
-where
-  D: RcDerefMut<Target = MergeAllInputs<U>>,
-  H: Subscription,
-  U: Subscription,
-{
-  let (handles, outer_done) = {
-    let mut inputs = inputs.rc_deref_mut();
-    inputs.cancelled = true;
-    (inputs.inner.drain().collect::<Vec<_>>(), inputs.outer_done)
-  };
-  if !outer_done {
-    outer.unsubscribe();
-  }
-  for handle in handles {
-    handle.unsubscribe();
-  }
-}
-impl<I, E, O, P, D, H, U> Observer<I, E> for MergeAllOuterObserver<P, D, H>
-where
-  I: Context<
-    Inner: CoreObservable<I::With<MergeAllInnerObserver<P, D, H>>, Unsub: IntoBoxedSubscription<U>>,
-  >,
-  O: for<'a> Observer<<I::Inner as ObservableType>::Item<'a>, E>,
-  P: RcDerefMut<Target = MergeAllState<O, I::Inner, I::Scheduler>>,
-  D: RcDerefMut<Target = MergeAllInputs<U>>,
-  H: Subscription + Clone,
-  U: Subscription,
-{
-  fn next(&mut self, inner: I) {
-    if self.inputs.rc_deref().cancelled {
-      return;
-    }
-    self
-      .state
-      .rc_deref_mut()
-      .queue
-      .push_back(inner.into_parts());
-    advance::<I, O, P, D, H, U>(self.state.clone(), self.inputs.clone(), self.outer.clone());
-  }
-  fn error(self, e: E) {
-    self.inputs.rc_deref_mut().outer_done = true;
-    let observer = {
-      let mut state = self.state.rc_deref_mut();
-      state.queue.clear();
-      state.observer.take()
-    };
-    cancel_inputs(&self.inputs, self.outer);
-    if let Some(observer) = observer {
-      observer.error(e);
-    }
-  }
-  fn complete(self) {
-    self.inputs.rc_deref_mut().outer_done = true;
-    let observer = {
-      let mut state = self.state.rc_deref_mut();
-      state.outer_done = true;
-      if state.active == 0 && state.queue.is_empty() { state.observer.take() } else { None }
-    };
-    if let Some(observer) = observer {
-      observer.complete();
-    }
-  }
-  fn is_closed(&self) -> bool {
-    self.inputs.rc_deref().cancelled || self.state.rc_deref().observer.is_closed()
-  }
-}
-fn advance<I, O, P, D, H, U>(state: P, inputs: D, outer: H)
-where
-  I: Context<
-    Inner: CoreObservable<I::With<MergeAllInnerObserver<P, D, H>>, Unsub: IntoBoxedSubscription<U>>,
-  >,
-  P: RcDerefMut<Target = MergeAllState<O, I::Inner, I::Scheduler>>,
-  D: RcDerefMut<Target = MergeAllInputs<U>>,
-  H: Subscription + Clone,
-  U: Subscription,
-{
-  let next = {
-    let mut state = state.rc_deref_mut();
-    if inputs.rc_deref().cancelled || state.observer.is_none() || state.active >= state.limit {
-      return;
-    }
-    let next = state.queue.pop_front();
-    if next.is_some() {
-      state.active += 1;
-    }
-    next
-  };
-  if let Some((core, scheduler)) = next {
-    let id = {
-      let mut inputs = inputs.rc_deref_mut();
-      if inputs.cancelled {
-        return;
-      }
-      inputs.inner.add(None)
-    };
-    let ctx = I::With::from_parts(
-      MergeAllInnerObserver {
-        state: state.clone(),
-        inputs: inputs.clone(),
-        outer,
-        id,
-        advance: advance::<I, O, P, D, H, U>,
+      shared: MergeAllShared {
+        downstream: C::RcMut::from(Some(observer)),
+        control: control.clone(),
       },
-      scheduler,
-    );
-    let mut handle = Some(core.subscribe(ctx).into_boxed());
-    let cancel = {
-      let mut inputs = inputs.rc_deref_mut();
-      if inputs.finished_pending.remove(&id) {
-        false
-      } else if inputs.cancelled {
-        true
-      } else {
-        if inputs.inner.contains(id) {
-          inputs.inner.remove(id);
-          inputs.inner.insert(id, handle.take());
-        }
-        false
-      }
-    };
-    if cancel {
-      handle.unsubscribe();
-    }
-  }
-}
-impl<V, E, O, I, Sch, P, D, H, U> Observer<V, E> for MergeAllInnerObserver<P, D, H>
-where
-  O: Observer<V, E>,
-  P: RcDerefMut<Target = MergeAllState<O, I, Sch>>,
-  D: RcDerefMut<Target = MergeAllInputs<U>>,
-  H: Subscription + Clone,
-  U: Subscription,
-{
-  fn next(&mut self, v: V) {
-    if self.inputs.rc_deref().cancelled {
-      return;
-    }
-    if let Some(o) = self.state.rc_deref_mut().observer.as_mut() {
-      o.next(v);
-    }
-  }
-  fn error(self, e: E) {
-    let retired = { self.inputs.rc_deref_mut().retire(self.id) };
-    drop(retired);
-    let observer = {
-      let mut state = self.state.rc_deref_mut();
-      state.queue.clear();
-      state.observer.take()
-    };
-    cancel_inputs(&self.inputs, self.outer);
-    if let Some(o) = observer {
-      o.error(e);
-    }
-  }
-  fn complete(self) {
-    let retired = { self.inputs.rc_deref_mut().retire(self.id) };
-    drop(retired);
-    if self.inputs.rc_deref().cancelled {
-      return;
-    }
-    let observer = {
-      let mut state = self.state.rc_deref_mut();
-      state.active -= 1;
-      if state.outer_done && state.active == 0 && state.queue.is_empty() {
-        state.observer.take()
-      } else {
-        None
-      }
-    };
-    if let Some(o) = observer {
-      o.complete();
-    }
-    (self.advance)(self.state, self.inputs, self.outer);
-  }
-  fn is_closed(&self) -> bool {
-    self.inputs.rc_deref().cancelled || self.state.rc_deref().observer.is_closed()
+    });
+    install_outer(self.source.subscribe(wrapped));
+    MergeAllSubscription(control)
   }
 }
 
 #[cfg(test)]
 mod tests {
+
+  #[rxrust_macro::test]
+  fn close_cancels_slots_and_late_installations_once() {
+    use crate::{
+      rc::MutRc,
+      subscription::{BoxedSubscription, ClosureSubscription, single_assignment::State},
+    };
+
+    let cancellations = Rc::new(std::cell::Cell::new(0));
+    let cleanup = cancellations.clone();
+    let mut control =
+      super::MergeAllControl::<(), (), SingleAssignment<MutRc<State<_>>>>::new(1, ());
+    let (install, [slot]) = SingleAssignment::<MutRc<State<BoxedSubscription>>>::channel();
+    control.inners.add(slot);
+
+    let (_, inners) = control.close().unwrap();
+    assert!(control.close().is_none());
+    assert!(control.inners.is_empty());
+    inners
+      .into_iter()
+      .for_each(Subscription::unsubscribe);
+    assert_eq!(cancellations.get(), 0);
+
+    install(BoxedSubscription::new(ClosureSubscription(move || {
+      cleanup.set(cleanup.get() + 1);
+    })));
+    assert_eq!(cancellations.get(), 1);
+  }
+
+  #[rxrust_macro::test]
+  fn cancellation_and_inner_completion_preserve_late_handle_ordering() {
+    use crate::{
+      subscription::{BoxedSubscription, ClosureSubscription},
+      test_support::Manual,
+    };
+
+    for cancel_before_terminal in [false, true] {
+      let outer = Manual::default();
+      let cancellations = Rc::new(std::cell::Cell::new(0));
+      let holder = Rc::new(RefCell::new(None::<BoxedSubscription>));
+      let during_setup = holder.clone();
+      let during_next = holder.clone();
+      let cleanup = cancellations.clone();
+      let subscription = Local::new(outer.clone())
+        .map(move |_| {
+          let during_setup = during_setup.clone();
+          let cleanup = cleanup.clone();
+          Local::create::<i32, &'static str, _, _>(move |observer| {
+            observer.next(1);
+            observer.complete();
+            if !cancel_before_terminal {
+              during_setup
+                .borrow_mut()
+                .take()
+                .unwrap()
+                .unsubscribe();
+            }
+            ClosureSubscription(move || cleanup.set(cleanup.get() + 1))
+          })
+        })
+        // Fix the mapped item type before flattening on stable Rust.
+        .box_it()
+        .merge_all(1)
+        .on_error(|_| {})
+        .subscribe(move |_| {
+          if cancel_before_terminal {
+            during_next
+              .borrow_mut()
+              .take()
+              .unwrap()
+              .unsubscribe();
+          }
+        });
+      *holder.borrow_mut() = Some(BoxedSubscription::new(subscription));
+
+      outer.next(0, 1);
+      assert_eq!(outer.cancellations(0), 1);
+      assert_eq!(cancellations.get(), usize::from(cancel_before_terminal));
+    }
+  }
 
   #[rxrust_macro::test]
   fn synchronous_inner_completion_does_not_retain_or_cancel_late_handle() {
@@ -355,16 +501,26 @@ mod tests {
   #[rxrust_macro::test]
   fn inner_error_cancels_peers_but_not_naturally_terminated_input() {
     use crate::test_support::Manual;
-    let first = Manual::default();
-    let second = Manual::default();
-    Local::from_iter([Local::new(first.clone()), Local::new(second.clone())])
-      .map_err(|never| -> &'static str { match never {} })
-      .merge_all(2)
-      .on_error(|_| {})
-      .subscribe(|_| {});
-    first.error(0);
-    assert_eq!(first.cancellations(0), 0);
-    assert_eq!(second.cancellations(0), 1);
+    for outer_done in [false, true] {
+      let outer = Manual::default();
+      let first = Manual::default();
+      let second = Manual::default();
+      let inner_sources = [first.clone(), second.clone()];
+      Local::new(outer.clone())
+        .map(move |index| Local::new(inner_sources[index as usize].clone()))
+        .merge_all(2)
+        .on_error(|_| {})
+        .subscribe(|_| {});
+      outer.next(0, 0);
+      outer.next(0, 1);
+      if outer_done {
+        outer.complete(0);
+      }
+      first.error(0);
+      assert_eq!(first.cancellations(0), 0);
+      assert_eq!(second.cancellations(0), 1);
+      assert_eq!(outer.cancellations(0), usize::from(!outer_done));
+    }
   }
   use std::{cell::RefCell, rc::Rc};
 

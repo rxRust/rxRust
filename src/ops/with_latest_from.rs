@@ -107,28 +107,25 @@ where
     let (downstream, scheduler) = context.into_parts();
     let state = C::RcMut::from(WithLatestFromState::new(downstream));
 
-    let a_proxy: BoxedSubProxy<C> = SingleAssignment::new();
+    let (install_a, [a_proxy, a_subscription]) = BoxedSubProxy::<C>::channel();
 
     // Subscribe B first
-    let b_observer = WithLatestFromBObserver {
-      state: state.clone(),
-      a_proxy: a_proxy.clone(),
-      _marker: PhantomData,
-    };
+    let b_observer =
+      WithLatestFromBObserver { state: state.clone(), a_proxy, _marker: PhantomData };
     let b_ctx = C::With::from_parts(b_observer, scheduler.clone());
     let b_unsub = source_b.subscribe(b_ctx);
-    let b_proxy: SubProxy<C, BUnsub> = SingleAssignment::new();
-    b_proxy.set(b_unsub);
+    let (install_b, [b_proxy, b_subscription]) = SubProxy::<C, BUnsub>::channel();
+    install_b(b_unsub);
 
     // Subscribe A
     if state.rc_deref().observer.is_some() {
-      let a_observer = WithLatestFromAObserver { state, b_proxy: b_proxy.clone() };
+      let a_observer = WithLatestFromAObserver { state, b_proxy };
       let a_ctx = C::With::from_parts(a_observer, scheduler);
       let a_unsub = source_a.subscribe(a_ctx);
-      a_proxy.set(a_unsub.into_boxed());
+      install_a(a_unsub.into_boxed());
     }
 
-    TupleSubscription::new(a_proxy, b_proxy)
+    TupleSubscription::new(a_subscription, b_subscription)
   }
 }
 
@@ -153,27 +150,27 @@ where
   }
 
   fn error(self, err: Err) {
-    if self.state.rc_deref().observer.is_none() {
-      return;
-    }
-    if !self.state.rc_deref().completed_b {
-      self.b_proxy.unsubscribe();
-    }
-    let observer = { self.state.rc_deref_mut().observer.take() };
+    let (observer, completed_b) = {
+      let mut state = self.state.rc_deref_mut();
+      (state.observer.take(), state.completed_b)
+    };
     if let Some(observer) = observer {
+      if !completed_b {
+        self.b_proxy.unsubscribe();
+      }
       observer.error(err);
     }
   }
 
   fn complete(self) {
-    if self.state.rc_deref().observer.is_none() {
-      return;
-    }
-    if !self.state.rc_deref().completed_b {
-      self.b_proxy.unsubscribe();
-    }
-    let observer = { self.state.rc_deref_mut().observer.take() };
+    let (observer, completed_b) = {
+      let mut state = self.state.rc_deref_mut();
+      (state.observer.take(), state.completed_b)
+    };
     if let Some(observer) = observer {
+      if !completed_b {
+        self.b_proxy.unsubscribe();
+      }
       observer.complete();
     }
   }
@@ -192,20 +189,14 @@ where
   fn next(&mut self, value: ItemB) { self.state.rc_deref_mut().last_b = Some(value); }
 
   fn error(self, err: Err) {
-    if self.state.rc_deref().observer.is_none() {
-      return;
-    }
-    self.a_proxy.unsubscribe();
     let observer = { self.state.rc_deref_mut().observer.take() };
     if let Some(observer) = observer {
+      self.a_proxy.unsubscribe();
       observer.error(err);
     }
   }
 
   fn complete(self) {
-    if self.state.rc_deref().observer.is_none() {
-      return;
-    }
     self.state.rc_deref_mut().completed_b = true;
     // Secondary completion does NOT complete downstream
   }

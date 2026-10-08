@@ -47,19 +47,18 @@ impl<S: ObservableType> ObservableType for Take<S> {
 /// values to be emitted. After `count` values have been emitted, it calls
 /// complete and prevents further values from being emitted.
 pub struct TakeObserver<O, U> {
-  upstream: U,
-  observer: Option<O>,
+  active: Option<(U, O)>,
   remaining: usize,
 }
 
 impl<O, U, Item, Err> Observer<Item, Err> for TakeObserver<O, U>
 where
   O: Observer<Item, Err>,
-  U: Subscription + Clone,
+  U: Subscription,
 {
   fn next(&mut self, v: Item) {
     let should_complete = if self.remaining > 0
-      && let Some(observer) = self.observer.as_mut()
+      && let Some((_, observer)) = self.active.as_mut()
     {
       observer.next(v);
       self.remaining -= 1;
@@ -68,35 +67,33 @@ where
       false
     };
 
-    if should_complete && let Some(observer) = self.observer.take() {
+    if should_complete && let Some((upstream, observer)) = self.active.take() {
       observer.complete();
-      self.upstream.clone().unsubscribe();
+      upstream.unsubscribe();
     }
   }
 
   fn error(self, e: Err) {
-    if let Some(observer) = self.observer {
+    if let Some((_upstream, observer)) = self.active {
       observer.error(e);
     }
   }
 
   fn complete(self) {
-    if let Some(observer) = self.observer {
+    if let Some((_upstream, observer)) = self.active {
       observer.complete();
     }
   }
 
   fn is_closed(&self) -> bool {
     self
-      .observer
+      .active
       .as_ref()
-      .is_none_or(|o| o.is_closed())
+      .is_none_or(|(_, observer)| observer.is_closed())
   }
 }
 
-// The scheduler can cross threads even when selected from a Local context.
-// A mutex-backed slot remains usable with borrowed and non-Send subscriptions.
-type Handle<U> = SingleAssignment<crate::rc::MutArc<State<U>>>;
+type Handle<C, U> = SingleAssignment<<C as Context>::RcMut<State<U>>>;
 
 impl<'a, S: 'a, C, U> CoreObservable<C> for Take<S>
 where
@@ -105,26 +102,23 @@ where
   // Infer U from an observer-independent witness before using it in the real
   // observer type. Without this bound Rust rejects U as unconstrained (E0207).
   S: CoreObservable<C::With<TakeObserver<C::Inner, ()>>, Unsub = U>,
-  S: CoreObservable<C::With<TakeObserver<C::Inner, Handle<U>>>, Unsub = U>,
+  S: CoreObservable<C::With<TakeObserver<C::Inner, Handle<C, U>>>, Unsub = U>,
   C::Inner: Observer<S::Item<'a>, S::Err>,
 {
-  type Unsub = Handle<U>;
+  type Unsub = Handle<C, U>;
 
   fn subscribe(self, context: C) -> Self::Unsub {
     let Take { source, count } = self;
-    let upstream = Handle::<U>::new();
+    let (install_upstream, [upstream, subscription]) = Handle::<C, U>::channel();
     if count == 0 {
       context.into_inner().complete();
-      upstream.clone().unsubscribe();
-      return upstream;
+      upstream.unsubscribe();
+      return subscription;
     }
-    let wrapped = context.transform(|observer| TakeObserver {
-      observer: Some(observer),
-      remaining: count,
-      upstream: upstream.clone(),
-    });
-    upstream.set(source.subscribe(wrapped));
-    upstream
+    let wrapped = context
+      .transform(|observer| TakeObserver { active: Some((upstream, observer)), remaining: count });
+    install_upstream(source.subscribe(wrapped));
+    subscription
   }
 }
 

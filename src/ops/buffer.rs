@@ -58,29 +58,22 @@ where
   fn next(&mut self, v: Item) { self.state.rc_deref_mut().buffer.push(v); }
 
   fn error(self, e: Err) {
-    if self.state.rc_deref().observer.is_none() {
-      return;
-    }
-    self.notifier_unsub.unsubscribe();
     let observer = { self.state.rc_deref_mut().observer.take() };
     if let Some(observer) = observer {
+      self.notifier_unsub.unsubscribe();
       observer.error(e);
     }
   }
 
   fn complete(self) {
-    if self.state.rc_deref().observer.is_none() {
-      return;
-    }
+    let (mut observer, buffer) = {
+      let mut state = self.state.rc_deref_mut();
+      let Some(observer) = state.observer.take() else { return };
+      (observer, std::mem::take(&mut state.buffer))
+    };
     self.notifier_unsub.unsubscribe();
-    let mut state = self.state.rc_deref_mut();
-    let buffer = std::mem::take(&mut state.buffer);
-    let observer = state.observer.take();
-    drop(state);
-    if let Some(mut observer) = observer {
-      observer.next(buffer);
-      observer.complete();
-    }
+    observer.next(buffer);
+    observer.complete();
   }
 
   fn is_closed(&self) -> bool { self.state.rc_deref_mut().observer.is_none() }
@@ -108,29 +101,22 @@ where
   }
 
   fn error(self, e: Err) {
-    if self.state.rc_deref().observer.is_none() {
-      return;
-    }
-    self.source_unsub.unsubscribe();
     let observer = { self.state.rc_deref_mut().observer.take() };
     if let Some(observer) = observer {
+      self.source_unsub.unsubscribe();
       observer.error(e);
     }
   }
 
   fn complete(self) {
-    if self.state.rc_deref().observer.is_none() {
-      return;
-    }
+    let (mut observer, buffer) = {
+      let mut state = self.state.rc_deref_mut();
+      let Some(observer) = state.observer.take() else { return };
+      (observer, std::mem::take(&mut state.buffer))
+    };
     self.source_unsub.unsubscribe();
-    let mut state = self.state.rc_deref_mut();
-    let buffer = std::mem::take(&mut state.buffer);
-    let observer = state.observer.take();
-    drop(state);
-    if let Some(mut observer) = observer {
-      observer.next(buffer);
-      observer.complete();
-    }
+    observer.next(buffer);
+    observer.complete();
   }
 
   fn is_closed(&self) -> bool { self.state.rc_deref_mut().observer.is_none() }
@@ -169,24 +155,24 @@ where
     let (downstream, scheduler) = context.into_parts();
     let state = C::RcMut::from(BufferState::new(downstream));
 
-    let source_unsub_proxy: SingleAssignment<C::RcMut<State<SourceUnsub>>> =
-      SingleAssignment::new();
-    let notifier_unsub_proxy: SingleAssignment<C::RcMut<State<C::BoxedSubscription>>> =
-      SingleAssignment::new();
+    let (install_source, [source_cancel, source_subscription]) =
+      SingleAssignment::<C::RcMut<State<SourceUnsub>>>::channel();
+    let (install_notifier, [notifier_cancel, notifier_subscription]) =
+      SingleAssignment::<C::RcMut<State<C::BoxedSubscription>>>::channel();
 
     let source_observer =
-      BufferSourceObserver { state: state.clone(), notifier_unsub: notifier_unsub_proxy.clone() };
+      BufferSourceObserver { state: state.clone(), notifier_unsub: notifier_cancel };
     let source_sub = source.subscribe(C::With::from_parts(source_observer, scheduler.clone()));
-    source_unsub_proxy.set(source_sub);
+    install_source(source_sub);
 
     if state.rc_deref().observer.is_some() {
       let notifier_observer =
-        BufferNotifierObserver { state: state.clone(), source_unsub: source_unsub_proxy.clone() };
+        BufferNotifierObserver { state: state.clone(), source_unsub: source_cancel };
       let notifier_sub = notifier.subscribe(C::With::from_parts(notifier_observer, scheduler));
-      notifier_unsub_proxy.set(notifier_sub.into_boxed());
+      install_notifier(notifier_sub.into_boxed());
     }
 
-    TupleSubscription::new(source_unsub_proxy, notifier_unsub_proxy)
+    TupleSubscription::new(source_subscription, notifier_subscription)
   }
 }
 
@@ -194,6 +180,46 @@ where
 
 #[cfg(test)]
 mod tests {
+
+  #[rxrust_macro::test]
+  fn terminal_ownership_precedes_peer_cleanup() {
+    use crate::{context::MutRc, subscription::ClosureSubscription};
+
+    for completes in [false, true] {
+      let terminals = Rc::new(RefCell::new(vec![]));
+      let errors = terminals.clone();
+      let completions = terminals.clone();
+      let values = Rc::new(RefCell::new(vec![]));
+      let received = values.clone();
+      let downstream = Local::subject::<Vec<i32>, &'static str>();
+      downstream
+        .clone()
+        .on_error(move |error| errors.borrow_mut().push(error))
+        .on_complete(move || completions.borrow_mut().push("complete"))
+        .subscribe(move |value| received.borrow_mut().push(value));
+      let state = MutRc::from(super::BufferState { observer: Some(downstream), buffer: vec![1] });
+      let notifier = super::BufferNotifierObserver {
+        state: state.clone(),
+        source_unsub: ClosureSubscription(|| panic!("naturally terminated source cancelled")),
+      };
+      let source = super::BufferSourceObserver {
+        state,
+        notifier_unsub: ClosureSubscription(move || {
+          Observer::<(), &'static str>::error(notifier, "cleanup");
+        }),
+      };
+
+      if completes {
+        source.complete();
+        assert_eq!(*terminals.borrow(), vec!["complete"]);
+        assert_eq!(*values.borrow(), vec![vec![1]]);
+      } else {
+        source.error("original");
+        assert_eq!(*terminals.borrow(), vec!["original"]);
+        assert!(values.borrow().is_empty());
+      }
+    }
+  }
 
   #[rxrust_macro::test]
   fn synchronous_source_completion_does_not_start_notifier() {
