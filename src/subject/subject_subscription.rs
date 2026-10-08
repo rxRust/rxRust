@@ -50,21 +50,51 @@ impl<P, Sch, Cell> SubjectSubscription<P, Sch, Cell> {
   }
 }
 
-pub(crate) struct RemoveState<P> {
+/// State of a scheduled Subject observer removal.
+///
+/// This type is public so custom operators can express the scheduler bounds of
+/// [`SubjectSubscription::unsubscribe_with_handle`]. Its fields are managed by
+/// Subject.
+pub struct RemoveState<P> {
   observers: P,
   id: usize,
 }
 
 impl<P, Sch, Cell> SubjectSubscription<P, Sch, Cell> {
-  /// Requests cancellation and returns the removal task for internal callers
-  /// that need to wait. The returned handle must not be cancelled.
-  pub(crate) fn unsubscribe_inner<O>(self) -> TaskHandle
+  /// Cancels this subscription and returns its observer-removal task handle.
+  ///
+  /// For a registered observer, the handle completes after removal from the
+  /// Subject. If the list can be borrowed immediately, removal is synchronous
+  /// and the handle is already finished. Otherwise, removal is scheduled on
+  /// this subscription's scheduler, which must keep running while you await
+  /// the handle. A pending registration is cancelled without waiting for its
+  /// scheduled registration task.
+  ///
+  /// Dropping the returned handle does not cancel removal. Do not unsubscribe
+  /// it or wrap it in an `unsubscribe_when_dropped()` guard: cancelling the
+  /// task may prevent removal and makes the handle complete without
+  /// performing it.
+  ///
+  /// ```
+  /// use std::convert::Infallible;
+  ///
+  /// use rxrust::prelude::*;
+  ///
+  /// let subject = Local::subject::<(), Infallible>();
+  /// let subscription = subject.clone().subscribe(|_| {});
+  /// let removal = subscription.unsubscribe_with_handle();
+  ///
+  /// // Outside a broadcast, removal can finish immediately.
+  /// assert!(removal.is_closed());
+  /// assert!(subject.inner().is_empty());
+  /// ```
+  pub fn unsubscribe_with_handle<O>(self) -> TaskHandle
   where
     P: RcDerefMut<Target = Subscribers<O>>,
     Sch: Scheduler<Task<RemoveState<P>>>,
     Cell: SharedCell<SubscriptionState>,
   {
-    loop {
+    let current = loop {
       let current = self.state.get();
       if current == SubscriptionState::Cancelled {
         return TaskHandle::finished();
@@ -72,30 +102,29 @@ impl<P, Sch, Cell> SubjectSubscription<P, Sch, Cell> {
       if self
         .state
         .compare_exchange(current, SubscriptionState::Cancelled)
-        .is_err()
+        .is_ok()
       {
-        continue;
+        break current;
       }
-      let SubscriptionState::Ready(id) = current else {
-        // A pending add will skip insertion or roll it back under the list
-        // lock.
-        return TaskHandle::finished();
-      };
-      if let Some(mut guard) = self.observers.try_rc_deref_mut() {
-        let observer = guard.remove(id);
-        drop(guard);
-        drop(observer);
-        return TaskHandle::finished();
-      }
-      return self.scheduler.schedule(
-        Task::new(RemoveState { observers: self.observers, id }, |state| {
-          let observer = { state.observers.rc_deref_mut().remove(state.id) };
-          drop(observer);
-          TaskState::Finished
-        }),
-        None,
-      );
+    };
+    let SubscriptionState::Ready(id) = current else {
+      // A pending add will skip insertion or roll it back under the list lock.
+      return TaskHandle::finished();
+    };
+    if let Some(mut guard) = self.observers.try_rc_deref_mut() {
+      let observer = guard.remove(id);
+      drop(guard);
+      drop(observer);
+      return TaskHandle::finished();
     }
+    self.scheduler.schedule(
+      Task::new(RemoveState { observers: self.observers, id }, |state| {
+        let observer = { state.observers.rc_deref_mut().remove(state.id) };
+        drop(observer);
+        TaskState::Finished
+      }),
+      None,
+    )
   }
 }
 
@@ -105,7 +134,7 @@ where
   Sch: Scheduler<Task<RemoveState<P>>>,
   Cell: SharedCell<SubscriptionState>,
 {
-  fn unsubscribe(self) { self.unsubscribe_inner(); }
+  fn unsubscribe(self) { self.unsubscribe_with_handle(); }
 
   fn is_closed(&self) -> bool { self.state.get() == SubscriptionState::Cancelled }
 }

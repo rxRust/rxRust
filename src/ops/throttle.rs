@@ -136,7 +136,7 @@ where
 
 pub struct ThrottleState<Item, O, Param, BoxedSub> {
   // Downstream observer.
-  observer: Option<O>,
+  observer: O,
   // Active throttle-window subscription.
   window: Option<BoxedSub>,
   generation: usize,
@@ -188,14 +188,14 @@ where
   }
 
   fn start_window_impl(&self, value: Item, trailing_emission: bool) {
-    let slot = WindowSlot::<Notifier>::new();
+    let (install_slot, [slot, subscription]) = WindowSlot::<Notifier>::channel();
     let (notifier, previous, generation, emit) = {
       let mut guard = self.state.rc_deref_mut();
       let Some(inner) = guard.as_mut() else {
         return;
       };
       inner.generation += 1;
-      let previous = inner.window.replace(slot.clone().into_boxed());
+      let previous = inner.window.replace(subscription.into_boxed());
       let notifier = inner.param.notify_observable(&value);
       let emit = if trailing_emission || inner.edge.leading {
         Some(value)
@@ -210,17 +210,17 @@ where
     previous.unsubscribe();
     let (core, ctx) = notifier.swap(ThrottleNotifyObserver {
       subscriber: self.clone(),
-      slot: slot.clone(),
+      slot: Some(slot),
       generation,
     });
-    slot.set(core.subscribe(ctx).into_boxed());
+    install_slot(core.subscribe(ctx).into_boxed());
     if let Some(value) = emit {
       let observer = {
         self
           .state
           .rc_deref()
           .as_ref()
-          .and_then(|s| s.observer.clone())
+          .map(|state| state.observer.clone())
       };
       if let Some(mut observer) = observer {
         observer.next(value);
@@ -262,14 +262,12 @@ where
     drop(retired);
     if let Some(pending) = pending {
       if completed {
-        if let Some(observer) = observer.as_mut() {
-          observer.next(pending);
-        }
+        observer.next(pending);
       } else {
         self.start_window(pending, true);
       }
     }
-    if completed && let Some(observer) = observer {
+    if completed {
       observer.complete();
     }
   }
@@ -284,9 +282,7 @@ where
       w.unsubscribe();
     }
     inner.pending.take();
-    if let Some(observer) = inner.observer.take() {
-      observer.error(err);
-    }
+    inner.observer.error(err);
   }
 }
 
@@ -294,7 +290,7 @@ type WindowSlot<C> =
   SingleAssignment<<C as Context>::RcMut<State<<C as Context>::BoxedSubscription>>>;
 pub struct ThrottleNotifyObserver<P, Item, W, H> {
   subscriber: ThrottleSubscriber<P, Item, H>,
-  slot: W,
+  slot: Option<W>,
   generation: usize,
 }
 
@@ -342,13 +338,11 @@ where
     if let Some(mut state) = state {
       state.window.unsubscribe();
       if state.edge.trailing
-        && let (Some(pending), Some(observer)) = (state.pending.take(), state.observer.as_mut())
+        && let Some(pending) = state.pending.take()
       {
-        observer.next(pending);
+        state.observer.next(pending);
       }
-      if let Some(observer) = state.observer {
-        observer.complete();
-      }
+      state.observer.complete();
     }
   }
 
@@ -372,10 +366,10 @@ where
       w.unsubscribe();
     }
     self.pending.take();
-    self.observer.take();
+    drop(self.observer);
   }
 
-  fn is_closed(&self) -> bool { self.observer.is_none() }
+  fn is_closed(&self) -> bool { false }
 }
 
 impl<NotifyItem, P, Item, Err, O, Param, BoxedSub, W, H> Observer<NotifyItem, Err>
@@ -385,40 +379,31 @@ where
   O: Observer<Item, Err> + Clone,
   BoxedSub: Subscription,
   H: Subscription + Clone,
-  W: Subscription + Clone,
+  W: Subscription,
 {
   fn next(&mut self, _: NotifyItem) {
     self.subscriber.close_window(self.generation);
-    self.slot.clone().unsubscribe();
+    self.slot.take().unsubscribe();
   }
   fn error(self, err: Err) {
-    let current = self
-      .subscriber
-      .state
-      .rc_deref()
-      .as_ref()
-      .is_some_and(|s| s.generation == self.generation && s.window.is_some());
-    if current {
-      // Natural terminal notification retires this window without cancellation.
-      let retired = {
-        self
-          .subscriber
-          .state
-          .rc_deref_mut()
-          .as_mut()
-          .and_then(|s| s.window.take())
-      };
-      drop(retired);
-      let completed = self
-        .subscriber
-        .state
-        .rc_deref()
+    let state = {
+      let mut guard = self.subscriber.state.rc_deref_mut();
+      if guard
         .as_ref()
-        .is_none_or(|s| s.completed);
-      if !completed {
-        self.subscriber.source.clone().unsubscribe();
+        .is_some_and(|state| state.generation == self.generation && state.window.is_some())
+      {
+        guard.take()
+      } else {
+        None
       }
-      self.subscriber.terminate_with_error(err);
+    };
+    if let Some(mut state) = state {
+      drop(state.window.take());
+      if !state.completed {
+        self.subscriber.source.unsubscribe();
+      }
+      state.pending.take();
+      state.observer.error(err);
     }
   }
   fn complete(self) { self.subscriber.close_window(self.generation); }
@@ -449,6 +434,7 @@ type RcThrottleState<C, Item, Param> = <C as Context>::RcMut<
 type ThrottleSourceObserverCtx<C, Param, Item, H> =
   <C as Context>::With<ThrottleObserver<RcThrottleState<C, Item, Param>, Item, H>>;
 type SourceSlot<C, U> = SingleAssignment<<C as Context>::RcMut<State<U>>>;
+type SharedSource<C, U> = <C as Context>::RcMut<Option<SourceSlot<C, U>>>;
 
 type NotifierObserver<C, Param, Item, N, H> =
   ThrottleNotifyObserver<RcThrottleState<C, Item, Param>, Item, WindowSlot<N>, H>;
@@ -462,7 +448,7 @@ where
       Unsub = Unsub,
     >,
   S: for<'a> CoreObservable<
-      ThrottleSourceObserverCtx<C, Param, <S as ObservableType>::Item<'a>, SourceSlot<C, Unsub>>,
+      ThrottleSourceObserverCtx<C, Param, <S as ObservableType>::Item<'a>, SharedSource<C, Unsub>>,
       Unsub = Unsub,
     >,
   Notifier: for<'a> Observable<
@@ -473,7 +459,7 @@ where
             Param,
             <S as ObservableType>::Item<'a>,
             Notifier,
-            SourceSlot<C, Unsub>,
+            SharedSource<C, Unsub>,
           >,
         >,
         Unsub: IntoBoxedSubscription<Notifier::BoxedSubscription>,
@@ -485,18 +471,20 @@ where
   WindowSlot<Notifier>: IntoBoxedSubscription<C::BoxedSubscription>,
   for<'a> C::RcMut<Option<C::Inner>>: Observer<S::Item<'a>, S::Err>,
   Unsub: Subscription,
+  SharedSource<C, Unsub>: Subscription,
 {
   type Unsub = ThrottleSubscription<SourceSlot<C, Unsub>, C::BoxedSubscription>;
 
   fn subscribe(self, context: C) -> Self::Unsub {
     let Throttle { source, param, edge } = self;
-    let source_slot = SourceSlot::<C, Unsub>::new();
+    let (install_source_slot, [source_slot, subscription]) = SourceSlot::<C, Unsub>::channel();
+    let source_slot = C::RcMut::from(Some(source_slot));
     let state = C::RcMut::from(None);
     let state_handle = state.clone().into_boxed();
 
     let wrapped = context.transform(|observer| {
       *state.rc_deref_mut() = Some(ThrottleState {
-        observer: Some(C::RcMut::from(Some(observer))),
+        observer: C::RcMut::from(Some(observer)),
         window: None,
         generation: 0,
         pending: None,
@@ -509,8 +497,8 @@ where
       ThrottleObserver(subscriber)
     });
 
-    source_slot.set(source.subscribe(wrapped));
-    ThrottleSubscription::new(source_slot, state_handle)
+    install_source_slot(source.subscribe(wrapped));
+    ThrottleSubscription::new(subscription, state_handle)
   }
 }
 
@@ -518,6 +506,35 @@ where
 
 #[cfg(test)]
 mod tests {
+
+  #[rxrust_macro::test]
+  fn terminal_ownership_blocks_new_windows_during_cleanup() {
+    use std::{cell::RefCell, rc::Rc};
+
+    use crate::test_support::Manual;
+
+    let source = Manual::default();
+    let during_cleanup = source.clone();
+    let notifier = Manual::default();
+    let windows = notifier.clone();
+    let values = Rc::new(RefCell::new(vec![]));
+    let received = values.clone();
+    let errors = Rc::new(RefCell::new(vec![]));
+    let reported = errors.clone();
+    Local::new(source.clone())
+      .finalize(move || during_cleanup.next(0, 2))
+      .throttle(move |_: &i32| Local::new(windows.clone()), ThrottleEdge::leading())
+      .on_error(move |error| reported.borrow_mut().push(error))
+      .subscribe(move |value| received.borrow_mut().push(value));
+
+    source.next(0, 1);
+    notifier.error(0);
+    assert_eq!(*values.borrow(), vec![1]);
+    assert_eq!(*errors.borrow(), vec!["test failure"]);
+    assert_eq!(notifier.subscriptions(), 1);
+    assert_eq!(source.cancellations(0), 1);
+    assert_eq!(notifier.cancellations(0), 0);
+  }
 
   #[rxrust_macro::test]
   fn synchronous_window_completion_emits_trailing_value() {

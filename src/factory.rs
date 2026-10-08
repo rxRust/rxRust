@@ -591,6 +591,13 @@ pub trait ObservableFactory: Context<Inner = ()> {
   /// Same as [`Self::interval`], but uses a custom scheduler instead of the
   /// default one.
   ///
+  /// # Note
+  ///
+  /// The scheduler's bounds apply to the whole chain: with `SharedScheduler`,
+  /// the observer and every operator state in the chain must be `Send`.
+  /// Operators that keep `Rc`-based state (e.g. `take` in a `Local` context)
+  /// do not satisfy this and fail to compile; use `Shared` for such chains.
+  ///
   /// # Examples
   ///
   /// ```rust,no_run
@@ -598,6 +605,10 @@ pub trait ObservableFactory: Context<Inner = ()> {
   ///
   /// // Use SharedScheduler in Local context
   /// Local::interval_with(Duration::from_millis(50), SharedScheduler)
+  ///   .subscribe(|n| println!("Tick {}", n));
+  ///
+  /// // Operators with Rc-based state need the Shared context
+  /// Shared::interval_with(Duration::from_millis(50), SharedScheduler)
   ///   .take(3)
   ///   .subscribe(|n| println!("Tick {}", n));
   /// ```

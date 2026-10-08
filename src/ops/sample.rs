@@ -132,19 +132,20 @@ where
   fn subscribe(self, context: C) -> Self::Unsub {
     let (observer, scheduler) = context.into_parts();
     let state = C::RcMut::from(SampleState::new(observer));
-    let source = Handle::<C, U>::new();
-    let sampler = Handle::<C, V>::new();
-    source.set(self.source.subscribe(C::With::from_parts(
-      SampleSourceObserver { state: state.clone(), notifier_proxy: sampler.clone() },
+    let (install_source, [source, source_subscription]) = Handle::<C, U>::channel();
+    let (install_sampler, [sampler, sampler_subscription]) = Handle::<C, V>::channel();
+    install_source(self.source.subscribe(C::With::from_parts(
+      SampleSourceObserver { state: state.clone(), notifier_proxy: sampler },
       scheduler.clone(),
     )));
     if state.rc_deref().observer.is_some() {
-      sampler.set(self.sampler.subscribe(C::With::from_parts(
-        SampleSamplerObserver { state, source: source.clone() },
-        scheduler,
-      )));
+      install_sampler(
+        self
+          .sampler
+          .subscribe(C::With::from_parts(SampleSamplerObserver { state, source }, scheduler)),
+      );
     }
-    TupleSubscription::new(source, sampler)
+    TupleSubscription::new(source_subscription, sampler_subscription)
   }
 }
 
@@ -159,23 +160,17 @@ where
   fn next(&mut self, value: Item) { self.state.rc_deref_mut().store(value); }
 
   fn error(self, err: Err) {
-    if self.state.rc_deref().observer.is_none() {
-      return;
-    }
-    self.notifier_proxy.unsubscribe();
     let observer = { self.state.rc_deref_mut().observer.take() };
     if let Some(observer) = observer {
+      self.notifier_proxy.unsubscribe();
       observer.error(err);
     }
   }
 
   fn complete(self) {
-    if self.state.rc_deref().observer.is_none() {
-      return;
-    }
-    self.notifier_proxy.unsubscribe();
     let observer = { self.state.rc_deref_mut().observer.take() };
     if let Some(observer) = observer {
+      self.notifier_proxy.unsubscribe();
       observer.complete();
     }
   }
@@ -193,30 +188,23 @@ where
   fn next(&mut self, _: SamplerItem) { self.state.rc_deref_mut().emit_if_present::<Err>(); }
 
   fn error(self, err: Err) {
-    if self.state.rc_deref().observer.is_none() {
-      return;
-    }
     let observer = { self.state.rc_deref_mut().observer.take() };
     if let Some(observer) = observer {
       observer.error(err);
+      self.source.unsubscribe();
     }
-    self.source.unsubscribe();
   }
 
   fn complete(self) {
-    if self.state.rc_deref().observer.is_none() {
-      return;
-    }
-    let (observer, value) = {
+    let (mut observer, value) = {
       let mut state = self.state.rc_deref_mut();
-      (state.observer.take(), state.value.take())
+      let Some(observer) = state.observer.take() else { return };
+      (observer, state.value.take())
     };
-    if let Some(mut observer) = observer {
-      if let Some(value) = value {
-        observer.next(value);
-      }
-      observer.complete();
+    if let Some(value) = value {
+      observer.next(value);
     }
+    observer.complete();
     self.source.unsubscribe();
   }
 
@@ -227,6 +215,33 @@ where
 
 #[cfg(test)]
 mod tests {
+
+  #[rxrust_macro::test]
+  fn terminal_ownership_blocks_sampling_during_cleanup() {
+    use std::cell::Cell;
+
+    use crate::test_support::Manual;
+
+    let source = Manual::default();
+    let sampler = Manual::default();
+    let during_cleanup = sampler.clone();
+    let values = Rc::new(RefCell::new(vec![]));
+    let received = values.clone();
+    let completions = Rc::new(Cell::new(0));
+    let completed = completions.clone();
+    Local::new(source.clone())
+      .sample(Local::new(sampler.clone()).finalize(move || during_cleanup.next(0, 0)))
+      .on_error(|_| panic!("unexpected error"))
+      .on_complete(move || completed.set(completed.get() + 1))
+      .subscribe(move |value| received.borrow_mut().push(value));
+
+    source.next(0, 4);
+    source.complete(0);
+    assert!(values.borrow().is_empty());
+    assert_eq!(completions.get(), 1);
+    assert_eq!(source.cancellations(0), 0);
+    assert_eq!(sampler.cancellations(0), 1);
+  }
 
   #[rxrust_macro::test(local)]
   async fn sampler_completion_cancels_source() {

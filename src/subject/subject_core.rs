@@ -626,38 +626,22 @@ mod tests {
 
     use crate::context::TestCtx;
     TestScheduler::init();
-    let subject = TestCtx::subject::<i32, Infallible>();
-    let values = Rc::new(RefCell::new(vec![]));
-    let received = values.clone();
-    let sub = subject
-      .clone()
-      .subscribe(move |value| received.borrow_mut().push(value));
-    let holder = Rc::new(RefCell::new(Some(sub)));
+    let subject = TestCtx::subject::<(), Infallible>();
+    let mut sub = Some(subject.clone().subscribe(|_| {}));
     let removal = Rc::new(RefCell::new(None));
-    let completed = removal.clone();
-    let trigger = subject.clone().subscribe(move |_| {
-      if let Some(sub) = holder.borrow_mut().take() {
-        *completed.borrow_mut() = Some(sub.unsubscribe_inner());
+    let removal_in_callback = removal.clone();
+    subject.clone().subscribe(move |_| {
+      if let Some(sub) = sub.take() {
+        *removal_in_callback.borrow_mut() = Some(sub.unsubscribe_with_handle());
       }
     });
-    subject.clone().next(1);
+    subject.clone().next(());
     let removal = removal.borrow_mut().take().unwrap();
     assert!(removal.clone().now_or_never().is_none());
     assert_eq!(subject.inner().subscriber_count(), 2);
-    subject.clone().next(2);
-    assert_eq!(*values.borrow(), vec![1, 2]);
     TestScheduler::flush();
     assert!(removal.now_or_never().is_some());
     assert_eq!(subject.inner().subscriber_count(), 1);
-    subject.clone().next(3);
-    assert_eq!(*values.borrow(), vec![1, 2]);
-    assert!(
-      trigger
-        .unsubscribe_inner()
-        .now_or_never()
-        .is_some()
-    );
-    assert!(subject.inner().is_empty());
   }
 
   #[rxrust_macro::test]

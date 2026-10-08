@@ -49,20 +49,19 @@ impl<S: ObservableType, P> ObservableType for TakeWhile<S, P> {
 /// the predicate returns true. When predicate returns false, it
 /// completes and stops further emissions.
 pub struct TakeWhileObserver<O, P, U> {
-  upstream: U,
-  observer: Option<O>,
+  active: Option<(U, O)>,
   predicate: P,
   inclusive: bool,
 }
 
 impl<O, P, U, Item, Err> Observer<Item, Err> for TakeWhileObserver<O, P, U>
 where
-  U: Subscription + Clone,
+  U: Subscription,
   O: Observer<Item, Err>,
   P: FnMut(&Item) -> bool,
 {
   fn next(&mut self, v: Item) {
-    let Some(observer) = self.observer.as_mut() else {
+    let Some((_, observer)) = self.active.as_mut() else {
       return;
     };
     if (self.predicate)(&v) {
@@ -72,54 +71,51 @@ where
     if self.inclusive {
       observer.next(v);
     }
-    if let Some(observer) = self.observer.take() {
+    if let Some((upstream, observer)) = self.active.take() {
       observer.complete();
-      self.upstream.clone().unsubscribe();
+      upstream.unsubscribe();
     }
   }
 
   fn error(self, e: Err) {
-    if let Some(observer) = self.observer {
+    if let Some((_upstream, observer)) = self.active {
       observer.error(e);
     }
   }
 
   fn complete(self) {
-    if let Some(observer) = self.observer {
+    if let Some((_upstream, observer)) = self.active {
       observer.complete();
     }
   }
 
   fn is_closed(&self) -> bool {
     self
-      .observer
+      .active
       .as_ref()
-      .is_none_or(|o| o.is_closed())
+      .is_none_or(|(_, observer)| observer.is_closed())
   }
 }
 
-// The scheduler can cross threads even when selected from a Local context.
-// A mutex-backed slot remains usable with borrowed and non-Send subscriptions.
-type Handle<U> = SingleAssignment<crate::rc::MutArc<State<U>>>;
+type Handle<C, U> = SingleAssignment<<C as Context>::RcMut<State<U>>>;
 
 impl<S, P, C, U> CoreObservable<C> for TakeWhile<S, P>
 where
   C: Context,
   U: Subscription,
   S: CoreObservable<C::With<TakeWhileObserver<C::Inner, P, ()>>, Unsub = U>
-    + CoreObservable<C::With<TakeWhileObserver<C::Inner, P, Handle<U>>>, Unsub = U>,
+    + CoreObservable<C::With<TakeWhileObserver<C::Inner, P, Handle<C, U>>>, Unsub = U>,
 {
-  type Unsub = Handle<U>;
+  type Unsub = Handle<C, U>;
   fn subscribe(self, context: C) -> Self::Unsub {
-    let upstream = Handle::<U>::new();
+    let (install_upstream, [upstream, subscription]) = Handle::<C, U>::channel();
     let wrapped = context.transform(|observer| TakeWhileObserver {
-      observer: Some(observer),
+      active: Some((upstream, observer)),
       predicate: self.predicate,
       inclusive: self.inclusive,
-      upstream: upstream.clone(),
     });
-    upstream.set(self.source.subscribe(wrapped));
-    upstream
+    install_upstream(self.source.subscribe(wrapped));
+    subscription
   }
 }
 

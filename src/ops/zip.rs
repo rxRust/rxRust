@@ -79,16 +79,16 @@ impl<O, ItemA, ItemB> ZipState<O, ItemA, ItemB> {
 
 /// Observer for source A
 pub struct ZipAObserver<StateRc, BProxy, AProxy> {
-  a_proxy: AProxy,
+  a_proxy: Option<AProxy>,
   state: StateRc,
-  b_proxy: BProxy,
+  b_proxy: Option<BProxy>,
 }
 
 /// Observer for source B
 pub struct ZipBObserver<StateRc, AProxy, BProxy> {
-  b_proxy: BProxy,
+  b_proxy: Option<BProxy>,
   state: StateRc,
-  a_proxy: AProxy,
+  a_proxy: Option<AProxy>,
 }
 
 // ==================== Type Aliases ====================
@@ -130,23 +130,23 @@ where
     let (downstream, scheduler) = context.into_parts();
     let state: SharedState<C, A, B> = C::RcMut::from(ZipState::new(downstream));
 
-    let a_proxy: BoxedSubProxy<C> = SingleAssignment::new();
-    let b_proxy: SubProxy<C, BUnsub> = SingleAssignment::new();
+    let (install_a, [a_proxy, a_for_b, a_subscription]) = BoxedSubProxy::<C>::channel();
+    let (install_b, [b_proxy, b_for_b, b_subscription]) = SubProxy::<C, BUnsub>::channel();
 
     let b_observer =
-      ZipBObserver { state: state.clone(), a_proxy: a_proxy.clone(), b_proxy: b_proxy.clone() };
+      ZipBObserver { state: state.clone(), a_proxy: Some(a_for_b), b_proxy: Some(b_for_b) };
     let b_ctx = C::With::from_parts(b_observer, scheduler.clone());
     let b_unsub = source_b.subscribe(b_ctx);
-    b_proxy.set(b_unsub);
+    install_b(b_unsub);
 
     if state.rc_deref().observer.is_some() {
-      let a_observer = ZipAObserver { state, b_proxy: b_proxy.clone(), a_proxy: a_proxy.clone() };
+      let a_observer = ZipAObserver { state, b_proxy: Some(b_proxy), a_proxy: Some(a_proxy) };
       let a_ctx = C::With::from_parts(a_observer, scheduler);
       let a_unsub = source_a.subscribe(a_ctx);
-      a_proxy.set(a_unsub.into_boxed());
+      install_a(a_unsub.into_boxed());
     }
 
-    TupleSubscription::new(a_proxy, b_proxy)
+    TupleSubscription::new(a_subscription, b_subscription)
   }
 }
 
@@ -156,8 +156,8 @@ impl<ItemA, ItemB, Err, O, StateRc, BProxy, AProxy> Observer<ItemA, Err>
   for ZipAObserver<StateRc, BProxy, AProxy>
 where
   StateRc: RcDerefMut<Target = ZipState<O, ItemA, ItemB>>,
-  BProxy: Subscription + Clone,
-  AProxy: Subscription + Clone,
+  BProxy: Subscription,
+  AProxy: Subscription,
   O: Observer<(ItemA, ItemB), Err>,
 {
   fn next(&mut self, value: ItemA) {
@@ -179,10 +179,10 @@ where
     if let Some(observer) = completed {
       observer.complete();
       if active_a {
-        self.a_proxy.clone().unsubscribe();
+        self.a_proxy.take().unsubscribe();
       }
       if active_b {
-        self.b_proxy.clone().unsubscribe();
+        self.b_proxy.take().unsubscribe();
       }
     }
   }
@@ -221,8 +221,8 @@ impl<ItemA, ItemB, Err, O, StateRc, AProxy, BProxy> Observer<ItemB, Err>
   for ZipBObserver<StateRc, AProxy, BProxy>
 where
   StateRc: RcDerefMut<Target = ZipState<O, ItemA, ItemB>>,
-  BProxy: Subscription + Clone,
-  AProxy: Subscription + Clone,
+  BProxy: Subscription,
+  AProxy: Subscription,
   O: Observer<(ItemA, ItemB), Err>,
 {
   fn next(&mut self, value: ItemB) {
@@ -244,10 +244,10 @@ where
     if let Some(observer) = completed {
       observer.complete();
       if active_a {
-        self.a_proxy.clone().unsubscribe();
+        self.a_proxy.take().unsubscribe();
       }
       if active_b {
-        self.b_proxy.clone().unsubscribe();
+        self.b_proxy.take().unsubscribe();
       }
     }
   }

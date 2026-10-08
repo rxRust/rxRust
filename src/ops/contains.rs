@@ -60,35 +60,34 @@ where
 
 /// ContainsObserver wrapper for checking if an item exists
 pub struct ContainsObserver<O, Item, U> {
-  upstream: U,
-  observer: Option<O>,
+  active: Option<(U, O)>,
   target: Item,
 }
 
 impl<O, U, Item, Err> Observer<Item, Err> for ContainsObserver<O, Item, U>
 where
-  U: Subscription + Clone,
+  U: Subscription,
   O: Observer<bool, Err>,
   Item: PartialEq,
 {
   fn next(&mut self, v: Item) {
     if v == self.target
-      && let Some(mut observer) = self.observer.take()
+      && let Some((upstream, mut observer)) = self.active.take()
     {
       observer.next(true);
       observer.complete();
-      self.upstream.clone().unsubscribe();
+      upstream.unsubscribe();
     }
   }
 
   fn error(self, e: Err) {
-    if let Some(observer) = self.observer {
+    if let Some((_upstream, observer)) = self.active {
       observer.error(e);
     }
   }
 
   fn complete(self) {
-    if let Some(mut observer) = self.observer {
+    if let Some((_upstream, mut observer)) = self.active {
       observer.next(false);
       observer.complete();
     }
@@ -96,15 +95,13 @@ where
 
   fn is_closed(&self) -> bool {
     self
-      .observer
+      .active
       .as_ref()
-      .is_none_or(|o| o.is_closed())
+      .is_none_or(|(_, observer)| observer.is_closed())
   }
 }
 
-// The scheduler can cross threads even when selected from a Local context.
-// A mutex-backed slot remains usable with borrowed and non-Send subscriptions.
-type Handle<U> = SingleAssignment<crate::rc::MutArc<State<U>>>;
+type Handle<C, U> = SingleAssignment<<C as Context>::RcMut<State<U>>>;
 
 impl<S, C, Item, U> CoreObservable<C> for Contains<S, Item>
 where
@@ -112,18 +109,17 @@ where
   U: Subscription,
   Item: PartialEq,
   S: CoreObservable<C::With<ContainsObserver<C::Inner, Item, ()>>, Unsub = U>
-    + CoreObservable<C::With<ContainsObserver<C::Inner, Item, Handle<U>>>, Unsub = U>,
+    + CoreObservable<C::With<ContainsObserver<C::Inner, Item, Handle<C, U>>>, Unsub = U>,
 {
-  type Unsub = Handle<U>;
+  type Unsub = Handle<C, U>;
   fn subscribe(self, context: C) -> Self::Unsub {
-    let upstream = Handle::<U>::new();
+    let (install_upstream, [upstream, subscription]) = Handle::<C, U>::channel();
     let wrapped = context.transform(|observer| ContainsObserver {
-      observer: Some(observer),
+      active: Some((upstream, observer)),
       target: self.target,
-      upstream: upstream.clone(),
     });
-    upstream.set(self.source.subscribe(wrapped));
-    upstream
+    install_upstream(self.source.subscribe(wrapped));
+    subscription
   }
 }
 
