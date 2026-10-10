@@ -95,13 +95,14 @@ conversions may still select a default scheduler as documented by their APIs.
 
 ## Delayed cancellation and connection grace periods
 
-`unsubscribe_on(delay)` captures the current Context scheduler instance.
-`unsubscribe_on_with(delay, scheduler)` uses the supplied instance. Both stop
-accepting downstream notifications as soon as cancellation reaches the operator,
-then schedule one upstream `unsubscribe()` call after the delay. A callback
-already in progress can finish. Zero delay still uses the scheduler. Natural
-completion/error and ordinary Drop do not schedule cancellation; an
-`unsubscribe_when_dropped()` guard follows the explicit cancellation path.
+`delay_unsubscription(delay)` captures the current Context scheduler instance.
+`delay_unsubscription_with(delay, scheduler)` uses the supplied instance. Both
+stop accepting downstream notifications as soon as cancellation reaches the
+operator, then schedule one upstream `unsubscribe()` call after the delay. A
+callback already in progress can finish. Zero delay still uses the scheduler.
+Ordinary Drop does not cancel; an `unsubscribe_when_dropped()` guard follows the
+explicit cancellation path. Cancelling after a natural completion/error forwards
+`unsubscribe()` upstream immediately.
 
 The scheduler must keep running until the task executes. Built-in schedulers
 require the upstream handle to be `'static`; a shared scheduler also requires it
@@ -121,7 +122,7 @@ let grace = Duration::from_millis(100);
 let shared = Local::defer(|| Local::interval(Duration::from_millis(10)))
     .publish()
     .ref_count()
-    .unsubscribe_on_with(grace, LocalScheduler::default());
+    .delay_unsubscription_with(grace, LocalScheduler::default());
 
 let old = shared.clone().subscribe(|value| println!("{value}"));
 old.unsubscribe();
