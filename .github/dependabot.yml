@@ -1,7 +1,7 @@
+version: 2
 updates:
   - package-ecosystem: rust-toolchain
     directory: /
     schedule:
-      interval: daily
-
-version: 2
+      interval: monthly
+    open-pull-requests-limit: 1
