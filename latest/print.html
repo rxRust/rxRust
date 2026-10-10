@@ -36,7 +36,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-db8ed8c7.js";
+            window.path_to_searchindex_js = "searchindex-e5917c37.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-0ee8fd1e.js"></script>
@@ -327,6 +327,78 @@ let subscription = Local::interval(Duration::from_secs(1))
 <li><strong><a href="#scheduler">Scheduler</a></strong>: Tightly integrated with Context to manage <em>Time</em> without boilerplate.</li>
 <li><strong><a href="#type-erasure">Type Erasure</a></strong>: Techniques (<code>box_it</code>, <code>impl Observable</code>) to manage Rust’s complex iterator types.</li>
 </ul>
+<h2 id="cancellation-and-terminal-notifications"><a class="header" href="#cancellation-and-terminal-notifications">Cancellation and terminal notifications</a></h2>
+<p><code>complete</code> and <code>error</code> end notification delivery. They do not implicitly invoke
+<code>unsubscribe()</code> on the source that sent the terminal notification. A combining
+operator cancels other active inputs when it no longer needs them. For example,
+<code>zip</code> completes when a completed input’s buffer runs out, while <code>combine_latest</code>
+can keep using the last value of a completed input. An input that completes
+without a value makes <code>combine_latest</code> complete immediately.</p>
+<p>Short-circuiting operators such as <code>take</code>, <code>take_while</code>, and <code>contains</code> explicitly
+cancel their upstream. <code>take(0)</code> completes without subscribing to its source.
+Because a source can emit synchronously before returning its subscription,
+cancellation may be recorded first and applied as soon as that handle arrives.
+Operators cannot invoke a cancellation handle before the source returns it;
+synchronous sources should also check <code>Observer::is_closed()</code>.</p>
+<p>Operator subscription handles implement <code>Subscription</code>; their concrete types may
+include shared cancellation state. A scheduled source’s <code>TaskHandle</code> can be
+awaited directly, but that does not make every operator subscription a future.
+Use completion notifications to observe a composed stream’s natural termination.</p>
+<p>Subject’s subscriber count is its list length. Subscription changes inside a
+broadcast may be deferred: until removal runs, the observer remains in the list
+and may still receive notifications. Ordinary Drop does not unsubscribe.</p>
+<p><code>publish().ref_count()</code> subscribes to the Subject, then reserves and starts a
+source connection if none exists. Concurrent subscribers reuse that reservation.
+Cancellation waits for the Subject subscription’s removal task before checking
+whether the list is empty and disconnecting. Source subscription and cancellation
+run outside internal locks. Natural termination does not cancel the source that
+sent it; a later subscription can start a new connection.</p>
+<p><code>ref_count</code> follows Subject’s existing re-entrancy policy. It does not wait for
+deferred registration or schedule connection startup. Cancellation inside callbacks
+is supported; disconnection follows actual removal. Starting a synchronously
+emitting connection inside a Subject callback still causes a re-entrant emission.
+Use an explicit async boundary for that feedback flow.</p>
+<p>Subscription contexts retain their scheduler instance through transformations,
+subscription, and connection management. Factories and explicit context
+conversions may still select a default scheduler as documented by their APIs.</p>
+<h2 id="delayed-cancellation-and-connection-grace-periods"><a class="header" href="#delayed-cancellation-and-connection-grace-periods">Delayed cancellation and connection grace periods</a></h2>
+<p><code>unsubscribe_on(delay)</code> captures the current Context scheduler instance.
+<code>unsubscribe_on_with(delay, scheduler)</code> uses the supplied instance. Both stop
+accepting downstream notifications as soon as cancellation reaches the operator,
+then schedule one upstream <code>unsubscribe()</code> call after the delay. A callback
+already in progress can finish. Zero delay still uses the scheduler. Natural
+completion/error and ordinary Drop do not schedule cancellation; an
+<code>unsubscribe_when_dropped()</code> guard follows the explicit cancellation path.</p>
+<p>The scheduler must keep running until the task executes. Built-in schedulers
+require the upstream handle to be <code>'static</code>; a shared scheduler also requires it
+to be <code>Send</code>. Cancellation during synchronous subscription may first wait for a
+late upstream handle to be installed. The delay starts when the request actually
+reaches this operator, so stacked delays accumulate. Existing <code>is_closed()</code>
+propagation is preserved: delaying the cancellation method does not guarantee
+that every source continues producing until the deadline.</p>
+<p>For a connection that survives brief gaps between consumers, compose as below.
+<code>defer</code> provides the cloneable source factory needed for reconnection:</p>
+<pre class="playground"><code class="language-rust no_run"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use rxrust::prelude::*;
+
+let grace = Duration::from_millis(100);
+let shared = Local::defer(|| Local::interval(Duration::from_millis(10)))
+    .publish()
+    .ref_count()
+    .unsubscribe_on_with(grace, LocalScheduler::default());
+
+let old = shared.clone().subscribe(|value| println!("{value}"));
+old.unsubscribe();
+let replacement = shared.subscribe(|value| println!("{value}"));
+replacement.unsubscribe();
+<span class="boring">}</span></code></pre>
+<p>The old subscription retains its reference through the grace period, allowing a
+new subscriber to reuse the active connection. Its timer releases only that old
+reference; disconnection occurs when the last reference is released. An interval
+can therefore advance during the gap, but values from the gap are not replayed.
+Subscribing after disconnection starts a new connection. This composition adds no
+timer or delay parameter to <code>ref_count</code>.</p>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="context"><a class="header" href="#context">Context</a></h1>
 <p>In rxRust v1.0, the <strong>Context</strong> is the foundation that defines the <strong>execution environment</strong> of a reactive stream.</p>
