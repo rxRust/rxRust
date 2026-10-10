@@ -1,7 +1,7 @@
 //! Delay the upstream cancellation method while closing downstream delivery
 //! now.
 use crate::{
-  context::{CellArc, Context, SharedCell},
+  context::{Context, SharedCell},
   observable::{CoreObservable, ObservableType},
   observer::Observer,
   scheduler::{Duration, Scheduler, Task, TaskState},
@@ -10,80 +10,64 @@ use crate::{
 
 /// Delays explicit or RAII cancellation using the selected scheduler.
 #[derive(Clone)]
-pub struct UnsubscribeOn<S, Sch> {
+pub struct DelayUnsubscription<S, Sch> {
   pub source: S,
   pub delay: Duration,
   pub scheduler: Sch,
 }
-impl<S: ObservableType, Sch> ObservableType for UnsubscribeOn<S, Sch> {
+impl<S: ObservableType, Sch> ObservableType for DelayUnsubscription<S, Sch> {
   type Item<'a>
     = S::Item<'a>
   where
     Self: 'a;
   type Err = S::Err;
 }
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Delivery {
-  Active,
-  Terminated,
-  Cancelled,
-}
-
-pub struct UnsubscribeOnObserver<O> {
+pub struct DelayUnsubscriptionObserver<O, Cell> {
   observer: O,
-  delivery: CellArc<Delivery>,
+  closed: Cell,
 }
-impl<O, I, E> Observer<I, E> for UnsubscribeOnObserver<O>
+impl<O, Cell, I, E> Observer<I, E> for DelayUnsubscriptionObserver<O, Cell>
 where
   O: Observer<I, E>,
+  Cell: SharedCell<bool>,
 {
   fn next(&mut self, value: I) {
-    if self.delivery.get() == Delivery::Active {
+    if !self.closed.get() {
       self.observer.next(value);
     }
   }
   fn error(self, err: E) {
-    if self
-      .delivery
-      .compare_exchange(Delivery::Active, Delivery::Terminated)
-      .is_ok()
-    {
+    if self.closed.compare_exchange(false, true).is_ok() {
       self.observer.error(err);
     }
   }
   fn complete(self) {
-    if self
-      .delivery
-      .compare_exchange(Delivery::Active, Delivery::Terminated)
-      .is_ok()
-    {
+    if self.closed.compare_exchange(false, true).is_ok() {
       self.observer.complete();
     }
   }
-  fn is_closed(&self) -> bool {
-    self.delivery.get() != Delivery::Active || self.observer.is_closed()
-  }
+  fn is_closed(&self) -> bool { self.closed.get() || self.observer.is_closed() }
 }
 
 /// Ordinary Drop does not cancel. Explicit and RAII cancellation both close
 /// delivery immediately and transfer upstream ownership to one scheduled task.
-pub struct UnsubscribeOnSubscription<U, Sch> {
+pub struct DelayUnsubscriptionSubscription<U, Sch, Cell> {
   upstream: U,
-  delivery: CellArc<Delivery>,
+  closed: Cell,
   delay: Duration,
   scheduler: Sch,
 }
-impl<U, Sch> Subscription for UnsubscribeOnSubscription<U, Sch>
+impl<U, Sch, Cell> Subscription for DelayUnsubscriptionSubscription<U, Sch, Cell>
 where
   U: Subscription,
   Sch: Scheduler<Task<Option<U>>>,
+  Cell: SharedCell<bool>,
 {
   fn unsubscribe(self) {
-    if self
-      .delivery
-      .compare_exchange(Delivery::Active, Delivery::Cancelled)
-      .is_err()
-    {
+    // `unsubscribe` consumes `self`, so a closed cell here means the source
+    // already terminated; there is nothing to keep alive.
+    if self.closed.compare_exchange(false, true).is_err() {
+      self.upstream.unsubscribe();
       return;
     }
 
@@ -96,23 +80,27 @@ where
     // Dropping a TaskHandle does not cancel the scheduled operation.
     self.scheduler.schedule(task, Some(self.delay));
   }
-  fn is_closed(&self) -> bool {
-    self.delivery.get() != Delivery::Active || self.upstream.is_closed()
-  }
+  fn is_closed(&self) -> bool { self.closed.get() || self.upstream.is_closed() }
 }
-impl<S, C, Sch> CoreObservable<C> for UnsubscribeOn<S, Sch>
+impl<S, C, Sch> CoreObservable<C> for DelayUnsubscription<S, Sch>
 where
   C: Context,
-  S: CoreObservable<C::With<UnsubscribeOnObserver<C::Inner>>>,
+  S: CoreObservable<C::With<DelayUnsubscriptionObserver<C::Inner, C::RcCell<bool>>>>,
   Sch: Scheduler<Task<Option<S::Unsub>>>,
 {
-  type Unsub = UnsubscribeOnSubscription<S::Unsub, Sch>;
+  type Unsub = DelayUnsubscriptionSubscription<S::Unsub, Sch, C::RcCell<bool>>;
   fn subscribe(self, context: C) -> Self::Unsub {
-    let delivery = CellArc::from(Delivery::Active);
+    let closed = C::RcCell::from(false);
     let upstream = self.source.subscribe(
-      context.transform(|observer| UnsubscribeOnObserver { observer, delivery: delivery.clone() }),
+      context
+        .transform(|observer| DelayUnsubscriptionObserver { observer, closed: closed.clone() }),
     );
-    UnsubscribeOnSubscription { upstream, delivery, delay: self.delay, scheduler: self.scheduler }
+    DelayUnsubscriptionSubscription {
+      upstream,
+      closed,
+      delay: self.delay,
+      scheduler: self.scheduler,
+    }
   }
 }
 
@@ -138,7 +126,7 @@ mod tests {
     let values = Rc::new(RefCell::new(vec![]));
     let v = values.clone();
     let sub = TestCtx::new(source.clone())
-      .unsubscribe_on(Duration::from_millis(10))
+      .delay_unsubscription(Duration::from_millis(10))
       .on_error(|_| {})
       .subscribe(move |x| v.borrow_mut().push(x));
     source.next(0, 1);
@@ -160,7 +148,7 @@ mod tests {
     let source = Manual::default();
     {
       let _guard = TestCtx::new(source.clone())
-        .unsubscribe_on(Duration::ZERO)
+        .delay_unsubscription(Duration::ZERO)
         .on_error(|_| {})
         .subscribe(|_| {})
         .unsubscribe_when_dropped();
@@ -172,18 +160,18 @@ mod tests {
   }
 
   #[rxrust_macro::test]
-  fn natural_completion_error_and_plain_drop_do_not_schedule_cancellation() {
+  fn natural_termination_forwards_cancellation_now_and_plain_drop_does_not_cancel() {
     TestScheduler::init();
     let source = Manual::default();
     let complete = TestCtx::new(source.clone())
-      .unsubscribe_on(Duration::ZERO)
+      .delay_unsubscription(Duration::ZERO)
       .on_error(|_| {})
       .subscribe(|_| {});
     source.complete(0);
     assert!(complete.is_closed());
     complete.unsubscribe();
     let error = TestCtx::new(source.clone())
-      .unsubscribe_on(Duration::ZERO)
+      .delay_unsubscription(Duration::ZERO)
       .on_error(|_| {})
       .subscribe(|_| {});
     source.error(1);
@@ -192,16 +180,17 @@ mod tests {
     let values = Rc::new(Cell::new(0));
     let v = values.clone();
     let dropped = TestCtx::new(source.clone())
-      .unsubscribe_on(Duration::ZERO)
+      .delay_unsubscription(Duration::ZERO)
       .on_error(|_| {})
       .subscribe(move |_| v.set(v.get() + 1));
     drop(dropped);
     source.next(2, 1);
     assert_eq!(values.get(), 1);
     assert_eq!(TestScheduler::pending_count(), 0);
-    for index in 0..3 {
-      assert_eq!(source.cancellations(index), 0);
-    }
+    // Cancelling after natural termination still releases upstream teardown.
+    assert_eq!(source.cancellations(0), 1);
+    assert_eq!(source.cancellations(1), 1);
+    assert_eq!(source.cancellations(2), 0);
   }
 
   #[rxrust_macro::test]
@@ -213,7 +202,7 @@ mod tests {
       emitter.next(1);
       ClosureSubscription(move || on_cancel.set(on_cancel.get() + 1))
     })
-    .unsubscribe_on(Duration::from_millis(10))
+    .delay_unsubscription(Duration::from_millis(10))
     .take(1)
     .subscribe(|_| {});
     sub.unsubscribe();
@@ -228,8 +217,8 @@ mod tests {
     TestScheduler::init();
     let source = Manual::default();
     TestCtx::new(source.clone())
-      .unsubscribe_on(Duration::from_millis(10))
-      .unsubscribe_on(Duration::from_millis(20))
+      .delay_unsubscription(Duration::from_millis(10))
+      .delay_unsubscription(Duration::from_millis(20))
       .on_error(|_| {})
       .subscribe(|_| {})
       .unsubscribe();
@@ -250,7 +239,7 @@ mod tests {
       let complete = terminals.clone();
       let error = terminals.clone();
       TestCtx::new(source.clone())
-        .unsubscribe_on(Duration::from_millis(10))
+        .delay_unsubscription(Duration::from_millis(10))
         .on_complete(move || complete.set(complete.get() + 1))
         .on_error(move |_| error.set(error.get() + 1))
         .subscribe(|_| {})
@@ -276,7 +265,7 @@ mod tests {
       emitter.next(1);
       ClosureSubscription(move || sent.send(()).unwrap())
     })
-    .unsubscribe_on(Duration::ZERO)
+    .delay_unsubscription(Duration::ZERO)
     .take(1)
     .subscribe(|_| {});
     sub.unsubscribe();
@@ -305,12 +294,12 @@ mod tests {
     let current = InstanceScheduler { id: 7, calls: calls.clone() };
     let explicit = InstanceScheduler { id: 9, calls: calls.clone() };
     LocalCtx::from_parts(source.clone(), current.clone())
-      .unsubscribe_on(Duration::ZERO)
+      .delay_unsubscription(Duration::ZERO)
       .on_error(|_| {})
       .subscribe(|_| {})
       .unsubscribe();
     LocalCtx::from_parts(source.clone(), current)
-      .unsubscribe_on_with(Duration::ZERO, explicit)
+      .delay_unsubscription_with(Duration::ZERO, explicit)
       .on_error(|_| {})
       .subscribe(|_| {})
       .unsubscribe();
@@ -326,7 +315,7 @@ mod tests {
     let delayed = Manual::default();
     let immediate = Manual::default();
     TestCtx::new(delayed.clone())
-      .unsubscribe_on(Duration::from_millis(10))
+      .delay_unsubscription(Duration::from_millis(10))
       .merge(TestCtx::new(immediate.clone()))
       .take(1)
       .on_error(|_| {})
@@ -345,7 +334,7 @@ mod tests {
     let shared = TestCtx::new(source.clone())
       .publish()
       .ref_count()
-      .unsubscribe_on_with(Duration::from_millis(10), TestScheduler);
+      .delay_unsubscription_with(Duration::from_millis(10), TestScheduler);
     let old = shared.clone().on_error(|_| {}).subscribe(|_| {});
     old.unsubscribe();
     TestScheduler::advance_by(Duration::from_millis(5));
@@ -377,7 +366,7 @@ mod tests {
     })
     .publish()
     .ref_count()
-    .unsubscribe_on(Duration::from_millis(100));
+    .delay_unsubscription(Duration::from_millis(100));
     let old_values = Rc::new(RefCell::new(vec![]));
     let received = old_values.clone();
     let old = shared

@@ -50,6 +50,7 @@ use crate::ops::{
   debounce::Debounce,
   default_if_empty::DefaultIfEmpty,
   delay::{Delay, DelaySubscriptionOp},
+  delay_unsubscription::DelayUnsubscription,
   distinct::{Distinct, DistinctKey},
   distinct_until_changed::{DistinctUntilChanged, DistinctUntilKeyChanged},
   filter::Filter,
@@ -86,7 +87,6 @@ use crate::ops::{
   take_while::TakeWhile,
   tap::Tap,
   throttle::{Throttle, ThrottleEdge, ThrottleWhenParam},
-  unsubscribe_on::UnsubscribeOn,
   with_latest_from::WithLatestFrom,
   zip::Zip,
 };
@@ -1094,6 +1094,62 @@ pub trait Observable: Context {
     self.transform(|core| DelaySubscriptionOp { source: core, delay, scheduler })
   }
 
+  /// Delay upstream cancellation using this context's scheduler instance.
+  ///
+  /// Explicit cancellation, including `unsubscribe_when_dropped()`, immediately
+  /// stops accepting downstream notifications and schedules one upstream
+  /// `unsubscribe()` call after `delay`. Even zero delay goes through the
+  /// scheduler. Ordinary Drop does not cancel. Cancelling after a natural
+  /// completion/error forwards `unsubscribe()` upstream immediately.
+  ///
+  /// The delay starts when cancellation reaches this operator. During a
+  /// synchronous subscription, a downstream operator may have to wait for the
+  /// subscription handle to be returned before forwarding cancellation.
+  /// Existing `is_closed()` propagation is preserved: this delays the method
+  /// call, but does not guarantee that every source keeps producing until then.
+  /// A callback already in progress may finish.
+  ///
+  /// The scheduler must be driven until the cancellation task runs. Its usual
+  /// lifetime and thread-safety bounds apply to the upstream handle (`'static`
+  /// for built-in schedulers, and `Send` for a shared scheduler).
+  ///
+  /// To keep a shared connection alive during a resubscription gap, place this
+  /// after `publish().ref_count()`. The old subscription retains its reference
+  /// until its delayed cancellation runs; new subscriptions reuse that
+  /// connection. Values emitted during the gap are not replayed.
+  ///
+  /// ```rust,no_run
+  /// use rxrust::prelude::*;
+  ///
+  /// let shared = Local::defer(|| Local::interval(Duration::from_millis(10)))
+  ///   .publish()
+  ///   .ref_count()
+  ///   .delay_unsubscription(Duration::from_millis(100));
+  /// let old = shared
+  ///   .clone()
+  ///   .subscribe(|value| println!("{value}"));
+  /// old.unsubscribe();
+  /// let replacement = shared.subscribe(|value| println!("{value}"));
+  /// replacement.unsubscribe();
+  /// ```
+  fn delay_unsubscription(
+    self, delay: Duration,
+  ) -> Self::With<DelayUnsubscription<Self::Inner, Self::Scheduler>> {
+    let scheduler = self.scheduler().clone();
+    self.transform(|source| DelayUnsubscription { source, delay, scheduler })
+  }
+
+  /// Delay upstream cancellation using the supplied scheduler instance.
+  ///
+  /// See [`delay_unsubscription`](Observable::delay_unsubscription) for
+  /// cancellation timing, natural termination, scheduler requirements, and
+  /// connection sharing.
+  fn delay_unsubscription_with<Sch>(
+    self, delay: Duration, scheduler: Sch,
+  ) -> Self::With<DelayUnsubscription<Self::Inner, Sch>> {
+    self.transform(|source| DelayUnsubscription { source, delay, scheduler })
+  }
+
   /// Emit a value only after a quiet period has passed
   ///
   /// Emits an item from the source Observable only after a particular duration
@@ -1157,61 +1213,6 @@ pub trait Observable: Context {
   /// * `scheduler` - The scheduler on which to schedule the subscription
   fn subscribe_on<Sch>(self, scheduler: Sch) -> Self::With<SubscribeOn<Self::Inner, Sch>> {
     self.transform(|core| SubscribeOn { source: core, scheduler })
-  }
-
-  /// Delay upstream cancellation using this context's scheduler instance.
-  ///
-  /// Explicit cancellation, including `unsubscribe_when_dropped()`, immediately
-  /// stops accepting downstream notifications and schedules one upstream
-  /// `unsubscribe()` call after `delay`. Even zero delay goes through the
-  /// scheduler. Natural completion/error and ordinary Drop create no task.
-  ///
-  /// The delay starts when cancellation reaches this operator. During a
-  /// synchronous subscription, a downstream operator may have to wait for the
-  /// subscription handle to be returned before forwarding cancellation.
-  /// Existing `is_closed()` propagation is preserved: this delays the method
-  /// call, but does not guarantee that every source keeps producing until then.
-  /// A callback already in progress may finish.
-  ///
-  /// The scheduler must be driven until the cancellation task runs. Its usual
-  /// lifetime and thread-safety bounds apply to the upstream handle (`'static`
-  /// for built-in schedulers, and `Send` for a shared scheduler).
-  ///
-  /// To keep a shared connection alive during a resubscription gap, place this
-  /// after `publish().ref_count()`. The old subscription retains its reference
-  /// until its delayed cancellation runs; new subscriptions reuse that
-  /// connection. Values emitted during the gap are not replayed.
-  ///
-  /// ```rust,no_run
-  /// use rxrust::prelude::*;
-  ///
-  /// let shared = Local::defer(|| Local::interval(Duration::from_millis(10)))
-  ///   .publish()
-  ///   .ref_count()
-  ///   .unsubscribe_on(Duration::from_millis(100));
-  /// let old = shared
-  ///   .clone()
-  ///   .subscribe(|value| println!("{value}"));
-  /// old.unsubscribe();
-  /// let replacement = shared.subscribe(|value| println!("{value}"));
-  /// replacement.unsubscribe();
-  /// ```
-  fn unsubscribe_on(
-    self, delay: Duration,
-  ) -> Self::With<UnsubscribeOn<Self::Inner, Self::Scheduler>> {
-    let scheduler = self.scheduler().clone();
-    self.transform(|source| UnsubscribeOn { source, delay, scheduler })
-  }
-
-  /// Delay upstream cancellation using the supplied scheduler instance.
-  ///
-  /// See [`unsubscribe_on`](Observable::unsubscribe_on) for cancellation
-  /// timing, natural termination, scheduler requirements, and connection
-  /// sharing.
-  fn unsubscribe_on_with<Sch>(
-    self, delay: Duration, scheduler: Sch,
-  ) -> Self::With<UnsubscribeOn<Self::Inner, Sch>> {
-    self.transform(|source| UnsubscribeOn { source, delay, scheduler })
   }
 
   /// Resubscribe to the source observable when it errors
