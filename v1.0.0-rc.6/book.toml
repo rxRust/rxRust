@@ -1,0 +1,9 @@
+[book]
+authors = ["rxRust Developers"]
+language = "en"
+src = "."
+title = "The rxRust Book"
+
+[output.html]
+git-repository-url = "https://github.com/rxRust/rxRust"
+additional-js = ["js/version-picker.js"]
