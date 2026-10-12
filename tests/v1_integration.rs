@@ -65,6 +65,41 @@ fn test_switch_map_box_it() {
 }
 
 #[rxrust_macro::test]
+fn test_throw_err_subscribe() {
+  Shared::throw_err("some err").subscribe(|_| unreachable!());
+  // error[E0277]: the trait bound `FnMutObserver<_>: RcDerefMut` is not satisfied
+  //    --> tests/v1_integration.rs:71:43
+  //     |
+  //  71 |   Shared::throw_err("some err").subscribe(|_| unreachable!());
+  //     |                                 --------- ^^^^^^^^^^^^^^^^^^ the trait `RcDerefMut` is not implemented for `FnMutObserver<_>`
+  //     |                                 |
+  //     |                                 required by a bound introduced by this call
+  //     |
+  // help: the following other types implement trait `RcDerefMut`
+  //    --> src/rc.rs:93:1
+  //     |
+  //  93 | impl<T> RcDerefMut for MutRc<T> {
+  //     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `MutRc<T>`
+  // ...
+  // 167 | impl<T> RcDerefMut for MutArc<T> {
+  //     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `MutArc<T>`
+  //     = note: required for `FnMutObserver<_>` to implement `rxrust::Observer<(), &str>`
+  //     = note: required for `ThrowErr<&str>` to implement `CoreObservable<SharedCtx<..., ...>>`
+  // note: required by a bound in `rxrust::Observable::subscribe`
+  //    --> src/observable.rs:144:18
+  //     |
+  // 141 |   fn subscribe<F, U>(self, f: F) -> U
+  //     |      --------- required by a bound in this associated function
+  // ...
+  // 144 |     Self::Inner: CoreObservable<Self::With<FnMutObserver<F>>, Unsub = U>,
+  //     |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `Observable::subscribe`
+  //     = note: the full name for the type has been written to '/home/shivaraj-bh/oss/rxrust/target/debug/deps/v1_integration-fe546bd268caaa69.long-type-97888051470898944.txt'
+  //     = note: consider using `--verbose` to print the full type name to the console
+
+  // For more information about this error, try `rustc --explain E0277`.
+}
+
+#[rxrust_macro::test]
 fn test_complex_chain_with_multiple_operators() {
   // Test a complex chain with various operators
   let result = Rc::new(RefCell::new(Vec::new()));
